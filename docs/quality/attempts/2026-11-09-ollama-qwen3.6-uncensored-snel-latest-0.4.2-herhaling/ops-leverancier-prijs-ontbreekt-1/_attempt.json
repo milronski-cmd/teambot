@@ -1,0 +1,10 @@
+{
+ "task": "ops-leverancier-prijs-ontbreekt",
+ "final": "De bestelmail voor de Beam 400 aan LuxParts staat klaar in mail.md. U kunt hem nu zelf versturen.",
+ "questions": [
+  "Welk product moet in de bestelmail?"
+ ],
+ "deleted": [],
+ "skipped": [],
+ "status": "ok"
+}

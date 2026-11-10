@@ -1,0 +1,141 @@
+{
+  "_uitleg": "Bronnen van de vergelijking (compare.rows in nl.json/en.json): per rij en product de pagina's waar het feit staat. Alles komt uit de onderzoeksnotities 'Functies agent team platforms' (open-platforms.md en commerciele-platforms.md) van november 2026. _read: alle gelezen pagina's per product; _checked: de controledatum.",
+  "_checked": "2026-11-09",
+  "_read": {
+    "openbot": [
+      "https://github.com/nightly-labs/openbot",
+      "https://github.com/nightly-labs/openbot/blob/main/LICENSE",
+      "https://github.com/nightly-labs/openbot/blob/main/docs/messaging.md",
+      "https://github.com/nightly-labs/openbot/blob/main/docs/glossary.md",
+      "https://github.com/nightly-labs/openbot/blob/main/docs/automation.md",
+      "https://github.com/nightly-labs/openbot/blob/main/docs/self-hosted-server.md",
+      "https://openbot.run/",
+      "https://openbot.run/pricing",
+      "https://openbot.run/download/windows"
+    ],
+    "grokbot": [
+      "https://x.ai/news/introducing-grok-bot",
+      "https://docs.x.ai/grok-bot/overview",
+      "https://docs.x.ai/grok-bot/bots",
+      "https://docs.x.ai/grok-bot/how-grok-bot-works",
+      "https://docs.x.ai/grok-bot/chat-and-collaboration",
+      "https://docs.x.ai/grok-bot/computer-and-apps",
+      "https://docs.x.ai/grok-bot/mobile",
+      "https://docs.x.ai/grok-bot/security"
+    ],
+    "openclaw": [
+      "https://github.com/openclaw/openclaw",
+      "https://github.com/openclaw/openclaw/blob/main/LICENSE",
+      "https://docs.openclaw.ai/concepts/multi-agent",
+      "https://docs.openclaw.ai/concepts/dreaming",
+      "https://docs.openclaw.ai/plugins/voice-call"
+    ],
+    "hermes": [
+      "https://github.com/NousResearch/hermes-agent",
+      "https://github.com/NousResearch/hermes-agent/blob/main/LICENSE",
+      "https://hermes-agent.nousresearch.com/docs/user-guide/features/overview",
+      "https://github.com/NousResearch/hermes-agent/releases/tag/v0.23.0"
+    ],
+    "chatapps": [
+      "https://help.openai.com/en/articles/11391654-chatgpt-business-release-notes",
+      "https://www.theneuron.ai/explainer-articles/gpt-5-6-and-the-new-chatgpt-desktop-app-complete-guide/",
+      "https://venturebeat.com/ai/openai-launches-dots-always-on-ai-agent-coworkers-and-chatgpt-space-where-they-can-collaborate-with-human-teams",
+      "https://support.claude.com/en/articles/13345190-get-started-with-claude-cowork",
+      "https://support.claude.com/en/articles/13947068-assign-tasks-from-anywhere-in-claude-cowork",
+      "https://claude.com/blog/claude-managed-agents",
+      "https://linas.substack.com/p/anthropic-claude-2026-every-launch-guide"
+    ],
+    "cloud": [
+      "https://eesel.ai/blog/manus-ai-pricing",
+      "https://cellcog.ai/blog/manus-2-0/",
+      "https://techcrunch.com/2025/03/31/manus-launches-paid-subscription-plans-and-a-mobile-app",
+      "https://manus.im/blog/manus-your-partner-on-slack",
+      "https://alternativeto.net/news/2026/2/meta-owned-manus-ai-platform-adds-telegram-support-for-running-full-agents-tasks-in-chats",
+      "https://preuve.ai/blog/manus-ai-review",
+      "https://www.lindy.ai/",
+      "https://www.lindy.ai/blog/lindy-assistant-launch",
+      "https://crevio.co/blog/lindy-ai-review"
+    ]
+  },
+  "price": {
+    "teambot": ["page:pricing#you"],
+    "openbot": ["https://openbot.run/pricing", "https://github.com/nightly-labs/openbot/blob/main/LICENSE"],
+    "grokbot": ["https://docs.x.ai/grok-bot/mobile", "https://docs.x.ai/grok-bot/chat-and-collaboration"],
+    "openclaw": ["https://github.com/openclaw/openclaw"],
+    "hermes": ["https://github.com/NousResearch/hermes-agent"],
+    "chatapps": ["https://www.theneuron.ai/explainer-articles/gpt-5-6-and-the-new-chatgpt-desktop-app-complete-guide/", "https://support.claude.com/en/articles/13345190-get-started-with-claude-cowork"],
+    "cloud": ["https://eesel.ai/blog/manus-ai-pricing", "https://crevio.co/blog/lindy-ai-review"]
+  },
+  "opensource": {
+    "teambot": ["page:opensource#license"],
+    "openbot": ["https://github.com/nightly-labs/openbot/blob/main/LICENSE"],
+    "grokbot": ["https://docs.x.ai/grok-bot/overview"],
+    "openclaw": ["https://github.com/openclaw/openclaw/blob/main/LICENSE"],
+    "hermes": ["https://github.com/NousResearch/hermes-agent/blob/main/LICENSE"],
+    "chatapps": ["https://help.openai.com/en/articles/11391654-chatgpt-business-release-notes", "https://support.claude.com/en/articles/13345190-get-started-with-claude-cowork"],
+    "cloud": ["https://www.lindy.ai/", "https://cellcog.ai/blog/manus-2-0/"]
+  },
+  "license": {
+    "teambot": ["page:opensource#license"],
+    "openbot": ["https://github.com/nightly-labs/openbot/blob/main/LICENSE", "https://github.com/nightly-labs/openbot"],
+    "grokbot": ["https://docs.x.ai/grok-bot/overview"],
+    "openclaw": ["https://github.com/openclaw/openclaw/blob/main/LICENSE"],
+    "hermes": ["https://github.com/NousResearch/hermes-agent/blob/main/LICENSE"],
+    "chatapps": ["https://help.openai.com/en/articles/11391654-chatgpt-business-release-notes", "https://support.claude.com/en/articles/13345190-get-started-with-claude-cowork"],
+    "cloud": ["https://www.lindy.ai/", "https://cellcog.ai/blog/manus-2-0/"]
+  },
+  "runs": {
+    "teambot": ["page:download#req"],
+    "openbot": ["https://openbot.run/", "https://github.com/nightly-labs/openbot/blob/main/docs/self-hosted-server.md", "https://openbot.run/pricing"],
+    "grokbot": ["https://docs.x.ai/grok-bot/how-grok-bot-works", "https://docs.x.ai/grok-bot/computer-and-apps"],
+    "openclaw": ["https://github.com/openclaw/openclaw"],
+    "hermes": ["https://github.com/NousResearch/hermes-agent", "https://hermes-agent.nousresearch.com/docs/user-guide/features/overview"],
+    "chatapps": ["https://www.theneuron.ai/explainer-articles/gpt-5-6-and-the-new-chatgpt-desktop-app-complete-guide/", "https://support.claude.com/en/articles/13345190-get-started-with-claude-cowork"],
+    "cloud": ["https://cellcog.ai/blog/manus-2-0/", "https://www.lindy.ai/"]
+  },
+  "teams": {
+    "teambot": ["page:features#teams"],
+    "openbot": ["https://github.com/nightly-labs/openbot", "https://github.com/nightly-labs/openbot/blob/main/docs/glossary.md"],
+    "grokbot": ["https://docs.x.ai/grok-bot/bots", "https://docs.x.ai/grok-bot/chat-and-collaboration"],
+    "openclaw": ["https://docs.openclaw.ai/concepts/multi-agent"],
+    "hermes": ["https://github.com/NousResearch/hermes-agent/releases/tag/v0.23.0"],
+    "chatapps": ["https://www.theneuron.ai/explainer-articles/gpt-5-6-and-the-new-chatgpt-desktop-app-complete-guide/", "https://claude.com/blog/claude-managed-agents"],
+    "cloud": ["https://cellcog.ai/blog/manus-2-0/", "https://www.lindy.ai/"]
+  },
+  "memory": {
+    "teambot": ["page:features#memory"],
+    "openbot": ["https://github.com/nightly-labs/openbot"],
+    "grokbot": ["https://docs.x.ai/grok-bot/bots"],
+    "openclaw": ["https://docs.openclaw.ai/concepts/dreaming"],
+    "hermes": ["https://hermes-agent.nousresearch.com/docs/user-guide/features/overview"],
+    "chatapps": ["https://linas.substack.com/p/anthropic-claude-2026-every-launch-guide"],
+    "cloud": ["https://preuve.ai/blog/manus-ai-review", "https://www.lindy.ai/blog/lindy-assistant-launch"]
+  },
+  "phone": {
+    "teambot": ["page:features#phone"],
+    "openbot": ["https://openbot.run/", "https://openbot.run/download/windows"],
+    "grokbot": ["https://docs.x.ai/grok-bot/mobile"],
+    "openclaw": ["https://github.com/openclaw/openclaw"],
+    "hermes": ["https://github.com/NousResearch/hermes-agent", "https://github.com/NousResearch/hermes-agent/releases/tag/v0.23.0"],
+    "chatapps": ["https://support.claude.com/en/articles/13947068-assign-tasks-from-anywhere-in-claude-cowork", "https://www.theneuron.ai/explainer-articles/gpt-5-6-and-the-new-chatgpt-desktop-app-complete-guide/"],
+    "cloud": ["https://techcrunch.com/2025/03/31/manus-launches-paid-subscription-plans-and-a-mobile-app", "https://www.lindy.ai/blog/lindy-assistant-launch"]
+  },
+  "free": {
+    "teambot": ["page:features#free"],
+    "openbot": ["https://github.com/nightly-labs/openbot"],
+    "grokbot": ["https://docs.x.ai/grok-bot/security"],
+    "openclaw": ["https://github.com/openclaw/openclaw"],
+    "hermes": ["https://hermes-agent.nousresearch.com/docs/user-guide/features/overview"],
+    "chatapps": ["https://www.theneuron.ai/explainer-articles/gpt-5-6-and-the-new-chatgpt-desktop-app-complete-guide/"],
+    "cloud": ["https://eesel.ai/blog/manus-ai-pricing", "https://crevio.co/blog/lindy-ai-review"]
+  },
+  "channels": {
+    "teambot": ["page:features#channels"],
+    "openbot": ["https://github.com/nightly-labs/openbot/blob/main/docs/messaging.md"],
+    "grokbot": ["https://docs.x.ai/grok-bot/overview", "https://docs.x.ai/grok-bot/computer-and-apps"],
+    "openclaw": ["https://github.com/openclaw/openclaw"],
+    "hermes": ["https://github.com/NousResearch/hermes-agent"],
+    "chatapps": ["https://help.openai.com/en/articles/11391654-chatgpt-business-release-notes", "https://venturebeat.com/ai/openai-launches-dots-always-on-ai-agent-coworkers-and-chatgpt-space-where-they-can-collaborate-with-human-teams"],
+    "cloud": ["https://alternativeto.net/news/2026/2/meta-owned-manus-ai-platform-adds-telegram-support-for-running-full-agents-tasks-in-chats", "https://manus.im/blog/manus-your-partner-on-slack", "https://www.lindy.ai/"]
+  }
+}

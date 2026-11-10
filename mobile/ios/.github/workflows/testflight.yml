@@ -1,0 +1,258 @@
+# TeamBot iPhone app → TestFlight. This repository holds only the iOS app (the folder mobile/ios of TeamBot), so
+# every path is relative to the repository root.
+#
+#  - Every pull request: generate the Xcode project with XcodeGen, build and run the unit tests on an iPhone
+#    simulator. No secrets, no signing. (Not on every push: in a private repository macOS minutes count 10 times,
+#    and GitHub Free has 2,000 minutes a month — about 200 macOS minutes, roughly 8 TestFlight builds.)
+#  - Actions › TestFlight › Run workflow: the tests, then archive, sign and upload to TestFlight (internal testers).
+#    With "Uploaden" switched off it only runs the tests.
+#    Signing is automatic through the App Store Connect API key: Xcode signs the archive with a temporary
+#    development certificate (revoked again at the end of the run) and the upload with Apple's cloud-managed
+#    distribution certificate. No certificates or profiles are stored anywhere.
+#
+# Secrets (Settings › Environments › testflight, or Settings › Secrets and variables › Actions):
+#   APPLE_TEAM_ID   Team ID (developer.apple.com › Account › Membership details)
+#   ASC_KEY_ID      Key ID of the App Store Connect API key (Users and Access › Integrations; role Admin)
+#   ASC_ISSUER_ID   Issuer ID (shown above that key list)
+#   ASC_KEY_P8      the full text of AuthKey_<KEYID>.p8 (or that text in base64)
+# Optional repository variables: IOS_BUNDLE_ID (default app.teambot.companion), XCODE_VERSION (e.g. 26.6;
+# default: the newest non-beta Xcode 26 or later on the runner).
+# Requirements checked on 9 November 2026: uploads need Xcode 26+ with the iOS 26 SDK (since 28 April 2026);
+# runner label macos-26 (= macos-latest, arm64, Xcode 26.0.1 … 26.6).
+name: TestFlight
+
+on:
+  pull_request:
+    paths-ignore: ['**/*.md']
+  workflow_dispatch:
+    inputs:
+      upload:
+        description: Uploaden naar TestFlight
+        type: boolean
+        default: true
+      internal_only:
+        description: Alleen voor interne testers (zo'n build kan nooit naar externe testers of de App Store)
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ios-${{ github.workflow }}-${{ github.ref }}-${{ github.event_name }}
+  cancel-in-progress: ${{ github.event_name != 'workflow_dispatch' }}
+
+env:
+  HOMEBREW_NO_AUTO_UPDATE: '1'
+  HOMEBREW_NO_INSTALL_CLEANUP: '1'
+
+jobs:
+  test:
+    name: Bouwen en testen (simulator)
+    runs-on: macos-26
+    timeout-minutes: 40
+    env:
+      TEAMBOT_TEAM_ID: ''
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Xcode kiezen
+        run: bash ci/xcode.sh "${{ vars.XCODE_VERSION }}"
+
+      - name: Xcode-project maken (XcodeGen)
+        run: |
+          brew install xcodegen
+          xcodegen --version
+          xcodegen generate
+
+      - name: Swift-pakketten ophalen (IrohLib voor de TeamBot-verbinding)
+        run: |
+          # Downloads the pinned IrohLib.xcframework (checksum in its Package.swift). A clear error here instead of a
+          # vague one in the build.
+          if ! xcodebuild -resolvePackageDependencies -project TeamBot.xcodeproj -scheme TeamBot > "$RUNNER_TEMP/packages.log" 2>&1; then
+            tail -40 "$RUNNER_TEMP/packages.log"
+            echo "::error::IrohLib kon niet worden opgehaald (github.com/n0-computer/iroh-ffi, versie 1.2.0)."
+            exit 1
+          fi
+          grep -iE 'iroh|resolved' "$RUNNER_TEMP/packages.log" | head -10 || true
+
+      - name: Unit tests op een iPhone-simulator
+        run: |
+          set -o pipefail
+          UDID=$(xcrun simctl list devices available -j | python3 -I ci/simulator.py)
+          xcodebuild test -project TeamBot.xcodeproj -scheme TeamBot -destination "id=$UDID" \
+            CODE_SIGNING_ALLOWED=NO -resultBundlePath "$RUNNER_TEMP/tests.xcresult" 2>&1 | tee "$RUNNER_TEMP/test.log" | grep -E '(error:|warning: .*deprecated|Test Case .* (passed|failed)|Executed|\*\* TEST)' || true
+          grep -q '\*\* TEST SUCCEEDED \*\*' "$RUNNER_TEMP/test.log"
+
+      - name: Logboek bewaren bij een fout
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-log
+          path: ${{ runner.temp }}/test.log
+          if-no-files-found: ignore
+          retention-days: 7
+
+  testflight:
+    name: Archiveren, ondertekenen en uploaden naar TestFlight
+    needs: test
+    if: github.event_name == 'workflow_dispatch' && inputs.upload
+    runs-on: macos-26
+    timeout-minutes: 60
+    environment: testflight
+    env:
+      APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+      ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+      ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+      ASC_KEY_P8: ${{ secrets.ASC_KEY_P8 }}
+      BUNDLE_ID: ${{ vars.IOS_BUNDLE_ID || 'app.teambot.companion' }}
+      # Unique per run and per retry ("12.1", "12.2"): App Store Connect refuses a build number twice.
+      BUILD_NUMBER: ${{ github.run_number }}.${{ github.run_attempt }}
+      INTERNAL_ONLY: ${{ inputs.internal_only }}
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Secrets controleren
+        run: |
+          missing=0
+          for v in APPLE_TEAM_ID ASC_KEY_ID ASC_ISSUER_ID ASC_KEY_P8; do
+            if [ -z "${!v}" ]; then echo "::error::Secret ontbreekt: $v (zie README.md › TestFlight)"; missing=1; fi
+          done
+          exit $missing
+
+      - name: Xcode kiezen
+        run: bash ci/xcode.sh "${{ vars.XCODE_VERSION }}"
+
+      - name: Xcode-project maken (XcodeGen)
+        run: |
+          brew install xcodegen
+          xcodegen --version
+          TEAMBOT_TEAM_ID="$APPLE_TEAM_ID" xcodegen generate
+
+      - name: Swift-pakketten ophalen (IrohLib voor de TeamBot-verbinding)
+        run: |
+          # Downloads the pinned IrohLib.xcframework (checksum in its Package.swift). A clear error here instead of a
+          # vague one in the build.
+          if ! xcodebuild -resolvePackageDependencies -project TeamBot.xcodeproj -scheme TeamBot > "$RUNNER_TEMP/packages.log" 2>&1; then
+            tail -40 "$RUNNER_TEMP/packages.log"
+            echo "::error::IrohLib kon niet worden opgehaald (github.com/n0-computer/iroh-ffi, versie 1.2.0)."
+            exit 1
+          fi
+          grep -iE 'iroh|resolved' "$RUNNER_TEMP/packages.log" | head -10 || true
+
+      - name: App Store Connect API-sleutel klaarzetten
+        run: |
+          dir="$RUNNER_TEMP/asc"
+          mkdir -p "$dir"
+          chmod 700 "$dir"
+          key="$dir/AuthKey_${ASC_KEY_ID}.p8"
+          if printf '%s' "$ASC_KEY_P8" | grep -q 'BEGIN PRIVATE KEY'; then
+            printf '%s\n' "$ASC_KEY_P8" | tr -d '\r' > "$key"
+          else
+            printf '%s' "$ASC_KEY_P8" | tr -d '\r\n ' | base64 --decode > "$key"
+          fi
+          chmod 600 "$key"
+          if ! grep -q 'BEGIN PRIVATE KEY' "$key"; then
+            echo "::error::ASC_KEY_P8 is geen .p8-sleutel. Plak de hele inhoud van AuthKey_${ASC_KEY_ID}.p8, met de regels BEGIN en END."
+            exit 1
+          fi
+          echo "ASC_KEY_PATH=$key" >> "$GITHUB_ENV"
+
+      - name: Archiveren (automatisch ondertekenen via de API-sleutel)
+        run: |
+          log="$RUNNER_TEMP/archive.log"
+          if ! xcodebuild archive \
+              -project TeamBot.xcodeproj -scheme TeamBot -configuration Release \
+              -destination 'generic/platform=iOS' \
+              -archivePath "$RUNNER_TEMP/TeamBot.xcarchive" \
+              -allowProvisioningUpdates \
+              -authenticationKeyPath "$ASC_KEY_PATH" -authenticationKeyID "$ASC_KEY_ID" -authenticationKeyIssuerID "$ASC_ISSUER_ID" \
+              DEVELOPMENT_TEAM="$APPLE_TEAM_ID" CODE_SIGN_STYLE=Automatic \
+              PRODUCT_BUNDLE_IDENTIFIER="$BUNDLE_ID" CURRENT_PROJECT_VERSION="$BUILD_NUMBER" > "$log" 2>&1; then
+            grep -E 'error:' "$log" | sort -u | head -40 || true
+            if grep -q 'has no devices' "$log"; then
+              echo "::error::Apple wil eerst één geregistreerd apparaat in je team zien. Voeg je iPhone toe onder developer.apple.com › Devices (zie README.md, stap 2) en start opnieuw."
+            elif grep -qiE 'maximum number of certificates|certificate limit' "$log"; then
+              echo "::error::Te veel ontwikkelaarscertificaten. Trek oude 'Created via API'-certificaten in onder developer.apple.com › Certificates en start opnieuw."
+            elif grep -qiE 'not (have|be) (permission|allowed)|insufficient|role' "$log"; then
+              echo "::error::De API-sleutel mag dit niet. Maak een sleutel met de rol Admin (zie README.md, stap 4)."
+            else
+              echo "::error::Archiveren mislukt; het volledige logboek staat bij Artifacts (xcode-logs)."
+            fi
+            tail -60 "$log"
+            exit 1
+          fi
+          grep -E '\*\* ARCHIVE SUCCEEDED \*\*' "$log"
+
+      - name: Build controleren
+        run: |
+          app="$RUNNER_TEMP/TeamBot.xcarchive/Products/Applications/TeamBot.app"
+          echo "Bundle-id: $(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$app/Info.plist")"
+          echo "Versie:    $(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$app/Info.plist") ($(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$app/Info.plist"))"
+          echo "SDK:       $(/usr/libexec/PlistBuddy -c 'Print :DTSDKName' "$app/Info.plist") / Xcode $(/usr/libexec/PlistBuddy -c 'Print :DTXcode' "$app/Info.plist")"
+          if ! codesign -d --entitlements - --xml "$app" 2>/dev/null | grep -q aps-environment; then
+            echo "::warning::De app heeft geen pushrecht (aps-environment). De build werkt, maar pushmeldingen niet. Zet Push Notifications aan bij de App ID op developer.apple.com."
+          fi
+
+      - name: Uploaden naar TestFlight
+        run: |
+          opts="$RUNNER_TEMP/ExportOptions.plist"
+          cp ExportOptions.plist "$opts"
+          plutil -replace teamID -string "$APPLE_TEAM_ID" "$opts"
+          if [ "$INTERNAL_ONLY" = "true" ]; then
+            plutil -replace testFlightInternalTestingOnly -bool YES "$opts"
+          else
+            plutil -replace testFlightInternalTestingOnly -bool NO "$opts"
+          fi
+          log="$RUNNER_TEMP/export.log"
+          if ! xcodebuild -exportArchive \
+              -archivePath "$RUNNER_TEMP/TeamBot.xcarchive" \
+              -exportOptionsPlist "$opts" \
+              -exportPath "$RUNNER_TEMP/export" \
+              -allowProvisioningUpdates \
+              -authenticationKeyPath "$ASC_KEY_PATH" -authenticationKeyID "$ASC_KEY_ID" -authenticationKeyIssuerID "$ASC_ISSUER_ID" > "$log" 2>&1; then
+            grep -iE 'error' "$log" | sort -u | head -40 || true
+            if grep -qiE 'cloud signing permission|cloud-managed' "$log"; then
+              echo "::error::De API-sleutel mag de cloud-ondertekening niet gebruiken. Maak een sleutel met de rol Admin (zie README.md, stap 4)."
+            elif grep -qiE 'no suitable application records|app record' "$log"; then
+              echo "::error::App Store Connect kent deze app nog niet. Maak de app aan met bundle-id $BUNDLE_ID (zie README.md, stap 3)."
+            else
+              echo "::error::Uploaden mislukt; het volledige logboek staat bij Artifacts (xcode-logs)."
+            fi
+            tail -60 "$log"
+            exit 1
+          fi
+          tail -15 "$log"
+
+      - name: Samenvatting
+        run: |
+          version=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$RUNNER_TEMP/TeamBot.xcarchive/Products/Applications/TeamBot.app/Info.plist")
+          {
+            echo "### TestFlight"
+            echo ""
+            echo "TeamBot **$version ($BUILD_NUMBER)** is geüpload naar App Store Connect."
+            echo ""
+            echo "Apple verwerkt de build eerst (meestal 5 tot 30 minuten). Daarna verschijnt hij in de TestFlight-app bij de interne testers."
+            if [ "$INTERNAL_ONLY" = "true" ]; then echo ""; echo "Deze build is alleen voor interne testers."; fi
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Tijdelijk ontwikkelaarscertificaat van deze run intrekken
+        if: always() && env.ASC_KEY_PATH != ''
+        continue-on-error: true
+        run: python3 -I ci/revoke_run_certificates.py
+
+      - name: Logboeken bewaren bij een fout
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: xcode-logs
+          path: |
+            ${{ runner.temp }}/archive.log
+            ${{ runner.temp }}/export.log
+            ${{ runner.temp }}/export/*.log
+          if-no-files-found: ignore
+          retention-days: 7
+
+      - name: Sleutel opruimen
+        if: always()
+        run: rm -rf "$RUNNER_TEMP/asc"

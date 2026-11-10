@@ -1,0 +1,332 @@
+{
+  "name": "teambot",
+  "productName": "TeamBot",
+  "version": "0.4.4",
+  "description": "Open-source AI-agentteam: eigen bots, eigen modellen, lokaal of in de cloud.",
+  "license": "Apache-2.0",
+  "author": "TeamBot contributors",
+  "type": "module",
+  "main": "dist/desktop/main.js",
+  "bin": {
+    "teambot": "bin/teambot.mjs"
+  },
+  "engines": {
+    "node": ">=22.13"
+  },
+  "scripts": {
+    "dev:server": "tsx watch server/main.ts",
+    "dev:ui": "vite",
+    "build:ui": "vite build",
+    "build:server": "node scripts/build.mjs",
+    "build": "npm run build:ui && npm run build:server",
+    "start": "node dist/server/main.js",
+    "send": "node bin/teambot.mjs send",
+    "desktop": "npm run build && electron .",
+    "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p ui/tsconfig.json --noEmit",
+    "test": "node --import tsx --test \"tests/**/*.test.ts\"",
+    "dist:win": "npm run build && node scripts/notices.mjs && node scripts/electron-builder-retry.mjs --win nsis --publish never",
+    "dist:mac": "npm run build && node scripts/notices.mjs && electron-builder --mac --publish never",
+    "mac-launch:check": "node tests/e2e/mac-launch.mjs",
+    "desktop:dev": "npm run build && electron .",
+    "notices": "node scripts/notices.mjs",
+    "release:feed": "node scripts/release-feed.mjs",
+    "licenses:check": "node scripts/notices.mjs --check",
+    "models:snapshot": "node --import tsx scripts/models-dev-snapshot.mjs",
+    "secrets:check": "node scripts/secret-scan.mjs",
+    "e2e": "node --import tsx tests/e2e/smoke.mjs && node --import tsx tests/e2e/extensions-ui.mjs && node --import tsx tests/e2e/c2-chat.mjs && node --import tsx tests/e2e/c2-proposals-restart.mjs && node --import tsx tests/e2e/c2-routines-memory.mjs && node --import tsx tests/e2e/c2-security-phone.mjs && node --import tsx tests/e2e/files-chat.mjs && node --import tsx tests/e2e/language-switch.mjs && node --import tsx tests/e2e/c4-core.mjs && node --import tsx tests/e2e/c4-groups.mjs && node --import tsx tests/e2e/c4-models-cli-review.mjs && node --import tsx tests/e2e/shared-bot.mjs && node --import tsx tests/e2e/history-pages.mjs && node --import tsx tests/e2e/newcomer.mjs && node --import tsx tests/e2e/layout.mjs && node --import tsx tests/e2e/phone-owner.mjs && node --import tsx tests/e2e/accent.mjs && node --import tsx tests/e2e/web-notes.mjs && node --import tsx tests/e2e/skill-pin-updates.mjs && node --import tsx tests/e2e/market-clear.mjs && node --import tsx tests/e2e/chat-folders.mjs && node --import tsx tests/e2e/hermes-import.mjs && node --import tsx tests/e2e/iroh-pairing.mjs && node --import tsx tests/e2e/own-rules.mjs && node --import tsx tests/e2e/backups-offsite.mjs && node --import tsx tests/e2e/openbot-cutover.mjs && node --import tsx tests/e2e/app-update.mjs && node --import tsx tests/e2e/dialogs-math.mjs",
+    "backups:check": "node --import tsx tests/e2e/backups-offsite.mjs",
+    "newcomer:check": "node --import tsx tests/e2e/newcomer.mjs",
+    "accept:04": "node tests/e2e/accept-04-run.mjs",
+    "parity:04": "node --import tsx tests/e2e/parity-04.mjs",
+    "a11y": "node --import tsx tests/e2e/a11y.mjs",
+    "i18n:extract": "node scripts/i18n-extract.mjs",
+    "i18n:translate": "node scripts/i18n-translate.mjs",
+    "i18n:add": "node scripts/i18n-add.mjs",
+    "i18n:check": "node --import tsx tests/e2e/i18n.mjs",
+    "desktop:live": "node --import tsx tests/e2e/desktop-live.mjs",
+    "mobile:check": "node --import tsx tests/e2e/mobile.mjs",
+    "phone:check": "node --import tsx tests/e2e/phone-owner.mjs",
+    "accent:check": "node --import tsx tests/e2e/accent.mjs",
+    "remote:check": "node --import tsx tests/e2e/remote-desktop.mjs",
+    "remote:indicator": "node tests/e2e/remote-indicator-check.mjs",
+    "app-update:check": "node --import tsx tests/e2e/app-update.mjs",
+    "installer:check": "node tests/e2e/installer-upgrade.mjs",
+    "browser:check": "node --import tsx tests/e2e/browser-dock.mjs",
+    "inapp:check": "node tests/e2e/inapp-browser.mjs",
+    "teamdata:check": "node --import tsx tests/e2e/teamdata.mjs",
+    "cutover:check": "node --import tsx tests/e2e/openbot-cutover.mjs",
+    "pack:package": "node scripts/teambot-pack.mjs",
+    "perf": "node --import tsx --expose-gc tests/e2e/perf.mjs",
+    "soak": "node scripts/soak.mjs",
+    "acp:live": "node --import tsx tests/e2e/acp-live.mjs",
+    "providers:live": "node --import tsx tests/e2e/providers-live.mjs",
+    "market:live": "node --import tsx tests/e2e/market-live.mjs",
+    "cli-tools:live": "node --import tsx tests/e2e/cli-tools-live.mjs",
+    "runtimes:live": "node --import tsx tests/e2e/cli-runtimes-live.mjs",
+    "language:live": "node --import tsx tests/e2e/language-live.mjs",
+    "team:live": "node --import tsx tests/e2e/team-live.mjs",
+    "quality": "node --import tsx scripts/quality.mjs",
+    "whatsapp:live": "node --import tsx tests/e2e/whatsapp-live.mjs",
+    "voice:live": "node --import tsx tests/e2e/voice-local.mjs",
+    "voice:duplex": "node --import tsx tests/e2e/voice-duplex.mjs",
+    "usage:live": "node --import tsx tests/e2e/usage-live.mjs",
+    "desktop:status": "node tests/e2e/desktop-status-live.mjs",
+    "desktop:accent": "node tests/e2e/desktop-accent-live.mjs",
+    "first-launch:check": "node tests/e2e/first-launch.mjs",
+    "newcomer-app:check": "node tests/e2e/newcomer-app.mjs",
+    "power:check": "node --import tsx tests/e2e/power-check.mjs",
+    "status:check": "node --import tsx tests/e2e/status-check.mjs",
+    "dictation:live": "node --import tsx tests/e2e/dictation-live.mjs",
+    "iroh:live": "node --import tsx tests/e2e/iroh-live.mjs",
+    "iroh:check": "node --import tsx tests/e2e/iroh-pairing.mjs",
+    "cloud:dev": "tsx cloud/main.ts",
+    "cloud:operator": "tsx cloud/main.ts operator",
+    "cloud:test": "node --import tsx --test tests/cloud.test.ts tests/cloud-dedicated.test.ts tests/cloud-reports.test.ts",
+    "cloud:build": "esbuild cloud/main.ts --bundle --platform=node --format=esm --target=node22 --packages=external --sourcemap --outfile=dist/cloud/main.js",
+    "cloud:start": "node dist/cloud/main.js",
+    "cloud:e2e": "node --import tsx tests/e2e/cloud.mjs",
+    "icons": "node --import tsx scripts/make-icons.mjs . a && node scripts/make-ico.mjs",
+    "website:build": "node --import tsx website/build.mjs",
+    "website:dev": "node website/serve.mjs",
+    "website:check": "node --import tsx website/build.mjs && node website/check.mjs",
+    "website:images": "node --import tsx website/images.mjs",
+    "website:screenshots": "node --import tsx website/screenshots.mjs",
+    "memory:bench": "node --import tsx scripts/memory-bench.mjs"
+  },
+  "dependencies": {
+    "@agentclientprotocol/sdk": "2.4.0",
+    "@anthropic-ai/sdk": "^1.6.0",
+    "@cfworker/json-schema": "4.1.6",
+    "@huggingface/tokenizers": "0.2.0",
+    "@modelcontextprotocol/client": "2.4.0",
+    "@modelcontextprotocol/node": "2.1.2",
+    "@modelcontextprotocol/server": "2.4.0",
+    "@number0/iroh": "1.2.0",
+    "@hyzyla/pdfium": "3.0.0",
+    "@mozilla/readability": "0.6.0",
+    "@vscode/ripgrep": "1.18.0",
+    "adm-zip": "^0.5.16",
+    "croner": "^11.0.0",
+    "discord.js": "^14.28.1",
+    "electron-updater": "^6.8.11",
+    "express": "^5.3.0",
+    "imapflow": "2.11.0",
+    "jsonrepair": "3.15.0",
+    "linkedom": "0.18.15",
+    "fetch-socks": "1.3.3",
+    "mailparser": "^3.14.2",
+    "mammoth": "1.13.0",
+    "node-webpmux": "file:packages/node-webpmux-stub",
+    "nodemailer": "10.4.0",
+    "onnxruntime-node": "1.30.0",
+    "openid-client": "^6.8.9",
+    "opus-decoder": "0.7.12",
+    "pg": "^8.23.1",
+    "playwright-core": "^1.65.0",
+    "qrcode": "^1.5.4",
+    "read-excel-file": "9.3.14",
+    "sherpa-onnx-node": "2.0.1",
+    "smol-toml": "1.9.1",
+    "socks": "2.8.10",
+    "ssh2": "^1.17.0",
+    "tesseract.js": "7.0.0",
+    "turndown": "^7.2.0",
+    "whatsapp-web.js": "1.34.7",
+    "ws": "^8.22.1",
+    "yaml": "^2.8.0",
+    "zod": "^4.6.7"
+  },
+  "devDependencies": {
+    "@electric-sql/pglite": "^0.5.15",
+    "@electron/fuses": "2.1.3",
+    "@fontsource-variable/figtree": "^5.3.0",
+    "@modelcontextprotocol/server-legacy": "2.4.0",
+    "@radix-ui/react-dialog": "1.3.1",
+    "@tailwindcss/vite": "^4.3.4",
+    "@types/adm-zip": "*",
+    "@types/express": "^5.0.6",
+    "@types/mailparser": "^3.9.0",
+    "@types/node": "^26.6.6",
+    "@types/papaparse": "5.5.2",
+    "@types/pg": "^8.23.1",
+    "@types/qrcode": "*",
+    "@types/react": "*",
+    "@types/react-dom": "*",
+    "@types/ssh2": "^1.15.6",
+    "@types/turndown": "*",
+    "@types/ws": "^8.18.2",
+    "@vitejs/plugin-react": "^6.2.1",
+    "axe-core": "^4.14.0",
+    "electron": "^45.2.3",
+    "electron-builder": "^26.18.0",
+    "esbuild": "^0.28.2",
+    "highlight.js": "^11.12.0",
+    "katex": "0.19.1",
+    "lucide-react": "^1.70.0",
+    "mermaid": "^12.3.0",
+    "papaparse": "5.7.0",
+    "pdfjs-dist": "^6.4.299",
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1",
+    "react-markdown": "^10.1.0",
+    "rehype-katex": "7.0.1",
+    "remark-gfm": "^4.0.1",
+    "remark-math": "6.0.0",
+    "tailwindcss": "^4.3.4",
+    "tsx": "^4.23.15",
+    "typescript": "^7.0.2",
+    "vite": "^8.3.6",
+    "zustand": "^5.0.16"
+  },
+  "overrides": {
+    "puppeteer": "npm:puppeteer-core@24.38.0",
+    "node-webpmux": "$node-webpmux"
+  },
+  "allowScripts": {
+    "esbuild@0.28.2": true,
+    "electron-winstaller@5.4.0": true,
+    "ssh2": false,
+    "tesseract.js": false,
+    "cpu-features": false
+  },
+  "build": {
+    "appId": "app.teambot.desktop",
+    "productName": "TeamBot",
+    "copyright": "TeamBot contributors — Apache-2.0",
+    "npmRebuild": false,
+    "afterPack": "./scripts/after-pack.mjs",
+    "directories": {
+      "output": "release",
+      "buildResources": "build"
+    },
+    "files": [
+      "dist/**/*",
+      "bin/**/*",
+      "package.json",
+      "!dist/**/*.map",
+      "!node_modules/tesseract.js-core/*.wasm.js",
+      "!node_modules/tesseract.js-core/tesseract-core.{js,wasm}",
+      "!node_modules/tesseract.js-core/tesseract-core-simd.{js,wasm}",
+      "!node_modules/tesseract.js-core/tesseract-core-relaxedsimd.{js,wasm}",
+      "!node_modules/@hyzyla/pdfium/dist/*.base64*",
+      "!node_modules/@hyzyla/pdfium/dist/*.{browser,cdn,worker}.js"
+    ],
+    "extraResources": [
+      {
+        "from": "build/icon.png",
+        "to": "icon.png"
+      },
+      {
+        "from": "build/watchdog.ps1",
+        "to": "watchdog.ps1"
+      },
+      {
+        "from": "LICENSE",
+        "to": "LICENSE.txt"
+      },
+      {
+        "from": "NOTICE",
+        "to": "NOTICE.txt"
+      },
+      {
+        "from": "THIRD_PARTY_NOTICES.txt",
+        "to": "THIRD_PARTY_NOTICES.txt"
+      },
+      {
+        "from": "sbom.cdx.json",
+        "to": "sbom.cdx.json"
+      }
+    ],
+    "publish": [
+      {
+        "provider": "generic",
+        "url": "https://updates.example.invalid/teambot/"
+      }
+    ],
+    "asar": true,
+    "asarUnpack": [
+      "node_modules/playwright-core/**",
+      "bin/**",
+      "node_modules/sherpa-onnx-*/**",
+      "node_modules/onnxruntime-node/**",
+      "node_modules/@number0/**",
+      "node_modules/@vscode/ripgrep*/**",
+      "node_modules/@hyzyla/pdfium/**",
+      "node_modules/{tesseract.js,tesseract.js-core,bmp-js,idb-keyval,is-url,node-fetch,whatwg-url,tr46,webidl-conversions,regenerator-runtime,wasm-feature-detect,zlibjs}/**"
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "icon": "build/icon.png",
+      "artifactName": "TeamBot-Setup-${version}.${ext}",
+      "verifyUpdateCodeSignature": true,
+      "files": [
+        "!node_modules/onnxruntime-node/bin/napi-v6/{linux,darwin}/**"
+      ]
+    },
+    "nsis": {
+      "oneClick": true,
+      "perMachine": false,
+      "runAfterFinish": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "TeamBot",
+      "installerHeaderIcon": "build/icon.ico",
+      "deleteAppDataOnUninstall": false,
+      "include": "build/installer.nsh"
+    },
+    "linux": {
+      "target": [
+        "AppImage",
+        "deb"
+      ],
+      "category": "Utility",
+      "icon": "build/icon.png",
+      "files": [
+        "!node_modules/onnxruntime-node/bin/napi-v6/{win32,darwin}/**"
+      ]
+    },
+    "mac": {
+      "target": [
+        "dmg",
+        "zip"
+      ],
+      "category": "public.app-category.productivity",
+      "icon": "build/icon.png",
+      "artifactName": "TeamBot-${version}-mac-${arch}.${ext}",
+      "hardenedRuntime": true,
+      "gatekeeperAssess": false,
+      "entitlements": "build/entitlements.mac.plist",
+      "entitlementsInherit": "build/entitlements.mac.plist",
+      "extendInfo": {
+        "NSMicrophoneUsageDescription": "TeamBot uses the microphone for dictation and voice calls with your bots.",
+        "NSCameraUsageDescription": "TeamBot uses the camera only when you share it in a call.",
+        "NSAppleEventsUsageDescription": "TeamBot opens Terminal to sign in to an AI subscription."
+      },
+      "files": [
+        "!node_modules/onnxruntime-node/bin/napi-v6/{linux,win32}/**"
+      ]
+    },
+    "dmg": {
+      "title": "TeamBot ${version}",
+      "contents": [
+        {
+          "x": 140,
+          "y": 180
+        },
+        {
+          "x": 400,
+          "y": 180,
+          "type": "link",
+          "path": "/Applications"
+        }
+      ]
+    }
+  }
+}

@@ -1,0 +1,15 @@
+{
+  // VS Code: user-level MCP servers (JSON with comments)
+  "inputs": [
+    { "type": "promptString", "id": "gh-token", "description": "GitHub Personal Access Token", "password": true }
+  ],
+  "servers": {
+    "github-remote": {
+      "type": "http",
+      "url": "https://api.githubcopilot.com/mcp/",
+      "headers": { "Authorization": "Bearer ${input:gh-token}" },
+    },
+    /* a local one */
+    "fetch": { "type": "stdio", "command": "uvx", "args": ["mcp-server-fetch"] },
+  },
+}

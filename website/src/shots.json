@@ -1,0 +1,63 @@
+{
+  "_uitleg": "Welke afbeelding uit src/img in welk vak op de site komt. Een afbeelding vervangen: zet een nieuw bestand met dezelfde naam in src/img (WebP of PNG, elke maat; breedte en hoogte leest de build zelf) en pas de alt-tekst aan in nl.json en en.json onder shots.<vak>. Een andere bestandsnaam kiezen kan hier. \"wil\" zegt wat de schermafbeelding moet laten zien; npm run website:screenshots maakt ze allemaal (tijdelijke TeamBot op poort 4811, verzonnen gegevens).",
+  "hero": {
+    "file": "chat-desktop",
+    "kind": "desktop",
+    "wil": "Desktop 1280x800 @1.5x, licht: de hoofdbot die per team de stand geeft, met de gebruiksbalk onderin de zijbalk."
+  },
+  "teams": {
+    "file": "teams-desktop",
+    "kind": "desktop",
+    "wil": "Desktop: de teamkiezer bovenin de zijbalk open, met Alle teams, Webshop en Bakkerij in hun eigen kleur."
+  },
+  "tasks": {
+    "file": "tasks-desktop",
+    "kind": "desktop",
+    "wil": "Desktop: het takenbord met een taak op te controleren en een taak op klaar met bewijs."
+  },
+  "phone": {
+    "file": "phone-chat",
+    "kind": "phone",
+    "wil": "Telefoon 390x844 @2x: de hoofdbot in de chat."
+  },
+  "phoneList": {
+    "file": "phone-list",
+    "kind": "phone",
+    "wil": "Telefoon 390x844 @2x: de lijst met bots, de hoofdbot bovenaan en Wacht op jou in de onderbalk."
+  },
+  "memory": {
+    "file": "memory-desktop",
+    "kind": "desktop",
+    "wil": "Desktop: Geheugen, tabblad Gedeeld, met een paar herinneringen."
+  },
+  "specialist": {
+    "file": "specialist-desktop",
+    "kind": "desktop",
+    "wil": "Desktop: de kennisbank van een specialist, met feiten, bron en datum."
+  },
+  "usage": {
+    "file": "usage-desktop",
+    "kind": "desktop",
+    "wil": "Desktop: Gebruik en limieten met een 5-uur- en weekbalk (met het streepje van de weekreserve) en de gratis bronnen."
+  },
+  "channels": {
+    "file": "channels-desktop",
+    "kind": "desktop",
+    "wil": "Desktop: het venster Kanaal toevoegen met Telegram, WhatsApp, e-mail, Discord en Slack."
+  },
+  "skills": {
+    "file": "market-desktop",
+    "kind": "desktop",
+    "wil": "Desktop: Marktplaats, de skills-catalogus met licentie per skill."
+  },
+  "routines": {
+    "file": "calendar-desktop",
+    "kind": "desktop",
+    "wil": "Desktop: de kalender van de routines (maand)."
+  },
+  "colours": {
+    "file": "colours-desktop",
+    "kind": "desktop",
+    "wil": "Desktop: Instellingen › Uiterlijk met Lavendel gekozen en het voorbeeld in licht en donker."
+  }
+}

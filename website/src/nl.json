@@ -1,0 +1,1572 @@
+{
+  "skip": "Naar de inhoud",
+  "navLabel": "Hoofdmenu",
+  "menu": "Menu",
+  "onPage": "Op deze pagina",
+  "themeToDark": "Donker thema",
+  "themeToLight": "Licht thema",
+  "header": {
+    "download": "Download"
+  },
+  "ogAlt": "Het oranje TeamBot-figuurtje met de tekst: je eigen team van AI-bots, op je eigen pc",
+  "moods": {
+    "idle": "rustig",
+    "working": "aan het werk",
+    "waiting": "wacht op jou",
+    "done": "klaar",
+    "paused": "gepauzeerd",
+    "error": "er ging iets mis"
+  },
+  "footer": {
+    "tagline": "Je eigen team van AI-bots, op je eigen pc. Gratis en open source (Apache-2.0).",
+    "honest": "Op deze site staat wat TeamBot doet, en ook wat nog niet kan.",
+    "noTracking": "Deze site gebruikt geen cookies, trackers of lettertypen en scripts van andere servers.",
+    "pagesLabel": "Pagina's",
+    "product": "TeamBot",
+    "more": "Meer",
+    "version": "Versie {version}",
+    "trademarks": "Genoemde productnamen zijn van hun eigenaars; TeamBot is daar niet aan verbonden."
+  },
+  "pages": {
+    "home": {
+      "slug": "index.html",
+      "nav": "Home",
+      "title": "TeamBot — je eigen team van AI-bots, op je eigen pc",
+      "description": "Gratis en open-source app voor je eigen team van AI-bots op je Windows-pc. Werkt met de AI die je al hebt, met gratis modellen of lokaal, en laat zien wat je bots doen en wat het kost."
+    },
+    "features": {
+      "slug": "functies.html",
+      "nav": "Functies",
+      "title": "Functies",
+      "description": "Wat TeamBot doet, in gewone woorden: hoofdbot en teams, specialisten die leren, geheugen, gratis doorwerken, je telefoon, chat-apps, skills, routines, browser, privacy en kleuren.",
+      "h1": "Wat TeamBot doet",
+      "lead": "Elf onderdelen in gewone woorden: wat het is, waarom het helpt en hoe je begint. Wat nog niet kan, staat [onderaan](page:features#limits)."
+    },
+    "compare": {
+      "slug": "vergelijking.html",
+      "nav": "Vergelijken",
+      "title": "Vergelijken",
+      "description": "TeamBot naast OpenBot, Grok Bot, OpenClaw, Hermes Agent, de ChatGPT- en Claude-apps en cloudplatforms als Manus en Lindy: prijs, open source, lokaal of cloud, teams, geheugen, telefoon en gratis modellen. Met bronnen, stand november 2026.",
+      "h1": "TeamBot naast andere AI-bots",
+      "lead": "Prijs, licentie, lokaal of in de cloud, teams, geheugen, telefoon en gratis modellen, met een bron bij elk feit. En ook waar anderen verder zijn."
+    },
+    "switch": {
+      "slug": "overstappen.html",
+      "nav": "Overstappen",
+      "title": "Overstappen van OpenBot",
+      "description": "Van OpenBot naar TeamBot: wat de import meeneemt, de stappen, en wat je doet met Telegram en WhatsApp, die maar aan één app tegelijk gekoppeld kunnen zijn.",
+      "h1": "Overstappen van OpenBot",
+      "lead": "Neem je bots, routines, skills en herinneringen in één keer mee. TeamBot leest OpenBot alleen, dus OpenBot blijft zoals het is."
+    },
+    "pricing": {
+      "slug": "prijzen.html",
+      "nav": "Prijzen",
+      "title": "Prijzen",
+      "description": "TeamBot is gratis en open source. Wat je eventueel zelf betaalt: je eigen AI-abonnement of het gebruik van een API-sleutel, rechtstreeks aan die aanbieder.",
+      "h1": "Prijzen",
+      "lead": "TeamBot kost niets. Hier staat wat je eventueel zelf betaalt, en aan wie."
+    },
+    "privacy": {
+      "slug": "privacy.html",
+      "nav": "Veiligheid",
+      "title": "Veiligheid en privacy",
+      "description": "Wat op je pc blijft, wat naar welke AI-aanbieder gaat, hoe je sleutels bewaard worden en hoe je alles weer verwijdert.",
+      "h1": "Veiligheid en privacy",
+      "lead": "Wat op je pc blijft, wat naar welke AI-aanbieder gaat, hoe je sleutels bewaard worden en hoe je alles weer verwijdert."
+    },
+    "faq": {
+      "slug": "vragen.html",
+      "nav": "Vragen",
+      "title": "Vragen en antwoorden",
+      "description": "Antwoorden op veelgestelde vragen over TeamBot: is het gratis, welke AI heb je nodig, is je data veilig, werkt je telefoon zonder Tailscale, en overstappen van OpenBot.",
+      "h1": "Vragen en antwoorden",
+      "lead": "Kort en eerlijk. Staat je vraag er niet bij, kijk dan in de [handleiding](page:manual)."
+    },
+    "download": {
+      "slug": "download.html",
+      "nav": "Download",
+      "title": "Download",
+      "description": "TeamBot downloaden voor Windows: installeren in drie stappen, systeemeisen, je telefoon koppelen, het bestand controleren en bijwerken.",
+      "h1": "Download TeamBot",
+      "lead": "Gratis voor Windows, zonder account."
+    },
+    "manual": {
+      "slug": "handleiding.html",
+      "nav": "Handleiding",
+      "title": "Handleiding",
+      "description": "De handleiding van TeamBot: aan de slag, de AI kiezen, bots, chatten, goedkeuringen, geheugen, teams, routines, skills en apps, computer use, bestanden, spraak, kanalen, je telefoon, instellingen en waar je data staat.",
+      "h1": "Handleiding",
+      "lead": "Installeren, je eerste bot, teams, routines, spraak, chat-apps en je telefoon, in korte stappen."
+    },
+    "opensource": {
+      "slug": "open-source.html",
+      "nav": "Open source",
+      "title": "Open source",
+      "description": "TeamBot is open source onder de Apache-2.0-licentie. Licentie, zelf bouwen en meehelpen.",
+      "h1": "Open source",
+      "lead": "TeamBot is vrije software onder de Apache-2.0-licentie. Lees de code, bouw hem zelf en help mee."
+    },
+    "notfound": {
+      "slug": "404.html",
+      "nav": "Niet gevonden",
+      "title": "Pagina niet gevonden",
+      "description": "Deze pagina bestaat niet (meer).",
+      "h1": "Deze pagina bestaat niet",
+      "lead": "Misschien is hij verhuisd. Begin op de [homepagina](page:home) of kies hieronder."
+    }
+  },
+  "shots": {
+    "hero": {
+      "alt": "TeamBot op de computer: de hoofdbot Baas geeft per team de stand van zaken, met onderin de zijbalk de gebruiksbalk met Claude en de gratis bronnen."
+    },
+    "teams": {
+      "alt": "De teamkiezer in TeamBot open, met Alle teams, Webshop (4 bots) en Bakkerij (2 bots), naast een gesprek met de hoofdbot."
+    },
+    "tasks": {
+      "alt": "Het takenbord in TeamBot met de kolommen Te doen, Bezig, Te controleren, Klaar en Geblokkeerd; de prijslijst staat op te controleren en de productteksten op klaar."
+    },
+    "phone": {
+      "alt": "TeamBot op een telefoon in donkere modus: de hoofdbot Baas geeft per team de stand van zaken."
+    },
+    "phoneList": {
+      "alt": "TeamBot op een telefoon: de lijst met bots met de hoofdbot bovenaan, en onderin Chats, Wacht op jou en Meer."
+    },
+    "memory": {
+      "alt": "Geheugen in TeamBot, tabblad Gedeeld: herinneringen van het team Webshop, elk met bron en datum."
+    },
+    "specialist": {
+      "alt": "De kennisbank van de specialist Inkoper in TeamBot: feiten over inkoop, elk met bron en datum."
+    },
+    "usage": {
+      "alt": "Gebruik en limieten in TeamBot: Claude 5 uur 38% en week 64% met het streepje van de weekreserve, en de gratis bronnen Groq, Kilo, OpenRouter (bijna op) en Lokaal."
+    },
+    "channels": {
+      "alt": "Het venster Kanaal toevoegen in TeamBot met Telegram, WhatsApp Business, e-mail, Discord, Slack, webhook en WhatsApp via QR-code."
+    },
+    "skills": {
+      "alt": "De Marktplaats in TeamBot: skills uit de catalogus, elk met licentie en maker, en Installeren voor het team Webshop."
+    },
+    "routines": {
+      "alt": "De kalender van de routines in TeamBot voor november, met per dag de geplande routines."
+    },
+    "colours": {
+      "alt": "Instellingen, Uiterlijk in TeamBot: de kleur Lavendel gekozen, met een voorbeeld in licht en donker naast elkaar."
+    },
+    "note": "Schermafbeeldingen van TeamBot {version} met een verzonnen team; alle namen, berichten en cijfers zijn niet echt."
+  },
+  "art": {
+    "chain": {
+      "label": "De gratis keten, in volgorde",
+      "steps": [
+        { "title": "Je abonnement", "text": "Claude of ChatGPT" },
+        { "title": "Je andere abonnement", "text": "als je er twee hebt" },
+        { "title": "Gratis aanbieders", "text": "eerst een andere aanbieder" },
+        { "title": "Lokaal model", "text": "op je eigen pc" }
+      ],
+      "pause": "**Belangrijk** werk zakt niet af naar een zwakker model: het wacht tot je limiet terug is."
+    },
+    "colours": {
+      "label": "De kleuren van TeamBot",
+      "names": ["Standaard", "Lavendel", "Kobalt", "Hemelsblauw", "Petrol", "Mint", "Olijf", "Goud", "Terracotta", "Roze", "Druif"]
+    },
+    "channels": {
+      "label": "Kanalen in TeamBot",
+      "names": ["Telegram", "WhatsApp", "WhatsApp Business", "Discord", "Slack", "E-mail"]
+    },
+    "privacy": {
+      "pc": "Je eigen pc",
+      "items": ["Bots en gesprekken", "Geheugen en dossiers", "Bestanden en back-ups", "Sleutels, versleuteld"],
+      "ai": "De AI die jij kiest",
+      "aiNote": "alleen wat nodig is voor het antwoord",
+      "us": "De makers van TeamBot",
+      "usNote": "niets: geen account, geen telemetrie",
+      "caption": "Met een lokaal model gaat er ook niets naar een AI-dienst."
+    },
+    "computer": {
+      "url": "winkel.voorbeeld/bestellingen",
+      "live": "Live",
+      "bot": "Verkoper werkt in zijn eigen browser",
+      "take": "Neem over",
+      "blockedTitle": "Altijd dicht",
+      "blocked": ["Inlogvensters en wachtwoordvelden", "Wachtwoordmanagers", "Bank- en betaalvensters"],
+      "stop": "Noodstop: `Ctrl+Alt+Esc`",
+      "caption": "Illustratie: een bot werkt in zijn eigen browser; je kijkt live mee en kunt overnemen."
+    },
+    "switch": {
+      "from": "OpenBot",
+      "fromState": "blijft onaangeroerd",
+      "to": "TeamBot",
+      "items": ["Bots met instructies en reserves", "Routines, eerst uit", "Je eigen skills", "Herinneringen", "Teamtabellen en teammap"],
+      "caption": "TeamBot leest OpenBot alleen. Daarna maak je de import met één knop ongedaan als je wilt."
+    },
+    "oneApp": {
+      "channel": "Je Telegram-bot of WhatsApp-nummer",
+      "old": "OpenBot",
+      "oldState": "losgekoppeld",
+      "new": "TeamBot",
+      "newState": "verbonden",
+      "caption": "Een kanaal hoort bij één app tegelijk. Koppel het eerst los in OpenBot."
+    }
+  },
+  "home": {
+    "kicker": "Gratis en open source · voor Windows",
+    "title": "Je eigen AI-team, gratis, op je eigen pc",
+    "lead": [
+      {
+        "if": "mainBot",
+        "text": "Je praat met één hoofdbot. Die verdeelt het werk over je bots en laat zien wat ze gedaan hebben. Met de AI die je al hebt, of met gratis modellen."
+      },
+      {
+        "if": "!mainBot",
+        "text": "Je bots werken samen in een team en laten zien wat ze gedaan hebben. Met de AI die je al hebt, of met gratis modellen."
+      }
+    ],
+    "ctaDownload": "Download voor Windows",
+    "ctaHow": "Bekijk wat het kan",
+    "trust": [
+      "Gratis, ook zakelijk",
+      "Open source (Apache-2.0)",
+      "Geen account nodig",
+      "Alles op je eigen pc"
+    ],
+    "what": {
+      "kicker": "Wat je ermee doet",
+      "title": "Werk dat je uit handen geeft",
+      "lead": "Een paar dingen die je bots vandaag al doen.",
+      "items": [
+        {
+          "icon": "clock",
+          "title": "Elke ochtend een overzicht",
+          "text": "Elke werkdag om 8:00 een samenvatting, of een rapport als pdf in je chat-app. Mist een routine zijn tijd, dan krijg je een melding."
+        },
+        {
+          "icon": "chat",
+          "title": "Berichten beantwoorden",
+          "text": "Koppel Telegram, WhatsApp, Slack of e-mail aan een bot. Alles over geld of beloftes gaat eerst naar jou."
+        },
+        {
+          "icon": "cursor",
+          "title": "Op het web zoeken",
+          "text": "Een bot werkt in zijn eigen browser. Jij kijkt live mee en neemt over als er ingelogd moet worden."
+        },
+        {
+          "icon": "grid",
+          "title": "Een team per bedrijf",
+          "text": "Een webshop, een bakkerij, een eigen project: elk met eigen bots, bestanden en budget."
+        },
+        {
+          "icon": "book",
+          "title": "Dingen onthouden",
+          "text": "Zeg “onthoud dat…” en je bots weten het de volgende keer, met de bron erbij."
+        },
+        {
+          "icon": "phone",
+          "title": "Goedkeuren onderweg",
+          "text": "Je telefoon meldt een vraag, jij zegt ja of nee. Alles loopt via je eigen pc."
+        }
+      ],
+      "link": "Alle functies"
+    },
+    "memory": {
+      "kicker": "Geheugen",
+      "title": "Je bots onthouden wat je zegt",
+      "text": "Na een gesprek bewaart TeamBot vanzelf feiten, voorkeuren en afspraken. Elke nacht ruimt hij dubbele en verlopen dingen op.",
+      "points": [
+        "Elk item heeft een bron en een datum.",
+        "Vergeten is echt vergeten, en ongedaan maken kan altijd.",
+        {
+          "if": "semanticMemory",
+          "text": "Zoeken op betekenis gebeurt op je eigen pc: wie naar een *wagen* vraagt, vindt ook *auto*."
+        },
+        {
+          "if": "teams",
+          "text": "Elk team heeft zijn eigen geheugen."
+        }
+      ],
+      "link": "Meer over geheugen"
+    },
+    "free": {
+      "kicker": "Gratis modellen",
+      "title": "Limiet op? Dan werk je gratis door",
+      "text": "Raakt je Claude- of ChatGPT-limiet op, dan gaat gewoon werk verder bij een gratis aanbieder, en als laatste op een model op je eigen pc. Je hoeft niet te beginnen met een abonnement.",
+      "points": [
+        "Elke wissel staat in de chat, en onder elk antwoord staat welk model het gaf.",
+        {
+          "if": "usageBar",
+          "text": "Een balk onderin laat zien hoeveel er over is, met de resettijd."
+        },
+        {
+          "if": "pauseImportant",
+          "text": "Belangrijk werk wacht liever dan door te gaan op een zwakker model."
+        }
+      ],
+      "note": "Gratis modellen hebben daglimieten en het aanbod verandert vaak.",
+      "link": "Gratis doorwerken"
+    },
+    "phone": {
+      "kicker": "Op je telefoon",
+      "title": "Je hoofdbot in je broekzak",
+      "text": [
+        {
+          "if": "!iphoneApp",
+          "text": "Zet TeamBot als app op het beginscherm van je iPhone of Android. Je praat met je hoofdbot, keurt goed wat op je wacht en krijgt een melding bij vragen."
+        },
+        {
+          "if": "iphoneApp",
+          "text": "Met de iPhone-app (nog in test) of als app op het beginscherm van elke telefoon. Je praat met je hoofdbot, keurt goed wat op je wacht en krijgt een melding bij vragen."
+        }
+      ],
+      "points": [
+        {
+          "if": "!phoneAnywhere",
+          "text": "Verbinden gaat thuis via je wifi, of overal via Tailscale (gratis voor persoonlijk gebruik). Je pc moet aan staan."
+        },
+        {
+          "if": "phoneAnywhere",
+          "text": "Je telefoon verbindt van overal met je eigen pc. Je pc moet aan staan."
+        },
+        "Je telefoon krijgt geen sleutels, en je kunt hem altijd ontkoppelen."
+      ],
+      "link": "Meer over je telefoon"
+    },
+    "faq": {
+      "kicker": "Vragen",
+      "title": "Kort en eerlijk",
+      "link": "Alle vragen en antwoorden"
+    },
+    "how": {
+      "kicker": "Zo werkt het",
+      "title": "In drie stappen aan het werk",
+      "steps": [
+        {
+          "title": "Installeer en kies je AI",
+          "text": "Gebruik je Claude- of ChatGPT-abonnement, een gratis model of een model op je eigen pc. Het welkomstscherm laat zien wat er al op je computer staat."
+        },
+        {
+          "title": "Maak je bots",
+          "text": "Geef een bot een naam, zeg wat hij doet en kies een model. Of begin met een kant-en-klaar team."
+        },
+        {
+          "title": "Geef een opdracht",
+          "text": "In de chat, op je telefoon of als vaste routine. Je ziet wat je bots doen, en wat er op jou wacht."
+        }
+      ]
+    },
+    "grid": {
+      "kicker": "Functies",
+      "title": "Alles wat je team nodig heeft",
+      "lead": "Elf onderdelen, in gewone woorden uitgelegd. Klik voor uitleg, een schermafbeelding en hoe je begint.",
+      "link": "Alle functies",
+      "moreText": "Elk onderdeel met uitleg, een schermafbeelding en hoe je begint."
+    },
+    "structure": {
+      "if": "teams",
+      "kicker": "Teams",
+      "title": "Eén voordeur, aparte teams",
+      "text": [
+        "Maak een team per bedrijf of project. Elk team heeft zijn eigen map, geheugen en budget. Een bot ziet een ander team alleen als jij dat toestaat.",
+        {
+          "if": "mainBot",
+          "text": "Je hoofdbot is de voordeur: je praat met hem, hij zet het werk door naar het juiste team en meldt terug."
+        },
+        "Eén team is genoeg om te beginnen. Een tweede team maak je wanneer je het nodig hebt."
+      ],
+      "diagram": {
+        "label": "Voorbeeld van een indeling",
+        "you": "Jij",
+        "main": "Hoofdbot",
+        "teams": [
+          { "name": "Webshop", "bots": ["Verkoper", "Schrijver", "Inkoper"] },
+          { "name": "Bakkerij", "bots": ["Planner", "Boekhouder"] }
+        ],
+        "caption": "Een voorbeeld: twee bedrijven, elk met een eigen team. Bestanden, geheugen en budget blijven per team gescheiden."
+      }
+    },
+    "principles": {
+      "kicker": "Rustig en voorspelbaar",
+      "title": "Geen stille verrassingen",
+      "lead": "Bij AI-bots gaat het vaak stil mis: een limiet die ongemerkt op is, een ander model zonder dat je het weet, of een taak die *klaar* heet terwijl er niets gebeurde. TeamBot laat zien wat er gebeurt.",
+      "items": [
+        {
+          "if": "usageBar",
+          "icon": "gauge",
+          "title": "Je verbruik altijd in beeld",
+          "text": "Een balk onderin laat zien hoeveel er over is van je Claude- en Codex-limieten en welke gratis bronnen beschikbaar zijn, met de resettijd erbij."
+        },
+        {
+          "if": "freeChain",
+          "icon": "switch",
+          "title": "Doorwerken als een model op is",
+          "text": "Is een limiet of een gratis model op, dan gaat gewoon werk verder bij een andere gratis aanbieder, en anders op je eigen pc."
+        },
+        {
+          "if": "pauseImportant",
+          "icon": "pause",
+          "title": "Belangrijk werk wacht liever",
+          "text": "Een belangrijke taak gaat niet verder op een zwakker model. Hij pauzeert, zegt waarom en tot wanneer, en gaat daarna zelf verder."
+        },
+        {
+          "icon": "eye",
+          "title": "Je ziet welk model antwoordde",
+          "text": "Onder elk antwoord staan het model en de kosten. Schakelt een bot over, dan zegt hij dat in de chat."
+        },
+        {
+          "if": "proof",
+          "icon": "proof",
+          "title": "Klaar is klaar, met bewijs",
+          "text": "Voordat een taak op *klaar* gaat, kijkt een tweede controle het werk na en hangt het bewijs eraan. Zonder bewijs staat er *te controleren*."
+        },
+        {
+          "if": "simpleLayout",
+          "icon": "sliders",
+          "title": "Simpel, tenzij je meer wilt",
+          "text": "Een rustig scherm met een paar vaste plekken. Wat je niet elke dag nodig hebt, staat onder *Geavanceerd*."
+        }
+      ]
+    },
+    "bento": {
+      "kicker": "Een gewone dag",
+      "title": "Je team aan het werk",
+      "lead": "Jij vraagt iets, je bots doen het en laten zien wat klaar is.",
+      "chat": {
+        "title": "Eén gesprek, het hele team",
+        "text": "Je praat met je hoofdbot. Die zet het werk uit en komt terug met de stand.",
+        "you": "Hoe staat de webshop ervoor?",
+        "reply": "Dit is de stand van vandaag:",
+        "lines": [
+          "Productteksten zijn klaar, met bewijs",
+          "De prijslijst wacht op controle",
+          "Eén factuur wacht op jouw akkoord"
+        ],
+        "ask": "Factuur van € 240 betalen?",
+        "yes": "Akkoord",
+        "no": "Nog niet"
+      },
+      "board": {
+        "title": "Zien wat klaar is",
+        "text": "Eén takenbord. Klaar is pas klaar met bewijs.",
+        "cols": [
+          "Bezig",
+          "Controle",
+          "Klaar"
+        ],
+        "cards": [
+          "Prijzen",
+          "Prijslijst",
+          "Teksten"
+        ],
+        "proof": "bewijs"
+      },
+      "routine": {
+        "title": "Werk op vaste tijden",
+        "text": "Elke ochtend een overzicht, elke week een controle. Jij hoeft er niet aan te denken.",
+        "days": [
+          "ma",
+          "di",
+          "wo",
+          "do",
+          "vr"
+        ],
+        "chips": [
+          "08:00 Overzicht",
+          "09:30 Voorraad",
+          "17:00 Prijzen"
+        ]
+      },
+      "free": {
+        "title": "Limiet op? Gewoon door",
+        "text": "Is je abonnement op, dan gaat het werk verder op een gratis model.",
+        "steps": [
+          "Je abonnement",
+          "Gratis model",
+          "Model op je pc"
+        ],
+        "states": [
+          "limiet bereikt",
+          "neemt het over",
+          "staat klaar"
+        ]
+      },
+      "memory": {
+        "title": "Vergeet niets",
+        "text": "Afspraken en voorkeuren blijven bewaard, met bron en datum.",
+        "items": [
+          "Retouren binnen 30 dagen gratis",
+          "Deze klant belt liever na vijf uur"
+        ],
+        "meta": [
+          "uit een gesprek · vandaag",
+          "uit een mail · gisteren"
+        ]
+      }
+    },
+    "table": {
+      "kicker": "Vergelijken",
+      "title": "TeamBot naast de rest",
+      "lead": "Kort naast elkaar. In de volledige vergelijking staat bij elk punt de bron, ook waar anderen verder zijn.",
+      "caption": "TeamBot vergeleken met vijf andere manieren om met AI-bots te werken",
+      "priceLabel": "Prijs",
+      "price": {
+        "teambot": "€ 0",
+        "openbot": "Privé gratis, zakelijk betaald",
+        "grokbot": "Betaald X-abonnement",
+        "openclaw": "Gratis",
+        "hermes": "Gratis",
+        "chatapps": "Gratis met grenzen, meer met abonnement"
+      },
+      "link": "Bekijk de volledige vergelijking met bronnen"
+    },
+    "tour": {
+      "kicker": "Zo ziet het eruit",
+      "title": "Een rustige app voor elke dag",
+      "rows": [
+        {
+          "if": "teams",
+          "slot": "teams",
+          "title": "Elk team zijn eigen plek",
+          "text": "Kies bovenin het team waarin je werkt, of *Alle teams*. Bots, bestanden en geheugen van andere teams blijven buiten beeld."
+        },
+        {
+          "slot": "tasks",
+          "title": "Eén takenbord",
+          "text": [
+            {
+              "if": "proof",
+              "text": "Elke taak zegt wanneer hij klaar is. Wat af is, heeft bewijs; wat nog nagekeken moet worden, staat op *te controleren*. Wat op jou wacht, staat apart."
+            },
+            {
+              "if": "!proof",
+              "text": "Taken, beslissingen en een logboek die je bots delen. Wat op jou wacht, staat apart."
+            }
+          ]
+        },
+        {
+          "slot": "phone",
+          "title": "Ook op je telefoon",
+          "text": [
+            {
+              "if": "iphoneApp",
+              "text": "Met de iPhone-app of in de browser van je telefoon, verbonden met je eigen pc. Vragen en goedkeuringen komen als melding."
+            },
+            {
+              "if": "!iphoneApp",
+              "text": "In de browser van je telefoon, verbonden met je eigen pc. Zet hem op je beginscherm, dan krijg je meldingen bij vragen en goedkeuringen."
+            }
+          ]
+        }
+      ]
+    },
+    "compare": {
+      "kicker": "Vergelijken",
+      "title": "Een open alternatief voor OpenBot",
+      "text": "Naast OpenBot, Grok Bot, OpenClaw, Hermes, de ChatGPT- en Claude-apps en cloudplatforms zoals Manus en Lindy. Met bronnen, en ook waar anderen verder zijn.",
+      "points": ["Open source onder Apache-2.0, ook voor zakelijk gebruik", "Op je eigen pc, zonder account", "Gratis doorwerken als een limiet op is"],
+      "link": "Bekijk de vergelijking",
+      "switchTitle": "Kom je van OpenBot?",
+      "switchText": "Je bots, routines, skills en herinneringen gaan in één keer mee. OpenBot blijft onaangeroerd.",
+      "switchLink": "Zo stap je over"
+    },
+    "price": {
+      "kicker": "Prijs",
+      "amount": "€ 0",
+      "amountLabel": "TeamBot kost nul euro",
+      "title": "TeamBot kost niets",
+      "text": "Geen account, geen abonnement en geen credits. Je betaalt alleen wat je zelf kiest, rechtstreeks aan die partij: je eigen AI-abonnement of het gebruik van een API-sleutel. Met gratis of lokale modellen betaal je niets.",
+      "link": "Wat je eventueel zelf betaalt"
+    },
+    "safe": {
+      "kicker": "Veiligheid",
+      "title": "Van jou, op je eigen pc",
+      "items": [
+        {
+          "icon": "pc",
+          "title": "Op je eigen pc",
+          "text": "Gesprekken, geheugen en bestanden staan op je computer. Je hebt geen account bij ons nodig, en TeamBot stuurt ons niets."
+        },
+        {
+          "icon": "send",
+          "title": "Alleen naar de AI die jij kiest",
+          "text": "Een bot stuurt alleen wat hij voor zijn antwoord nodig heeft, naar de AI-dienst die je bij die bot koos. Met een lokaal model gaat er niets naar een AI-dienst."
+        },
+        {
+          "icon": "shield",
+          "title": "Jij beslist",
+          "text": "Versturen, betalen en verwijderen vragen eerst. Sleutels staan versleuteld, en één knop stopt alles."
+        }
+      ],
+      "link": "Lees hoe het precies zit"
+    },
+    "honest": {
+      "title": "Eerlijk: wat nog niet kan",
+      "items": [
+        { "if": "!signed", "text": "De installer is nog niet ondertekend. Windows waarschuwt daarom bij de eerste start." },
+        "Je bots werken zolang je pc aan staat en TeamBot draait.",
+        {
+          "if": "!iphoneApp",
+          "text": "Alleen voor Windows. Er is geen app in de App Store of Play Store; je telefoon gebruikt TeamBot via de browser."
+        },
+        {
+          "if": "iphoneApp",
+          "text": "Alleen voor Windows. De iPhone-app is nog in test en staat niet in de App Store; verder gebruik je TeamBot op je telefoon via de browser."
+        },
+        "Gratis modellen hebben daglimieten, en het aanbod verandert vaak."
+      ],
+      "link": "Alle bekende beperkingen"
+    },
+    "cta": {
+      "title": "Probeer het op je eigen pc",
+      "text": "Gratis en open source, zonder account.",
+      "faq": "Vragen en antwoorden"
+    }
+  },
+  "features": {
+    "jumpLabel": "Naar een onderdeel",
+    "whyLabel": "Waarom het helpt",
+    "startLabel": "Zo begin je",
+    "items": [
+      {
+        "if": "teams",
+        "id": "teams",
+        "icon": "grid",
+        "slot": "teams",
+        "short": "Hoofdbot en teams",
+        "teaser": "Eén voordeur die het werk verdeelt over aparte teams.",
+        "title": "Eén hoofdbot, aparte teams",
+        "what": [
+          { "if": "mainBot", "text": "Je praat met één hoofdbot. Die zet het werk door naar het juiste team en meldt terug, met bewijs. Elk team, bijvoorbeeld per bedrijf of project, heeft zijn eigen map, geheugen, budget en logboek." },
+          { "if": "!mainBot", "text": "Maak een team per bedrijf of project. Elk team heeft zijn eigen map, geheugen, budget en logboek, met een teamleider en een gedeeld takenbord." }
+        ],
+        "why": [
+          "Je hoeft niet te onthouden welke bot wat doet: je vraagt het gewoon aan je hoofdbot.",
+          "Een bot ziet een ander team alleen als jij dat toestaat: *geen toegang*, *meekijken* of *aansturen*.",
+          "Met één team zie je niets van teams. De teamkiezer verschijnt pas bij je tweede team."
+        ],
+        "start": "Kies bij je eerste bot *Hoofdbot*. Een tweede team maak je met *Nieuw team* in de teamkiezer. Meer in [Teams](page:manual#teams)."
+      },
+      {
+        "id": "specialists",
+        "icon": "cap",
+        "slot": "specialist",
+        "short": "Specialisten die leren",
+        "teaser": "Bots die zelf bijleren in hun vak, met bron en datum.",
+        "title": "Specialisten die zelf bijleren",
+        "what": "Maak van een bot een specialist in een vak, zoals inkoop, SEO of belastingen. In een leerronde haalt hij nieuwe inhoud uit bronnen die jij kiest, en bewaart hij de kern in zijn eigen kennisbank.",
+        "why": [
+          "Elk feit heeft een bron en een datum, en alles is terug te draaien.",
+          "Spreekt iets nieuws tegen wat hij al weet, dan komt het bij *Te controleren*.",
+          "Correcties van jou worden lessen voor het hele team, en een werkwijze die vaak goed gaat wordt een voorstel voor een skill."
+        ],
+        "start": "Zet in de bot-instellingen onder *Geavanceerd › Specialisme* de optie *Specialist in een vakgebied* aan, en vul het vakgebied en de bronnen in. De leerronde staat uit tot jij hem aanzet. Meer in [Specialisten](page:manual#specialisten)."
+      },
+      {
+        "id": "memory",
+        "icon": "book",
+        "slot": "memory",
+        "short": "Geheugen",
+        "teaser": "Onthoudt wat je zegt, met bron, en houdt zichzelf bij.",
+        "title": "Een geheugen dat zichzelf bijhoudt",
+        "what": "Na een gesprek onthoudt TeamBot vanzelf feiten, voorkeuren en afspraken uit wat jij zei. Elke nacht ruimt hij dubbele en verlopen dingen op, en feiten die met de tijd veranderen worden opnieuw gecontroleerd.",
+        "why": [
+          "Elk item heeft een bron. Onder een antwoord zie je waar een herinnering vandaan komt.",
+          "Vergeten is echt vergeten, en ongedaan maken kan altijd.",
+          { "if": "semanticMemory", "text": "Zoeken op betekenis gebeurt op je eigen pc: wie naar een *wagen* vraagt, vindt ook *auto*." },
+          { "if": "teams", "text": "Elk team heeft zijn eigen geheugen. Een bot neemt niets mee naar een ander team." }
+        ],
+        "start": "Zeg in een gesprek “onthoud dat …”, of kijk onder *Geheugen* wat er al staat. Meer in [Geheugen en dossiers](page:manual#geheugen-en-dossiers)."
+      },
+      {
+        "if": "freeChain",
+        "id": "free",
+        "icon": "gauge",
+        "slot": "usage",
+        "extra": "chain",
+        "short": "Gratis doorwerken",
+        "teaser": "Is een limiet op, dan werkt TeamBot gratis verder. Een balk laat alles zien.",
+        "title": "Gratis doorwerken, en altijd zien wat er over is",
+        "what": "Raakt je limiet van Claude of ChatGPT op, dan gaat gewoon werk vanzelf verder bij een gratis aanbieder, en als laatste op een model op je eigen pc. De gebruiksbalk onderin laat altijd zien hoeveel er over is.",
+        "why": [
+          "Elke wissel staat in de chat, en onder elk antwoord staat welk model het gaf.",
+          { "if": "weekReserve", "text": "Boven een grens die je kiest (standaard 85% van je week) gaat gewoon werk alvast naar gratis modellen, zodat er genoeg overblijft voor belangrijk werk." },
+          { "if": "usageBar", "text": "De balk is groen, oranje of rood, met de resettijd. Geeft een aanbieder geen exact cijfer, dan staat er *schatting*." }
+        ],
+        "start": "De keten staat standaard aan. Gratis bronnen zet je aan onder *Instellingen › Gratis modellen*. Meer in [Gratis modellen](page:manual#gratis-modellen) en [De gebruiksbalk](page:manual#de-gebruiksbalk)."
+      },
+      {
+        "id": "phone",
+        "icon": "phone",
+        "slot": "phone",
+        "slot2": "phoneList",
+        "short": "Op je telefoon",
+        "teaser": "Je hoofdbot in je broekzak, met een melding bij vragen.",
+        "title": "Je bots op je telefoon",
+        "what": [
+          { "if": "!iphoneApp", "text": "Zet TeamBot als app op het beginscherm van je iPhone of Android. Je praat met je hoofdbot, keurt goed wat op je wacht en krijgt een melding bij vragen. Je telefoon praat alleen met je eigen pc." },
+          { "if": "iphoneApp", "text": "Met de iPhone-app (nog in test) of als app op het beginscherm van elke telefoon. Je praat met je hoofdbot, keurt goed wat op je wacht en krijgt een melding bij vragen. Je telefoon praat alleen met je eigen pc." }
+        ],
+        "why": [
+          "Bijna alles wat op je pc kan, kan ook op je telefoon: chatten, goedkeuren, bots, routines en teams.",
+          "Je telefoon krijgt geen sleutels, en je kunt hem altijd ontkoppelen.",
+          { "if": "!phoneAnywhere", "text": "Verbinden gaat thuis via je eigen wifi, of overal via Tailscale (gratis voor persoonlijk gebruik). Je pc moet aan staan." },
+          { "if": "phoneAnywhere", "text": "Je telefoon verbindt van overal met je eigen pc. Je pc moet aan staan." }
+        ],
+        "start": [
+          { "if": "!phoneAnywhere", "text": "Zet Tailscale op je pc en je telefoon, ga naar *Instellingen › Telefoon* en scan de QR-code. Meer in [Je telefoon](page:manual#je-telefoon)." },
+          { "if": "phoneAnywhere", "text": "Ga naar *Instellingen › Telefoon* en scan de QR-code. Meer in [Je telefoon](page:manual#je-telefoon)." }
+        ]
+      },
+      {
+        "id": "channels",
+        "icon": "chat",
+        "slot": "channels",
+        "extra": "channels",
+        "short": "Chat-apps",
+        "teaser": "Praat met je bots vanuit Telegram, WhatsApp, Slack en meer.",
+        "title": "Praat met je bots in de chat-app die je al gebruikt",
+        "what": "Koppel Telegram, WhatsApp, Discord, Slack of e-mail aan een bot of aan je hoofdbot. Je stuurt een bericht en je bot antwoordt in dezelfde app, als het moet met een pdf erbij.",
+        "why": [
+          "Alleen afzenders die jij toestaat, komen binnen. Anderen krijgen geen tools.",
+          "Een kanaal heet pas *verbonden* als TeamBot echt een bericht heeft ontvangen en verstuurd.",
+          { "if": "customerSafe", "text": "Bots die met klanten praten, zeggen dat ze AI zijn. Alles over geld, prijzen of beloftes gaat eerst naar jou." }
+        ],
+        "start": "*Instellingen › Kanalen › Kanaal toevoegen*. Telegram is het makkelijkst: een eigen bot, zonder open poort. Meer in [Kanalen](page:manual#kanalen-whatsapp-telegram-en-meer)."
+      },
+      {
+        "id": "skills",
+        "icon": "box",
+        "slot": "skills",
+        "short": "Skills",
+        "teaser": "Kant-en-klare werkwijzen, op vaste versies en met licentie.",
+        "title": "Skills: werkwijzen voor je bots",
+        "what": "Een skill is een werkwijze die een bot volgt, zoals een klantvraag sorteren of een campagneplan maken. Een bot laadt een skill pas als een taak erom vraagt.",
+        "why": [
+          { "if": "catalog", "text": "Skills komen uit een eigen catalogus op vastgezette versies, met maker en licentie in beeld." },
+          "Je leest een skill voordat je hem installeert, met een veiligheidscontrole. Een update zie je eerst als verschil.",
+          "Werkt iets in een gesprek goed? Met *Bewaar als skill* maak je er zelf een van, voor één bot of het hele team.",
+          "Apps (MCP) krijgen eerst alleen leesrechten; daarna kies je per bot wat hij mag."
+        ],
+        "start": "Open *Marktplaats › Skills*, kies een skill en zet hem aan voor een bot of team. Meer in [Skills en apps](page:manual#skills-en-apps)."
+      },
+      {
+        "id": "routines",
+        "icon": "clock",
+        "slot": "routines",
+        "short": "Routines",
+        "teaser": "Vaste taken op vaste tijden, met bewijs dat ze draaiden.",
+        "title": "Routines die laten weten wat er gebeurde",
+        "what": "Laat een bot iets op vaste tijden doen, zoals elke werkdag om 8:00 een overzicht, of op de laatste werkdag van de maand de facturen. Of laat een routine starten bij een nieuw bestand, een e-mail, een webhook of een chatbericht.",
+        "why": [
+          { "if": "missedRuns", "text": "Een run telt pas als geslaagd met een resultaat. Draaide hij niet, dan krijg je een melding: “verwacht om 08:00, niet gedraaid”." },
+          "In de kalender zie je per week of maand wat er gepland staat en wat er gebeurde.",
+          "Het resultaat kan naar je chat-app, bijvoorbeeld je dagrapport als pdf."
+        ],
+        "start": "Zeg in de chat “herinner me elke maandag om 9 uur aan …”, of kies *Routines › Nieuwe routine*. Meer in [Routines](page:manual#routines)."
+      },
+      {
+        "id": "computer",
+        "icon": "cursor",
+        "art": "computer",
+        "short": "Browser en computer",
+        "teaser": "Een eigen browser per bot. Je bureaublad alleen als jij dat wilt.",
+        "title": "Een eigen browser, en je bureaublad alleen als jij dat wilt",
+        "what": "Een bot werkt op het web in zijn eigen browser, met een eigen profiel. Je kijkt live mee en neemt over om zelf in te loggen. Je eigen bureaublad laten bedienen staat standaard uit.",
+        "why": [
+          "Inlogvensters, wachtwoordmanagers en bank- en betaalvensters blijven altijd dicht.",
+          "Zet je je bureaublad aan, dan kies je welke apps, en vraagt de bot standaard bij elke actie.",
+          "Beweeg je de muis, dan pauzeert de bot. Noodstop: `Ctrl+Alt+Esc`."
+        ],
+        "start": "Kies per bot onder *Geavanceerd › Computer & bestanden* het minste wat nodig is, bijvoorbeeld *Eigen browser*. Meer in [Browser en computer use](page:manual#browser-en-computer-use)."
+      },
+      {
+        "id": "privacy",
+        "icon": "shield",
+        "art": "privacy",
+        "short": "Privacy",
+        "teaser": "Alles staat op je eigen pc. Geen account, geen telemetrie.",
+        "title": "Alles op je eigen pc",
+        "what": "Je bots, gesprekken, geheugen en bestanden staan op je eigen computer. Je hebt geen account bij ons nodig, en TeamBot stuurt de makers niets: geen statistieken en geen foutrapporten.",
+        "why": [
+          "Een bot stuurt alleen wat hij voor zijn antwoord nodig heeft, naar de AI die jij bij die bot kiest.",
+          { "if": "privacyLabels", "text": "Bij elke bron staat een label: *blijft op je pc*, *bewaart niets* of *kan trainen*." },
+          "Sleutels staan versleuteld en komen nooit in gesprekken, logboeken of exports.",
+          "Versturen, betalen en verwijderen vragen eerst jouw toestemming."
+        ],
+        "start": "Open *Instellingen › Privacy en beveiliging › Waar staat mijn data?*: daar zie je per bot wat je pc verlaat. Alles op een rij staat op [Veiligheid en privacy](page:privacy)."
+      },
+      {
+        "id": "colours",
+        "icon": "palette",
+        "slot": "colours",
+        "extra": "colours",
+        "short": "Kleuren",
+        "teaser": "Licht of donker, en een kleur naar keuze op al je apparaten.",
+        "title": "Jouw kleur, licht of donker",
+        "what": "Kies licht, donker of systeem, en een van tien kleuren of *Standaard*. Je ziet meteen een voorbeeld in licht en donker naast elkaar.",
+        "why": [
+          "De kleur geldt op je pc, in de browser en op je telefoon.",
+          "Elke kleur haalt de WCAG-AA-norm voor contrast, dus tekst blijft goed leesbaar.",
+          "Je bots houden hun eigen figuurtje en kleur, glad of van vilt."
+        ],
+        "start": "*Instellingen › Uiterlijk › Kleur*. Meer in [Taal en overige instellingen](page:manual#taal-en-overige-instellingen)."
+      }
+    ],
+    "more": {
+      "title": "En verder",
+      "lead": "Kleiner, maar je merkt het elke dag.",
+      "items": [
+        { "if": "proof", "icon": "proof", "title": "Klaar met bewijs", "text": "Elke taak zegt wanneer hij klaar is. Een tweede controle kijkt het werk na; zonder bewijs staat er *te controleren*." },
+        { "icon": "mic", "title": "Spraak, lokaal en gratis", "text": "Dicteren, ook in andere programma's, voorlezen en praten met je bots. Op je eigen pc, ook in het Nederlands." },
+        { "icon": "sliders", "title": "Jij kiest wat een bot mag", "text": "Vijf niveaus, van alleen chatten tot volledige toegang. Versturen en betalen vragen altijd eerst." },
+        { "if": "trash", "icon": "trash", "title": "Prullenbak en oefenen", "text": "Wist een bot een bestand, dan haal je het terug. Of laat hem eerst werken op een kopie van een map." },
+        { "icon": "translate", "title": "Elf talen", "text": "De app werkt in elf talen, ook Arabisch. Je bots antwoorden in de taal waarin je schrijft." },
+        { "icon": "refresh", "title": "Back-ups met een weg terug", "text": "Elke dag een back-up, en vóór elke update ook. Terugzetten gaat met één klik." }
+      ]
+    },
+    "limits": {
+      "title": "Wat nog niet kan",
+      "lead": "Dit zijn de bekende beperkingen van versie {version}:",
+      "items": [
+        { "if": "!signed", "text": "De Windows-installer is nog niet ondertekend; Windows waarschuwt daarom bij de eerste start." },
+        "TeamBot is er alleen voor Windows. Een getest pakket voor macOS of Linux is er niet.",
+        "Je bots draaien op je eigen pc of server. Staat die uit, dan staan ze stil.",
+        { "if": "!phoneAnywhere", "text": "Je telefoon verbindt thuis via wifi of overal via Tailscale; van overal zonder Tailscale kan nog niet." },
+        {
+          "if": "!iphoneApp",
+          "text": "Er is geen app in de App Store of Play Store. Je telefoon gebruikt TeamBot via de browser."
+        },
+        {
+          "if": "iphoneApp",
+          "text": "De iPhone-app is alleen voor testers (TestFlight) en staat niet in de App Store. Er is geen Android-app; Android gebruikt de browser."
+        },
+        "Gratis modellen hebben limieten per dag of per uur, en het aanbod verandert vaak. Kleine lokale modellen maken vaker fouten dan grote.",
+        "De limieten van Claude en Codex worden deels geschat, en ze zijn gedeeld met je eigen gebruik van Claude en ChatGPT buiten TeamBot.",
+        "Een bot die je bureaublad bedient, deelt de muis en het toetsenbord met jou.",
+        "WhatsApp via een QR-code is een onofficiële koppeling. WhatsApp kan zo'n nummer blokkeren; voor een bedrijf is de officiële WhatsApp Business-koppeling de veilige keuze.",
+        "Sommige koppelingen zijn gebouwd en automatisch getest, maar nog niet met een echt account of apparaat. Welke dat zijn, staat in de [handleiding](page:manual#wat-nog-niet-kan).",
+        "Toegankelijkheid is getest met axe-core en het toetsenbord, nog niet met een schermlezer."
+      ]
+    }
+  },
+  "compare": {
+    "aspect": "Onderwerp",
+    "caption": "TeamBot naast OpenBot, Grok Bot, OpenClaw, Hermes Agent, de ChatGPT- en Claude-apps en cloudplatforms, per onderwerp, met bronnen",
+    "checked": "**Stand november 2026.** Gecontroleerd op {date}. Producten veranderen snel: kijk bij de bron voordat je kiest.",
+    "notFound": "Niet gevonden in de gelezen bronnen",
+    "source": "Bron",
+    "sourceShort": "link",
+    "legendLabel": "Betekenis van de tekens",
+    "marks": { "yes": "ja", "part": "deels", "no": "nee" },
+    "short": [
+      { "icon": "scale", "title": "Zo hebben we vergeleken", "text": ["Alleen wat de makers zelf openbaar schrijven, en voor de cloudplatforms ook reviews die we gelezen hebben. Bij elke cel staat een bron."] },
+      { "icon": "spark", "title": "Waar TeamBot voor kiest", "text": ["Open source onder Apache-2.0, alles op je eigen pc, gratis doorwerken als een limiet op is, en bewijs voordat iets *klaar* heet."] },
+      { "icon": "info", "title": "Waar anderen verder zijn", "text": ["Apps in de stores, Mac en Linux, een telefoon zonder Tailscale en doorwerken als je pc uit staat. Per product staat het [hieronder](page:compare#others)."] }
+    ],
+    "tableTitle": "Naast elkaar",
+    "tableLead": "Zeven keuzes, negen onderwerpen. Op een smal scherm staat elk product op een eigen kaart.",
+    "tableNote": "Wat over anderen staat, komt uit hun eigen documentatie of uit reviews, stand november 2026. Vonden we iets niet, dan staat er *niet gevonden*: dat zegt niet dat het ontbreekt.",
+    "products": {
+      "teambot": { "name": "**TeamBot**", "kind": "Open source · eigen pc" },
+      "openbot": {
+        "name": "OpenBot",
+        "kind": "Bron openbaar · eigen pc of gehost",
+        "ahead": ["Apps in de App Store en Google Play", "Werkt op Mac, Windows en Linux", "Je telefoon verbindt van overal, zonder Tailscale", "Gmail, Drive en Agenda koppel je met één klik", "Je bureaublad op afstand bedienen vanaf je telefoon", "De app is er in 15 talen"]
+      },
+      "grokbot": {
+        "name": "Grok Bot (xAI)",
+        "kind": "Gesloten · in de cloud",
+        "ahead": ["Werkt door als je eigen computer uit staat, op een cloudcomputer", "Elke bot kan een eigen e-mailadres krijgen", "Live spraakgesprek met een bot", "Een taak één keer voordoen; de bot leert de stappen"]
+      },
+      "openclaw": {
+        "name": "OpenClaw",
+        "kind": "Open source (MIT) · eigen computer",
+        "ahead": ["Meer dan 20 chat-apps, ook Signal, iMessage en Teams", "Echt bellen via een telefoonnummer", "Apps voor iPhone en Android, en praten via de Apple Watch", "Werkt op Mac, Windows en Linux"]
+      },
+      "hermes": {
+        "name": "Hermes Agent",
+        "kind": "Open source (MIT) · eigen computer of server",
+        "ahead": ["Draait ook op een goedkope VPS, en werkt dan door als je pc uit staat", "Een wekwoord: “Hey Hermes”", "Overstappen uit OpenClaw, Claude Code, Codex en Cursor", "Een plugincatalogus met meer dan 1.050 plugins"]
+      },
+      "chatapps": {
+        "name": "ChatGPT- en Claude-apps",
+        "kind": "Gesloten · in de cloud",
+        "ahead": ["Gepolijste apps op elke telefoon, met spraak", "Niets te installeren of in te stellen", "Geplande taken lopen in de cloud door, ook als je laptop dicht is"]
+      },
+      "cloud": {
+        "name": "Cloudplatforms (Manus, Lindy)",
+        "kind": "Gesloten · in de cloud",
+        "ahead": ["Een cloudcomputer die altijd aan staat", "Agents met een eigen telefoonnummer (Lindy, Manus Cue)", "Lindy: meer dan 1.500 koppelingen, en een assistent via iMessage"]
+      }
+    },
+    "rows": [
+      {
+        "id": "price",
+        "icon": "wallet",
+        "label": "Prijs",
+        "cells": {
+          "teambot": "€ 0. Je AI-aanbieder rekent rechtstreeks met je af, of je gebruikt gratis modellen",
+          "openbot": "Gratis voor persoonlijk gebruik; zakelijk een betaalde licentie; gehoste servers vanaf € 20 per maand",
+          "grokbot": "Alleen met een betaald X-abonnement (Premium, Super of Ultra); elk antwoord van een bot telt mee",
+          "openclaw": "Gratis, geen betaalde versie; je betaalt je eigen AI-aanbieder",
+          "hermes": "Gratis; optioneel een Nous Portal-abonnement met modellen en tools",
+          "chatapps": "Gratis versie met grenzen; meer met een maandabonnement (o.a. ChatGPT Plus en Pro, Claude Pro en Max)",
+          "cloud": "Credits: Manus gratis 300 per dag, Pro $ 20 per maand; Lindy vanaf $ 29,99 per maand, zonder gratis versie"
+        }
+      },
+      {
+        "id": "opensource",
+        "icon": "code",
+        "label": "Open source",
+        "cells": {
+          "teambot": { "mark": "yes", "text": "Ja" },
+          "openbot": { "mark": "part", "text": "Broncode is openbaar, maar zakelijk gebruik is niet vrij" },
+          "grokbot": { "mark": "no", "text": "Nee, gesloten" },
+          "openclaw": { "mark": "yes", "text": "Ja" },
+          "hermes": { "mark": "yes", "text": "Ja" },
+          "chatapps": { "mark": "no", "text": "Nee, gesloten" },
+          "cloud": { "mark": "no", "text": "Nee, gesloten" }
+        }
+      },
+      {
+        "id": "license",
+        "icon": "proof",
+        "label": "Licentie",
+        "cells": {
+          "teambot": "Apache-2.0: gebruiken, aanpassen en delen mag, ook zakelijk",
+          "openbot": "PolyForm Noncommercial 1.0.0 (versies tot en met 0.1.11 waren Apache-2.0)",
+          "grokbot": "Eigen voorwaarden van xAI",
+          "openclaw": "MIT (OpenClaw Foundation)",
+          "hermes": "MIT",
+          "chatapps": "Eigen voorwaarden van OpenAI en Anthropic",
+          "cloud": "Eigen voorwaarden van de aanbieder"
+        }
+      },
+      {
+        "id": "runs",
+        "icon": "pc",
+        "label": "Waar het draait",
+        "cells": {
+          "teambot": "Op je eigen Windows 11-pc of je eigen server (Docker); staat die uit, dan staan je bots stil",
+          "openbot": "Op je eigen computer (macOS, Windows, Linux) of server, of op een betaalde server van de makers",
+          "grokbot": "In de cloud: één cloudcomputer van xAI die al je bots delen; werkt door als je laptop dicht is",
+          "openclaw": "Op je eigen computer of server (macOS, Windows, Linux)",
+          "hermes": "Op je eigen computer (Linux, macOS, Windows), een VPS of cloudomgevingen die slapen als ze niets doen",
+          "chatapps": "In de cloud; de desktop-apps kunnen ook op je computer werken",
+          "cloud": "In de cloud, op een cloudcomputer van de aanbieder"
+        }
+      },
+      {
+        "id": "teams",
+        "icon": "grid",
+        "label": "Teams",
+        "cells": {
+          "teambot": { "mark": "yes", "text": "Hoofdbot die werk doorzet naar aparte teams, elk met eigen map, geheugen en budget" },
+          "openbot": { "mark": "yes", "text": "Gedeelde kanalen met een leider die taken verdeelt; berichten tussen agents; workflows" },
+          "grokbot": { "mark": "yes", "text": "Een hoofdbot en groepschats met 2 tot 6 bots; alle bots delen één computer" },
+          "openclaw": { "mark": "yes", "text": "Meerdere afgeschermde agents; een teamvoorbeeld met coördinator, onderzoeker, schrijver en controleur" },
+          "hermes": { "mark": "yes", "text": "Subagents (standaard 3 tegelijk) en groepschats met een leider die kiest wie antwoordt" },
+          "chatapps": { "mark": "part", "text": "Meerdere agents tegelijk voor één taak (ChatGPT Ultra: 4; Claude Cowork: subagents)" },
+          "cloud": { "mark": "yes", "text": "Manus: veel subagents tegelijk en agents in een groepschat; Lindy: agents die elkaar werk geven" }
+        }
+      },
+      {
+        "id": "memory",
+        "icon": "book",
+        "label": "Geheugen",
+        "cells": {
+          "teambot": "Leert vanzelf; per team; elk feit met bron, ongedaan maken en echt vergeten",
+          "openbot": "Herinneringen per agent, en een feitenlijst per chatkoppeling (max. 32 feiten, nog zonder scherm)",
+          "grokbot": "Onthoudt voorkeuren, feiten en een werklog; geen geheugenscherm, verbeteren gaat via de chat",
+          "openclaw": "Geheugen in Markdown-bestanden met zoeken; ‘Dreaming’ ruimt op (staat standaard uit)",
+          "hermes": "Begrensd geheugen (MEMORY.md en USER.md) en zoeken in eerdere gesprekken",
+          "chatapps": "Geheugen dat je kunt bekijken, aanpassen en wissen; bij Claude ook per project",
+          "cloud": "Manus: bestanden en instructies per project; Lindy leert uit gesprekken, mails en correcties"
+        }
+      },
+      {
+        "id": "phone",
+        "icon": "phone",
+        "label": "Telefoon",
+        "cells": {
+          "teambot": {
+            "mark": "yes",
+            "text": [
+              { "if": "!iphoneApp", "text": "Als app op je beginscherm via de browser; thuis via wifi of overal met Tailscale. Geen app in de stores" },
+              { "if": "iphoneApp", "text": "iPhone-app in test; verder via de browser, thuis via wifi of overal met Tailscale" }
+            ]
+          },
+          "openbot": { "mark": "yes", "text": "Apps in de App Store en Google Play; verbindt van overal zonder Tailscale" },
+          "grokbot": { "mark": "yes", "text": "iPhone-app (iOS 18+); Android voor een deel van de functies" },
+          "openclaw": { "mark": "yes", "text": "Apps voor iPhone en Android" },
+          "hermes": { "mark": "part", "text": "Geen officiële app: Android via Termux, iPhone via apps van anderen, of de webapp" },
+          "chatapps": { "mark": "yes", "text": "Apps voor iPhone en Android" },
+          "cloud": { "mark": "yes", "text": "Manus: apps voor iPhone en Android; Lindy werkt via iMessage en sms" }
+        }
+      },
+      {
+        "id": "free",
+        "icon": "gauge",
+        "label": "Gratis modellen",
+        "cells": {
+          "teambot": { "mark": "yes", "text": "Gratis keten staat standaard aan: ander abonnement, gratis aanbieders, dan lokaal; belangrijk werk pauzeert" },
+          "openbot": { "mark": "part", "text": "Gratis modellen van OpenCode zonder account; Ollama en LM Studio; een reservemodel bij een limiet" },
+          "grokbot": { "mark": "no", "text": "Geen modelkeuze: xAI kiest het model" },
+          "openclaw": { "mark": "part", "text": "Lokale modellen (o.a. Ollama en LM Studio); je kiest zelf een aanbieder" },
+          "hermes": { "mark": "part", "text": "Elke aanbieder; modellen met het label ‘Free’; wisselt bij een fout naar een ander model" },
+          "chatapps": { "mark": "part", "text": "Gratis versie met grenzen, alleen met hun eigen modellen" },
+          "cloud": { "mark": "part", "text": "Manus: 300 gratis credits per dag; Lindy: geen gratis versie meer" }
+        }
+      },
+      {
+        "id": "channels",
+        "icon": "chat",
+        "label": "Chat-apps",
+        "cells": {
+          "teambot": "Telegram, WhatsApp, Discord, Slack en e-mail",
+          "openbot": "Slack, Discord, Telegram en WhatsApp",
+          "grokbot": "Slack, e-mail en X Chat",
+          "openclaw": "Meer dan 20, o.a. WhatsApp, Telegram, Signal, iMessage en Teams",
+          "hermes": "Telegram, Discord, Slack, WhatsApp, Signal, e-mail en Home Assistant",
+          "chatapps": "Slack (ChatGPT ook Teams)",
+          "cloud": "Manus: Telegram, Slack en e-mail; Lindy: iMessage, sms, e-mail en Slack"
+        }
+      }
+    ],
+    "othersTitle": "Waar anderen verder zijn",
+    "othersLead": "Dit kunnen anderen nu wel en TeamBot (nog) niet. Wat we zelf nog missen, staat ook bij [Wat nog niet kan](page:features#limits).",
+    "oursTitle": "Waar TeamBot voor kiest",
+    "oursLead": "Geen meting, wel keuzes die je in de app terugziet.",
+    "ours": [
+      { "icon": "code", "title": "Echt open source", "text": "Apache-2.0: gebruiken, aanpassen en delen mag, ook zakelijk. OpenBot is niet-commercieel; Grok Bot, ChatGPT, Claude, Manus en Lindy zijn gesloten." },
+      { "icon": "switch", "title": "Gratis doorwerken", "text": "De gratis keten staat standaard aan, en belangrijk werk pauzeert in plaats van stil te wisselen naar een zwakker model." },
+      { "icon": "proof", "title": "Klaar is klaar", "text": "Elke taak heeft een *klaar als* en een tweede controle met bewijs." },
+      { "icon": "shield", "title": "Veilig standaard", "text": "Een nieuwe bot vraagt eerst toestemming. Volledige toegang zet je zelf aan, per bot." },
+      { "icon": "pc", "title": "Op je eigen pc", "text": "Geen account en geen telemetrie. Je data staat in één map op je computer." },
+      { "icon": "clock", "title": "Routines die niet stil falen", "text": "Draaide een routine niet, dan zegt TeamBot dat: “verwacht om 08:00, niet gedraaid”." }
+    ],
+    "readTitle": "Gelezen bronnen",
+    "readLead": "Deze pagina's staan in onze onderzoeksnotities van november 2026.",
+    "fix": "Een fout gezien? Meld het in de repository, dan passen we het aan."
+  },
+  "switch": {
+    "cta": "Download voor Windows",
+    "toSteps": "Naar de stappen",
+    "comes": {
+      "kicker": "Wat meekomt",
+      "title": "Je team in één keer over",
+      "lead": "Eerst zie je een voorbeeld van alles wat overkomt. Pas na *Importeren* verandert er iets in TeamBot.",
+      "items": [
+        { "icon": "bot", "title": "Bots", "text": "Naam, instructies, model en denkniveau, reserves op volgorde, toegang en gezicht." },
+        { "icon": "clock", "title": "Routines", "text": "Alle schema's. Ze komen **uit** binnen, zodat niets dubbel draait." },
+        { "icon": "box", "title": "Je eigen skills", "text": "Via dezelfde veiligheidscontrole als de marktplaats." },
+        { "icon": "book", "title": "Herinneringen", "text": "Vastgezet blijft vastgezet; de rest is doorzoekbaar." },
+        { "icon": "grid", "title": "Teamtabellen en teammap", "text": "Taken, beslissingen en logboek. Je gedeelde map wordt de teammap, zonder kopie." },
+        {
+          "icon": "user",
+          "title": "Rollen",
+          "text": [
+            { "if": "mainBot", "text": "Je baas wordt hoofdbot of teamleider; een kennisbot wordt specialist." },
+            { "if": "!mainBot", "text": "Je baas wordt teamleider; een kennisbot wordt specialist." }
+          ]
+        }
+      ]
+    },
+    "not": {
+      "title": "Wat niet meekomt",
+      "lead": "Dat zie je vooraf in het voorbeeld, met de reden.",
+      "items": [
+        { "title": "Gesprekken en bijlagen", "text": "Bewuste keuze: je begint schoon. Ze blijven in OpenBot staan." },
+        { "title": "Sleutels, tokens en wachtwoorden", "text": "Nooit. Je logt opnieuw in of plakt je sleutel opnieuw." },
+        { "title": "Kanalen en apps", "text": "Die verbind je opnieuw in TeamBot. Lees eerst [Telegram en WhatsApp](page:switch#channels)." },
+        { "title": "Skills van OpenBot zelf", "text": "Die vallen onder de licentie van OpenBot. Zoek een alternatief in de marktplaats." },
+        { "title": "Workflows", "text": "TeamBot heeft (nog) geen workflow-canvas." },
+        { "title": "Je telefoonkoppeling", "text": "Koppel je telefoon opnieuw via *Instellingen › Telefoon*." }
+      ]
+    },
+    "steps": {
+      "kicker": "Zo stap je over",
+      "title": "In zes stappen",
+      "lead": "Reken op een kwartier. OpenBot mag ondertussen gewoon blijven draaien.",
+      "items": [
+        { "title": "Installeer TeamBot", "text": "[Download](page:download) en installeer TeamBot op dezelfde pc als OpenBot." },
+        { "title": "Bekijk wat er overkomt", "text": "Op het welkomstscherm staat *Je OpenBot-team overzetten* (later onder *Instellingen › Overstappen*). Klik op *Bekijken wat er overkomt* en *OpenBot inlezen*: TeamBot leest alleen." },
+        { "title": "Kies wat mee moet", "text": "Vink aan wat mee moet. Kies het team, wie hoofdbot of teamleider wordt en welke bots specialist worden, en per bot een werkmap: de bestaande map (aanbevolen), een kopie of een nieuwe lege map." },
+        { "title": "Importeer", "text": "Klik op *Importeren*. Daarna zie je een overzicht, met *Import ongedaan maken* als je toch terug wilt." },
+        { "title": "Koppel je AI en je telefoon", "text": "Claude Code, Codex en OpenCode op deze pc vindt TeamBot zelf. Een API-sleutel plak je opnieuw onder *Instellingen › AI-diensten*. Je telefoon koppel je met een QR-code." },
+        { "title": "Zet je kanalen en routines aan", "text": "Stop je met OpenBot? Zet je chat-apps over zoals hieronder staat, en klik op *Routines aanzetten*." }
+      ]
+    },
+    "channels": {
+      "kicker": "Telegram en WhatsApp",
+      "title": "Eén kanaal, één app tegelijk",
+      "lead": "Een Telegram-bot of WhatsApp-nummer kun je maar aan één app tegelijk koppelen. Telegram weigert de tweede app, en bij WhatsApp zouden beide apps op hetzelfde bericht kunnen antwoorden.",
+      "steps": [
+        "Koppel het kanaal los in OpenBot, of sluit OpenBot af.",
+        "Kies in TeamBot *Instellingen › Kanalen › Kanaal toevoegen* en kies hetzelfde kanaal.",
+        "Telegram: plak je bot-token. WhatsApp via QR: scan de code op je telefoon onder *Gekoppelde apparaten*.",
+        "Stuur een testbericht. Het kanaal heet pas *verbonden* als TeamBot echt een bericht heeft ontvangen en verstuurd."
+      ],
+      "tip": "**Eerst proberen?** Maak bij @BotFather een tweede Telegram-bot voor TeamBot. Dan blijft OpenBot op je oude bot gewoon werken.",
+      "cards": [
+        { "icon": "send", "title": "Telegram", "text": ["Een bot-token kan maar door één app tegelijk gelezen worden. Gebruiken twee apps hem, dan meldt TeamBot: *Conflict: een andere app gebruikt deze bot-token al*.", "Ben je je token kwijt? Vraag bij @BotFather een nieuwe; de oude werkt dan niet meer."] },
+        { "icon": "phone", "title": "WhatsApp", "text": ["Verwijder in WhatsApp op je telefoon onder *Gekoppelde apparaten* de koppeling van OpenBot, en scan daarna de QR-code van TeamBot.", "WhatsApp via QR is onofficieel en WhatsApp kan zo'n nummer blokkeren. Voor een bedrijf is *WhatsApp Business (Cloud API)* de veilige keuze."] }
+      ]
+    },
+    "after": {
+      "title": "Daarna",
+      "items": [
+        { "icon": "undo", "title": "Terug kan altijd", "text": "*Import ongedaan maken* haalt weg wat de import maakte. OpenBot zelf is nooit veranderd." },
+        { "icon": "refresh", "title": "Opnieuw inlezen", "text": "Later nog iets mee? Lees OpenBot opnieuw in; wat er al is, komt niet dubbel." },
+        { "icon": "shield", "title": "Toegang zoals je hem had", "text": "Had een bot in OpenBot volledige toegang, dan krijgt hij dat ook in TeamBot. Versturen en betalen vragen nog wel eerst." }
+      ]
+    },
+    "end": {
+      "title": "Klaar om over te stappen?",
+      "text": "Gratis, open source en zonder account. OpenBot blijft staan tot jij besluit.",
+      "manual": "Lees de handleiding"
+    }
+  },
+  "faq": {
+    "groups": [
+      {
+        "id": "start",
+        "icon": "wallet",
+        "title": "Kosten en starten",
+        "items": [
+          {
+            "q": "Is TeamBot gratis?",
+            "a": ["Ja. TeamBot kost € 0: geen account, geen abonnement, geen proefperiode en geen credits. De code is open source onder de Apache-2.0-licentie.", "Je betaalt alleen wat je zelf kiest, rechtstreeks aan die partij: je eigen AI-abonnement of het gebruik van een API-sleutel. Met gratis of lokale modellen betaal je niets. Zie [Prijzen](page:pricing)."]
+          },
+          {
+            "q": "Welke AI heb ik nodig?",
+            "a": ["Om te beginnen geen: *Gratis starten* zet een gratis model klaar, zonder account.", "Heb je Claude Pro of Max, of ChatGPT Plus of Pro? Dan gebruikt TeamBot de officiële Claude Code of Codex op je eigen login. Je kunt ook een API-sleutel plakken, of met een snelle pc een model op je eigen computer draaien (Ollama of LM Studio)."]
+          },
+          {
+            "q": "Wat heb ik nodig om te installeren?",
+            "a": "Een pc met Windows 11 (64-bit), of Windows 10 met ESU- of LTSC-ondersteuning. Mac en Linux worden nog niet ondersteund; een eigen server met Docker kan wel. Zie [Download](page:download#req)."
+          },
+          {
+            "if": "!signed",
+            "q": "Waarom waarschuwt Windows bij het installeren?",
+            "a": "De installer is nog niet ondertekend. Download hem alleen van de officiële releasepagina, klik in het blauwe venster op **Meer informatie** en daarna op **Toch uitvoeren**."
+          },
+          {
+            "q": "Moet ik kunnen programmeren?",
+            "a": "Nee. Een bot maken vraagt drie dingen: een naam, wat hij doet en welk model. De rest heeft goede standaardwaarden."
+          }
+        ]
+      },
+      {
+        "id": "data",
+        "icon": "shield",
+        "title": "Privacy en veiligheid",
+        "items": [
+          {
+            "q": "Is mijn data veilig?",
+            "a": ["Je bots, gesprekken, geheugen en bestanden staan op je eigen pc, in `%APPDATA%\\TeamBot`. Je hebt geen account bij ons nodig en TeamBot stuurt de makers niets: geen statistieken, geen foutrapporten.", "Een bot stuurt alleen wat hij voor zijn antwoord nodig heeft naar de AI-dienst die jij bij die bot kiest. Met een lokaal model gaat er niets naar een AI-dienst. Sleutels staan versleuteld. Lees [hoe het precies zit](page:privacy)."]
+          },
+          {
+            "q": "Kunnen bots zomaar dingen doen?",
+            "a": "Een nieuwe bot vraagt eerst toestemming. Versturen naar anderen en betalen vragen altijd, ook bij *volledige toegang*. Eén knop stopt alle bots."
+          },
+          {
+            "q": "Gebruiken AI-diensten mijn gegevens om te trainen?",
+            "a": [
+              { "if": "privacyLabels", "text": "Dat hangt af van de dienst. In TeamBot staat bij elke bron een label: *blijft op je pc*, *bewaart niets* of *kan trainen*. Sommige gratis diensten mogen wat je stuurt gebruiken om hun modellen te verbeteren; gevoelig werk houd je op een lokaal model." },
+              { "if": "!privacyLabels", "text": "Dat hangt af van de dienst. Sommige gratis diensten mogen wat je stuurt gebruiken om hun modellen te verbeteren; gevoelig werk houd je op een lokaal model." }
+            ]
+          },
+          {
+            "q": "Hoe haal ik alles weer weg?",
+            "a": "Exporteer wat je wilt houden, ontkoppel je telefoon en chat-apps, en verwijder TeamBot via Windows. Kies dan **Ja** om ook je gegevens te verwijderen. De stappen staan op [Veiligheid en privacy](page:privacy#delete)."
+          }
+        ]
+      },
+      {
+        "id": "phone",
+        "icon": "phone",
+        "title": "Telefoon",
+        "items": [
+          {
+            "q": "Werkt het op mijn telefoon zonder Tailscale?",
+            "a": [
+              { "if": "!phoneAnywhere", "text": "Thuis wel: op hetzelfde wifi-netwerk als je pc. Die verbinding is niet versleuteld en geeft geen pushmeldingen." },
+              { "if": "!phoneAnywhere", "text": "Buitenshuis heb je nu Tailscale nodig. Dat is gratis voor persoonlijk gebruik en geeft een versleutelde verbinding tussen je eigen apparaten. Verbinden van overal zonder Tailscale zit nog niet in deze versie." },
+              { "if": "phoneAnywhere", "text": "Ja. Je telefoon verbindt van overal met je eigen pc, ook zonder Tailscale. Je pc moet wel aan staan." }
+            ]
+          },
+          {
+            "q": "Is er een app in de App Store of Play Store?",
+            "a": [
+              { "if": "!iphoneApp", "text": "Nee. Je zet TeamBot vanuit de browser op je beginscherm: op de iPhone met Safari › Deel › *Zet op beginscherm*, op Android met Chrome › *App installeren*. Dan werkt hij als een app, met meldingen." },
+              { "if": "iphoneApp", "text": "Nog niet in de stores. De iPhone-app is in test via TestFlight; verder zet je TeamBot vanuit de browser op je beginscherm, met meldingen." }
+            ]
+          },
+          {
+            "q": "Moet mijn pc aan blijven?",
+            "a": "Ja. Je bots draaien op je eigen pc of server. Staat die uit, dan staan ze stil, en TeamBot meldt routines die daardoor niet draaiden. Zet *Houd de pc wakker terwijl routines of taken lopen* aan als je wilt."
+          }
+        ]
+      },
+      {
+        "id": "use",
+        "icon": "bot",
+        "title": "Gebruik en overstappen",
+        "items": [
+          {
+            "q": "Wat gebeurt er als mijn limiet op is?",
+            "a": [
+              { "if": "freeChain", "text": "Dat zie je aankomen in de gebruiksbalk. Gewoon werk gaat verder op een gratis of lokaal model, en onder elk antwoord staat welk model het gaf. Werk met de schakelaar *Belangrijk* wacht tot je limiet terug is." },
+              { "if": "!freeChain", "text": "Dan kies je per bot: overschakelen naar een reserve, wachten tot de limiet terug is, of stoppen. Onder elk antwoord staat welk model het gaf." }
+            ]
+          },
+          {
+            "q": "Kan ik OpenBot en TeamBot naast elkaar gebruiken?",
+            "a": "Ja. De import leest OpenBot alleen, en routines komen uit binnen. Een Telegram-bot of WhatsApp-nummer koppel je wel aan één app tegelijk. Zie [Overstappen van OpenBot](page:switch)."
+          },
+          {
+            "q": "In welke talen werkt TeamBot?",
+            "a": "De app werkt in 11 talen, waaronder Nederlands, Engels, Duits, Frans en Arabisch. Je bots antwoorden in de taal waarin je schrijft. De handleiding is er in het Nederlands."
+          },
+          {
+            "q": "Mag ik TeamBot zakelijk gebruiken?",
+            "a": "Ja, de Apache-2.0-licentie staat dat toe, ook aanpassen en delen. Kijk voor je AI-dienst wel naar hun eigen voorwaarden."
+          }
+        ]
+      }
+    ],
+    "end": {
+      "title": "Nog een vraag?",
+      "text": "De handleiding legt elk scherm uit, in korte stappen.",
+      "manual": "Naar de handleiding",
+      "download": "Download voor Windows"
+    }
+  },
+  "pricing": {
+    "free": {
+      "kicker": "TeamBot zelf",
+      "amount": "€ 0",
+      "amountLabel": "nul euro",
+      "per": "open source, voor iedereen",
+      "items": [
+        "Alle functies, zonder proefperiode",
+        "Geen account en geen creditcard",
+        "Geen abonnement en geen credits, dus niets op te zeggen",
+        "Open source (Apache-2.0): gebruiken, aanpassen en delen mag, ook zakelijk"
+      ],
+      "cta": "Download voor Windows"
+    },
+    "you": {
+      "title": "Wat je eventueel zelf betaalt",
+      "lead": "TeamBot heeft een AI nodig om mee te werken. Die kies je zelf, en je betaalt die partij rechtstreeks. TeamBot verdient daar niets aan.",
+      "options": [
+        {
+          "icon": "spark",
+          "title": "Gratis modellen",
+          "cost": "€ 0",
+          "text": "OpenCode met een gratis model, en gratis lagen van aanbieders met een eigen gratis sleutel. Ze hebben limieten per dag of per uur, en het aanbod verandert vaak."
+        },
+        {
+          "icon": "pc",
+          "title": "Lokaal op je pc",
+          "cost": "€ 0",
+          "text": "Met Ollama of LM Studio draait het model op je eigen computer. Je betaalt alleen de stroom. Dit vraagt een snelle pc, en kleine modellen maken vaker fouten."
+        },
+        {
+          "icon": "user",
+          "title": "Je eigen AI-abonnement",
+          "cost": "wat je al betaalt",
+          "text": "Claude via Claude Code of ChatGPT via Codex, op je eigen login. Je betaalt je abonnement bij Anthropic of OpenAI, zoals je al deed. De limieten van je abonnement gelden, ook voor wat je buiten TeamBot doet."
+        },
+        {
+          "icon": "key",
+          "title": "Een API-sleutel",
+          "cost": "per gebruik",
+          "text": "Bijvoorbeeld bij OpenAI, Anthropic of OpenRouter. Je betaalt die aanbieder per gebruik. TeamBot kijkt vóór elke stap naar je dagbudget; de laatste stap kan het budget nog iets overschrijden."
+        }
+      ],
+      "extrasTitle": "Alleen als je het wilt",
+      "extras": [
+        "**Je telefoon buitenshuis** gaat via Tailscale. Voor persoonlijk gebruik is dat gratis.",
+        "**Een eigen server** voor TeamBot met vrienden of een team: wat je hostingpartij rekent.",
+        "**Een cloud-VM** voor een bot (Hetzner of DigitalOcean): TeamBot toont de kosten voordat je hem aanmaakt."
+      ]
+    },
+    "guard": {
+      "title": "Zo voorkom je verrassingen",
+      "items": [
+        { "if": "usageBar", "icon": "gauge", "title": "Altijd zien wat er over is", "text": "De gebruiksbalk toont je limieten van Claude en Codex en de gratis bronnen, met de resettijd. Je krijgt een melding bij 80% en bij de grens." },
+        { "if": "weekReserve", "icon": "switch", "title": "Een reserve voor belangrijk werk", "text": "Boven een grens die je zelf kiest, standaard 85% van je Claude-week, gaat gewoon werk alvast naar gratis modellen." },
+        { "if": "pauseImportant", "icon": "pause", "title": "Pauzeren in plaats van stil wisselen", "text": "Een belangrijke taak gaat niet stilletjes verder op een zwakker model. Hij wacht, en zegt tot wanneer." },
+        { "icon": "eye", "title": "Model en kosten onder elk antwoord", "text": "Je ziet bij elk antwoord welk model het gaf en wat het kostte, of *onbekend*." },
+        { "icon": "wallet", "title": "Een dagbudget", "text": "Stel een bedrag per dag in voor betaalde sleutels. Een bot zegt het als het op is." }
+      ]
+    },
+    "faq": {
+      "title": "Vragen over geld",
+      "more": "Meer vragen en antwoorden",
+      "items": [
+        {
+          "q": "Is TeamBot echt gratis?",
+          "a": "Ja. Er is geen betaalde versie, geen proefperiode en geen account. De code staat onder de Apache-2.0-licentie."
+        },
+        {
+          "q": "Komt er later een betaalde versie?",
+          "a": "Elke versie die is uitgebracht, mag je volgens de Apache-2.0-licentie altijd gratis gebruiken. Komt er ooit een betaalde extra dienst bij, zoals hosting, dan staat de prijs hier, vooraf en in gewone woorden."
+        },
+        {
+          "q": "Betaal ik TeamBot voor Claude of ChatGPT?",
+          "a": "Nee. TeamBot stuurt de officiële Claude Code en Codex aan op jouw eigen login. Je abonnement betaal je bij Anthropic of OpenAI."
+        },
+        {
+          "if": "freeChain",
+          "q": "Wat gebeurt er als mijn limiet op is?",
+          "a": "Dat zie je aankomen in de gebruiksbalk. Gewoon werk gaat verder op een gratis of lokaal model, en onder elk antwoord staat welk model het gaf. Belangrijk werk wacht tot je limiet terug is."
+        },
+        {
+          "if": "!freeChain",
+          "q": "Wat gebeurt er als mijn limiet op is?",
+          "a": "Dan kies je per bot: overschakelen naar een reserve, wachten tot de limiet terug is, of stoppen. Onder elk antwoord staat welk model het gaf."
+        },
+        {
+          "q": "Zijn gratis modellen echt gratis?",
+          "a": "Ja, maar met grenzen: een aantal verzoeken per dag of per uur, en een aanbod dat vaak verandert. Sommige gratis diensten mogen wat je stuurt gebruiken om hun modellen te verbeteren. Gevoelig werk houd je op je eigen pc met een lokaal model."
+        },
+        {
+          "q": "Mag ik TeamBot zakelijk gebruiken?",
+          "a": "Ja, de Apache-2.0-licentie staat dat toe. Kijk voor je AI-dienst wel naar hun eigen voorwaarden."
+        }
+      ]
+    }
+  },
+  "privacy": {
+    "draftTitle": "Concept.",
+    "draft": [
+      {
+        "if": "iphoneApp",
+        "text": "Deze tekst is nog niet juridisch getoetst en is geen privacyverklaring of overeenkomst. Hij beschrijft hoe TeamBot technisch werkt. De iPhone-app toont dezelfde uitleg voordat je hem voor het eerst gebruikt."
+      },
+      {
+        "if": "!iphoneApp",
+        "text": "Deze tekst is nog niet juridisch getoetst en is geen privacyverklaring of overeenkomst. Hij beschrijft hoe TeamBot technisch werkt."
+      }
+    ],
+    "summaryTitle": "In het kort",
+    "summary": [
+      { "icon": "pc", "title": "Op je eigen pc", "text": "Je bots, gesprekken, geheugen en bestanden staan op je eigen computer." },
+      { "icon": "send", "title": "Naar de AI die jij kiest", "text": "Alleen wat een bot voor zijn antwoord nodig heeft, en alleen naar de dienst van die bot." },
+      { "icon": "key", "title": "Sleutels versleuteld", "text": "Nooit in gesprekken, logboeken of exports, en nooit op je telefoon." },
+      { "icon": "trash", "title": "Alles te wissen", "text": "Exporteer wat je wilt houden en verwijder de rest in een paar stappen." }
+    ],
+    "pc": {
+      "title": "Wat op je pc blijft",
+      "items": [
+        "Je bots, gesprekken, geheugen, routines, back-ups en bestanden staan in de datamap van TeamBot: `%APPDATA%\\TeamBot`. De werkmappen van je bots staan daar ook, tenzij je zelf een andere map koos.",
+        "Je hebt geen account bij de makers van TeamBot nodig.",
+        "TeamBot stuurt de makers niets: geen statistieken, geen foutrapporten. Het diagnosebestand maak je zelf en deel je alleen als je dat wilt; er staan geen berichten of sleutels in.",
+        "Met een lokaal model (Ollama of LM Studio) gaan je gesprekken niet naar een AI-dienst, en lokale spraak blijft ook op je pc.",
+        { "if": "teams", "text": "Elk team heeft zijn eigen map, geheugen en logboek. Een bot ziet een ander team alleen als jij hem daar toegang toe geeft." }
+      ]
+    },
+    "ai": {
+      "title": "Wat naar welke AI-aanbieder gaat",
+      "lead": "Een bot stuurt alleen wat hij voor zijn antwoord nodig heeft: je bericht, zijn instructies, en wat hij daarvoor gebruikt, zoals een paar herinneringen, delen van bestanden die hij leest en de uitkomst van zijn tools. Dat gaat naar de dienst die je bij die bot koos.",
+      "caption": "Waar je bericht naartoe gaat, per keuze",
+      "labels": ["Gaat naar", "Voorwaarden"],
+      "rows": [
+        ["Lokaal model (Ollama, LM Studio)", "Blijft op je pc", "Geen: je bericht verlaat je computer niet"],
+        ["Claude via Claude Code", "Anthropic", "Die van jouw Claude-abonnement"],
+        ["ChatGPT via Codex", "OpenAI", "Die van jouw ChatGPT-abonnement"],
+        ["OpenCode", "De aanbieder van het model dat je kiest, via OpenCode", "Die van OpenCode en die aanbieder"],
+        ["Je eigen API-sleutel", "Die aanbieder, bijvoorbeeld OpenAI, Anthropic of OpenRouter", "Hun API-voorwaarden"],
+        ["Een gratis laag van een aanbieder", "Die aanbieder", "Hun voorwaarden; sommige gratis diensten mogen wat je stuurt gebruiken om hun modellen te verbeteren"]
+      ],
+      "after": [
+        "Nooit verstuurd: je sleutels en wachtwoorden.",
+        { "if": "teams", "text": "Ook niet verstuurd: iets uit een team waar die bot geen toegang toe heeft." },
+        { "if": "privacyLabels", "text": "In TeamBot staat bij elke bron een label: *blijft op je pc*, *bewaart niets* of *kan trainen*. Het label volgt de voorwaarden van de aanbieder; lees die bij twijfel zelf." },
+        { "if": "privateWork", "text": "Werk dat je als privé markeert, zoals persoonlijke gegevens of een gevoelig dossier, gaat alleen naar een lokaal model of naar een bron die niets bewaart." },
+        "Onder elk antwoord staat welk model het gaf. Schakelt een bot over naar een ander model, dan zegt hij dat."
+      ]
+    },
+    "other": {
+      "title": "Wat verder je pc verlaat, alleen als je het gebruikt",
+      "items": [
+        "**Zoeken op internet:** standaard via DuckDuckGo, of een zoekdienst die je zelf kiest.",
+        "**Skills en apps:** de catalogus en de bestanden van een skill of app komen van de plek waar de maker ze publiceert, zoals GitHub.",
+        "**Claude Code, Codex en OpenCode:** installeer of update je die vanuit TeamBot, dan downloadt hij ze uit het npm-register en controleert hij ze eerst.",
+        "**Chat-apps:** berichten via Telegram, WhatsApp, Discord, Slack of e-mail lopen via die diensten zelf.",
+        "**Je telefoon:** praat alleen met je eigen pc, via je eigen netwerk of via Tailscale (een versleutelde verbinding tussen je eigen apparaten). Wat je inspreekt, gaat naar je pc, niet naar internet.",
+        "**Spraak:** blijft op je pc, behalve als je een live stem of een stem van een aanbieder kiest.",
+        "**Updates:** TeamBot kijkt of er een nieuwe versie is en downloadt pas na jouw klik."
+      ]
+    },
+    "keys": {
+      "title": "Sleutels en logins",
+      "items": [
+        "API-sleutels en andere geheimen staan versleuteld in één kluis. Op Windows hoort de sleutel daarvoor bij je Windows-account.",
+        "Sleutels komen nooit in gesprekken, logboeken, exports of het diagnosebestand.",
+        { "if": "teams", "text": "Een sleutel werkt standaard in al je teams. Je kunt hem ook beperken tot één team." },
+        "Bij Claude Code en Codex log je zelf in. Die programma's bewaren hun eigen inlog, zoals altijd; TeamBot stuurt ze ongewijzigd aan en stuurt je inlog nergens heen.",
+        "Je telefoon krijgt geen sleutels. Een gekoppelde telefoon heeft alleen een eigen toegangsbewijs, dat je in TeamBot altijd kunt intrekken.",
+        "Zet je een back-up terug op een andere pc, dan vul je je sleutels opnieuw in."
+      ]
+    },
+    "control": {
+      "title": "Wat bots mogen",
+      "items": [
+        "Per bot kies je een toegangsniveau: alleen chatten, alleen lezen, eerst vragen, automatisch of volledige toegang.",
+        "Acties met gevolgen, zoals versturen naar anderen, betalen en verwijderen, vragen eerst, en je ziet wat de bot wil doen. Dat zit in de app zelf, niet alleen in de instructie van de bot.",
+        "TeamBot behandelt webpagina's, e-mails en berichten van andere bots als informatie, niet als opdracht.",
+        "Een bot je bureaublad laten bedienen staat standaard uit. Inlogschermen, wachtwoordmanagers en betaalvensters blijven altijd dicht.",
+        "Afbeeldingen en linkvoorbeelden van bots laden pas na een klik, zodat een bot geen gegevens kan wegsturen via een webadres.",
+        "Alles met gevolgen staat in het logboek, en één knop stopt alle bots."
+      ],
+      "note": "Een werkmap is geen afgesloten omgeving: TeamBot belooft alleen afscherming waar die echt bestaat. Het volledige dreigingsmodel staat in [docs/THREAT_MODEL.md](repo:docs/THREAT_MODEL.md)."
+    },
+    "delete": {
+      "title": "Alles verwijderen",
+      "lead": "Zo haal je TeamBot en je gegevens helemaal weg:",
+      "steps": [
+        "Wil je iets bewaren? Kies in TeamBot *Instellingen › Gegevens › Exporteren*.",
+        "Ontkoppel je telefoon en je chat-apps in TeamBot. Daarna werkt de koppeling nergens meer, ook niet als de app nog op je telefoon staat.",
+        "Verwijder TeamBot via *Instellingen › Apps* van Windows. De installer vraagt of je je gegevens ook wilt verwijderen; kies **Ja**. Standaard staat er *Nee*, zodat je bij opnieuw installeren niets kwijt bent.",
+        "Koos je eerder *Nee*, of gaf je een bot een werkmap buiten de datamap? Verwijder die mappen dan zelf, zoals `%APPDATA%\\TeamBot`.",
+        "Wat al naar een AI-dienst of chat-app is gestuurd, valt onder die dienst. Verwijder het daar, bijvoorbeeld in je account bij Anthropic of OpenAI, en log uit in Claude Code en Codex als je die niet meer gebruikt."
+      ]
+    },
+    "site": {
+      "title": "Deze website",
+      "items": [
+        "Geen cookies, geen trackers, geen analytics en geen lettertypen of scripts van andere servers.",
+        "Je keuze voor licht of donker wordt alleen in je eigen browser bewaard.",
+        "De partij die deze site host, kan technische serverlogs bijhouden, zoals IP-adres en tijdstip. Welke partij dat is, staat hier zodra de site online staat."
+      ]
+    },
+    "report": {
+      "title": "Een kwetsbaarheid melden",
+      "text": "Meld beveiligingsproblemen niet in een openbare issue, maar via *Report a vulnerability* op de repository. Zie [SECURITY.md](repo:SECURITY.md)."
+    }
+  },
+  "download": {
+    "smartTitle": "Windows waarschuwt bij de eerste start",
+    "smart": [
+      { "if": "!signed", "text": "De installer is nog niet ondertekend, dus Windows toont een blauw venster; klik daar op **Meer informatie**." },
+      { "if": "!signed", "text": "Daarna verschijnt er een knop: kies **Toch uitvoeren** en de installatie begint." }
+    ],
+    "pendingTitle": "Komt beschikbaar zodra de releases online staan.",
+    "pending": "De downloadknop werkt nog niet: de repository en de releasepagina zijn nog niet openbaar. Dit wordt het adres:",
+    "winTitle": "TeamBot {version} voor Windows",
+    "winText": "Eén installer, zonder account. Het welkomstscherm laat zien welke AI er al op je computer staat en helpt je aan je eerste bot. Heb je nog niets, dan zet *Gratis starten* een gratis model klaar.",
+    "button": "Download voor Windows (.exe)",
+    "fileName": "Bestand: `TeamBot-Setup-{version}.exe` (64-bit). [Zo controleer je of het bestand klopt](page:download#checksum).",
+    "stepsTitle": "Zo installeer je TeamBot",
+    "steps": [
+      { "title": "Download de installer", "text": "Eén bestand voor Windows. Je hebt geen account nodig." },
+      { "if": "!signed", "id": "smartscreen", "title": "Zegt Windows “Windows heeft uw pc beschermd”?", "text": "Dat komt doordat de installer nog niet ondertekend is. Klik in het blauwe venster op **Meer informatie** en daarna op **Toch uitvoeren**." },
+      { "title": "Kies je AI", "text": "Het welkomstscherm laat zien welke AI er al op je pc staat. Heb je nog niets, dan zet *Gratis starten* een gratis model klaar." }
+    ],
+    "moreTitle": "Meer over installeren",
+    "reqTitle": "Systeemeisen",
+    "req": [
+      "Windows 11, 64-bit (x64). Windows 10 alleen met geldige ESU- of LTSC-ondersteuning.",
+      "Internet voor de AI-dienst die je kiest; lokale modellen werken zonder.",
+      "Voor lokale modellen: een snelle pc.",
+      "Voor lokale spraak: ongeveer 800 MB extra (eenmalige download).",
+      "Je gegevens komen in `%APPDATA%\\TeamBot`."
+    ],
+    "phoneTitle": "Op je telefoon",
+    "phoneLead": [
+      {
+        "if": "!iphoneApp",
+        "text": "Er is geen app in de App Store of Play Store. Je zet TeamBot vanuit de browser op je beginscherm, verbonden met je eigen pc:"
+      },
+      {
+        "if": "iphoneApp",
+        "text": "Op een iPhone kan dat met de iPhone-app (nog in test via TestFlight). Op elke telefoon werkt het via de browser, verbonden met je eigen pc:"
+      }
+    ],
+    "phoneSteps": [
+      "Zet **Tailscale** op je pc en je telefoon en log op beide in met hetzelfde account.",
+      "In TeamBot: *Instellingen › Telefoon*. Je krijgt een beveiligd https-adres dat alleen je eigen apparaten bereiken.",
+      "Maak daar een QR-code en scan die met je telefoon.",
+      "Zet de pagina op je beginscherm (iPhone: Safari › Deel › *Zet op beginscherm*). Dan werken meldingen en de microfoon."
+    ],
+    "phoneNote": [
+      { "if": "!phoneAnywhere", "text": "Thuis kan het ook zonder Tailscale, via hetzelfde wifi-netwerk; die verbinding is niet versleuteld en geeft geen meldingen. Je pc moet aan staan en TeamBot moet draaien (in het systeemvak is genoeg)." },
+      { "if": "phoneAnywhere", "text": "Je pc moet aan staan en TeamBot moet draaien (in het systeemvak is genoeg)." }
+    ],
+    "serverTitle": "Eigen server (Docker)",
+    "serverText": "Voor vrienden of een team, op een VPS of thuisserver met Docker. Open daarna `http(s)://<server>:4747` en maak een eigenaar-account.",
+    "serverNote": "Zet hem achter HTTPS (bijvoorbeeld Caddy, Cloudflare Tunnel of Tailscale) voordat je hem op internet zet. Meer in de [handleiding](page:manual).",
+    "sumTitle": "Controleren of het bestand klopt",
+    "sumKnown": "De SHA-256 van `TeamBot-Setup-{version}.exe` is:",
+    "sumPending": "Bij elke release staat `SHA256SUMS.txt` met de SHA-256 van de installer. Zodra de releases online staan, staat die waarde ook hier.",
+    "sumHow": "Controleer het gedownloade bestand in PowerShell, in de map waarin het staat. De uitkomst moet precies gelijk zijn:",
+    "sumMore": "Elke release krijgt ook een ondertekende build-provenance van GitHub en een SBOM (een lijst van alle onderdelen). De licenties van alle onderdelen staan in de app in `THIRD_PARTY_NOTICES.txt`.",
+    "notesTitle": "Nieuw in deze versie",
+    "notes": [
+      { "if": "teams", "text": "**Teams als eigen werkruimte**, bijvoorbeeld per bedrijf, met toegang per bot en sleutels voor alle teams of één." },
+      { "if": "mainBot", "text": "**Een hoofdbot** als vaste voordeur, ook op je telefoon." },
+      { "if": "freeChain", "text": "**Gratis doorwerken**: is een model op, dan gaat gewoon werk verder bij een andere aanbieder of lokaal." },
+      { "if": "pauseImportant", "text": "**Belangrijk werk pauzeert** in plaats van door te gaan op een zwakker model." },
+      { "if": "usageBar", "text": "**De gebruiksbalk** staat altijd onderin, met je limieten en de gratis bronnen." },
+      { "if": "proof", "text": "**Klaar met bewijs**: een tweede controle vóór een taak op klaar gaat." },
+      { "if": "semanticMemory", "text": "**Geheugen voor iedereen**: zoeken op betekenis op je eigen pc, en feiten die veranderen worden opnieuw gecontroleerd." },
+      "**Kleur kiezen**: Standaard of tien kleuren, op al je apparaten.",
+      "**Bewaar als skill**: maak van een goed gesprek een skill voor een bot of het hele team.",
+      { "if": "simpleLayout", "text": "**Een rustigere indeling** met een paar vaste plekken; de rest onder *Geavanceerd*." }
+    ],
+    "notesMore": "Alle wijzigingen staan in [de changelog](repo:CHANGELOG.md) en bij elke release op de releasepagina.",
+    "updTitle": "Bijwerken",
+    "upd": [
+      "TeamBot meldt zelf een nieuwe versie, downloadt pas na jouw klik en installeert bij opnieuw starten. Vóór elke update maakt TeamBot een back-up, en je gegevens blijven staan."
+    ]
+  },
+  "manual": {
+    "toc": "Inhoud",
+    "tableLabel": "Tabel",
+    "source": "Deze pagina komt rechtstreeks uit `docs/HANDLEIDING.md` van versie {version}.",
+    "onlyNlTitle": "",
+    "onlyNl": "",
+    "quickLabel": "Snel naar",
+    "quick": [
+      { "id": "eerste-start", "icon": "download", "title": "Eerste start", "text": "Installeren en je eerste bot" },
+      { "id": "gratis-modellen", "icon": "spark", "title": "Gratis modellen", "text": "Beginnen zonder abonnement" },
+      { "id": "je-telefoon", "icon": "phone", "title": "Je telefoon", "text": "Koppelen met een QR-code" },
+      { "id": "problemen-en-oplossingen", "icon": "question", "title": "Problemen", "text": "Als iets niet werkt" }
+    ]
+  },
+  "opensource": {
+    "repoPendingTitle": "Repository-adres volgt.",
+    "repoPending": "De code staat nog niet op een openbare plek. Dit wordt het adres:",
+    "repoButton": "Naar de repository",
+    "license": {
+      "kicker": "Licentie",
+      "title": "Apache-2.0, echt open",
+      "text": [
+        "TeamBot valt onder de **Apache License 2.0**. Zie [LICENSE](repo:LICENSE) en [NOTICE](repo:NOTICE).",
+        "TeamBot gebruikt alleen permissieve open-source onderdelen; `npm run licenses:check` controleert dat. TeamBot is een eigen implementatie en bevat geen code, teksten of merken van OpenBot, Grok Bot, OpenClaw, Hermes of andere bot-apps.",
+        "Het lettertype Figtree valt onder de SIL Open Font License 1.1 ([licentietekst](asset:fonts/OFL.txt))."
+      ],
+      "points": ["Gebruiken mag, ook zakelijk", "Aanpassen en delen mag", "Lever de licentie en de NOTICE mee", "Een uitgebrachte versie blijft altijd vrij te gebruiken"]
+    },
+    "contribute": {
+      "title": "Meehelpen",
+      "lead": "Elke hulp is welkom, ook een melding of een vertaling.",
+      "items": [
+        { "icon": "question", "title": "Fout of idee?", "text": "Open een issue. Beveiligingsproblemen meld je privé; zie [SECURITY.md](repo:SECURITY.md)." },
+        { "icon": "code", "title": "Code", "text": "Stuur een pull request met tests. Draai eerst `npm run typecheck && npm test`." },
+        { "icon": "translate", "title": "Vertalen", "text": "De teksten per taal staan in `ui/src/i18n/<taal>.json`; `npm run i18n:check` controleert ze." },
+        { "icon": "book", "title": "Architectuur", "text": "Het modulecontract staat in [docs/DEVELOPING.md](repo:docs/DEVELOPING.md)." }
+      ]
+    },
+    "buildTitle": "Zelf bouwen",
+    "buildLead": "Je hebt Node.js 22.13 of nieuwer nodig, en Windows voor de installer.",
+    "buildCode": "npm install\nnpm run build          # interface + server\nnpm run desktop:dev    # de desktop-app starten\nnpm run typecheck && npm test\nnpm run dist:win       # Windows-installer in release/",
+    "buildNote": "Ontwikkelen met live herladen: `npm run dev:server -- --mode desktop` en `npm run dev:ui`. Meer in [README.md](repo:README.md).",
+    "siteTitle": "Deze website",
+    "siteText": "De site staat in de map `website/` van dezelfde repository: één sjabloon, de teksten per taal in JSON en een buildscript zonder framework. De handleiding komt rechtstreeks uit `docs/HANDLEIDING.md`."
+  },
+  "notfound": {
+    "links": "Veelgezochte pagina's"
+  }
+}

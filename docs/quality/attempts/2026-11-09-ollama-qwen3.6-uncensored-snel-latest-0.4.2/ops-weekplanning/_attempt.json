@@ -1,0 +1,8 @@
+{
+ "task": "ops-weekplanning",
+ "final": "Ik heb de weekplanning voor de taken in **planning.csv** weggeschreven.\n\n**Samenvatting:**\n\n| Dag | Tom | Sara |\n|------------|------------------------|---------------------------|\n| ma | Retouren (2u) + Leverancier (1u) | Productfoto's (2u) + Nieuwsbrief (2u) |\n| di | Voorraadtelling (4u) | Productfoto's (2u) |\n| wo | Voorraadtelling (2u) + Kassasysteem (2u) | Nieuwsbrief (1u) + Blog (3u) |\n| do | Kassasysteem (1u) | — (geen beschikbaarheid) |\n| vr | Kassasysteem (1u) | Blog (2u) |\n\nAlle taken worden binnen hun deadline afgerond en de beschikbare uren per dag worden niet overschreden.",
+ "questions": [],
+ "deleted": [],
+ "skipped": [],
+ "status": "ok"
+}

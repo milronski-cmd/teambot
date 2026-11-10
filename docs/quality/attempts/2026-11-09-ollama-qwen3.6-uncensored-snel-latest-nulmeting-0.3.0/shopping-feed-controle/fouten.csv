@@ -1,0 +1,6 @@
+id;veld;probleem
+P3;price;Prijs is leeg of ontbreekt
+P5;gtin;GTIN heeft 5 cijfers, vereist 8, 12, 13 of 14
+P6;title;Titel is leeg of ontbreekt
+P7;availability;Ongeldige waarde: op voorraad (geldige opties: in_stock, out_of_stock, preorder, backorder)
+P8;image_link;image_link is leeg of ontbreekt

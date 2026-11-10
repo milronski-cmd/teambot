@@ -1,0 +1,1 @@
+Het antwoord staat in antwoord.md. Ons beleid zegt niets over levering in België, dus ik heb niets beloofd. Wil jij Mila vragen of we naar België leveren en wat dat kost? Dan kan ik Pieter daarna een definitief antwoord geven.

@@ -1,0 +1,30 @@
+{
+  "numStartups": 42,
+  "installMethod": "native",
+  "oauthAccount": { "emailAddress": "eigenaar@example.nl", "organizationUuid": "00000000-0000-0000-0000-000000000000" },
+  "mcpServers": {
+    "github": {
+      "type": "stdio",
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-github"],
+      "env": { "GITHUB_PERSONAL_ACCESS_TOKEN": "ghp_FIXTURE0000000000000000000000000001", "LOG_LEVEL": "info" }
+    },
+    "sentry": {
+      "type": "http",
+      "url": "https://mcp.sentry.dev/mcp",
+      "headers": { "Authorization": "Bearer sntrys_FIXTURE00000000000000000002" }
+    }
+  },
+  "projects": {
+    "C:/werk/winkel": {
+      "allowedTools": [],
+      "mcpServers": {
+        "postgres": {
+          "command": "npx",
+          "args": ["-y", "@modelcontextprotocol/server-postgres", "postgresql://winkel:Geheim-FIXTURE-0003@localhost/winkel"]
+        }
+      }
+    },
+    "C:/werk/leeg": { "allowedTools": [], "mcpServers": {} }
+  }
+}

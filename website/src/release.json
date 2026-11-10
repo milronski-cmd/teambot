@@ -1,0 +1,23 @@
+{
+  "_uitleg": "Welke functies van 0.4 in deze release zitten. Zet \"on\" op false als een functie niet meegaat: de site laat dan elke tekst met \"if\": \"<naam>\" weg en toont de teksten met \"if\": \"!<naam>\" (het alternatief). Controleer dit vóór elke publicatie tegen docs/STATUS.md.",
+  "features": {
+    "teams": { "on": true, "plan": "B", "wat": "Meerdere teams als afgeschermde werkruimte (eigen map, geheugen en dossiers, teamtabellen, logboek en dagbudget; kanalen, skills en routines gelden voor alle teams), toegang per bot, sleutels voor alle teams of één team, team dupliceren" },
+    "mainBot": { "on": true, "plan": "C", "wat": "Eén hoofdbot als vaste voordeur, ook op de telefoon, die werk doorzet naar teams" },
+    "proof": { "on": true, "plan": "C", "wat": "\"Klaar als\" per taak, controlestap met bewijs vóór \"klaar\", anders \"te controleren\"; een bot die rondjes draait stopt zelf" },
+    "freeChain": { "on": true, "plan": "D", "wat": "Automatisch doorschakelen naar een andere gratis aanbieder en daarna lokaal Ollama" },
+    "pauseImportant": { "on": true, "plan": "D", "wat": "Belangrijke taken pauzeren met reden en hervattijd in plaats van een zwakker model" },
+    "privateWork": { "on": true, "plan": "D", "wat": "Privéwerk gaat alleen naar lokaal Ollama of bronnen die niets bewaren" },
+    "privacyLabels": { "on": true, "plan": "D", "wat": "Label per bron: blijft op je pc / bewaart niets / kan trainen" },
+    "usageBar": { "on": true, "plan": "E", "wat": "Gebruiksbalk altijd onderin de zijbalk (Claude, Codex, gratis bronnen) met resettijd en label schatting" },
+    "weekReserve": { "on": true, "plan": "E", "wat": "Boven de weekreserve (standaard 85% van de Claude- of Codex-week) gaat gewoon werk alvast naar een ander model uit de keten; een streepje op de weekbalk" },
+    "simpleLayout": { "on": true, "plan": "A", "wat": "Vijf vaste knoppen, Geavanceerd verborgen, bot maken in drie vragen" },
+    "semanticMemory": { "on": true, "plan": "F", "wat": "Zoeken op betekenis in het geheugen" },
+    "missedRuns": { "on": true, "plan": "G", "wat": "Routines met bewijs en een melding als iets niet draaide, ook als de pc uit stond" },
+    "trash": { "on": true, "plan": "G", "wat": "Prullenbak voor bestanden die bots wissen of overschrijven" },
+    "catalog": { "on": true, "plan": "H", "wat": "Eigen skills-catalogus op vastgezette versies; een update is een zichtbaar verschil" },
+    "customerSafe": { "on": true, "plan": "K", "wat": "Bots die met klanten praten zeggen dat ze AI zijn en zetten geld en beloftes eerst door naar de eigenaar" },
+    "phoneAnywhere": { "on": false, "plan": "Na 0.4", "wat": "Je telefoon verbindt van overal met je pc, zonder Tailscale of account. Staat uit: nu werkt het thuis via wifi of overal via Tailscale, en dat zegt de site ook." },
+    "iphoneApp": { "on": false, "plan": "I", "wat": "iPhone-app via TestFlight. Staat uit zolang alleen interne testers hem kunnen krijgen; dan wijst de site naar de browser." },
+    "signed": { "on": false, "plan": "-", "wat": "De Windows-installer is ondertekend (docs/IOS_WINDOWS_RELEASE.md, Ondertekenen). Zolang dit uit staat, legt de downloadpagina uit wat je in het SmartScreen-venster aanklikt; zet het aan zodra de gepubliceerde installer ondertekend is." }
+  }
+}

@@ -1,0 +1,13 @@
+{
+  "naam": "Kettingblad Beam 400 koplamp",
+  "sku": "KB-BEAM-400",
+  "lichtsterkte_lumen": 400,
+  "accu_mah": 2000,
+  "opladen": "USB-C",
+  "waterdichtheid": "IPX5",
+  "gewicht_gram": 95,
+  "standen": ["hoog", "laag", "knipper"],
+  "bevestiging": "op de stuurbeugel (22–35 mm), zonder gereedschap",
+  "kleur": "zwart",
+  "prijs_eur": 34.95
+}

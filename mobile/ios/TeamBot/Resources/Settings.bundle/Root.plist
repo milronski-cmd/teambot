@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!-- iOS Settings › TeamBot. The switch can only withdraw consent (ConsentStore.syncWithSettingsApp);
+	     giving consent always happens on the consent screen in the app, after the explanation. -->
+	<key>PreferenceSpecifiers</key>
+	<array>
+		<dict>
+			<key>Type</key>
+			<string>PSGroupSpecifier</string>
+			<key>Title</key>
+			<string>Privacy</string>
+			<key>FooterText</key>
+			<string>Zet dit uit om je toestemming in te trekken. Deze iPhone stuurt dan niets meer naar je bots, tot je in de app opnieuw toestemming geeft. Aanzetten doe je in de app, na de uitleg.</string>
+		</dict>
+		<dict>
+			<key>Type</key>
+			<string>PSToggleSwitchSpecifier</string>
+			<key>Title</key>
+			<string>Berichten naar AI-diensten</string>
+			<key>Key</key>
+			<string>ai_consent</string>
+			<key>DefaultValue</key>
+			<false/>
+		</dict>
+	</array>
+</dict>
+</plist>

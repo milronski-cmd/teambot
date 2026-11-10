@@ -1,0 +1,12 @@
+node_modules/
+dist/
+release/
+.data/
+*.log
+.env
+.env.*
+!.env.example
+THIRD_PARTY_NOTICES.txt
+sbom.cdx.json
+.claude/
+website/dist/

@@ -1,0 +1,8 @@
+{
+ "task": "webshop-voorraad-bijbestellen",
+ "final": "De file `bijbestellen.csv` is aangemaakt en bevat de volgende producten die onder hun minimumvoorraad zitten, gesorteerd van groot naar klein tekort:\n\n- **KB-REAR-50** – Rear 50 achterlicht – tekort: 21\n- **KB-LOCK-01** – Kettingslot Basic – tekort: 10\n- **KB-BEAM-400** – Beam 400 koplamp – tekort: 8\n- **KB-BAG-04** – Stuurtas 4L – tekort: 1\n\nDe andere producten (Beam 800 koplamp, Fietsbel Ding, Minipomp en Fietshandschoenen M) zitten op of boven het minimum en staan dus niet in het bestand.",
+ "questions": [],
+ "deleted": [],
+ "skipped": [],
+ "status": "ok"
+}

@@ -1,0 +1,1 @@
+Ik heb je vraag over verzending naar België beantwoord in antwoord.md

@@ -1,0 +1,8 @@
+{
+ "task": "shopping-feed-controle",
+ "final": "De fouten naar `fouten.csv` geschreven. Ik zie dat het bestand goed is weggeschreven met de juiste fouten.\n\n**Wat ik heb gevonden:**\n\n| id | veld | probleem |\n|------|---------|--------------------------------------------------|\n| P3 | price | het veld price is leeg |\n| P5 | gtin | GTIN heeft 5 cijfers, moet 8, 12, 13 of 14 cijfers zijn |\n| P6 | title | het veld title is leeg |\n| P7 | availability | waarde \"op voorraad\" is geen geldige waarde (moet in_stock, out_of_stock, preorder of backorder zijn) |\n| P8 | image_link | image_link ontbreekt |\n\nHet bestand `fouten.csv` staat nu in de werkmap klaar.",
+ "questions": [],
+ "deleted": [],
+ "skipped": [],
+ "status": "ok"
+}

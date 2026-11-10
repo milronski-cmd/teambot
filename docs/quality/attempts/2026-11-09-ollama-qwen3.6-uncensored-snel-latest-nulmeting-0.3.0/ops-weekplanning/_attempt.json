@@ -1,0 +1,8 @@
+{
+ "task": "ops-weekplanning",
+ "final": "Ik heb de data uit de bestanden gelezen en de planning gemaakt. Hier is de weekplanning:\n\n**Maandag (9 november 2026):**\n- **Sara**: Productfoto's Beam 800 – 4 uur\n- **Tom**: Retouren verwerken – 2 uur, Leverancier bellen – 1 uur\n\n**Dinsdag (10 november 2026):**\n- **Sara**: Productfoto's Beam 800 – 2 uur\n- **Tom**: Voorraadtelling – 4 uur\n\n**Woensdag (11 november 2026):**\n- **Sara**: Nieuwsbrief december – 3 uur\n- **Tom**: Voorraadtelling – 4 uur\n\n**Donderdag (12 november 2026):**\n- **Sara**: Nieuwsbrief december – 1 uur, Kassasysteem bijwerken – 1 uur\n- **Tom**: Voorraadtelling – 2 uur, Kassasysteem bijwerken – 1 uur\n\n**Vrijdag (13 november 2026):**\n- **Sara**: Blog fietsverlichting – 5 uur\n- **Tom**: Kassasysteem bijwerken – 3 uur, Inpaktafel opruimen – 2 uur\n\nDeze planning is nu beschikbaar als tekst hierboven. Als je de planning als CSV-bestand wilt opslaan, kun je deze kopiëren en plakken in een tekstbestand.",
+ "questions": [],
+ "deleted": [],
+ "skipped": [],
+ "status": "ok"
+}

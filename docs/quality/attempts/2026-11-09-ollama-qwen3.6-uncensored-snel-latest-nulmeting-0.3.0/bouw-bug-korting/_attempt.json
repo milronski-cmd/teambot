@@ -1,0 +1,8 @@
+{
+ "task": "bouw-bug-korting",
+ "final": "De fout zat in de `discountRate`-functie: de vergelijkingen gebruikten `>` (groter dan) in plaats van `>=` (groter dan of gelijk aan). Daardoor kwamen hoeveelheden van precies 5 of precies 10 items niet in aanmerking voor korting. Ik heb dit aangepast naar `>=` in beide voorwaarden.",
+ "questions": [],
+ "deleted": [],
+ "skipped": [],
+ "status": "ok"
+}

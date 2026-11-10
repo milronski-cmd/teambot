@@ -1,0 +1,11 @@
+{
+  "name": "@teambot/sdk",
+  "version": "0.1.0",
+  "private": true,
+  "description": "TeamBot package SDK: manifest types, hashing, Ed25519 signing and verification (in-repo, not published).",
+  "license": "Apache-2.0",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  }
+}

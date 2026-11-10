@@ -1,0 +1,113 @@
+name: Release
+
+# Builds the Windows installer, SBOM, notices and the update channel (latest.yml + blockmap) when a version tag is
+# pushed (v*). Code signing (docs/IOS_WINDOWS_RELEASE.md, "Ondertekenen"), one of:
+#  A. Azure Trusted Signing = the build.win.azureSignOptions block in package.json plus the secrets AZURE_TENANT_ID,
+#     AZURE_CLIENT_ID and AZURE_CLIENT_SECRET (electron-builder signs during the build);
+#  B. a certificate file = the secrets WIN_CSC_LINK (base64 .pfx) and WIN_CSC_KEY_PASSWORD;
+#  C. SignPath (free for open source via SignPath Foundation) = the build.win.signtoolOptions block in package.json,
+#     the secret SIGNPATH_API_TOKEN and the variable SIGNPATH_ORGANIZATION_ID: the installer is signed after the
+#     build, then latest.yml and the blockmap are made again for the signed file (npm run release:feed).
+# Without any of them the installer is unsigned (Windows SmartScreen warns; the download page says what to click).
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  id-token: write      # build provenance (Sigstore via GitHub OIDC)
+  attestations: write
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npm test
+      - run: npm run dist:win
+        env:
+          CSC_LINK: ${{ secrets.WIN_CSC_LINK }}
+          CSC_KEY_PASSWORD: ${{ secrets.WIN_CSC_KEY_PASSWORD }}
+          # Only used when package.json has build.win.azureSignOptions (Microsoft Entra app with the signer role).
+          AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+          AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+          AZURE_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
+      # Route C: SignPath signs the finished installer (off until the variable SIGNPATH_ORGANIZATION_ID is set).
+      - name: Unsigned installer for SignPath
+        id: unsigned
+        if: ${{ vars.SIGNPATH_ORGANIZATION_ID != '' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: teambot-unsigned
+          path: release/TeamBot-Setup-*.exe
+      - name: Sign with SignPath
+        if: ${{ vars.SIGNPATH_ORGANIZATION_ID != '' }}
+        uses: signpath/github-action-submit-signing-request@v1
+        with:
+          api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
+          organization-id: ${{ vars.SIGNPATH_ORGANIZATION_ID }}
+          project-slug: ${{ vars.SIGNPATH_PROJECT_SLUG || 'teambot' }}
+          signing-policy-slug: ${{ vars.SIGNPATH_SIGNING_POLICY_SLUG || 'release-signing' }}
+          github-artifact-id: ${{ steps.unsigned.outputs.artifact-id }}
+          wait-for-completion: true
+          output-artifact-directory: release
+      - name: latest.yml and blockmap for the signed installer
+        if: ${{ vars.SIGNPATH_ORGANIZATION_ID != '' }}
+        run: npm run release:feed -- --out release --only-new
+      - name: Update channel matches the installer
+        run: npm run release:feed -- --check
+      - name: Update folder for a static host (latest.yml, installer, blockmap)
+        run: npm run release:feed
+      - name: Secret scan (repo, dist/, the unpacked app and the files inside app.asar)
+        run: npm run secrets:check
+      - name: Checksums
+        shell: pwsh
+        run: Get-ChildItem release/*.exe | ForEach-Object { "$((Get-FileHash $_ -Algorithm SHA256).Hash.ToLower())  $($_.Name)" } | Out-File -Encoding ascii release/SHA256SUMS.txt
+      - name: Release notes (CHANGELOG.md section of this version)
+        run: node scripts/release-notes.mjs > release/RELEASE_NOTES.md
+      - name: Build provenance attestation (SLSA, signed by GitHub)
+        uses: actions/attest-build-provenance@v2
+        with:
+          subject-path: |
+            release/*.exe
+            sbom.cdx.json
+      - name: SBOM attestation
+        uses: actions/attest-sbom@v2
+        with:
+          subject-path: release/*.exe
+          sbom-path: sbom.cdx.json
+      - uses: actions/upload-artifact@v4
+        with:
+          name: teambot-windows
+          path: |
+            release/*.exe
+            release/*.blockmap
+            release/latest.yml
+            release/SHA256SUMS.txt
+            release/RELEASE_NOTES.md
+            sbom.cdx.json
+            THIRD_PARTY_NOTICES.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: teambot-update-feed
+          path: release/feed/
+      # A draft: nothing reaches installed TeamBots until the owner publishes it (GitHub Releases channel).
+      - name: Draft GitHub release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          draft: true
+          body_path: release/RELEASE_NOTES.md
+          files: |
+            release/*.exe
+            release/*.blockmap
+            release/latest.yml
+            release/SHA256SUMS.txt
+            sbom.cdx.json
+            THIRD_PARTY_NOTICES.txt

@@ -1,0 +1,75 @@
+{
+ "server": {
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "io.github.upstash/context7",
+  "description": "Up-to-date docs for AI agents",
+  "title": "Context7",
+  "repository": {
+   "url": "https://github.com/upstash/context7",
+   "source": "github"
+  },
+  "version": "4.5.1",
+  "websiteUrl": "https://context7.com",
+  "icons": [
+   {
+    "src": "https://raw.githubusercontent.com/upstash/context7/master/public/icon.png",
+    "mimeType": "image/png"
+   }
+  ],
+  "packages": [
+   {
+    "registryType": "npm",
+    "identifier": "@upstash/context7-mcp",
+    "version": "4.5.1",
+    "transport": {
+     "type": "stdio"
+    },
+    "environmentVariables": [
+     {
+      "description": "API key for authentication",
+      "isSecret": true,
+      "name": "CONTEXT7_API_KEY"
+     }
+    ]
+   },
+   {
+    "registryType": "mcpb",
+    "identifier": "https://github.com/upstash/context7/releases/download/mcpb-v4.5.1/context7.mcpb",
+    "version": "4.5.1",
+    "fileSha256": "f59289cd0e9e9d79ae9d8557f8488f3f557249378fe44a11a78e7dc24e31288b",
+    "transport": {
+     "type": "stdio"
+    },
+    "environmentVariables": [
+     {
+      "description": "API key for authentication",
+      "isSecret": true,
+      "name": "CONTEXT7_API_KEY"
+     }
+    ]
+   }
+  ],
+  "remotes": [
+   {
+    "type": "streamable-http",
+    "url": "https://mcp.context7.com/mcp",
+    "headers": [
+     {
+      "description": "API key for authentication. Accepts \"Bearer <key>\" or the raw key.",
+      "isSecret": true,
+      "name": "Authorization"
+     }
+    ]
+   }
+  ]
+ },
+ "_meta": {
+  "io.modelcontextprotocol.registry/official": {
+   "status": "active",
+   "statusChangedAt": "2026-11-06T12:18:00.670765Z",
+   "publishedAt": "2026-11-06T12:18:00.670765Z",
+   "updatedAt": "2026-11-06T12:18:00.670765Z",
+   "isLatest": true
+  }
+ }
+}

@@ -1,0 +1,1 @@
+Ik heb de productpagina voor de Vouwslot Pro aangemaakt en opgeslagen in **productpagina.md**. De tekst bevat een titel, een beschrijving van precies 100 woorden en de prijs.

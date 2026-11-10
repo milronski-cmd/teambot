@@ -1,0 +1,3 @@
+Ik heb de inhoud van tekst.md gelezen. Nu ga ik die tekst herschrijven naar eenvoudig Nederlands (B1-niveau) en de resultaten weggenen in b1.md.
+
+Ik heb de tekst herschreven in eenvoudig Nederlands met korte zinnen en geen moeilijke woorden. Het resultaat is opgeslagen in b1.md.

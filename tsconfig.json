@@ -1,0 +1,16 @@
+{
+  "compilerOptions": {
+    "target": "ES2023",
+    "lib": ["ES2023"],
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "strict": true,
+    "skipLibCheck": true,
+    "resolveJsonModule": true,
+    "noEmit": true,
+    "types": ["node"],
+    "noUnusedLocals": false,
+    "isolatedModules": true
+  },
+  "include": ["shared/**/*.ts", "server/**/*.ts", "desktop/**/*.ts", "tests/**/*.ts", "scripts/**/*.ts", "packages/**/*.ts", "cloud/**/*.ts"]
+}

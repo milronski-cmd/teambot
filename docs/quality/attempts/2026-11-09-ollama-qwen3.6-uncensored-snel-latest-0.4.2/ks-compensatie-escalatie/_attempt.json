@@ -1,0 +1,8 @@
+{
+ "task": "ks-compensatie-escalatie",
+ "final": "Het antwoord aan de klant staat in antwoord.md. Het is een concept dat door jou nog moet worden doorgestuurd naar de klant.\n\nSamengevat wat jij nog zelf moet doen:\n1. **Het antwoord versturen** — kopieer de tekst uit `antwoord.md` en stuur deze via het juiste kanaal naar de klant.\n2. **Het bestand wissen** — `antwoord.md` is een conceptbestand dat je in de werkmap achterblijft; wegwerken uit de repo is je taak.",
+ "questions": [],
+ "deleted": [],
+ "skipped": [],
+ "status": "ok"
+}

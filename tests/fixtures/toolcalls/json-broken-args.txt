@@ -1,0 +1,4 @@
+<tool_call>
+{'name': 'read_file', 'arguments': {'path': 'campagnes.csv', // the export from the ads account
+}}
+</tool_call>

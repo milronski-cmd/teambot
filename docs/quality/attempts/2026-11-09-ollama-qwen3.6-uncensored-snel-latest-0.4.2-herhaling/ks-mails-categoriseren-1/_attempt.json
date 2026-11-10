@@ -1,0 +1,8 @@
+{
+ "task": "ks-mails-categoriseren",
+ "final": "De bestanden zijn aangemaakt en bevatten de juiste categorieën. De klantmails zijn als volgt ingedeeld:\n\n- **mail-1.txt** (Lotte): *levering* — vraag over het niet-ontvangen pakket\n- **mail-2.txt** (Ahmed): *retour* — vraag over het retourneren van fietshandschoenen\n- **mail-3.txt** (Ingrid): *betaling* — vraag over een mislukte iDEAL-betaling\n- **mail-4.txt** (Bas): *product* — vraag over de pasvorm van de Beam 400\n- **mail-5.txt** (Fenna): *garantie* — kapotte achterlicht\n- **mail-6.txt** (Daan): *betaling* — vraag over betalen met PayPal\n\nHet bestand `categorieen.csv` met de kolommen `bestand;categorie` staat nu in de werkmap en is klaar voor gebruik.",
+ "questions": [],
+ "deleted": [],
+ "skipped": [],
+ "status": "ok"
+}

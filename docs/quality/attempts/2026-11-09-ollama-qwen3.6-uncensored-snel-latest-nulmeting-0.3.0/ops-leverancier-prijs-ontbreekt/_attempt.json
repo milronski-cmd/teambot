@@ -1,0 +1,8 @@
+{
+ "task": "ops-leverancier-prijs-ontbreekt",
+ "final": "In de offerte.md (offerte nr. LP-2026-118) staan de volgende producten:\n\n- **Rear 50 achterlicht** — € 6,10 per stuk (vanaf 100 stuks)\n- **Beam 800 koplamp** — € 19,80 per stuk (vanaf 50 stuks)\n\nHet product **\"Beam 400\"** komt niet in deze offerte voor. Welk product bedoel je precies? Moet ik het bestand aanpassen met de juiste prijs, of gebruik ik een andere prijs?",
+ "questions": [],
+ "deleted": [],
+ "skipped": [],
+ "status": "ok"
+}

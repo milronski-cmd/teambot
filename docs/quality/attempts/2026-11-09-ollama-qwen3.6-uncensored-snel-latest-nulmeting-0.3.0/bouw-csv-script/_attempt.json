@@ -1,0 +1,8 @@
+{
+ "task": "bouw-csv-script",
+ "final": "Ik heb het script `totals.mjs` aangemaakt en getest op het `orders.csv` bestand. Het script:\n\n1. Leest het CSV-bestand in dat als eerste argument wordt meegegeven\n2. Parseert de kolommen aan de hand van de header\n3. Groepeert de bedragen per land\n4. Rondt af op 2 decimalen\n5. Drukt het resultaat af als JSON\n\n**Testresultaat:**\n```\n{\"NL\":34.95,\"BE\":69.9,\"DE\":49.95}\n```\n\nHet script lijkt correct te werken! 🎉\n\n**Samenvatting:**\n- `totals.mjs` is aangemaakt met Node.js ingebouwde modules (`fs`, `path`)\n- Het script gebruikt `process.argv[2]` voor het invoerbestand\n- Splitsen werkt op komma's (`,`), dus het bestand moet komma-gescheiden zijn\n- Output is JSON met landen als keys en sommen als waarden\n- Bedragen worden afgerond op 2 decimalen via `Math.round(totals[key] * 100) / 100`\n\n**Tip:** Als je het bestand wilt uitbreiden naar andere talen (zoals Duits/Nederlands), kan ik het script aanpassen met een taalparameter.",
+ "questions": [],
+ "deleted": [],
+ "skipped": [],
+ "status": "ok"
+}

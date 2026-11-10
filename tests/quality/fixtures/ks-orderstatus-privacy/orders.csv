@@ -1,0 +1,7 @@
+ordernr;klant;email;status;vervoerder;trackcode
+1039;Kees Jansen;kees.jansen@mail.example;bezorgd;PostNL;3SKTB1039NL
+1040;Yara El Amrani;yara.elamrani@mail.example;verzonden;PostNL;3SKTB1040NL
+1041;Joost Peters;joost.p@mail.example;geannuleerd;;
+1042;Emma de Boer;emma.deboer@mail.example;in behandeling;;
+1043;Sanne Bakker;sanne.bakker@mail.example;verzonden;PostNL;3SKTB1043NL
+1044;Tim Mulder;tim.mulder@mail.example;terugbetaald;PostNL;3SKTB1044NL

@@ -1,0 +1,8 @@
+{
+ "task": "ads-zoektermen-uitsluiten",
+ "final": "Het bestand is nu correct en bevat de volgende 6 zoektermen die moeten worden uitgesloten:\n\n**Op basis van kosten > €15 zonder conversies:**\n1. **fietslamp 1000 lumen** — €22,60 kosten, 0 conversies\n2. **kettingslot** — €18,70 kosten, 0 conversies\n3. **koplamp fiets usb c** — €16,20 kosten, 0 conversies\n\n**Op basis van niet-relevantie (geen fietsverlichting/accessoires):**\n4. **fietslamp vacature** — lijkt op een vacature, geen fietsgerelateerd product\n5. **gratis fietslamp** — wijst op een giveaway, geen fietsaccessoires\n6. **autolamp h7** — autolampen, geen fietsgerelateerde producten\n\nHet bestand `uitsluiten.txt` is opgeslagen en bevat deze zoektermen, één per regel.",
+ "questions": [],
+ "deleted": [],
+ "skipped": [],
+ "status": "ok"
+}

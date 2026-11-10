@@ -1,0 +1,8 @@
+{
+ "task": "bouw-formatprijs",
+ "final": "Ik heb de implementatie van formatPrice geschreven in `src/format.js` en tests toegevoegd in `test/format.test.js`. De tests slagen — alles werkt correct.\n\nDe implementatie:\n- Omzetten centen → euro's\n- Absoluutwaarde nemen en controleren of het negatief is\n- Euro's formatteren met `toLocaleString(\"nl-NL\")` voor de punt-scheiding van duizendtallen\n- Centen aanvullen met nul tot twee cijfers\n- Comma tussen euro's en centen\n- Min-teken behouden als het bedrag negatief is",
+ "questions": [],
+ "deleted": [],
+ "skipped": [],
+ "status": "ok"
+}

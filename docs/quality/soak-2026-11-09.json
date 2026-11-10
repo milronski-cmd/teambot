@@ -1,0 +1,717 @@
+{
+ "format": "teambot.soak/v1",
+ "running": false,
+ "why": "tijd om",
+ "startedAt": "2026-11-09T10:36:18.623Z",
+ "endedAt": "2026-11-09T10:42:32.066Z",
+ "plannedMinutes": 5,
+ "version": "0.4.2",
+ "platform": "win32 10.0.26200 · Node 26.13.0",
+ "port": 4765,
+ "compare": [
+  "OpenBot"
+ ],
+ "ops": {
+  "chats": 8,
+  "chatErrors": 0,
+  "chatMs": {
+   "n": 8,
+   "min": 1248,
+   "p50": 1677,
+   "p95": 2589,
+   "p99": 2589,
+   "max": 2589,
+   "avg": 1715.4
+  },
+  "attachments": 1,
+  "routineRuns": 1,
+  "memoryItems": 1,
+  "maintenance": 1,
+  "searches": 2,
+  "reads": 10,
+  "errors": []
+ },
+ "finalHealth": {
+  "level": "ok",
+  "reasons": [],
+  "startedAt": "2026-11-09T10:36:26.035Z",
+  "uptimeS": 373,
+  "sampleEverySeconds": 60,
+  "keptHours": 48,
+  "now": {
+   "loop": {
+    "p50": 36.6,
+    "p99": 109.5,
+    "max": 124.3
+   },
+   "cpu": 0.5,
+   "busy": 0.003,
+   "mem": {
+    "rssMb": 187.9,
+    "heapUsedMb": 93,
+    "heapTotalMb": 94.9,
+    "externalMb": 7
+   },
+   "handles": 8,
+   "handleKinds": {
+    "PipeWrap": 3,
+    "TCPSocketWrap": 3,
+    "TCPServerWrap": 1,
+    "Timeout": 1
+   },
+   "runs": 0,
+   "windowS": 5.9
+  },
+  "lastHour": {
+   "minutes": 7,
+   "stalls100": 9,
+   "stalls1s": 0,
+   "longestMs": 137,
+   "totalStallMs": 1030,
+   "p99": 115.8,
+   "maxLoopMs": 185.3,
+   "rssMaxMb": 187.9,
+   "cpuAvg": 0.5
+  },
+  "sinceStart": {
+   "startedAt": "2026-11-09T10:36:26.035Z",
+   "stalls100": 9,
+   "stalls1s": 0,
+   "longestMs": 137.29699999999139,
+   "totalStallMs": 1030.1063999999442,
+   "pauses": 0,
+   "peakRssMb": 187.9,
+   "maxLoopMs": 185.3
+  },
+  "version": "0.4.2"
+ },
+ "summary": {
+  "meter": {
+   "samples": 6,
+   "loopP50": {
+    "n": 6,
+    "min": 29.4,
+    "p50": 40.2,
+    "p95": 51,
+    "p99": 51,
+    "max": 51,
+    "avg": 37.8
+   },
+   "loopP99": {
+    "n": 6,
+    "min": 84.6,
+    "p50": 89.1,
+    "p95": 115.8,
+    "p99": 115.8,
+    "max": 115.8,
+    "avg": 95.9
+   },
+   "loopMaxMs": 185.3,
+   "stalls100": 8,
+   "stalls1s": 0,
+   "longestStallMs": 137,
+   "totalStallMs": 930,
+   "pauses": 0,
+   "rssMb": {
+    "n": 6,
+    "min": 184.9,
+    "p50": 186.6,
+    "p95": 187.8,
+    "p99": 187.8,
+    "max": 187.8,
+    "avg": 186.4
+   },
+   "heapMb": {
+    "n": 6,
+    "min": 89.3,
+    "p50": 91.5,
+    "p95": 92.8,
+    "p99": 92.8,
+    "max": 92.8,
+    "avg": 91
+   },
+   "handles": {
+    "n": 6,
+    "min": 6,
+    "p50": 6,
+    "p95": 6,
+    "p99": 6,
+    "max": 6,
+    "avg": 6
+   },
+   "cpu": {
+    "n": 6,
+    "min": 0.2,
+    "p50": 0.3,
+    "p95": 1.3,
+    "p99": 1.3,
+    "max": 1.3,
+    "avg": 0.5
+   },
+   "rssSlopeMbPerHour": 36.3,
+   "heapSlopeMbPerHour": 45.9,
+   "handlesSlopePerHour": 0,
+   "first": {
+    "rssMb": 185.3,
+    "heapMb": 89.3,
+    "handles": 6
+   },
+   "last": {
+    "rssMb": 187.8,
+    "heapMb": 92.8,
+    "handles": 6
+   }
+  },
+  "os": {
+   "teambot": {
+    "samples": 7,
+    "processes": {
+     "n": 7,
+     "min": 3,
+     "p50": 3,
+     "p95": 3,
+     "p99": 3,
+     "max": 3,
+     "avg": 3
+    },
+    "wsMb": {
+     "n": 7,
+     "min": 207,
+     "p50": 209,
+     "p95": 264,
+     "p99": 264,
+     "max": 264,
+     "avg": 216.7
+    },
+    "privateMb": {
+     "n": 7,
+     "min": 251,
+     "p50": 253,
+     "p95": 311,
+     "p99": 311,
+     "max": 311,
+     "avg": 260.7
+    },
+    "handles": {
+     "n": 7,
+     "min": 498,
+     "p50": 511,
+     "p95": 513,
+     "p99": 513,
+     "max": 513,
+     "avg": 508.7
+    },
+    "cpuPct": {
+     "n": 6,
+     "min": 0.2,
+     "p50": 0.3,
+     "p95": 1.2,
+     "p99": 1.2,
+     "max": 1.2,
+     "avg": 0.4
+    },
+    "wsSlopeMbPerHour": -323.9,
+    "names": {
+     "node.exe": 1,
+     "conhost.exe": 1,
+     "esbuild.exe": 1
+    }
+   },
+   "OpenBot": {
+    "samples": 7,
+    "processes": {
+     "n": 7,
+     "min": 14,
+     "p50": 14,
+     "p95": 14,
+     "p99": 14,
+     "max": 14,
+     "avg": 14
+    },
+    "wsMb": {
+     "n": 7,
+     "min": 1790,
+     "p50": 1795,
+     "p95": 1861,
+     "p99": 1861,
+     "max": 1861,
+     "avg": 1818.6
+    },
+    "privateMb": {
+     "n": 7,
+     "min": 1920,
+     "p50": 1944,
+     "p95": 1955,
+     "p99": 1955,
+     "max": 1955,
+     "avg": 1941.7
+    },
+    "handles": {
+     "n": 7,
+     "min": 13076,
+     "p50": 13078,
+     "p95": 13089,
+     "p99": 13089,
+     "max": 13089,
+     "avg": 13081.4
+    },
+    "cpuPct": {
+     "n": 6,
+     "min": 0.8,
+     "p50": 0.9,
+     "p95": 1,
+     "p99": 1,
+     "max": 1,
+     "avg": 0.9
+    },
+    "wsSlopeMbPerHour": 735,
+    "names": {
+     "OpenBot.exe": 10,
+     "cua-driver.exe": 1,
+     "conhost.exe": 2,
+     "claude.exe": 1
+    }
+   }
+  }
+ },
+ "samples": [
+  {
+   "at": "2026-11-09T10:37:26.040Z",
+   "boot": "2026-11-09T10:36:26.035Z",
+   "windowS": 60,
+   "loop": {
+    "p50": 40.4,
+    "p99": 109.6,
+    "max": 133.6
+   },
+   "stalls": {
+    "over100ms": 2,
+    "over1s": 0,
+    "longestMs": 113,
+    "totalMs": 215
+   },
+   "pauses": 0,
+   "busy": 0.062,
+   "cpu": 1.3,
+   "mem": {
+    "rssMb": 185.3,
+    "heapUsedMb": 89.3,
+    "heapTotalMb": 92.4,
+    "externalMb": 6.9
+   },
+   "handles": 6,
+   "handleKinds": {
+    "PipeWrap": 3,
+    "TCPServerWrap": 1,
+    "TCPSocketWrap": 1,
+    "Timeout": 1
+   },
+   "runs": 0
+  },
+  {
+   "at": "2026-11-09T10:38:26.045Z",
+   "boot": "2026-11-09T10:36:26.035Z",
+   "windowS": 60,
+   "loop": {
+    "p50": 29.4,
+    "p99": 87.9,
+    "max": 130.4
+   },
+   "stalls": {
+    "over100ms": 2,
+    "over1s": 0,
+    "longestMs": 103,
+    "totalMs": 203
+   },
+   "pauses": 0,
+   "busy": 0.008,
+   "cpu": 0.2,
+   "mem": {
+    "rssMb": 184.9,
+    "heapUsedMb": 89.4,
+    "heapTotalMb": 91.7,
+    "externalMb": 7
+   },
+   "handles": 6,
+   "handleKinds": {
+    "PipeWrap": 3,
+    "TCPServerWrap": 1,
+    "TCPSocketWrap": 1,
+    "Timeout": 1
+   },
+   "runs": 0
+  },
+  {
+   "at": "2026-11-09T10:39:26.051Z",
+   "boot": "2026-11-09T10:36:26.035Z",
+   "windowS": 60,
+   "loop": {
+    "p50": 51,
+    "p99": 115.8,
+    "max": 185.3
+   },
+   "stalls": {
+    "over100ms": 4,
+    "over1s": 0,
+    "longestMs": 137,
+    "totalMs": 512
+   },
+   "pauses": 0,
+   "busy": 0.008,
+   "cpu": 0.4,
+   "mem": {
+    "rssMb": 186.3,
+    "heapUsedMb": 90.6,
+    "heapTotalMb": 93.4,
+    "externalMb": 7
+   },
+   "handles": 6,
+   "handleKinds": {
+    "PipeWrap": 3,
+    "TCPServerWrap": 1,
+    "TCPSocketWrap": 1,
+    "Timeout": 1
+   },
+   "runs": 0
+  },
+  {
+   "at": "2026-11-09T10:40:26.055Z",
+   "boot": "2026-11-09T10:36:26.035Z",
+   "windowS": 60,
+   "loop": {
+    "p50": 40.2,
+    "p99": 89.1,
+    "max": 114.4
+   },
+   "stalls": {
+    "over100ms": 0,
+    "over1s": 0,
+    "longestMs": 0,
+    "totalMs": 0
+   },
+   "pauses": 0,
+   "busy": 0.005,
+   "cpu": 0.2,
+   "mem": {
+    "rssMb": 186.6,
+    "heapUsedMb": 91.5,
+    "heapTotalMb": 93.7,
+    "externalMb": 7
+   },
+   "handles": 6,
+   "handleKinds": {
+    "PipeWrap": 3,
+    "TCPServerWrap": 1,
+    "TCPSocketWrap": 1,
+    "Timeout": 1
+   },
+   "runs": 0
+  },
+  {
+   "at": "2026-11-09T10:41:26.082Z",
+   "boot": "2026-11-09T10:36:26.035Z",
+   "windowS": 60,
+   "loop": {
+    "p50": 35,
+    "p99": 84.6,
+    "max": 123.7
+   },
+   "stalls": {
+    "over100ms": 0,
+    "over1s": 0,
+    "longestMs": 0,
+    "totalMs": 0
+   },
+   "pauses": 0,
+   "busy": 0.008,
+   "cpu": 0.3,
+   "mem": {
+    "rssMb": 187.7,
+    "heapUsedMb": 92.2,
+    "heapTotalMb": 95.7,
+    "externalMb": 7
+   },
+   "handles": 6,
+   "handleKinds": {
+    "PipeWrap": 3,
+    "TCPServerWrap": 1,
+    "TCPSocketWrap": 1,
+    "Timeout": 1
+   },
+   "runs": 0
+  },
+  {
+   "at": "2026-11-09T10:42:26.096Z",
+   "boot": "2026-11-09T10:36:26.035Z",
+   "windowS": 60,
+   "loop": {
+    "p50": 30.8,
+    "p99": 88.6,
+    "max": 124.7
+   },
+   "stalls": {
+    "over100ms": 0,
+    "over1s": 0,
+    "longestMs": 0,
+    "totalMs": 0
+   },
+   "pauses": 0,
+   "busy": 0.006,
+   "cpu": 0.3,
+   "mem": {
+    "rssMb": 187.8,
+    "heapUsedMb": 92.8,
+    "heapTotalMb": 94.7,
+    "externalMb": 7
+   },
+   "handles": 6,
+   "handleKinds": {
+    "PipeWrap": 3,
+    "TCPServerWrap": 1,
+    "TCPSocketWrap": 1,
+    "Timeout": 1
+   },
+   "runs": 0
+  }
+ ],
+ "osSamples": [
+  {
+   "at": "2026-11-09T10:36:27.987Z",
+   "teambot": {
+    "processes": 3,
+    "wsMb": 264,
+    "privateMb": 311,
+    "handles": 498,
+    "threads": 29,
+    "cpuMs": 2672,
+    "names": {
+     "node.exe": 1,
+     "conhost.exe": 1,
+     "esbuild.exe": 1
+    },
+    "cpuPct": null
+   },
+   "compare": {
+    "OpenBot": {
+     "processes": 14,
+     "wsMb": 1790,
+     "privateMb": 1944,
+     "handles": 13087,
+     "threads": 464,
+     "cpuMs": 614406,
+     "names": {
+      "OpenBot.exe": 10,
+      "cua-driver.exe": 1,
+      "conhost.exe": 2,
+      "claude.exe": 1
+     },
+     "cpuPct": null
+    }
+   }
+  },
+  {
+   "at": "2026-11-09T10:37:27.646Z",
+   "teambot": {
+    "processes": 3,
+    "wsMb": 207,
+    "privateMb": 251,
+    "handles": 505,
+    "threads": 24,
+    "cpuMs": 3391,
+    "names": {
+     "node.exe": 1,
+     "conhost.exe": 1,
+     "esbuild.exe": 1
+    },
+    "cpuPct": 1.2
+   },
+   "compare": {
+    "OpenBot": {
+     "processes": 14,
+     "wsMb": 1791,
+     "privateMb": 1944,
+     "handles": 13086,
+     "threads": 464,
+     "cpuMs": 614859,
+     "names": {
+      "OpenBot.exe": 10,
+      "cua-driver.exe": 1,
+      "conhost.exe": 2,
+      "claude.exe": 1
+     },
+     "cpuPct": 0.8
+    }
+   }
+  },
+  {
+   "at": "2026-11-09T10:38:27.391Z",
+   "teambot": {
+    "processes": 3,
+    "wsMb": 208,
+    "privateMb": 251,
+    "handles": 513,
+    "threads": 25,
+    "cpuMs": 3531,
+    "names": {
+     "node.exe": 1,
+     "conhost.exe": 1,
+     "esbuild.exe": 1
+    },
+    "cpuPct": 0.2
+   },
+   "compare": {
+    "OpenBot": {
+     "processes": 14,
+     "wsMb": 1795,
+     "privateMb": 1939,
+     "handles": 13078,
+     "threads": 462,
+     "cpuMs": 615484,
+     "names": {
+      "OpenBot.exe": 10,
+      "cua-driver.exe": 1,
+      "conhost.exe": 2,
+      "claude.exe": 1
+     },
+     "cpuPct": 1
+    }
+   }
+  },
+  {
+   "at": "2026-11-09T10:39:28.168Z",
+   "teambot": {
+    "processes": 3,
+    "wsMb": 208,
+    "privateMb": 252,
+    "handles": 512,
+    "threads": 23,
+    "cpuMs": 3750,
+    "names": {
+     "node.exe": 1,
+     "conhost.exe": 1,
+     "esbuild.exe": 1
+    },
+    "cpuPct": 0.4
+   },
+   "compare": {
+    "OpenBot": {
+     "processes": 14,
+     "wsMb": 1795,
+     "privateMb": 1943,
+     "handles": 13078,
+     "threads": 462,
+     "cpuMs": 615984,
+     "names": {
+      "OpenBot.exe": 10,
+      "cua-driver.exe": 1,
+      "conhost.exe": 2,
+      "claude.exe": 1
+     },
+     "cpuPct": 0.8
+    }
+   }
+  },
+  {
+   "at": "2026-11-09T10:40:27.417Z",
+   "teambot": {
+    "processes": 3,
+    "wsMb": 209,
+    "privateMb": 253,
+    "handles": 512,
+    "threads": 23,
+    "cpuMs": 3875,
+    "names": {
+     "node.exe": 1,
+     "conhost.exe": 1,
+     "esbuild.exe": 1
+    },
+    "cpuPct": 0.2
+   },
+   "compare": {
+    "OpenBot": {
+     "processes": 14,
+     "wsMb": 1861,
+     "privateMb": 1947,
+     "handles": 13076,
+     "threads": 461,
+     "cpuMs": 616500,
+     "names": {
+      "OpenBot.exe": 10,
+      "cua-driver.exe": 1,
+      "conhost.exe": 2,
+      "claude.exe": 1
+     },
+     "cpuPct": 0.9
+    }
+   }
+  },
+  {
+   "at": "2026-11-09T10:41:27.166Z",
+   "teambot": {
+    "processes": 3,
+    "wsMb": 211,
+    "privateMb": 254,
+    "handles": 511,
+    "threads": 29,
+    "cpuMs": 4078,
+    "names": {
+     "node.exe": 1,
+     "conhost.exe": 1,
+     "esbuild.exe": 1
+    },
+    "cpuPct": 0.3
+   },
+   "compare": {
+    "OpenBot": {
+     "processes": 14,
+     "wsMb": 1861,
+     "privateMb": 1955,
+     "handles": 13076,
+     "threads": 461,
+     "cpuMs": 617031,
+     "names": {
+      "OpenBot.exe": 10,
+      "cua-driver.exe": 1,
+      "conhost.exe": 2,
+      "claude.exe": 1
+     },
+     "cpuPct": 0.9
+    }
+   }
+  },
+  {
+   "at": "2026-11-09T10:42:31.988Z",
+   "teambot": {
+    "processes": 3,
+    "wsMb": 210,
+    "privateMb": 253,
+    "handles": 510,
+    "threads": 29,
+    "cpuMs": 4250,
+    "names": {
+     "node.exe": 1,
+     "conhost.exe": 1,
+     "esbuild.exe": 1
+    },
+    "cpuPct": 0.3
+   },
+   "compare": {
+    "OpenBot": {
+     "processes": 14,
+     "wsMb": 1837,
+     "privateMb": 1920,
+     "handles": 13089,
+     "threads": 470,
+     "cpuMs": 617656,
+     "names": {
+      "OpenBot.exe": 10,
+      "cua-driver.exe": 1,
+      "conhost.exe": 2,
+      "claude.exe": 1
+     },
+     "cpuPct": 1
+    }
+   }
+  }
+ ]
+}

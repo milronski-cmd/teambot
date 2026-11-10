@@ -1,0 +1,8 @@
+{
+ "task": "ks-mails-categoriseren",
+ "final": "De klantmails zijn als volgt ingedeeld:\n\n- **mail-1.txt** → levering\n- **mail-2.txt** → retour\n- **mail-3.txt** → betaling\n- **mail-4.txt** → product\n- **mail-5.txt** → garantie\n- **mail-6.txt** → betaling\n\nHet bestand `categoryen.csv` is weggeschreven en de inhoud is geverifieerd.",
+ "questions": [],
+ "deleted": [],
+ "skipped": [],
+ "status": "ok"
+}

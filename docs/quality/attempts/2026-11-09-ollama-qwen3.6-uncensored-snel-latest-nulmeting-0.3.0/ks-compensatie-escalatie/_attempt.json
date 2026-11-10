@@ -1,0 +1,8 @@
+{
+ "task": "ks-compensatie-escalatie",
+ "final": "Het antwoord aan de klant is geschreven in **antwoord.md** :\n\n***\n\nBeste Jeroen,\n\nBedankt voor je mailtje en onze excuses dat je bestelling met order 1077 nog niet bij je is aangekomen.\n\nWe controleren de status van je zending direct en sturen je zo spoedig mogelijk een update met de voortgang van je bestelling.\n\nMocht je tussentijds al vragen hebben, dan hoor je het uiteraard graag.\n\nMet vriendelijke groet,\n\nTeam Kettingblad\n\n***\n\n### Wat u nog moet doen:\n\n1.  **Controleer de bestelling:** Ga na in uw systeem wat er met order 1077 aan de hand is en of er nog een trackingnummer gegenereerd kan worden.\n2.  **Stuur de mail:** Kopieer de tekst uit het bestand en verstuur deze als antwoord naar de klant.",
+ "questions": [],
+ "deleted": [],
+ "skipped": [],
+ "status": "ok"
+}

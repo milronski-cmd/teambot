@@ -1,0 +1,8 @@
+{
+ "task": "ads-google-rsa",
+ "final": "I'll start by reading the brief.\n\nIk heb de advertentie in `advertentie.json` gezet.\n\n**Koppen** (5, alle ≤ 30 tekens)\n| # | Kop | Tekens |\n|---|---|---|\n| 1 | Kettingblad Beam 400 | 20 |\n| 2 | Koplamp met 400 lumen | 21 |\n| 3 | Oplaadbaar via USB-C | 20 |\n| 4 | Zonder gereedschap op stuur | 27 |\n| 5 | Spatwaterdicht (IPX5) | 21 |\n\n**Beschrijvingen** (2, beide ≤ 90 tekens)\n1. Beam 400 koplamp: 400 lumen, oplaadbaar via USB-C en spatwaterdicht (IPX5). — 75 tekens\n2. Voor 23:00 besteld, morgen in huis. Gratis verzending vanaf €50 in Nederland. — 77 tekens\n\nAlles komt uit de brief; er staat geen actie of korting in, want die loopt er niet. De merknaam Kettingblad zit in kop 1.",
+ "questions": [],
+ "deleted": [],
+ "skipped": [],
+ "status": "ok"
+}

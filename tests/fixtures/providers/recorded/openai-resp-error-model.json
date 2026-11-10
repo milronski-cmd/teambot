@@ -1,0 +1,35 @@
+{
+  "source": "recorded live on 2026-11-07 by tests/e2e/providers-live.mjs",
+  "note": "Unknown model via the Responses API (free: rejected before any tokens)",
+  "entries": [
+    {
+      "url": "https://api.openai.com/v1/responses",
+      "method": "POST",
+      "request": {
+        "model": "gpt-teambot-bestaat-niet",
+        "stream": true,
+        "store": false,
+        "input": [
+          {
+            "role": "user",
+            "content": [
+              {
+                "type": "input_text",
+                "text": "x"
+              }
+            ]
+          }
+        ],
+        "reasoning": {
+          "summary": "auto"
+        },
+        "include": [
+          "reasoning.encrypted_content"
+        ]
+      },
+      "status": 404,
+      "contentType": "application/json",
+      "body": "{\n  \"error\": {\n    \"message\": \"The model `gpt-teambot-bestaat-niet` does not exist or you do not have access to it.\",\n    \"type\": \"invalid_request_error\",\n    \"param\": null,\n    \"code\": \"model_not_found\"\n  }\n}"
+    }
+  ]
+}

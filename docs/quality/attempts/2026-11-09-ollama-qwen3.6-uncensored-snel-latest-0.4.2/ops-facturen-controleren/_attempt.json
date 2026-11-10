@@ -1,0 +1,8 @@
+{
+ "task": "ops-facturen-controleren",
+ "final": "Ik heb de vergelijking gemaakt en **afwijkingen.csv** weggeschreven. Hier is de samenvatting:\n\n**Drie afwijkingen gevonden:**\n\n| Factuur | Reden |\n|---------|-------|\n| **F-2031** | Bedrag verschilt van inkooporder PO-501: factuur € 1.520 vs. inkooporder € 1.250 |\n| **F-2034** | Geen bestaande inkooporder aanwezig (leverancier Fietsfix heeft geen gekoppelde order) |\n| **F-2036** | Dubbele factuur – PO-503 is al verwerkt via F-2032 |\n\nDe overige vier facturen (F-2030, F-2032, F-2033, F-2035) komen overeen met hun inkooporders.\n\nHet bestand **afwijkingen.csv** staat in je werkmap.",
+ "questions": [],
+ "deleted": [],
+ "skipped": [],
+ "status": "ok"
+}

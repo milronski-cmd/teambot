@@ -1,0 +1,84 @@
+{
+  "source": "recorded live on 2026-11-07 by tests/e2e/providers-live.mjs",
+  "note": "Answer after tool results",
+  "entries": [
+    {
+      "url": "https://api.openai.com/v1/chat/completions",
+      "method": "POST",
+      "request": {
+        "model": "gpt-6-luna",
+        "stream": true,
+        "messages": [
+          {
+            "role": "system",
+            "content": "Antwoord kort, in het Nederlands."
+          },
+          {
+            "role": "user",
+            "content": "Wat is het weer in Amsterdam en in Utrecht? Roep de tool voor beide steden tegelijk aan."
+          },
+          {
+            "role": "assistant",
+            "content": null,
+            "tool_calls": [
+              {
+                "id": "call_3vhToj9Z6mHxCpo0x4ywN9pI",
+                "type": "function",
+                "function": {
+                  "name": "get_weather",
+                  "arguments": "{\"city\":\"Amsterdam\"}"
+                }
+              },
+              {
+                "id": "call_Ym3lvZyGXG5yHxlTVIM4qsao",
+                "type": "function",
+                "function": {
+                  "name": "get_weather",
+                  "arguments": "{\"city\":\"Utrecht\"}"
+                }
+              }
+            ]
+          },
+          {
+            "role": "tool",
+            "tool_call_id": "call_3vhToj9Z6mHxCpo0x4ywN9pI",
+            "content": "Zonnig, 21 graden in Amsterdam."
+          },
+          {
+            "role": "tool",
+            "tool_call_id": "call_Ym3lvZyGXG5yHxlTVIM4qsao",
+            "content": "Zonnig, 21 graden in Utrecht."
+          }
+        ],
+        "tools": [
+          {
+            "type": "function",
+            "function": {
+              "name": "get_weather",
+              "description": "Geeft het weer in een stad.",
+              "parameters": {
+                "type": "object",
+                "properties": {
+                  "city": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "city"
+                ]
+              }
+            }
+          }
+        ],
+        "stream_options": {
+          "include_usage": true
+        },
+        "reasoning_effort": "none",
+        "max_completion_tokens": 600
+      },
+      "status": 200,
+      "contentType": "text/event-stream; charset=utf-8",
+      "body": "data: {\"id\":\"chatcmpl-EhRYV0utEp6ZE1ktqAnpDAlv7tRwL\",\"object\":\"chat.completion.chunk\",\"created\":1794022735,\"model\":\"gpt-6-luna\",\"service_tier\":\"default\",\"system_fingerprint\":null,\"choices\":[{\"index\":0,\"delta\":{\"role\":\"assistant\",\"content\":\"\",\"refusal\":null},\"finish_reason\":null}],\"usage\":null,\"obfuscation\":\"\"}\n\ndata: {\"id\":\"chatcmpl-EhRYV0utEp6ZE1ktqAnpDAlv7tRwL\",\"object\":\"chat.completion.chunk\",\"created\":1794022735,\"model\":\"gpt-6-luna\",\"service_tier\":\"default\",\"system_fingerprint\":null,\"choices\":[{\"index\":0,\"delta\":{\"content\":\"In\"},\"finish_reason\":null}],\"usage\":null,\"obfuscation\":\"\"}\n\ndata: {\"id\":\"chatcmpl-EhRYV0utEp6ZE1ktqAnpDAlv7tRwL\",\"object\":\"chat.completion.chunk\",\"created\":1794022735,\"model\":\"gpt-6-luna\",\"service_tier\":\"default\",\"system_fingerprint\":null,\"choices\":[{\"index\":0,\"delta\":{\"content\":\" Amsterdam\"},\"finish_reason\":null}],\"usage\":null,\"obfuscation\":\"3CUSh23L\"}\n\ndata: {\"id\":\"chatcmpl-EhRYV0utEp6ZE1ktqAnpDAlv7tRwL\",\"object\":\"chat.completion.chunk\",\"created\":1794022735,\"model\":\"gpt-6-luna\",\"service_tier\":\"default\",\"system_fingerprint\":null,\"choices\":[{\"index\":0,\"delta\":{\"content\":\" is\"},\"finish_reason\":null}],\"usage\":null,\"obfuscation\":\"u7Dr2D2TK5rtJsS\"}\n\ndata: {\"id\":\"chatcmpl-EhRYV0utEp6ZE1ktqAnpDAlv7tRwL\",\"object\":\"chat.completion.chunk\",\"created\":1794022735,\"model\":\"gpt-6-luna\",\"service_tier\":\"default\",\"system_fingerprint\":null,\"choices\":[{\"index\":0,\"delta\":{\"content\":\" het\"},\"finish_reason\":null}],\"usage\":null,\"obfuscation\":\"Nf2wtu0oGG3Bb4\"}\n\ndata: {\"id\":\"chatcmpl-EhRYV0utEp6ZE1ktqAnpDAlv7tRwL\",\"object\":\"chat.completion.chunk\",\"created\":1794022735,\"model\":\"gpt-6-luna\",\"service_tier\":\"default\",\"system_fingerprint\":null,\"choices\":[{\"index\":0,\"delta\":{\"content\":\" zonn\"},\"finish_reason\":null}],\"usage\":null,\"obfuscation\":\"Mi6b20UIDCy2d\"}\n\ndata: {\"id\":\"chatcmpl-EhRYV0utEp6ZE1ktqAnpDAlv7tRwL\",\"object\":\"chat.completion.chunk\",\"created\":1794022735,\"model\":\"gpt-6-luna\",\"service_tier\":\"default\",\"system_fingerprint\":null,\"choices\":[{\"index\":0,\"delta\":{\"content\":\"ig\"},\"finish_reason\":null}],\"usage\":null,\"obfuscation\":\"\"}\n\ndata: {\"id\":\"chatcmpl-EhRYV0utEp6ZE1ktqAnpDAlv7tRwL\",\"object\":\"chat.completion.chunk\",\"created\":1794022735,\"model\":\"gpt-6-luna\",\"service_tier\":\"default\",\"system_fingerprint\":null,\"choices\":[{\"index\":0,\"delta\":{\"content\":\" en\"},\"finish_reason\":null}],\"usage\":null,\"obfuscation\":\"GuMsVpRePnZfw1u\"}\n\ndata: {\"id\":\"chatcmpl-EhRYV0utEp6ZE1ktqAnpDAlv7tRwL\",\"object\":\"chat.completion.chunk\",\"created\":1794022735,\"model\":\"gpt-6-luna\",\"service_tier\":\"default\",\"system_fingerprint\":null,\"choices\":[{\"index\":0,\"delta\":{\"content\":\" \"},\"finish_reason\":null}],\"usage\":null,\"obfuscation\":\"F\"}\n\ndata: {\"id\":\"chatcmpl-EhRYV0utEp6ZE1ktqAnpDAlv7tRwL\",\"object\":\"chat.completion.chunk\",\"created\":1794022735,\"model\":\"gpt-6-luna\",\"service_tier\":\"default\",\"system_fingerprint\":null,\"choices\":[{\"index\":0,\"delta\":{\"content\":\"21\"},\"finish_reason\":null}],\"usage\":null,\"obfuscation\":\"\"}\n\ndata: {\"id\":\"chatcmpl-EhRYV0utEp6ZE1ktqAnpDAlv7tRwL\",\"object\":\"chat.completion.chunk\",\"created\":1794022735,\"model\":\"gpt-6-luna\",\"service_tier\":\"default\",\"system_fingerprint\":null,\"choices\":[{\"index\":0,\"delta\":{\"content\":\" graden\"},\"finish_reason\":null}],\"usage\":null,\"obfuscation\":\"uEQ1OW6TjZR\"}\n\ndata: {\"id\":\"chatcmpl-EhRYV0utEp6ZE1ktqAnpDAlv7tRwL\",\"object\":\"chat.completion.chunk\",\"created\":1794022735,\"model\":\"gpt-6-luna\",\"service_tier\":\"default\",\"system_fingerprint\":null,\"choices\":[{\"index\":0,\"delta\":{\"content\":\".\"},\"finish_reason\":null}],\"usage\":null,\"obfuscation\":\"v\"}\n\ndata: {\"id\":\"chatcmpl-EhRYV0utEp6ZE1ktqAnpDAlv7tRwL\",\"object\":\"chat.completion.chunk\",\"created\":1794022735,\"model\":\"gpt-6-luna\",\"service_tier\":\"default\",\"system_fingerprint\":null,\"choices\":[{\"index\":0,\"delta\":{\"content\":\" In\"},\"finish_reason\":null}],\"usage\":null,\"obfuscation\":\"qm2Q9vxMqSmeTYM\"}\n\ndata: {\"id\":\"chatcmpl-EhRYV0utEp6ZE1ktqAnpDAlv7tRwL\",\"object\":\"chat.completion.chunk\",\"created\":1794022735,\"model\":\"gpt-6-luna\",\"service_tier\":\"default\",\"system_fingerprint\":null,\"choices\":[{\"index\":0,\"delta\":{\"content\":\" Utrecht\"},\"finish_reason\":null}],\"usage\":null,\"obfuscation\":\"PV3G047ERS\"}\n\ndata: {\"id\":\"chatcmpl-EhRYV0utEp6ZE1ktqAnpDAlv7tRwL\",\"object\":\"chat.completion.chunk\",\"created\":1794022735,\"model\":\"gpt-6-luna\",\"service_tier\":\"default\",\"system_fingerprint\":null,\"choices\":[{\"index\":0,\"delta\":{\"content\":\" ook\"},\"finish_reason\":null}],\"usage\":null,\"obfuscation\":\"S2ZC537afTZF0i\"}\n\ndata: {\"id\":\"chatcmpl-EhRYV0utEp6ZE1ktqAnpDAlv7tRwL\",\"object\":\"chat.completion.chunk\",\"created\":1794022735,\"model\":\"gpt-6-luna\",\"service_tier\":\"default\",\"system_fingerprint\":null,\"choices\":[{\"index\":0,\"delta\":{\"content\":\":\"},\"finish_reason\":null}],\"usage\":null,\"obfuscation\":\"B\"}\n\ndata: {\"id\":\"chatcmpl-EhRYV0utEp6ZE1ktqAnpDAlv7tRwL\",\"object\":\"chat.completion.chunk\",\"created\":1794022735,\"model\":\"gpt-6-luna\",\"service_tier\":\"default\",\"system_fingerprint\":null,\"choices\":[{\"index\":0,\"delta\":{\"content\":\" zonn\"},\"finish_reason\":null}],\"usage\":null,\"obfuscation\":\"Kt52l0faxNh7u\"}\n\ndata: {\"id\":\"chatcmpl-EhRYV0utEp6ZE1ktqAnpDAlv7tRwL\",\"object\":\"chat.completion.chunk\",\"created\":1794022735,\"model\":\"gpt-6-luna\",\"service_tier\":\"default\",\"system_fingerprint\":null,\"choices\":[{\"index\":0,\"delta\":{\"content\":\"ig\"},\"finish_reason\":null}],\"usage\":null,\"obfuscation\":\"\"}\n\ndata: {\"id\":\"chatcmpl-EhRYV0utEp6ZE1ktqAnpDAlv7tRwL\",\"object\":\"chat.completion.chunk\",\"created\":1794022735,\"model\":\"gpt-6-luna\",\"service_tier\":\"default\",\"system_fingerprint\":null,\"choices\":[{\"index\":0,\"delta\":{\"content\":\" en\"},\"finish_reason\":null}],\"usage\":null,\"obfuscation\":\"cALrTb5Nwdtvnmx\"}\n\ndata: {\"id\":\"chatcmpl-EhRYV0utEp6ZE1ktqAnpDAlv7tRwL\",\"object\":\"chat.completion.chunk\",\"created\":1794022735,\"model\":\"gpt-6-luna\",\"service_tier\":\"default\",\"system_fingerprint\":null,\"choices\":[{\"index\":0,\"delta\":{\"content\":\" \"},\"finish_reason\":null}],\"usage\":null,\"obfuscation\":\"A\"}\n\ndata: {\"id\":\"chatcmpl-EhRYV0utEp6ZE1ktqAnpDAlv7tRwL\",\"object\":\"chat.completion.chunk\",\"created\":1794022735,\"model\":\"gpt-6-luna\",\"service_tier\":\"default\",\"system_fingerprint\":null,\"choices\":[{\"index\":0,\"delta\":{\"content\":\"21\"},\"finish_reason\":null}],\"usage\":null,\"obfuscation\":\"\"}\n\ndata: {\"id\":\"chatcmpl-EhRYV0utEp6ZE1ktqAnpDAlv7tRwL\",\"object\":\"chat.completion.chunk\",\"created\":1794022735,\"model\":\"gpt-6-luna\",\"service_tier\":\"default\",\"system_fingerprint\":null,\"choices\":[{\"index\":0,\"delta\":{\"content\":\" graden\"},\"finish_reason\":null}],\"usage\":null,\"obfuscation\":\"TRyqlkAnIhR\"}\n\ndata: {\"id\":\"chatcmpl-EhRYV0utEp6ZE1ktqAnpDAlv7tRwL\",\"object\":\"chat.completion.chunk\",\"created\":1794022735,\"model\":\"gpt-6-luna\",\"service_tier\":\"default\",\"system_fingerprint\":null,\"choices\":[{\"index\":0,\"delta\":{\"content\":\".\"},\"finish_reason\":null}],\"usage\":null,\"obfuscation\":\"a\"}\n\ndata: {\"id\":\"chatcmpl-EhRYV0utEp6ZE1ktqAnpDAlv7tRwL\",\"object\":\"chat.completion.chunk\",\"created\":1794022735,\"model\":\"gpt-6-luna\",\"service_tier\":\"default\",\"system_fingerprint\":null,\"choices\":[{\"index\":0,\"delta\":{},\"finish_reason\":\"stop\"}],\"usage\":null,\"obfuscation\":\"02X8VCYun2dx\"}\n\ndata: {\"id\":\"chatcmpl-EhRYV0utEp6ZE1ktqAnpDAlv7tRwL\",\"object\":\"chat.completion.chunk\",\"created\":1794022735,\"model\":\"gpt-6-luna\",\"service_tier\":\"default\",\"system_fingerprint\":null,\"choices\":[],\"usage\":{\"prompt_tokens\":241,\"completion_tokens\":25,\"total_tokens\":266,\"prompt_tokens_details\":{\"cached_tokens\":0,\"cache_write_tokens\":0,\"audio_tokens\":0},\"completion_tokens_details\":{\"reasoning_tokens\":0,\"audio_tokens\":0,\"accepted_prediction_tokens\":0,\"rejected_prediction_tokens\":0}},\"obfuscation\":\"PVVQNbU3\"}\n\ndata: [DONE]\n\n"
+    }
+  ]
+}

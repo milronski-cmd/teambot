@@ -1,0 +1,14 @@
+{
+  "mcpServers": {
+    "filesystem": {
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-filesystem", "C:\\Users\\eigenaar\\Documents"]
+    },
+    "brave-search": {
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-brave-search"],
+      "env": { "BRAVE_API_KEY": "BSAFIXTURE00000000000000000004" }
+    }
+  },
+  "globalShortcut": "Ctrl+Space"
+}

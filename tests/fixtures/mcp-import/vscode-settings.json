@@ -1,0 +1,10 @@
+{
+  "editor.fontSize": 14,
+  // MCP servers in the general settings (older VS Code)
+  "mcp": {
+    "servers": {
+      "time": { "command": "uvx", "args": ["mcp-server-time", "--local-timezone=Europe/Amsterdam"] },
+    },
+  },
+  "workbench.colorTheme": "Default Dark Modern",
+}

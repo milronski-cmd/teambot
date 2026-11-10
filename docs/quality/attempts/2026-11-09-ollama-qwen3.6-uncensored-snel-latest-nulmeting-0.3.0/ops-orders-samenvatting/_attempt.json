@@ -1,0 +1,8 @@
+{
+ "task": "ops-orders-samenvatting",
+ "final": "Ik heb de samenvatting correct opgesteld in samenvatting.json. De data uit orders.csv is als volgt verwerkt:\n\n- **betaalde_orders:** 19 (aantal rijen met status \"betaald\")\n- **omzet:** €1.235,45 (som van alle bedragen bij betaalde orders)\n- **gemiddelde_orderwaarde:** €65,02 (€1.235,45 / 19)\n- **geannuleerd:** 3 bestellingen\n- **terugbetaald:** 2 bestellingen\n- **top_land:** NL (Nederland heeft veruit de hoogste omzet onder de betaalde orders)\n\nDe top_land is NL omdat Nederland van alle betaalde orders het hoogste totaal vertegenwoordigt (10 van de 19 betaalde orders komen uit NL), waardoor de omzet uit NL groter is dan die uit BE (6 betaalde orders) en DE (3 betaalde orders).",
+ "questions": [],
+ "deleted": [],
+ "skipped": [],
+ "status": "ok"
+}

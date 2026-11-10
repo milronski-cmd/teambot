@@ -1,0 +1,8 @@
+{
+ "task": "bouw-bug-korting",
+ "final": "Alle tests slagen nu. De bug was opgelost door `>` te vervangen door `>=` in de `discountRate`-functie.\n\nMet `>` werden alleen totale hoeveelheden **groter** dan 5 of 10 in aanmerking genomen. Door `>=` te gebruiken, krijgen kopers met precies 5 of 10 items ook de juiste korting (10% respectievelijk 15%).\n\nIk heb de wijzigingen toegepast in `src/cart.js`.",
+ "questions": [],
+ "deleted": [],
+ "skipped": [],
+ "status": "ok"
+}

@@ -1,0 +1,82 @@
+# TeamBot Cloud on one Docker host (see docs/CLOUD.md). From the repository root:
+#   docker compose -f cloud/docker-compose.cloud.yml --profile build build   # builds teambot + teambot-cloud images
+#   docker compose -f cloud/docker-compose.cloud.yml up -d
+# Before the first start: set the domain, secrets and Stripe values below (or in an .env file next to this file),
+# point *.<domain> and <domain> to this host, and put cloud/Caddyfile.example in place as cloud/Caddyfile.
+services:
+  # Only used to build the per-workspace TeamBot image; the cloud starts one container per workspace from it.
+  teambot-image:
+    profiles: ["build"]
+    build: { context: .., dockerfile: Dockerfile }
+    image: teambot:${TEAMBOT_VERSION:-latest}
+    entrypoint: ["true"]
+
+  postgres:
+    image: postgres:17
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: teambot_cloud
+      POSTGRES_USER: teambot
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?zet POSTGRES_PASSWORD}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    networks: [db]
+
+  cloud:
+    build: { context: .., dockerfile: cloud/Dockerfile }
+    image: teambot-cloud:latest
+    # Must match CLOUD_DOCKER_SELF: the cloud joins each workspace network under this name.
+    container_name: teambot-cloud
+    restart: unless-stopped
+    depends_on: [postgres]
+    environment:
+      NODE_ENV: production
+      CLOUD_URL: https://${CLOUD_DOMAIN:?zet CLOUD_DOMAIN}
+      DATABASE_URL: postgres://teambot:${POSTGRES_PASSWORD}@postgres:5432/teambot_cloud
+      # 32 random bytes, base64 (openssl rand -base64 32). Encrypts the per-workspace master keys. Back it up!
+      CLOUD_SECRET_KEY: ${CLOUD_SECRET_KEY:?zet CLOUD_SECRET_KEY}
+      CLOUD_PROVISIONER: docker
+      CLOUD_DOCKER_IMAGE: teambot:${TEAMBOT_VERSION:-latest}
+      CLOUD_DOCKER_SELF: teambot-cloud
+      # Caddy runs in the same compose project: trust its X-Forwarded-* (its address on the edge network).
+      CLOUD_TRUST_PROXY: ${CADDY_IP:-172.30.0.10}
+      CLOUD_TLS_ASK_FROM: ${CADDY_IP:-172.30.0.10}
+      # Stripe (leave empty for "handmatig" mode: the operator sets plan and status)
+      STRIPE_SECRET_KEY: ${STRIPE_SECRET_KEY:-}
+      STRIPE_WEBHOOK_SECRET: ${STRIPE_WEBHOOK_SECRET:-}
+      STRIPE_PRICE_STARTER: ${STRIPE_PRICE_STARTER:-}
+      STRIPE_PRICE_TEAM: ${STRIPE_PRICE_TEAM:-}
+      # Optional: e-mail verification for new accounts
+      CLOUD_SMTP_URL: ${CLOUD_SMTP_URL:-}
+      CLOUD_GRACE_DAYS: ${CLOUD_GRACE_DAYS:-7}
+      CLOUD_RETENTION_DAYS: ${CLOUD_RETENTION_DAYS:-30}
+    volumes:
+      # The Docker socket is root on the host. Prefer a socket proxy that only allows the calls in docs/CLOUD.md.
+      - /var/run/docker.sock:/var/run/docker.sock
+      - clouddata:/data
+    networks:
+      db: {}
+      edge: { ipv4_address: 172.30.0.11 }
+
+  caddy:
+    image: caddy:2
+    restart: unless-stopped
+    ports: ["80:80", "443:443"]
+    environment:
+      CLOUD_DOMAIN: ${CLOUD_DOMAIN}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddydata:/data
+    networks:
+      edge: { ipv4_address: 172.30.0.10 }
+
+networks:
+  db: { internal: true }
+  edge:
+    ipam:
+      config: [{ subnet: 172.30.0.0/24 }]
+
+volumes:
+  pgdata:
+  clouddata:
+  caddydata:

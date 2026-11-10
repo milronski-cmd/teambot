@@ -1,0 +1,8 @@
+{
+ "task": "bouw-datum-bug",
+ "final": "De bug is verholpen en de tests slagen.\n\n**Wat er aan de hand was:**\nDe `ordersInMonth`-functie in `src/orders.js` gebruikte `-30` als laatste dag van de maand, maar oktober heeft 31 dagen. Bestellingen op 31 oktober vielen daardoor buiten het bereik. Dit heb ik aangepast naar `-31`.\n\n**Test toegevoegd:**\nEr is een nieuwe test `orders van oktober include 31 oktober` toegevoegd in `test/orders.test.js` die dit geval expliciet test.\n\nAlle 3 tests slagen nu correct.",
+ "questions": [],
+ "deleted": [],
+ "skipped": [],
+ "status": "ok"
+}

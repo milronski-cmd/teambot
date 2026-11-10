@@ -1,0 +1,92 @@
+# XcodeGen spec for the TeamBot iOS companion. This folder is the root of its own repository (CI:
+# .github/workflows/testflight.yml). Generate the Xcode project on a Mac or a macOS runner:
+#   brew install xcodegen && TEAMBOT_TEAM_ID=<your team id> xcodegen generate
+name: TeamBot
+options:
+  bundleIdPrefix: app.teambot
+  # The app's own screens are Dutch: system texts in the app follow that.
+  developmentLanguage: nl
+  deploymentTarget:
+    # 17.5: the minimum of IrohLib (the TeamBot connection).
+    iOS: "17.5"
+  createIntermediateGroups: true
+# The TeamBot connection (iroh, MIT OR Apache-2.0): prebuilt IrohLib.xcframework from the iroh-ffi release (checksum
+# pinned in its Package.swift). Exact version: update together with @number0/iroh on the pc.
+packages:
+  IrohLib:
+    url: https://github.com/n0-computer/iroh-ffi
+    exactVersion: 1.2.0
+settings:
+  base:
+    SWIFT_VERSION: "5.0"
+    MARKETING_VERSION: "0.4.4"
+    CURRENT_PROJECT_VERSION: "1"
+    DEVELOPMENT_TEAM: ${TEAMBOT_TEAM_ID}
+    CODE_SIGN_STYLE: Automatic
+targets:
+  TeamBot:
+    type: application
+    platform: iOS
+    sources:
+      - path: TeamBot
+        excludes:
+          - "**/*.entitlements"
+    info:
+      path: TeamBot/Info.plist
+      properties:
+        CFBundleDisplayName: TeamBot
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        LSRequiresIPhoneOS: true
+        UILaunchScreen: {}
+        UIApplicationSceneManifest:
+          UIApplicationSupportsMultipleScenes: false
+        UISupportedInterfaceOrientations:
+          - UIInterfaceOrientationPortrait
+          - UIInterfaceOrientationLandscapeLeft
+          - UIInterfaceOrientationLandscapeRight
+        UISupportedInterfaceOrientations~ipad:
+          - UIInterfaceOrientationPortrait
+          - UIInterfaceOrientationPortraitUpsideDown
+          - UIInterfaceOrientationLandscapeLeft
+          - UIInterfaceOrientationLandscapeRight
+        NSCameraUsageDescription: TeamBot gebruikt de camera alleen om de koppel-QR-code op je computer te scannen.
+        NSMicrophoneUsageDescription: TeamBot gebruikt de microfoon alleen als jij op de spraakknop tikt, om een bericht in te spreken.
+        NSLocalNetworkUsageDescription: TeamBot maakt verbinding met TeamBot op je eigen computer in je thuisnetwerk.
+        NSAppTransportSecurity:
+          NSAllowsLocalNetworking: true
+        ITSAppUsesNonExemptEncryption: false
+    dependencies:
+      - package: IrohLib
+    entitlements:
+      path: TeamBot/TeamBot.entitlements
+      properties:
+        aps-environment: development
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: app.teambot.companion
+        TARGETED_DEVICE_FAMILY: "1,2"
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        ENABLE_PREVIEWS: YES
+  TeamBotTests:
+    type: bundle.unit-test
+    platform: iOS
+    sources:
+      - path: TeamBotTests
+    dependencies:
+      - target: TeamBot
+    settings:
+      base:
+        GENERATE_INFOPLIST_FILE: YES
+        PRODUCT_BUNDLE_IDENTIFIER: app.teambot.companion.tests
+schemes:
+  TeamBot:
+    build:
+      targets:
+        TeamBot: all
+        TeamBotTests: [test]
+    test:
+      targets:
+        - TeamBotTests
+    archive:
+      config: Release

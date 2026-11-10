@@ -1,0 +1,66 @@
+# TeamBot Dedicated: the standard TeamBot image (server mode) + Caddy (automatic HTTPS) on your own server or VPC.
+# Start:  cp .env.example .env   (fill in, see README.md)   then:   docker compose up -d
+name: teambot
+
+services:
+  teambot:
+    image: ${TEAMBOT_IMAGE:-teambot:latest}
+    restart: unless-stopped
+    environment:
+      TEAMBOT_MODE: server
+      TEAMBOT_DATA: /data
+      TEAMBOT_HOST: 0.0.0.0
+      TEAMBOT_PORT: "4747"
+      TEAMBOT_PUBLIC_URL: ${TEAMBOT_PUBLIC_URL:?zet TEAMBOT_PUBLIC_URL in .env}
+      # Encrypts stored API keys. Generate once (openssl rand -base64 32) and never change it.
+      TEAMBOT_MASTER_KEY: ${TEAMBOT_MASTER_KEY:?zet TEAMBOT_MASTER_KEY in .env}
+      # The first owner account can only be created with this token (https://<domein>/?setup=<token>).
+      TEAMBOT_SETUP_TOKEN: ${TEAMBOT_SETUP_TOKEN:?zet TEAMBOT_SETUP_TOKEN in .env}
+      TEAMBOT_MAX_USERS: ${TEAMBOT_MAX_USERS:-100}
+      TEAMBOT_ALLOW_SIGNUP: "0"
+      # Caddy is the only proxy in front of TeamBot (private Docker network).
+      TEAMBOT_TRUST_PROXY: loopback,uniquelocal
+    volumes:
+      - teambot-data:/data
+    # No published ports: only Caddy reaches TeamBot.
+    expose: ["4747"]
+    read_only: true
+    tmpfs:
+      - /tmp:rw,nosuid,nodev,size=256m
+      - /home/node:rw,nosuid,nodev,size=64m
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    mem_limit: ${TEAMBOT_MEMORY:-4g}
+    pids_limit: 1024
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:4747/healthz').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+    logging:
+      driver: json-file
+      options: { max-size: "10m", max-file: "3" }
+
+  caddy:
+    image: caddy:2
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    environment:
+      TEAMBOT_DOMAIN: ${TEAMBOT_DOMAIN:?zet TEAMBOT_DOMAIN in .env}
+      ACME_EMAIL: ${ACME_EMAIL:?zet ACME_EMAIL in .env}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    depends_on:
+      teambot:
+        condition: service_healthy
+
+volumes:
+  teambot-data:
+  caddy-data:
+  caddy-config:

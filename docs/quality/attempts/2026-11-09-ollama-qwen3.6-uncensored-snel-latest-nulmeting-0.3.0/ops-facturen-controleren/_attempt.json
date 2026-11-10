@@ -1,0 +1,8 @@
+{
+ "task": "ops-facturen-controleren",
+ "final": "Ik heb `facturen.csv` vergeleken met `inkooporders.csv` en de afwijkingen weggeschreven.\n\n**Gevonden afwijkingen:**\n\n| Factuur | Reden |\n|---------|-------|\n| F-2031 | Bedrag komt niet overeen met inkooporder (gefactureerd: 1.520,00 vs. 1.250,00) |\n| F-2034 | Geen bestaande inkooporder (leverancier heeft geen PO) |\n| F-2036 | Dubbele factuur (zelfde PO als F-2032) |\n\nAlle overige facturen (F-2030, F-2032, F-2033, F-2035) komen overeen met hun bijbehorende inkooporders.\n\nHet bestand `afwijkingen.csv` is weggeschreven met de verwachte kolommen en inhoud.",
+ "questions": [],
+ "deleted": [],
+ "skipped": [],
+ "status": "ok"
+}

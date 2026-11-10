@@ -1,0 +1,28 @@
+<tool_call>
+<function=list_dir>
+<parameter=path>
+.
+</parameter>
+<parameter=depth>
+2
+</parameter>
+<parameter=hidden>
+false
+</parameter>
+</function>
+</tool_call>
+<tool_call>
+<function=write_file>
+<parameter=path>
+roas.py
+</parameter>
+<parameter=content>
+def roas(omzet, kosten):
+    # "</function>" and "</tool_call>" in a value are text, not the end of the call
+    return omzet / kosten if kosten > 0 and omzet >= 0 else None
+</parameter>
+<parameter=tags>
+["ads", "roas"]
+</parameter>
+</function>
+</tool_call>

@@ -1,0 +1,1 @@
+Het antwoord is weggeschreven naar antwoord.md. Het bevat een beleefde respons met de verzendstatus en het tracknummer van bestelling 1043, zodat Sanne het pakket kan volgen via PostNL.

@@ -1,0 +1,8 @@
+{
+ "task": "bouw-bug-korting",
+ "final": "Ik heb de fout gevonden en hersteld:\n\n**Oorzaak:**\nIn `src/cart.js` gebruikte de `discountRate`-functie `>` in plaats van `>=` bij de drempelwaarden. Hierdoor werden kortingen pas toegepast bij *meer dan* het gevraagde aantal, en niet *vanaf* dat aantal.\n\n**Oplossing:**\nIk heb de vergelijkingen veranderd:\n- `totalQty > 5` → `totalQty >= 5`\n- `totalQty > 10` → `totalQty >= 10`\n\nNu wordt de 10% korting pas vanaf 5 items toegepast (en niet vanaf 6), en de 15% korting vanaf 10 items (en niet vanaf 11). De tests lopen weer door.",
+ "questions": [],
+ "deleted": [],
+ "skipped": [],
+ "status": "ok"
+}

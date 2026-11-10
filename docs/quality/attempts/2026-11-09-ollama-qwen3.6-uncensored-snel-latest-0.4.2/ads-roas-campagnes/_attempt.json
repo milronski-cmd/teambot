@@ -1,0 +1,8 @@
+{
+ "task": "ads-roas-campagnes",
+ "final": "<function=read_file>\n<parameter=path>\ncampagnes.csv\n</parameter>\n</function>\n</tool_call>",
+ "questions": [],
+ "deleted": [],
+ "skipped": [],
+ "status": "ok"
+}

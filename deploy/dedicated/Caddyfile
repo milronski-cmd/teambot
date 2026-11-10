@@ -1,0 +1,13 @@
+# Caddy for TeamBot Dedicated: automatic HTTPS (Let's Encrypt) for TEAMBOT_DOMAIN.
+{
+	email {$ACME_EMAIL}
+}
+
+{$TEAMBOT_DOMAIN} {
+	encode zstd gzip
+	reverse_proxy teambot:4747 {
+		# Stream responses (live answers of bots) right away; WebSockets are proxied automatically.
+		flush_interval -1
+	}
+	header Strict-Transport-Security "max-age=31536000"
+}

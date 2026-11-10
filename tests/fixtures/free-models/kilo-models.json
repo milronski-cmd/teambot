@@ -1,0 +1,401 @@
+{
+ "recorded": "2026-11-09",
+ "note": "Trimmed from the live public lists (GET, no key, no prompt).",
+ "url": "https://ai-gateway.kilo.ai/api/v1/models",
+ "body": {
+  "data": [
+   {
+    "id": "kilo-auto/efficient",
+    "name": "Auto Efficient",
+    "created": 0,
+    "description": "Routes each request to the cheapest model that gets the job done, based on continuously benchmarked accuracy and cost.",
+    "architecture": {
+     "input_modalities": [
+      "text",
+      "image"
+     ],
+     "output_modalities": [
+      "text"
+     ],
+     "tokenizer": "Other"
+    },
+    "top_provider": {
+     "is_moderated": false,
+     "context_length": 1000000,
+     "max_completion_tokens": 65536
+    },
+    "pricing": {
+     "prompt": "-1",
+     "completion": "-1",
+     "request": "0",
+     "image": "0",
+     "web_search": "0",
+     "internal_reasoning": "0"
+    },
+    "context_length": 1000000,
+    "supported_parameters": [
+     "max_tokens",
+     "temperature",
+     "tools",
+     "reasoning",
+     "include_reasoning"
+    ],
+    "opencode": {},
+    "inference_provider_ids": [],
+    "preferredIndex": 0,
+    "isFree": false,
+    "mayTrainOnYourPrompts": false,
+    "autoRouting": {
+     "models": [
+      "anthropic/claude-haiku-5.5",
+      "deepseek/deepseek-v4.1-flash-1017"
+     ]
+    }
+   },
+   {
+    "id": "kilo-auto/free",
+    "name": "Auto Free",
+    "created": 0,
+    "description": "Rotates through available free models. Limited capability and no credits required. [Learn more](https://kilo.ai/docs/code-with-ai/agents/auto-model)\n\n**Warning*",
+    "architecture": {
+     "input_modalities": [
+      "text"
+     ],
+     "output_modalities": [
+      "text"
+     ],
+     "tokenizer": "Other"
+    },
+    "top_provider": {
+     "is_moderated": false,
+     "context_length": 256000,
+     "max_completion_tokens": 32768
+    },
+    "pricing": {
+     "prompt": "0",
+     "completion": "0",
+     "input_cache_read": "0",
+     "input_cache_write": "0",
+     "request": "0",
+     "image": "0",
+     "web_search": "0",
+     "internal_reasoning": "0"
+    },
+    "context_length": 256000,
+    "supported_parameters": [
+     "max_tokens",
+     "temperature",
+     "tools",
+     "reasoning",
+     "include_reasoning"
+    ],
+    "opencode": {},
+    "inference_provider_ids": [],
+    "preferredIndex": 1,
+    "isFree": true,
+    "mayTrainOnYourPrompts": true,
+    "autoRouting": {
+     "models": [
+      "dots-studio/dots-3-note-preview:free",
+      "nvidia/nemotron-3-ultra-550b-a55b:free"
+     ]
+    }
+   },
+   {
+    "id": "nvidia/nemotron-3.5-super-vl:free",
+    "name": "NVIDIA: Nemotron 3.5 Super VL (free)",
+    "created": 1792076662,
+    "description": "NVIDIA Nemotron 3.5 Super VL is an open multimodal mixture-of-experts model from NVIDIA, with 12B active parameters out of 120B total. It takes text, images, do",
+    "architecture": {
+     "modality": "text+image+video->text",
+     "input_modalities": [
+      "text",
+      "image",
+      "video"
+     ],
+     "output_modalities": [
+      "text"
+     ],
+     "tokenizer": "Other"
+    },
+    "top_provider": {
+     "is_moderated": false,
+     "context_length": 1000000,
+     "max_completion_tokens": 131072
+    },
+    "pricing": {
+     "prompt": "0",
+     "completion": "0",
+     "discount": 0
+    },
+    "context_length": 1000000,
+    "per_request_limits": null,
+    "supported_parameters": [
+     "include_reasoning",
+     "max_tokens",
+     "reasoning",
+     "response_format",
+     "seed",
+     "structured_outputs",
+     "temperature",
+     "tool_choice",
+     "tools",
+     "top_p"
+    ],
+    "expiration_date": null,
+    "inference_provider_ids": [
+     "nvidia"
+    ],
+    "preferredIndex": 2,
+    "isFree": true,
+    "mayTrainOnYourPrompts": true,
+    "opencode": {
+     "variants": {
+      "instant": {
+       "reasoning": {
+        "enabled": false,
+        "effort": "none"
+       }
+      },
+      "thinking": {
+       "reasoning": {
+        "enabled": true,
+        "effort": "high"
+       }
+      }
+     },
+     "reasoning_options": [
+      {
+       "type": "toggle"
+      }
+     ]
+    }
+   },
+   {
+    "id": "liquid/lfm-3-1.7b:free",
+    "name": "LiquidAI: LFM3-1.7B (free)",
+    "created": 1794009477,
+    "description": "A compact 1.7B-parameter text model with a 256K-token context, post-trained for agents, tool calling, and structured outputs. It reasons before it answers. Prom",
+    "architecture": {
+     "modality": "text->text",
+     "input_modalities": [
+      "text"
+     ],
+     "output_modalities": [
+      "text"
+     ],
+     "tokenizer": "Other"
+    },
+    "top_provider": {
+     "is_moderated": false,
+     "context_length": 262144,
+     "max_completion_tokens": 8192
+    },
+    "pricing": {
+     "prompt": "0",
+     "completion": "0",
+     "discount": 0
+    },
+    "context_length": 262144,
+    "per_request_limits": null,
+    "supported_parameters": [
+     "frequency_penalty",
+     "include_reasoning",
+     "logprobs",
+     "max_completion_tokens",
+     "max_tokens",
+     "min_p",
+     "presence_penalty",
+     "reasoning",
+     "repetition_penalty",
+     "response_format",
+     "seed",
+     "stop",
+     "structured_outputs",
+     "temperature",
+     "tool_choice",
+     "tools",
+     "top_k",
+     "top_logprobs",
+     "top_p"
+    ],
+    "expiration_date": null,
+    "inference_provider_ids": [
+     "liquid"
+    ],
+    "isFree": true,
+    "mayTrainOnYourPrompts": true,
+    "opencode": {
+     "variants": {
+      "thinking": {
+       "reasoning": {
+        "enabled": true,
+        "effort": "high"
+       }
+      }
+     },
+     "reasoning_options": []
+    }
+   },
+   {
+    "id": "nvidia/nemotron-3-ultra-550b-a55b:free",
+    "name": "NVIDIA: Nemotron 3 Ultra (free)",
+    "created": 1780551208,
+    "description": "NVIDIA Nemotron 3 Ultra is an open frontier-reasoning and orchestration model from NVIDIA, with 55B active parameters out of 550B total (MoE). Built on a hybrid",
+    "architecture": {
+     "modality": "text->text",
+     "input_modalities": [
+      "text"
+     ],
+     "output_modalities": [
+      "text"
+     ],
+     "tokenizer": "Other"
+    },
+    "top_provider": {
+     "is_moderated": false,
+     "context_length": 1000000,
+     "max_completion_tokens": 65536
+    },
+    "pricing": {
+     "prompt": "0",
+     "completion": "0",
+     "discount": 0
+    },
+    "context_length": 1000000,
+    "per_request_limits": null,
+    "supported_parameters": [
+     "include_reasoning",
+     "max_tokens",
+     "reasoning",
+     "reasoning_effort",
+     "seed",
+     "temperature",
+     "tool_choice",
+     "tools",
+     "top_p"
+    ],
+    "expiration_date": null,
+    "inference_provider_ids": [
+     "nvidia"
+    ],
+    "isFree": true,
+    "mayTrainOnYourPrompts": true,
+    "opencode": {
+     "variants": {
+      "none": {
+       "reasoning": {
+        "enabled": false,
+        "effort": "none"
+       }
+      },
+      "medium": {
+       "reasoning": {
+        "enabled": true,
+        "effort": "medium"
+       }
+      },
+      "high": {
+       "reasoning": {
+        "enabled": true,
+        "effort": "high"
+       }
+      }
+     },
+     "reasoning_options": [
+      {
+       "type": "effort",
+       "values": [
+        "none",
+        "medium",
+        "high"
+       ]
+      }
+     ]
+    }
+   },
+   {
+    "id": "openai/gpt-oss-safeguard-20b",
+    "name": "OpenAI: gpt-oss-safeguard-20b",
+    "created": 1761752836,
+    "description": "gpt-oss-safeguard-20b is a safety reasoning model from OpenAI built upon gpt-oss-20b. This open-weight, 21B-parameter Mixture-of-Experts (MoE) model offers lowe",
+    "architecture": {
+     "modality": "text->text",
+     "input_modalities": [
+      "text"
+     ],
+     "output_modalities": [
+      "text"
+     ],
+     "tokenizer": "GPT"
+    },
+    "top_provider": {
+     "is_moderated": false,
+     "context_length": 131072,
+     "max_completion_tokens": 65536
+    },
+    "pricing": {
+     "prompt": "0.000000075",
+     "completion": "0.0000003",
+     "input_cache_read": "0.0000000375",
+     "discount": 0
+    },
+    "context_length": 131072,
+    "per_request_limits": null,
+    "supported_parameters": [
+     "include_reasoning",
+     "max_tokens",
+     "reasoning",
+     "response_format",
+     "seed",
+     "stop",
+     "structured_outputs",
+     "temperature",
+     "tool_choice",
+     "tools",
+     "top_p"
+    ],
+    "expiration_date": null,
+    "inference_provider_ids": [
+     "amazon-bedrock",
+     "groq"
+    ],
+    "isFree": false,
+    "mayTrainOnYourPrompts": false,
+    "opencode": {
+     "variants": {
+      "thinking": {
+       "reasoning": {
+        "enabled": true,
+        "effort": "high"
+       }
+      }
+     },
+     "reasoning_options": []
+    },
+    "enkrypt": {
+     "model_name": "gpt-oss-safeguard-20b",
+     "provider": "groq",
+     "source": "openai",
+     "risk_score": 25.7241,
+     "bias_score": 74.42,
+     "cbrn_score": 18,
+     "harmful_score": 25.56,
+     "insecure_code_score": 7.56,
+     "toxicity_score": 3.09,
+     "robustness_score": null,
+     "jailbreak_score": 17.1223,
+     "evasion_score": null,
+     "safety_score": 28.6287,
+     "nist_score": 26,
+     "owasp_score": 29,
+     "ingestedAt": "2026-09-04T04:01:19.650Z",
+     "evaluatedAt": null,
+     "lastCheckedAt": "2026-11-08T04:00:25.235Z",
+     "staleAfter": "2026-11-09T06:00:25.235Z",
+     "freshness": "fresh"
+    }
+   }
+  ]
+ }
+}

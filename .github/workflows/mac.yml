@@ -1,0 +1,83 @@
+name: Mac
+
+# Builds the macOS app (Apple Silicon) on a Mac runner: TeamBot-<version>-mac-arm64.dmg (drag to Applications) and a
+# .zip, then starts the packed app once and checks that the window, the interface and the local server come up
+# (tests/e2e/mac-launch.mjs). Started by hand (Actions → Mac → Run workflow) or by a version tag.
+#
+# Signing: with the secrets MAC_CSC_LINK (base64 of a "Developer ID Application" .p12) and MAC_CSC_KEY_PASSWORD the app
+# is signed, and with APPLE_TEAM_ID, ASC_KEY_ID, ASC_ISSUER_ID and ASC_KEY_P8 (the same App Store Connect key as the
+# iPhone build) Apple notarizes it, so it opens with a double click. Without them the app is signed "ad hoc": it works,
+# but macOS asks the person to allow it once (System Settings → Privacy & Security → Open Anyway).
+on:
+  workflow_dispatch:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: read
+
+jobs:
+  mac:
+    runs-on: macos-15
+    timeout-minutes: 40
+    env:
+      HAVE_CERT: ${{ secrets.MAC_CSC_LINK != '' }}
+      HAVE_NOTARY: ${{ secrets.MAC_CSC_LINK != '' && secrets.ASC_KEY_P8 != '' }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - name: Notarization key
+        if: env.HAVE_NOTARY == 'true'
+        run: |
+          mkdir -p "$RUNNER_TEMP/asc"
+          echo "$ASC_KEY_P8" | base64 --decode > "$RUNNER_TEMP/asc/AuthKey.p8"
+          echo "APPLE_API_KEY=$RUNNER_TEMP/asc/AuthKey.p8" >> "$GITHUB_ENV"
+          echo "APPLE_API_KEY_ID=$ASC_KEY_ID" >> "$GITHUB_ENV"
+          echo "APPLE_API_ISSUER=$ASC_ISSUER_ID" >> "$GITHUB_ENV"
+        env:
+          ASC_KEY_P8: ${{ secrets.ASC_KEY_P8 }}
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+      - name: Build (signed with Developer ID)
+        if: env.HAVE_CERT == 'true'
+        run: npm run build && node scripts/notices.mjs && npx electron-builder --mac --arm64 --publish never
+        env:
+          CSC_LINK: ${{ secrets.MAC_CSC_LINK }}
+          CSC_KEY_PASSWORD: ${{ secrets.MAC_CSC_KEY_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+      - name: Build (ad hoc signature, no Apple certificate yet)
+        if: env.HAVE_CERT != 'true'
+        run: npm run build && node scripts/notices.mjs && npx electron-builder --mac --arm64 --publish never -c.mac.identity=- -c.mac.notarize=false
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+      - name: The signature is valid
+        run: |
+          codesign --verify --deep --strict --verbose=2 release/mac-arm64/TeamBot.app
+          codesign -dv --entitlements - release/mac-arm64/TeamBot.app 2>&1 | head -40
+      - name: First start of the packed app
+        run: node tests/e2e/mac-launch.mjs --out release/launch-check
+      - name: Secret scan
+        run: npm run secrets:check
+      - name: Checksums
+        run: cd release && shasum -a 256 *.dmg *.zip > SHA256SUMS-mac.txt && cat SHA256SUMS-mac.txt
+      - name: Remove the notarization key
+        if: always()
+        run: rm -rf "$RUNNER_TEMP/asc"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: teambot-mac-launch-check
+          path: release/launch-check/
+          if-no-files-found: ignore
+      - uses: actions/upload-artifact@v4
+        with:
+          name: teambot-mac
+          path: |
+            release/*.dmg
+            release/*.zip
+            release/latest-mac.yml
+            release/SHA256SUMS-mac.txt

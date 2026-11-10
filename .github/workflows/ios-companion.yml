@@ -1,0 +1,107 @@
+# Builds and tests the native iOS companion (mobile/ios) on a hosted macOS runner.
+# TestFlight upload only on manual dispatch with testflight=true and the App Store Connect secrets set:
+#   APPLE_TEAM_ID, ASC_KEY_ID, ASC_ISSUER_ID, ASC_KEY_P8 (base64 of the AuthKey_XXXX.p8 API key)
+name: iOS companion
+
+on:
+  push:
+    paths: ['mobile/ios/**', '.github/workflows/ios-companion.yml']
+  pull_request:
+    paths: ['mobile/ios/**', '.github/workflows/ios-companion.yml']
+  workflow_dispatch:
+    inputs:
+      testflight:
+        description: Upload een build naar TestFlight (vereist de App Store Connect-secrets)
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ios-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: macos-26
+    timeout-minutes: 45
+    defaults:
+      run:
+        working-directory: mobile/ios
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Xcode 26 kiezen (App Store eist Xcode 26 / iOS 26 SDK)
+        run: |
+          XC=$(ls -d /Applications/Xcode_26*.app 2>/dev/null | sort -V | tail -1 || true)
+          if [ -n "$XC" ]; then sudo xcode-select -s "$XC"; fi
+          xcodebuild -version
+          MAJOR=$(xcodebuild -version | head -1 | awk '{print $2}' | cut -d. -f1)
+          if [ "$MAJOR" -lt 26 ]; then echo "::error::Xcode 26 of nieuwer nodig (gevonden: $MAJOR)"; exit 1; fi
+
+      - name: XcodeGen installeren
+        run: brew install xcodegen
+
+      - name: Xcode-project genereren
+        run: xcodegen generate
+
+      - name: Bouwen en testen (simulator, zonder ondertekening)
+        run: |
+          UDID=$(xcrun simctl list devices available -j | python3 -c "import json,sys; d=json.load(sys.stdin)['devices']; print(next(x['udid'] for k,v in d.items() if 'iOS' in k for x in v if x['name'].startswith('iPhone')))")
+          echo "Simulator: $UDID"
+          xcodebuild test -project TeamBot.xcodeproj -scheme TeamBot -destination "id=$UDID" CODE_SIGNING_ALLOWED=NO -quiet
+
+  testflight:
+    needs: build
+    if: github.event_name == 'workflow_dispatch' && inputs.testflight
+    runs-on: macos-26
+    timeout-minutes: 60
+    environment: testflight
+    env:
+      TEAMBOT_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+      ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+      ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+      ASC_KEY_P8: ${{ secrets.ASC_KEY_P8 }}
+    defaults:
+      run:
+        working-directory: mobile/ios
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Secrets controleren
+        run: |
+          for v in TEAMBOT_TEAM_ID ASC_KEY_ID ASC_ISSUER_ID ASC_KEY_P8; do
+            if [ -z "${!v}" ]; then echo "::error::Secret ontbreekt: $v (zie mobile/ios/README.md)"; exit 1; fi
+          done
+
+      - name: Xcode 26 kiezen
+        run: |
+          XC=$(ls -d /Applications/Xcode_26*.app 2>/dev/null | sort -V | tail -1 || true)
+          if [ -n "$XC" ]; then sudo xcode-select -s "$XC"; fi
+          xcodebuild -version
+
+      - name: Project genereren
+        run: brew install xcodegen && xcodegen generate
+
+      - name: Archiveren (automatische ondertekening via App Store Connect API-sleutel)
+        run: |
+          mkdir -p "$RUNNER_TEMP/asc"
+          echo "$ASC_KEY_P8" | base64 --decode > "$RUNNER_TEMP/asc/AuthKey.p8"
+          xcodebuild archive -project TeamBot.xcodeproj -scheme TeamBot -configuration Release \
+            -destination 'generic/platform=iOS' -archivePath "$RUNNER_TEMP/TeamBot.xcarchive" \
+            -allowProvisioningUpdates \
+            -authenticationKeyPath "$RUNNER_TEMP/asc/AuthKey.p8" -authenticationKeyID "$ASC_KEY_ID" -authenticationKeyIssuerID "$ASC_ISSUER_ID" \
+            DEVELOPMENT_TEAM="$TEAMBOT_TEAM_ID" CURRENT_PROJECT_VERSION="${{ github.run_number }}" -quiet
+
+      - name: Uploaden naar TestFlight
+        run: |
+          sed "s/TEAM_ID_PLACEHOLDER/$TEAMBOT_TEAM_ID/" ExportOptions.plist > "$RUNNER_TEMP/ExportOptions.plist"
+          xcodebuild -exportArchive -archivePath "$RUNNER_TEMP/TeamBot.xcarchive" \
+            -exportOptionsPlist "$RUNNER_TEMP/ExportOptions.plist" -exportPath "$RUNNER_TEMP/export" \
+            -allowProvisioningUpdates \
+            -authenticationKeyPath "$RUNNER_TEMP/asc/AuthKey.p8" -authenticationKeyID "$ASC_KEY_ID" -authenticationKeyIssuerID "$ASC_ISSUER_ID"
+
+      - name: Sleutel opruimen
+        if: always()
+        run: rm -rf "$RUNNER_TEMP/asc"

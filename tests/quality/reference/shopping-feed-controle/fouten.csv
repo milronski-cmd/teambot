@@ -1,0 +1,6 @@
+id;veld;probleem
+P3;price;prijs ontbreekt
+P5;gtin;GTIN heeft 5 cijfers (moet 8, 12, 13 of 14 zijn)
+P6;title;titel is leeg
+P7;availability;"op voorraad" is geen geldige waarde
+P8;image_link;afbeelding ontbreekt

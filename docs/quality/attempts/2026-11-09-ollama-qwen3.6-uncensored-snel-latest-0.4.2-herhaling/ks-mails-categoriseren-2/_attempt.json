@@ -1,0 +1,8 @@
+{
+ "task": "ks-mails-categoriseren",
+ "final": "De mails zijn als volgt gecategoriseerd:\n\n| Bestand | Categorie |\n|---|---|\n| mail-1.txt | levering |\n| mail-2.txt | retour |\n| mail-3.txt | betaling |\n| mail-4.txt | product |\n| mail-5.txt | garantie |\n| mail-6.txt | betaling |\n\nHet bestand `categoriseer.csv` staat in je werkmap.",
+ "questions": [],
+ "deleted": [],
+ "skipped": [],
+ "status": "ok"
+}

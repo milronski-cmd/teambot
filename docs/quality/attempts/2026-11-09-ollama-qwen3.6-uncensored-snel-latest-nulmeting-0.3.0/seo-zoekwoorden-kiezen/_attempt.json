@@ -1,0 +1,8 @@
+{
+ "task": "seo-zoekwoorden-kiezen",
+ "final": "<read_file>\n<parameter=path>\nzoekwoorden.csv\n</parameter>\n</function>\n</tool_call>",
+ "questions": [],
+ "deleted": [],
+ "skipped": [],
+ "status": "ok"
+}

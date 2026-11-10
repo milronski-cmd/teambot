@@ -1,0 +1,8 @@
+{
+ "task": "webshop-categorieen",
+ "final": "Ik heb de producten uit `producten.csv` ingedeeld in de gevraagde categorieën en geschreven naar `categorieen.csv` met de kolommen `sku` en `categorie`:\n\n| SKU | Categorie |\n|---|---|\n| KB-BEAM-400 | Verlichting (koplamp) |\n| KB-REAR-50 | Verlichting (achterlicht) |\n| KB-LOCK-01 | Sloten (kettingslot) |\n| KB-LOCK-02 | Sloten (vouwslot) |\n| KB-PUMP-03 | Onderhoud (minipomp) |\n| KB-OIL-06 | Onderhoud (kettingolie) |\n| KB-BAG-04 | Tassen (stuurtas) |\n| KB-BAG-08 | Tassen (fietstas) |\n| KB-GLOV-05 | Kleding (fietshandschoenen) |\n| KB-JACK-09 | Kleding (regenjas) |\n\nElk product is ingedeeld op basis van de omschrijving: koplampen en achterlichten komen bij Verlichting, sloten bij Sloten, de pomp en kettingolie bij Onderhoud, tassen bij Tassen, en de fietskleding (handschoenen en regenjas) bij Kleding.",
+ "questions": [],
+ "deleted": [],
+ "skipped": [],
+ "status": "ok"
+}

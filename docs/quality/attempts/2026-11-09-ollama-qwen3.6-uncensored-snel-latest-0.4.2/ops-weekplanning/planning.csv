@@ -1,0 +1,16 @@
+dag;persoon;taak;uren
+ma;Tom;Retouren verwerken;2
+ma;Tom;Leverancier bellen;1
+ma;Sara;Productfoto's Beam 800;2
+ma;Sara;Nieuwsbrief december;2
+di;Sara;Productfoto's Beam 800;2
+di;Tom;Voorraadtelling;4
+wo;Sara;Nieuwsbrief december;1
+wo;Sara;Blog fietsverlichting;3
+wo;Tom;Voorraadtelling;2
+wo;Tom;Kassasysteem bijwerken;2
+do;Tom;Voorraadtelling;2
+do;Tom;Kassasysteem bijwerken;1
+vr;Tom;Voorraadtelling;2
+vr;Tom;Kassasysteem bijwerken;1
+vr;Sara;Blog fietsverlichting;2

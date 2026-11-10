@@ -1,0 +1,8 @@
+{
+ "task": "shopping-feed-controle",
+ "final": "# Controle Resultaat\n\nIk heb de feed.json gecontroleerd en de fouten worden correct weergegeven in fouten.csv:\n\n| id | veld | probleem |\n|------|------|----------|\n| P3 | price | Prijs is leeg of ontbreekt |\n| P5 | gtin | GTIN heeft 5 cijfers, vereist 8, 12, 13 of 14 |\n| P6 | title | Titel is leeg of ontbreekt |\n| P7 | availability | Ongeldige waarde: op voorraad (geldige opties: in_stock, out_of_stock, preorder, backorder) |\n| P8 | image_link | image_link is leeg of ontbreekt |\n\n**Samenvatting:**\n- **P3**: Geen prijs gespecificeerd (vereiste veld ontbreekt)\n- **P5**: GTIN-code is te kort (5 cijfers i.p.v. minstens 8 cijfers)\n- **P6**: Producttitel ontbreekt volledig\n- **P7**: Gebruikt \"op voorraad\" in plaats van de vereiste Engelse statuswaarden\n- **P8**: Image_link ontbreekt (vereiste afbeeldingslink niet aanwezig)\n\nOverige producten (P1, P2, P4) voldoen aan alle eisen: titels zijn aanwezig, prijzen hebben geldige formaten, availability-waardes zijn correct en GTIN-codes voldoen aan de lengte-eisen.",
+ "questions": [],
+ "deleted": [],
+ "skipped": [],
+ "status": "ok"
+}

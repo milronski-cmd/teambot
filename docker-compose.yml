@@ -1,0 +1,31 @@
+# TeamBot self-host. Start: `docker compose up -d`, then open the one-time link TeamBot prints at its first start
+# (`docker compose logs teambot`) and create the owner account. Without that link nobody can claim a fresh server
+# (inside Docker every visitor comes through the network, also you on the server itself).
+# Closed by default: the port is published on 127.0.0.1 only. To reach TeamBot from other devices, put HTTPS in front
+# (Caddy/Traefik/Cloudflare Tunnel, or Tailscale) and set TEAMBOT_PUBLIC_URL to that https address; the phone app,
+# microphone and push notifications require HTTPS outside localhost. Only if you really want plain http on your LAN,
+# change the port line to "4747:4747". As long as TEAMBOT_PUBLIC_URL is not https, TeamBot warns about plain http at
+# every start (inside the container it cannot see that the port is published on 127.0.0.1 only).
+services:
+  teambot:
+    build: .
+    image: teambot:latest
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:4747:4747"
+    volumes:
+      - teambot-data:/data
+    environment:
+      TEAMBOT_MODE: server
+      # Public address (used in invite and pairing links), e.g. https://teambot.example.com
+      TEAMBOT_PUBLIC_URL: ""
+      # Optional: create the owner account on first start instead of via the web page (at least 12 characters;
+      # a weak password is refused and no owner is made)
+      # TEAMBOT_OWNER_EMAIL: you@example.com
+      # TEAMBOT_OWNER_PASSWORD: a-long-passphrase-of-your-own
+      # Allow sign-up without an invite code (not recommended on a public server)
+      TEAMBOT_ALLOW_SIGNUP: "0"
+      # Trust X-Forwarded-* from your reverse proxy: its address or network (default: loopback only), e.g.
+      # TEAMBOT_TRUST_PROXY: "loopback,uniquelocal"
+volumes:
+  teambot-data:

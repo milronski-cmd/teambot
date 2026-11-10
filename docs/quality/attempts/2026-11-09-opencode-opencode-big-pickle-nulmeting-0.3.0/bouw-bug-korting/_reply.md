@@ -1,0 +1,5 @@
+I'll start by looking at the project and running the tests.
+
+Opgelost, alle 4 tests slagen.
+
+**De fout:** in `src/cart.js` gebruikte `discountRate` de vergelijkingen `>` in plaats van `>=`. Daardoor kreeg je bij precies 5 stuks nog geen 10% korting (pas vanaf 6) en bij precies 10 stuks nog geen 15% (pas vanaf 11). Ik heb beide aangepast; de tests zijn ongewijzigd.

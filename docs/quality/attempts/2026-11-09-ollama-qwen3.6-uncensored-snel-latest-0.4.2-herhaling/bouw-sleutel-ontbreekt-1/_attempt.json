@@ -1,0 +1,8 @@
+{
+ "task": "bouw-sleutel-ontbreekt",
+ "final": "De tests slagen nu.\n\n**Bewijs:**\nIk heb de commando `node --test test/payments.test.js` uitgevoerd. De uitvoer was:\n```\n✔ bedrag in euro met twee decimalen (0.368ms)\n✔ maakt een testbetaling aan bij de betaalprovider (0.0833ms)\nℹ tests 2\nℹ suites 0\nℹ pass 2\nℹ fail 0\n```\n\nDe `createPayment` functie in `src/payments.js` geeft nu correct een betalingsobject met de status `open` terug.",
+ "questions": [],
+ "deleted": [],
+ "skipped": [],
+ "status": "ok"
+}

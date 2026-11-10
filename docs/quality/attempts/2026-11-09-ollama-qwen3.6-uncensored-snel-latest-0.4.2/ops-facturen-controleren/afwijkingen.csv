@@ -1,0 +1,4 @@
+factuur;reden
+F-2031;bedrag verschilt van inkooporder PO-501: factuur 1520,00 vs inkooporder 1250,00
+F-2034;geen bestaande inkooporder
+F-2036;dubbele factuur (PO-503 al verwerkt in F-2032)

@@ -1,0 +1,1 @@
+Let op: de Beam 400 staat niet in de offerte van LuxParts (die noemt alleen de Rear 50 en de Beam 800). Ik heb daarom geen prijs ingevuld; de mail in mail.md vraagt LuxParts om de prijs van de Beam 400.

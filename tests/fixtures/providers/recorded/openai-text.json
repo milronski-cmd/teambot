@@ -1,0 +1,32 @@
+{
+  "source": "recorded live on 2026-11-07 by tests/e2e/providers-live.mjs",
+  "note": "Plain text answer",
+  "entries": [
+    {
+      "url": "https://api.openai.com/v1/chat/completions",
+      "method": "POST",
+      "request": {
+        "model": "gpt-6-luna",
+        "stream": true,
+        "messages": [
+          {
+            "role": "system",
+            "content": "Antwoord kort, in het Nederlands."
+          },
+          {
+            "role": "user",
+            "content": "Zeg alleen het woord: hallo"
+          }
+        ],
+        "stream_options": {
+          "include_usage": true
+        },
+        "reasoning_effort": "low",
+        "max_completion_tokens": 600
+      },
+      "status": 200,
+      "contentType": "text/event-stream; charset=utf-8",
+      "body": "data: {\"id\":\"chatcmpl-EhRYSkXYWfO7d85hmFh5CHJqBC9f2\",\"object\":\"chat.completion.chunk\",\"created\":1794022732,\"model\":\"gpt-6-luna\",\"service_tier\":\"default\",\"system_fingerprint\":null,\"choices\":[{\"index\":0,\"delta\":{\"role\":\"assistant\",\"content\":\"\",\"refusal\":null},\"finish_reason\":null}],\"usage\":null,\"obfuscation\":\"\"}\n\ndata: {\"id\":\"chatcmpl-EhRYSkXYWfO7d85hmFh5CHJqBC9f2\",\"object\":\"chat.completion.chunk\",\"created\":1794022732,\"model\":\"gpt-6-luna\",\"service_tier\":\"default\",\"system_fingerprint\":null,\"choices\":[{\"index\":0,\"delta\":{\"content\":\"h\"},\"finish_reason\":null}],\"usage\":null,\"obfuscation\":\"q\"}\n\ndata: {\"id\":\"chatcmpl-EhRYSkXYWfO7d85hmFh5CHJqBC9f2\",\"object\":\"chat.completion.chunk\",\"created\":1794022732,\"model\":\"gpt-6-luna\",\"service_tier\":\"default\",\"system_fingerprint\":null,\"choices\":[{\"index\":0,\"delta\":{\"content\":\"allo\"},\"finish_reason\":null}],\"usage\":null,\"obfuscation\":\"YFckR6RfNeMcAY\"}\n\ndata: {\"id\":\"chatcmpl-EhRYSkXYWfO7d85hmFh5CHJqBC9f2\",\"object\":\"chat.completion.chunk\",\"created\":1794022732,\"model\":\"gpt-6-luna\",\"service_tier\":\"default\",\"system_fingerprint\":null,\"choices\":[{\"index\":0,\"delta\":{},\"finish_reason\":\"stop\"}],\"usage\":null,\"obfuscation\":\"6KtSAe8RGo0q\"}\n\ndata: {\"id\":\"chatcmpl-EhRYSkXYWfO7d85hmFh5CHJqBC9f2\",\"object\":\"chat.completion.chunk\",\"created\":1794022732,\"model\":\"gpt-6-luna\",\"service_tier\":\"default\",\"system_fingerprint\":null,\"choices\":[],\"usage\":{\"prompt_tokens\":26,\"completion_tokens\":5,\"total_tokens\":31,\"prompt_tokens_details\":{\"cached_tokens\":0,\"cache_write_tokens\":0,\"audio_tokens\":0},\"completion_tokens_details\":{\"reasoning_tokens\":0,\"audio_tokens\":0,\"accepted_prediction_tokens\":0,\"rejected_prediction_tokens\":0}},\"obfuscation\":\"avix9aZYwD3\"}\n\ndata: [DONE]\n\n"
+    }
+  ]
+}

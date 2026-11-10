@@ -1,0 +1,1 @@
+Ik heb een productbeschrijving geschreven voor de Kettingblad Beam 400 koplamp. De tekst is tussen 80 en 150 woorden, bevat alle specificaties uit het `specs.json` bestand en is opgeslagen in `beschrijving.md`. De beschrijving is wervend maar eerlijk en volledig gebaseerd op de gegeven gegevens.

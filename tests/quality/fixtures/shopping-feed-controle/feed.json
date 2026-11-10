@@ -1,0 +1,73 @@
+[
+  {
+    "id": "P1",
+    "title": "Kettingblad Beam 400 koplamp",
+    "price": "34.95 EUR",
+    "availability": "in_stock",
+    "gtin": "8712345000017",
+    "image_link": "https://kettingblad.example/img/beam-400.jpg",
+    "link": "https://kettingblad.example/koplampen/beam-400"
+  },
+  {
+    "id": "P2",
+    "title": "Kettingblad Beam 800 koplamp",
+    "price": "54.95 EUR",
+    "availability": "in_stock",
+    "gtin": "8712345000024",
+    "image_link": "https://kettingblad.example/img/beam-800.jpg",
+    "link": "https://kettingblad.example/koplampen/beam-800"
+  },
+  {
+    "id": "P3",
+    "title": "Kettingblad Rear 50 achterlicht",
+    "price": "",
+    "availability": "in_stock",
+    "gtin": "8712345000031",
+    "image_link": "https://kettingblad.example/img/rear-50.jpg",
+    "link": "https://kettingblad.example/achterlichten/rear-50"
+  },
+  {
+    "id": "P4",
+    "title": "Kettingblad Kettingslot Basic 90 cm",
+    "price": "24.95 EUR",
+    "availability": "out_of_stock",
+    "gtin": "8712345000048",
+    "image_link": "https://kettingblad.example/img/lock-basic.jpg",
+    "link": "https://kettingblad.example/sloten/basic"
+  },
+  {
+    "id": "P5",
+    "title": "Kettingblad Vouwslot Pro",
+    "price": "49.95 EUR",
+    "availability": "preorder",
+    "gtin": "87123",
+    "image_link": "https://kettingblad.example/img/vouwslot-pro.jpg",
+    "link": "https://kettingblad.example/sloten/vouwslot-pro"
+  },
+  {
+    "id": "P6",
+    "title": "",
+    "price": "9.95 EUR",
+    "availability": "in_stock",
+    "gtin": "8712345000062",
+    "image_link": "https://kettingblad.example/img/fietsbel.jpg",
+    "link": "https://kettingblad.example/accessoires/fietsbel"
+  },
+  {
+    "id": "P7",
+    "title": "Kettingblad Stuurtas 4L",
+    "price": "29.95 EUR",
+    "availability": "op voorraad",
+    "gtin": "8712345000079",
+    "image_link": "https://kettingblad.example/img/stuurtas.jpg",
+    "link": "https://kettingblad.example/tassen/stuurtas"
+  },
+  {
+    "id": "P8",
+    "title": "Kettingblad Minipomp",
+    "price": "14.95 EUR",
+    "availability": "in_stock",
+    "gtin": "8712345000086",
+    "link": "https://kettingblad.example/onderhoud/minipomp"
+  }
+]

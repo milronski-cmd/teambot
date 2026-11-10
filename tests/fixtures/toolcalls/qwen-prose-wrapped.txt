@@ -1,0 +1,9 @@
+Ik lees eerst de campagnes in.
+
+<tool_call>
+<function=read_file>
+<parameter=path>
+campagnes.csv
+</parameter>
+</function>
+</tool_call>

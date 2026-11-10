@@ -1,0 +1,675 @@
+@import "tailwindcss";
+
+@custom-variant dark (&:where(.dark, .dark *));
+/* Touch screens: bigger hit areas (44 px) without changing the desktop look. */
+@custom-variant coarse (@media (pointer: coarse));
+
+/*
+ * Design tokens. The interface is monochrome (near-black in dark, soft grey-white in light) so the bot characters
+ * carry the colour. "accent" is the call-to-action colour: light-on-dark in the dark theme, dark-on-light in light.
+ * Semantic colours: ok (working/success), warn (waits for you), danger. All text pairs meet WCAG AA (4.5:1) on
+ * canvas/surface/surface-2/surface-3 and on their own *-soft backgrounds.
+ * Use: bg-canvas, bg-surface, bg-surface-2, bg-surface-3, text-fg, text-muted, border-line, bg-accent text-accent-fg,
+ * text-ok, bg-warn-soft text-warn, bg-danger text-danger-fg ...
+ * Accent colours (Instellingen › Uiterlijk): shell/accent.ts swaps only the accent tokens and the focus ring through
+ * <html data-accent="…">; without that attribute (Standaard) these values apply unchanged. shell/accent.ts mirrors the
+ * neutral values below for its previews and tests/accent.test.ts keeps both in step.
+ *
+ * The visual system (0.4.5): calm and round, one accent colour, depth from borders and surface steps.
+ *  - Radius: small parts 8 (rounded-md), controls 10 (rounded-lg / rounded-control), cards 16 (rounded-xl /
+ *    rounded-card), groups 20 (rounded-2xl / rounded-group), chat bubbles 22 (rounded-bubble), dialogs 28 (rounded-3xl /
+ *    rounded-dialog), pills rounded-full. Never a bare `rounded` (4 px) on a box people see.
+ *  - Icons (lucide): 16 px in buttons and lines (size-icon), 20 px for places and big actions (size-icon-lg).
+ *  - Spacing: a 4 px rhythm (Tailwind's 1 = 4 px: gap-1, gap-2, gap-3, p-4 …); half steps only inside small controls.
+ *  - Shadows only on things that float over the page: menus, popovers, toasts (shadow-pop; the old shadow-lg/xl/2xl
+ *    are the same soft shadow). Cards, dialogs and bars use a border and a surface step instead.
+ */
+@theme {
+  --radius-md: 0.5rem;
+  --radius-lg: 0.625rem;
+  --radius-xl: 1rem;
+  --radius-2xl: 1.25rem;
+  --radius-3xl: 1.75rem;
+  --radius-control: 0.625rem;
+  --radius-card: 1rem;
+  --radius-group: 1.25rem;
+  --radius-bubble: 1.375rem;
+  --radius-dialog: 1.75rem;
+  --spacing-icon: 1rem;
+  --spacing-icon-lg: 1.25rem;
+  --shadow-pop: 0 12px 32px -6px rgb(0 0 0 / 0.18), 0 2px 6px -1px rgb(0 0 0 / 0.08);
+  --shadow-lg: 0 12px 32px -6px rgb(0 0 0 / 0.18), 0 2px 6px -1px rgb(0 0 0 / 0.08);
+  --shadow-xl: 0 12px 32px -6px rgb(0 0 0 / 0.18), 0 2px 6px -1px rgb(0 0 0 / 0.08);
+  --shadow-2xl: 0 12px 32px -6px rgb(0 0 0 / 0.18), 0 2px 6px -1px rgb(0 0 0 / 0.08);
+  --color-canvas: #faf9f7;
+  --color-surface: #ffffff;
+  --color-surface-2: #f5f3ef;
+  --color-surface-3: #ebe8e2;
+  --color-fg: #1c1b19;
+  --color-muted: #5c5852;
+  --color-line: #e6e2dc;
+  --color-line-strong: #d2ccc3;
+  --color-accent: #1c1b19;
+  --color-accent-soft: #ebe8e2;
+  /* The call-to-action button: the orange of the website with dark ink (a chosen accent colour replaces it). */
+  --color-btn: #ff9440;
+  --color-btn-fg: #241a10;
+  --color-accent-fg: #ffffff;
+  --color-ok: #136b3c;
+  --color-ok-soft: #e7f3ec;
+  --color-ok-fg: #ffffff;
+  --color-warn: #855507;
+  --color-warn-soft: #f7efe1;
+  --color-warn-fg: #1a1405;
+  --color-warn-strong: #e9a32a;
+  --color-danger: #b12e2e;
+  --color-danger-soft: #faeaea;
+  --color-danger-fg: #ffffff;
+  --font-sans: "Figtree Variable", "Figtree", "Segoe UI Variable", "Segoe UI", system-ui, -apple-system, sans-serif;
+  --font-mono: "Cascadia Code", "JetBrains Mono", Consolas, ui-monospace, monospace;
+  --breakpoint-desk: 760px;
+}
+
+.dark {
+  --color-canvas: #0f0f11;
+  --color-surface: #19191d;
+  --color-surface-2: #1f1f23;
+  --color-surface-3: #28282e;
+  --color-fg: #eeedf0;
+  --color-muted: #a8a5ae;
+  --color-line: #2a2a30;
+  --color-line-strong: #3c3c43;
+  --color-accent: #d6d6de;
+  --color-accent-soft: #28282e;
+  --color-btn: #ff9a4d;
+  --color-btn-fg: #1d140b;
+  --color-accent-fg: #111114;
+  --color-ok: #4fd18b;
+  --color-ok-soft: #14241b;
+  --color-ok-fg: #06210f;
+  --color-warn: #ffc24a;
+  --color-warn-soft: #29241e;
+  --color-warn-fg: #1a1405;
+  --color-warn-strong: #ffc24a;
+  --color-danger: #ff7a7a;
+  --color-danger-soft: #2c1818;
+  --color-danger-fg: #1b0b0b;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+/* iOS keeps the layout viewport when the keyboard opens; App sets --app-h from visualViewport so the composer stays visible. */
+#root {
+  height: var(--app-h, 100%);
+}
+/*
+ * Keyboard open: the app covers exactly the visible part of the page, also when the keyboard moved that part down
+ * (visualViewport.offsetTop, App sets --vv-top): never shrunk and then scrolled up as well (composer mid-screen).
+ */
+:root.tb-keyboard #root {
+  position: fixed;
+  inset-inline: 0;
+  top: var(--vv-top, 0px);
+}
+/*
+ * Keyboard open: the page itself has nothing to scroll (the lists inside do). A finger that reaches the end of a list,
+ * or drags on the header or the chat bar, must not pull the whole app along behind the keyboard.
+ */
+:root.tb-keyboard,
+:root.tb-keyboard body {
+  overscroll-behavior: none;
+}
+:root.tb-keyboard .overflow-y-auto {
+  overscroll-behavior-y: contain;
+}
+body {
+  background: var(--color-canvas);
+  color: var(--color-fg);
+  font-family: var(--font-sans);
+  font-feature-settings: "ss01" off;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  -webkit-tap-highlight-color: transparent;
+  text-rendering: optimizeLegibility;
+}
+/* Arabic script (and other scripts Figtree has no glyphs for) falls back to the system font; give it a little more room. */
+:root:lang(ar) body {
+  line-height: 1.6;
+}
+::selection {
+  background: color-mix(in srgb, var(--color-fg) 22%, transparent);
+}
+
+/*
+ * Right-to-left languages (dir="rtl" on <html>): layout uses logical classes (ps/pe, ms/me, start/end, text-start),
+ * so it mirrors by itself. Icons that point somewhere (back/forward arrows, chevrons, send, reply, undo) are mirrored
+ * here; icons that show an object (search, bell, clock, external link) keep their shape. Add `rtl-flip` to any other
+ * element that should mirror, or `rtl-keep` to an icon that must not.
+ */
+[dir="rtl"] :is(.lucide-chevron-right, .lucide-chevron-left, .lucide-chevrons-right, .lucide-chevrons-left, .lucide-arrow-right, .lucide-arrow-left, .lucide-corner-up-left, .lucide-corner-up-right, .lucide-corner-down-left, .lucide-corner-down-right, .lucide-reply, .lucide-reply-all, .lucide-forward, .lucide-send, .lucide-send-horizontal, .lucide-undo-2, .lucide-redo-2, .lucide-undo, .lucide-redo, .lucide-log-out, .lucide-log-in, .lucide-list-ordered, .lucide-arrow-up-right, .lucide-arrow-down-left, .lucide-panel-right, .lucide-panel-left, .lucide-import, .rtl-flip):not(.rtl-keep) {
+  transform: scaleX(-1);
+}
+/* The focus ring: the text colour, or the accent colour the user chose (shell/accent.ts sets --color-ring). In the base
+   layer, so a field that draws its own focus (the chat bar's `outline-none` inside its rounded box) wins: unlayered,
+   this rule beat Tailwind's utilities and drew a square box inside the chat bar (owner, 0.4.4). */
+@layer base {
+  /*
+   * A grid without columns of its own (most are "grid gap-3 sm:grid-cols-2": one column on a phone) gets one column
+   * that is as wide as the grid, not as wide as its longest line: a card with a long name that should be cut off with
+   * "…" pushed the whole list off the right edge of a phone screen (Alle bots). Any grid-cols-* utility wins over this.
+   */
+  .grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  :focus-visible {
+    outline: 2px solid var(--color-ring, var(--color-fg));
+    outline-offset: 2px;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  * {
+    animation: none !important;
+    transition: none !important;
+  }
+  /* A closing menu waits for its exit animation; without motion it is gone at once. */
+  .tb-pop[data-state="closed"] {
+    display: none;
+  }
+}
+
+/*
+ * Menus and popovers (components/Menu.tsx): they open and close with one short move, out of the button they belong to
+ * (--tb-pop-origin) and a few pixels from its side (--tb-pop-shift: negative = from above, positive = from below).
+ */
+.tb-pop {
+  transform-origin: var(--tb-pop-origin, top);
+  animation: tb-pop-in 160ms cubic-bezier(0.23, 1, 0.32, 1);
+}
+.tb-pop[data-state="closed"] {
+  animation: tb-pop-out 120ms ease-in forwards;
+  pointer-events: none;
+}
+@keyframes tb-pop-in {
+  from {
+    opacity: 0;
+    transform: translateY(var(--tb-pop-shift, -4px));
+  }
+}
+@keyframes tb-pop-out {
+  to {
+    opacity: 0;
+    transform: translateY(var(--tb-pop-shift, -4px));
+  }
+}
+/* A menu that swaps its rows for a submenu (and back): the new rows fade in from the side they come from. */
+.tb-swap {
+  animation: tb-swap-in 160ms cubic-bezier(0.23, 1, 0.32, 1);
+}
+.tb-swap[data-from="back"] {
+  --tb-swap-from: -8px;
+}
+@keyframes tb-swap-in {
+  from {
+    opacity: 0;
+    transform: translateX(var(--tb-swap-from, 8px));
+  }
+}
+[dir="rtl"] .tb-swap {
+  --tb-swap-from: -8px;
+}
+[dir="rtl"] .tb-swap[data-from="back"] {
+  --tb-swap-from: 8px;
+}
+
+/*
+ * Tooltips in the app's own shape (the system's `title` box is square and slow): `tb-tip` on a positioned button shows
+ * its aria-label (or data-tip, when the tip says more than the name) after a short wait, under the button; `tb-tip-up`
+ * above it, `tb-tip-end` aligned to the button's end (near the window's edge). Mouse and keyboard only: on a touch
+ * screen a tip would stick after a tap.
+ */
+@media (hover: hover) {
+  .tb-tip {
+    position: relative;
+  }
+  .tb-tip::after {
+    content: attr(aria-label);
+    position: absolute;
+    top: calc(100% + 6px);
+    left: 50%;
+    z-index: 60;
+    width: max-content;
+    max-width: 240px;
+    padding: 5px 9px;
+    border-radius: var(--radius-md);
+    background: var(--color-fg);
+    color: var(--color-canvas);
+    font-size: 12px;
+    font-weight: 500;
+    line-height: 1.35;
+    letter-spacing: 0;
+    text-align: center;
+    white-space: normal;
+    pointer-events: none;
+    opacity: 0;
+    transform: translate(-50%, -2px);
+    transition:
+      opacity 120ms ease-out,
+      transform 120ms ease-out;
+  }
+  .tb-tip[data-tip]::after {
+    content: attr(data-tip);
+    /* Empty alt text: the tip is no part of the element's name (a link without aria-label was read as "Taken Taken"). */
+    content: attr(data-tip) / "";
+  }
+  .tb-tip.tb-tip-up::after {
+    top: auto;
+    bottom: calc(100% + 6px);
+    transform: translate(-50%, 2px);
+  }
+  .tb-tip.tb-tip-end::after {
+    left: auto;
+    right: 0;
+    transform: translate(0, -2px);
+  }
+  .tb-tip.tb-tip-start::after {
+    left: 0;
+    transform: translate(0, -2px);
+  }
+  .tb-tip.tb-tip-up.tb-tip-start::after {
+    transform: translate(0, 2px);
+  }
+  .tb-tip:hover::after,
+  .tb-tip:focus-visible::after {
+    opacity: 1;
+    transform: translate(-50%, 0);
+    transition-delay: 350ms;
+  }
+  .tb-tip.tb-tip-end:hover::after,
+  .tb-tip.tb-tip-end:focus-visible::after,
+  .tb-tip.tb-tip-start:hover::after,
+  .tb-tip.tb-tip-start:focus-visible::after {
+    transform: translate(0, 0);
+  }
+  /* One tip at a time: the mouse on another button wins from the button that still has the keyboard focus. */
+  body:has(.tb-tip:hover) .tb-tip:focus-visible:not(:hover)::after {
+    opacity: 0;
+    transition-delay: 0ms;
+  }
+  /* Its own menu or popover is open: the tip would lie over it. */
+  .tb-tip[aria-expanded="true"]::after {
+    display: none;
+  }
+}
+
+/* ---- Bot characters (BotFace) ---- */
+.tb-face svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+}
+.tb-face .tb-eyes {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: tb-blink 5.2s infinite;
+}
+.tb-face.tb-bob svg {
+  animation: tb-bob 1.6s ease-in-out infinite;
+}
+@keyframes tb-blink {
+  0%,
+  93%,
+  100% {
+    transform: scaleY(1);
+  }
+  95.5% {
+    transform: scaleY(0.12);
+  }
+}
+@keyframes tb-bob {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-4%);
+  }
+}
+
+/* "Waits for you" cards (approvals, questions): warm amber edge on a barely tinted surface. */
+.tb-ask {
+  border-color: color-mix(in srgb, var(--color-warn) 42%, var(--color-line));
+  background: color-mix(in srgb, var(--color-warn) 6%, var(--color-surface));
+}
+.tb-ask-danger {
+  border-color: color-mix(in srgb, var(--color-danger) 45%, var(--color-line));
+  background: color-mix(in srgb, var(--color-danger) 6%, var(--color-surface));
+}
+
+/* Soft "working" pulse for status dots. */
+.tb-pulse {
+  animation: tb-pulse 1.6s ease-in-out infinite;
+}
+@keyframes tb-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.35;
+  }
+}
+
+/* Markdown in chat bubbles */
+.md {
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+}
+.md > * + * {
+  margin-top: 0.6em;
+}
+.md h1,
+.md h2,
+.md h3 {
+  font-weight: 650;
+  margin-top: 0.9em;
+}
+.md h1 {
+  font-size: 1.25em;
+}
+.md h2 {
+  font-size: 1.12em;
+}
+.md strong {
+  font-weight: 700;
+}
+.md ul {
+  list-style: disc;
+  padding-inline-start: 1.4em;
+}
+.md ol {
+  list-style: decimal;
+  padding-inline-start: 1.4em;
+}
+.md li + li {
+  margin-top: 0.2em;
+}
+.md a {
+  color: var(--color-fg);
+  text-decoration: underline;
+  text-decoration-color: color-mix(in srgb, var(--color-fg) 45%, transparent);
+  text-underline-offset: 2px;
+}
+.md a:hover {
+  text-decoration-color: currentColor;
+}
+.md code {
+  font-family: var(--font-mono);
+  font-size: 0.86em;
+  background: var(--color-surface-3);
+  padding: 0.1em 0.35em;
+  border-radius: 5px;
+}
+.md pre {
+  background: var(--color-canvas);
+  border: 1px solid var(--color-line);
+  border-radius: 10px;
+  padding: 0.75em 1em;
+  overflow-x: auto;
+}
+.md pre code {
+  background: none;
+  padding: 0;
+}
+/* Formulas (KaTeX, shell/math.ts): a wide formula scrolls inside the answer, never the page. A formula KaTeX cannot read
+   stays as its source text in the normal text colour (errorColor: currentColor). */
+.md .katex-display {
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding: 0.25em 0;
+}
+
+/* ---- Syntax colours (highlight.js classes; lib/highlight.ts). Contrast ≥ 4.5:1 on the code background, both themes. */
+:root {
+  --hl-keyword: #6d28d9;
+  --hl-string: #116331;
+  --hl-number: #9a4a06;
+  --hl-comment: var(--color-muted);
+  --hl-title: #1d4ed8;
+  --hl-attr: #a8174f;
+  --hl-type: #0b6576;
+}
+.dark {
+  --hl-keyword: #c4a7ff;
+  --hl-string: #7ee2a8;
+  --hl-number: #ffc27a;
+  --hl-title: #8ab4ff;
+  --hl-attr: #ff9ec8;
+  --hl-type: #6fd6e8;
+}
+.hljs-keyword,
+.hljs-selector-tag,
+.hljs-literal,
+.hljs-tag,
+.hljs-name,
+.hljs-meta .hljs-keyword {
+  color: var(--hl-keyword);
+}
+.hljs-string,
+.hljs-regexp,
+.hljs-addition,
+.hljs-selector-attr,
+.hljs-selector-pseudo,
+.hljs-template-tag {
+  color: var(--hl-string);
+}
+.hljs-number,
+.hljs-symbol,
+.hljs-bullet,
+.hljs-link {
+  color: var(--hl-number);
+}
+.hljs-comment,
+.hljs-quote,
+.hljs-meta {
+  color: var(--hl-comment);
+  font-style: italic;
+}
+.hljs-title,
+.hljs-section,
+.hljs-selector-id,
+.hljs-selector-class {
+  color: var(--hl-title);
+}
+.hljs-attr,
+.hljs-attribute,
+.hljs-variable,
+.hljs-template-variable,
+.hljs-property,
+.hljs-params {
+  color: var(--hl-attr);
+}
+.hljs-type,
+.hljs-built_in,
+.hljs-title.class_ {
+  color: var(--hl-type);
+}
+.hljs-deletion {
+  color: var(--color-danger);
+}
+.hljs-emphasis {
+  font-style: italic;
+}
+.hljs-strong {
+  font-weight: 700;
+}
+.md table {
+  border-collapse: collapse;
+  display: block;
+  overflow-x: auto;
+}
+.md th,
+.md td {
+  border: 1px solid var(--color-line);
+  padding: 0.3em 0.6em;
+  /* Whole words in a cell; a table that is too wide scrolls sideways (above). With .md's "anywhere" a wide table on a
+     phone was squeezed until every word broke in the middle ("Kolo-m"). */
+  overflow-wrap: break-word;
+}
+.md blockquote {
+  border-inline-start: 3px solid var(--color-line-strong);
+  padding-inline-start: 0.8em;
+  color: var(--color-muted);
+}
+.md hr {
+  border-color: var(--color-line);
+}
+
+/*
+ * Scrollbars: slim, with a rounded thumb that only darkens under the mouse. Chromium (the app, Chrome, Edge) and Safari
+ * draw the ::-webkit-scrollbar parts; Firefox, which has none, gets the standard thin bar.
+ */
+.scroll-thin::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+.scroll-thin::-webkit-scrollbar-track,
+.scroll-thin::-webkit-scrollbar-corner {
+  background: transparent;
+}
+.scroll-thin::-webkit-scrollbar-thumb {
+  background: var(--color-line);
+  background-clip: content-box;
+  border: 2px solid transparent;
+  border-radius: 999px;
+}
+.scroll-thin::-webkit-scrollbar-thumb:hover {
+  background-color: var(--color-line-strong);
+}
+@supports not selector(::-webkit-scrollbar) {
+  .scroll-thin {
+    scrollbar-width: thin;
+    scrollbar-color: var(--color-line) transparent;
+  }
+}
+/*
+ * Notch / rounded corners in landscape (iPhone, iPad, Android): keep content inside the safe area.
+ * These classes replace the element's own padding on that side, so use them only on an element without one; an
+ * element with its own padding uses the variables instead, e.g. `pb-[max(0.75rem,var(--safe-bottom))]`.
+ * While the on-screen keyboard is open it covers the home indicator: no extra room under the composer then.
+ */
+:root {
+  --safe-top: env(safe-area-inset-top, 0px);
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
+}
+:root.tb-keyboard {
+  --safe-bottom: 0px;
+}
+.safe-x {
+  padding-left: env(safe-area-inset-left);
+  padding-right: env(safe-area-inset-right);
+}
+.safe-bottom {
+  padding-bottom: var(--safe-bottom);
+}
+.safe-top {
+  padding-top: var(--safe-top);
+}
+
+/*
+ * Touch screens: every text field at least 16 px. iOS (Safari and the iPhone app's web view) zooms the whole page in
+ * when a field below 16 px gets the focus, and does not zoom back out. Desktop (mouse) keeps its sizes; user zoom stays
+ * allowed. A field that is deliberately bigger (the PIN of the app lock) keeps its size.
+ */
+@media (pointer: coarse) {
+  :is(input:not([type="checkbox"], [type="radio"], [type="range"], [type="color"], [type="file"], [type="button"], [type="submit"], [type="reset"], [type="image"]), textarea, select):not(.text-lg, .text-xl, .text-2xl, .text-3xl, .text-4xl) {
+    font-size: 16px;
+  }
+}
+
+/*
+ * iOS keeps the layout viewport when the keyboard opens (App sets .tb-keyboard and --vv-h from the visual viewport).
+ * A full-screen layer (a dialog or bottom sheet) then ends at the top of the keyboard, so its field and buttons stay in
+ * view instead of behind the keyboard.
+ */
+:root.tb-keyboard .tb-overlay {
+  top: var(--vv-top, 0px);
+  bottom: auto;
+  height: var(--vv-h, 100%);
+}
+:root.tb-keyboard .tb-overlay > [role="dialog"],
+:root.tb-keyboard .tb-overlay > [role="alertdialog"] {
+  max-height: 100%;
+}
+/* Ctrl+F in a conversation: every hit and the current one (CSS Custom Highlights; the page itself is not changed). */
+::highlight(tb-find) {
+  background-color: color-mix(in srgb, var(--color-warn-strong) 35%, transparent);
+}
+::highlight(tb-find-current) {
+  background-color: var(--color-warn-strong);
+  color: var(--color-warn-fg);
+}
+[data-find-current] {
+  outline: 2px solid var(--color-warn-strong);
+  outline-offset: 2px;
+  border-radius: var(--radius-md);
+}
+
+/*
+ * Calm motion on the overview pages (components/overview.tsx): things that appear fade in over a few pixels, a menu
+ * pops from its button, a fold opens and closes smoothly, and a placeholder pulses while a list loads. 120–200 ms, the
+ * ease-out the rest of the app uses; all of it is switched off by the reduced-motion rule above.
+ */
+@keyframes tb-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+}
+.tb-in {
+  animation: tb-in 160ms cubic-bezier(0.23, 1, 0.32, 1) backwards;
+}
+@keyframes tb-pop {
+  from {
+    opacity: 0;
+    transform:;
+  }
+}
+.tb-pop {
+  animation: tb-pop 120ms cubic-bezier(0.23, 1, 0.32, 1) backwards;
+}
+.tb-skel {
+  border-radius: var(--radius-md);
+  background: var(--color-surface-3);
+  animation: tb-pulse 1.6s ease-in-out infinite;
+}
+/* <details class="tb-fold">: the content slides open and shut (where the browser can animate to its natural height). */
+@supports (interpolate-size: allow-keywords) {
+  details.tb-fold {
+    interpolate-size: allow-keywords;
+  }
+  details.tb-fold::details-content {
+    block-size: 0;
+    opacity: 0;
+    transition:
+      block-size 180ms cubic-bezier(0.23, 1, 0.32, 1),
+      opacity 180ms ease-out,
+      content-visibility 180ms allow-discrete;
+  }
+  /* Clipped only while shut: once open, a menu inside the fold may reach outside it. */
+  details.tb-fold:not([open])::details-content {
+    overflow-y: clip;
+  }
+  details.tb-fold[open]::details-content {
+    block-size: auto;
+    opacity: 1;
+  }
+}
+@supports not (interpolate-size: allow-keywords) {
+  details.tb-fold[open] > :not(summary) {
+    animation: tb-in 160ms cubic-bezier(0.23, 1, 0.32, 1) backwards;
+  }
+}

@@ -1,0 +1,83 @@
+{
+  "source": "recorded live on 2026-11-07 by tests/e2e/providers-live.mjs",
+  "note": "Answer after tool results",
+  "entries": [
+    {
+      "url": "https://api.openai.com/v1/responses",
+      "method": "POST",
+      "request": {
+        "model": "gpt-6-luna",
+        "stream": true,
+        "store": false,
+        "input": [
+          {
+            "role": "user",
+            "content": [
+              {
+                "type": "input_text",
+                "text": "Wat is het weer in Amsterdam en in Utrecht? Roep de tool voor beide steden tegelijk aan."
+              }
+            ]
+          },
+          {
+            "id": "fc_08aa7919ec0ea700016aeea0f8930487d28a4f5cd1d8b55e66",
+            "type": "function_call",
+            "status": "completed",
+            "arguments": "{\"city\":\"Amsterdam\"}",
+            "call_id": "call_opFC5dFMqIgHIj2xvz6cY4vW",
+            "name": "get_weather"
+          },
+          {
+            "id": "fc_08aa7919ec0ea700016aeea0f8931887d2b4711361b4be06b4",
+            "type": "function_call",
+            "status": "completed",
+            "arguments": "{\"city\":\"Utrecht\"}",
+            "call_id": "call_GzMLRq8tOvYLYZMcxDkkUCJn",
+            "name": "get_weather"
+          },
+          {
+            "type": "function_call_output",
+            "call_id": "call_opFC5dFMqIgHIj2xvz6cY4vW",
+            "output": "Zonnig, 21 graden in Amsterdam."
+          },
+          {
+            "type": "function_call_output",
+            "call_id": "call_GzMLRq8tOvYLYZMcxDkkUCJn",
+            "output": "Zonnig, 21 graden in Utrecht."
+          }
+        ],
+        "instructions": "Antwoord kort, in het Nederlands.",
+        "tools": [
+          {
+            "type": "function",
+            "name": "get_weather",
+            "description": "Geeft het weer in een stad.",
+            "parameters": {
+              "type": "object",
+              "properties": {
+                "city": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "city"
+              ]
+            },
+            "strict": false
+          }
+        ],
+        "max_output_tokens": 600,
+        "reasoning": {
+          "effort": "low",
+          "summary": "auto"
+        },
+        "include": [
+          "reasoning.encrypted_content"
+        ]
+      },
+      "status": 200,
+      "contentType": "text/event-stream; charset=utf-8",
+      "body": "event: response.created\ndata: {\"type\":\"response.created\",\"response\":{\"id\":\"resp_08aa7919ec0ea700016aeea0f8f40c87d2b1d79d2187aeb35a\",\"object\":\"response\",\"created_at\":1794023672,\"status\":\"in_progress\",\"access_programs\":null,\"background\":false,\"completed_at\":null,\"error\":null,\"frequency_penalty\":0.0,\"image\":{\"context_compression\":\"disabled\"},\"incomplete_details\":null,\"instructions\":\"Antwoord kort, in het Nederlands.\",\"max_output_tokens\":600,\"max_tool_calls\":null,\"model\":\"gpt-6-luna\",\"moderation\":null,\"output\":[],\"parallel_tool_calls\":true,\"presence_penalty\":0.0,\"previous_response_id\":null,\"prompt_cache_key\":null,\"prompt_cache_retention\":\"24h\",\"reasoning\":{\"context\":\"all_turns\",\"effort\":\"low\",\"mode\":\"standard\",\"summary\":\"detailed\"},\"safety_identifier\":null,\"service_tier\":\"auto\",\"store\":false,\"temperature\":1.0,\"text\":{\"format\":{\"type\":\"text\"},\"verbosity\":\"medium\"},\"tool_choice\":\"auto\",\"tool_usage\":{\"image_gen\":{\"input_tokens\":0,\"input_tokens_details\":{\"image_tokens\":0,\"text_tokens\":0},\"output_tokens\":0,\"output_tokens_details\":{\"image_tokens\":0,\"text_tokens\":0},\"total_tokens\":0},\"web_search\":{\"num_requests\":0}},\"tools\":[{\"type\":\"function\",\"description\":\"Geeft het weer in een stad.\",\"name\":\"get_weather\",\"output_schema\":null,\"parameters\":{\"type\":\"object\",\"properties\":{\"city\":{\"type\":\"string\"}},\"required\":[\"city\"]},\"strict\":false}],\"top_logprobs\":0,\"top_p\":0.98,\"truncation\":\"disabled\",\"usage\":null,\"user\":null,\"metadata\":{}},\"sequence_number\":0}\n\nevent: response.in_progress\ndata: {\"type\":\"response.in_progress\",\"response\":{\"id\":\"resp_08aa7919ec0ea700016aeea0f8f40c87d2b1d79d2187aeb35a\",\"object\":\"response\",\"created_at\":1794023672,\"status\":\"in_progress\",\"access_programs\":null,\"background\":false,\"completed_at\":null,\"error\":null,\"frequency_penalty\":0.0,\"image\":{\"context_compression\":\"disabled\"},\"incomplete_details\":null,\"instructions\":\"Antwoord kort, in het Nederlands.\",\"max_output_tokens\":600,\"max_tool_calls\":null,\"model\":\"gpt-6-luna\",\"moderation\":null,\"output\":[],\"parallel_tool_calls\":true,\"presence_penalty\":0.0,\"previous_response_id\":null,\"prompt_cache_key\":null,\"prompt_cache_retention\":\"24h\",\"reasoning\":{\"context\":\"all_turns\",\"effort\":\"low\",\"mode\":\"standard\",\"summary\":\"detailed\"},\"safety_identifier\":null,\"service_tier\":\"auto\",\"store\":false,\"temperature\":1.0,\"text\":{\"format\":{\"type\":\"text\"},\"verbosity\":\"medium\"},\"tool_choice\":\"auto\",\"tool_usage\":{\"image_gen\":{\"input_tokens\":0,\"input_tokens_details\":{\"image_tokens\":0,\"text_tokens\":0},\"output_tokens\":0,\"output_tokens_details\":{\"image_tokens\":0,\"text_tokens\":0},\"total_tokens\":0},\"web_search\":{\"num_requests\":0}},\"tools\":[{\"type\":\"function\",\"description\":\"Geeft het weer in een stad.\",\"name\":\"get_weather\",\"output_schema\":null,\"parameters\":{\"type\":\"object\",\"properties\":{\"city\":{\"type\":\"string\"}},\"required\":[\"city\"]},\"strict\":false}],\"top_logprobs\":0,\"top_p\":0.98,\"truncation\":\"disabled\",\"usage\":null,\"user\":null,\"metadata\":{}},\"sequence_number\":1}\n\nevent: response.output_item.added\ndata: {\"type\":\"response.output_item.added\",\"item\":{\"id\":\"msg_08aa7919ec0ea700016aeea0f9757887d29a60fb4f415bbc9a\",\"type\":\"message\",\"status\":\"in_progress\",\"content\":[],\"phase\":\"final_answer\",\"role\":\"assistant\"},\"output_index\":0,\"sequence_number\":2}\n\nevent: response.content_part.added\ndata: {\"type\":\"response.content_part.added\",\"content_index\":0,\"item_id\":\"msg_08aa7919ec0ea700016aeea0f9757887d29a60fb4f415bbc9a\",\"output_index\":0,\"part\":{\"type\":\"output_text\",\"annotations\":[],\"logprobs\":[],\"text\":\"\"},\"sequence_number\":3}\n\nevent: response.output_text.delta\ndata: {\"type\":\"response.output_text.delta\",\"content_index\":0,\"delta\":\"Amsterdam\",\"item_id\":\"msg_08aa7919ec0ea700016aeea0f9757887d29a60fb4f415bbc9a\",\"logprobs\":[],\"obfuscation\":\"wGNuWA5\",\"output_index\":0,\"sequence_number\":4}\n\nevent: response.output_text.delta\ndata: {\"type\":\"response.output_text.delta\",\"content_index\":0,\"delta\":\":\",\"item_id\":\"msg_08aa7919ec0ea700016aeea0f9757887d29a60fb4f415bbc9a\",\"logprobs\":[],\"obfuscation\":\"2ifxHGzVd9EUGlR\",\"output_index\":0,\"sequence_number\":5}\n\nevent: response.output_text.delta\ndata: {\"type\":\"response.output_text.delta\",\"content_index\":0,\"delta\":\" zonn\",\"item_id\":\"msg_08aa7919ec0ea700016aeea0f9757887d29a60fb4f415bbc9a\",\"logprobs\":[],\"obfuscation\":\"VHQeZPov8Zw\",\"output_index\":0,\"sequence_number\":6}\n\nevent: response.output_text.delta\ndata: {\"type\":\"response.output_text.delta\",\"content_index\":0,\"delta\":\"ig\",\"item_id\":\"msg_08aa7919ec0ea700016aeea0f9757887d29a60fb4f415bbc9a\",\"logprobs\":[],\"obfuscation\":\"ZGQVBlKV3G8Tgi\",\"output_index\":0,\"sequence_number\":7}\n\nevent: response.output_text.delta\ndata: {\"type\":\"response.output_text.delta\",\"content_index\":0,\"delta\":\",\",\"item_id\":\"msg_08aa7919ec0ea700016aeea0f9757887d29a60fb4f415bbc9a\",\"logprobs\":[],\"obfuscation\":\"gVumdDTtDpfSj5R\",\"output_index\":0,\"sequence_number\":8}\n\nevent: response.output_text.delta\ndata: {\"type\":\"response.output_text.delta\",\"content_index\":0,\"delta\":\" \",\"item_id\":\"msg_08aa7919ec0ea700016aeea0f9757887d29a60fb4f415bbc9a\",\"logprobs\":[],\"obfuscation\":\"qESCvjrgU6KNAkK\",\"output_index\":0,\"sequence_number\":9}\n\nevent: response.output_text.delta\ndata: {\"type\":\"response.output_text.delta\",\"content_index\":0,\"delta\":\"21\",\"item_id\":\"msg_08aa7919ec0ea700016aeea0f9757887d29a60fb4f415bbc9a\",\"logprobs\":[],\"obfuscation\":\"tcOdZwzjfgLRBy\",\"output_index\":0,\"sequence_number\":10}\n\nevent: response.output_text.delta\ndata: {\"type\":\"response.output_text.delta\",\"content_index\":0,\"delta\":\" °\",\"item_id\":\"msg_08aa7919ec0ea700016aeea0f9757887d29a60fb4f415bbc9a\",\"logprobs\":[],\"obfuscation\":\"l3VtCBTUgc8ZgF\",\"output_index\":0,\"sequence_number\":11}\n\nevent: response.output_text.delta\ndata: {\"type\":\"response.output_text.delta\",\"content_index\":0,\"delta\":\"C\",\"item_id\":\"msg_08aa7919ec0ea700016aeea0f9757887d29a60fb4f415bbc9a\",\"logprobs\":[],\"obfuscation\":\"l2ZQDmJa7rkYs5p\",\"output_index\":0,\"sequence_number\":12}\n\nevent: response.output_text.delta\ndata: {\"type\":\"response.output_text.delta\",\"content_index\":0,\"delta\":\".\",\"item_id\":\"msg_08aa7919ec0ea700016aeea0f9757887d29a60fb4f415bbc9a\",\"logprobs\":[],\"obfuscation\":\"ti5zu5Dc9HzkyOj\",\"output_index\":0,\"sequence_number\":13}\n\nevent: response.output_text.delta\ndata: {\"type\":\"response.output_text.delta\",\"content_index\":0,\"delta\":\" Utrecht\",\"item_id\":\"msg_08aa7919ec0ea700016aeea0f9757887d29a60fb4f415bbc9a\",\"logprobs\":[],\"obfuscation\":\"BDO7RKII\",\"output_index\":0,\"sequence_number\":14}\n\nevent: response.output_text.delta\ndata: {\"type\":\"response.output_text.delta\",\"content_index\":0,\"delta\":\":\",\"item_id\":\"msg_08aa7919ec0ea700016aeea0f9757887d29a60fb4f415bbc9a\",\"logprobs\":[],\"obfuscation\":\"VpN8DvSPWlEc4gr\",\"output_index\":0,\"sequence_number\":15}\n\nevent: response.output_text.delta\ndata: {\"type\":\"response.output_text.delta\",\"content_index\":0,\"delta\":\" zonn\",\"item_id\":\"msg_08aa7919ec0ea700016aeea0f9757887d29a60fb4f415bbc9a\",\"logprobs\":[],\"obfuscation\":\"j8CIJPAQ7hd\",\"output_index\":0,\"sequence_number\":16}\n\nevent: response.output_text.delta\ndata: {\"type\":\"response.output_text.delta\",\"content_index\":0,\"delta\":\"ig\",\"item_id\":\"msg_08aa7919ec0ea700016aeea0f9757887d29a60fb4f415bbc9a\",\"logprobs\":[],\"obfuscation\":\"gu7oNAcKK065vC\",\"output_index\":0,\"sequence_number\":17}\n\nevent: response.output_text.delta\ndata: {\"type\":\"response.output_text.delta\",\"content_index\":0,\"delta\":\",\",\"item_id\":\"msg_08aa7919ec0ea700016aeea0f9757887d29a60fb4f415bbc9a\",\"logprobs\":[],\"obfuscation\":\"dt26aPAAfNABpZX\",\"output_index\":0,\"sequence_number\":18}\n\nevent: response.output_text.delta\ndata: {\"type\":\"response.output_text.delta\",\"content_index\":0,\"delta\":\" \",\"item_id\":\"msg_08aa7919ec0ea700016aeea0f9757887d29a60fb4f415bbc9a\",\"logprobs\":[],\"obfuscation\":\"g0e8hcHv4sQsm7E\",\"output_index\":0,\"sequence_number\":19}\n\nevent: response.output_text.delta\ndata: {\"type\":\"response.output_text.delta\",\"content_index\":0,\"delta\":\"21\",\"item_id\":\"msg_08aa7919ec0ea700016aeea0f9757887d29a60fb4f415bbc9a\",\"logprobs\":[],\"obfuscation\":\"0XIyvw5LwJSepe\",\"output_index\":0,\"sequence_number\":20}\n\nevent: response.output_text.delta\ndata: {\"type\":\"response.output_text.delta\",\"content_index\":0,\"delta\":\" °\",\"item_id\":\"msg_08aa7919ec0ea700016aeea0f9757887d29a60fb4f415bbc9a\",\"logprobs\":[],\"obfuscation\":\"7r0k2asJMgjq4G\",\"output_index\":0,\"sequence_number\":21}\n\nevent: response.output_text.delta\ndata: {\"type\":\"response.output_text.delta\",\"content_index\":0,\"delta\":\"C\",\"item_id\":\"msg_08aa7919ec0ea700016aeea0f9757887d29a60fb4f415bbc9a\",\"logprobs\":[],\"obfuscation\":\"I6ohRcX1KbhJPfA\",\"output_index\":0,\"sequence_number\":22}\n\nevent: response.output_text.delta\ndata: {\"type\":\"response.output_text.delta\",\"content_index\":0,\"delta\":\".\",\"item_id\":\"msg_08aa7919ec0ea700016aeea0f9757887d29a60fb4f415bbc9a\",\"logprobs\":[],\"obfuscation\":\"FOUgAqTrOnPz0VX\",\"output_index\":0,\"sequence_number\":23}\n\nevent: response.output_text.done\ndata: {\"type\":\"response.output_text.done\",\"content_index\":0,\"item_id\":\"msg_08aa7919ec0ea700016aeea0f9757887d29a60fb4f415bbc9a\",\"logprobs\":[],\"output_index\":0,\"sequence_number\":24,\"text\":\"Amsterdam: zonnig, 21 °C. Utrecht: zonnig, 21 °C.\"}\n\nevent: response.content_part.done\ndata: {\"type\":\"response.content_part.done\",\"content_index\":0,\"item_id\":\"msg_08aa7919ec0ea700016aeea0f9757887d29a60fb4f415bbc9a\",\"output_index\":0,\"part\":{\"type\":\"output_text\",\"annotations\":[],\"logprobs\":[],\"text\":\"Amsterdam: zonnig, 21 °C. Utrecht: zonnig, 21 °C.\"},\"sequence_number\":25}\n\nevent: response.output_item.done\ndata: {\"type\":\"response.output_item.done\",\"item\":{\"id\":\"msg_08aa7919ec0ea700016aeea0f9757887d29a60fb4f415bbc9a\",\"type\":\"message\",\"status\":\"completed\",\"content\":[{\"type\":\"output_text\",\"annotations\":[],\"logprobs\":[],\"text\":\"Amsterdam: zonnig, 21 °C. Utrecht: zonnig, 21 °C.\"}],\"phase\":\"final_answer\",\"role\":\"assistant\"},\"output_index\":0,\"sequence_number\":26}\n\nevent: response.completed\ndata: {\"type\":\"response.completed\",\"response\":{\"id\":\"resp_08aa7919ec0ea700016aeea0f8f40c87d2b1d79d2187aeb35a\",\"object\":\"response\",\"created_at\":1794023672,\"status\":\"completed\",\"access_programs\":null,\"background\":false,\"completed_at\":1794023673,\"error\":null,\"frequency_penalty\":0.0,\"image\":{\"context_compression\":\"disabled\"},\"incomplete_details\":null,\"instructions\":\"Antwoord kort, in het Nederlands.\",\"max_output_tokens\":600,\"max_tool_calls\":null,\"model\":\"gpt-6-luna\",\"moderation\":null,\"output\":[{\"id\":\"msg_08aa7919ec0ea700016aeea0f9757887d29a60fb4f415bbc9a\",\"type\":\"message\",\"status\":\"completed\",\"content\":[{\"type\":\"output_text\",\"annotations\":[],\"logprobs\":[],\"text\":\"Amsterdam: zonnig, 21 °C. Utrecht: zonnig, 21 °C.\"}],\"phase\":\"final_answer\",\"role\":\"assistant\"}],\"parallel_tool_calls\":true,\"presence_penalty\":0.0,\"previous_response_id\":null,\"prompt_cache_key\":null,\"prompt_cache_retention\":\"24h\",\"reasoning\":{\"context\":\"all_turns\",\"effort\":\"low\",\"mode\":\"standard\",\"summary\":\"detailed\"},\"safety_identifier\":null,\"service_tier\":\"default\",\"store\":false,\"temperature\":1.0,\"text\":{\"format\":{\"type\":\"text\"},\"verbosity\":\"medium\"},\"tool_choice\":\"auto\",\"tool_usage\":{\"image_gen\":{\"input_tokens\":0,\"input_tokens_details\":{\"image_tokens\":0,\"text_tokens\":0},\"output_tokens\":0,\"output_tokens_details\":{\"image_tokens\":0,\"text_tokens\":0},\"total_tokens\":0},\"web_search\":{\"num_requests\":0}},\"tools\":[{\"type\":\"function\",\"description\":\"Geeft het weer in een stad.\",\"name\":\"get_weather\",\"output_schema\":null,\"parameters\":{\"type\":\"object\",\"properties\":{\"city\":{\"type\":\"string\"}},\"required\":[\"city\"]},\"strict\":false}],\"top_logprobs\":0,\"top_p\":0.98,\"truncation\":\"disabled\",\"usage\":{\"input_tokens\":165,\"input_tokens_details\":{\"cache_write_tokens\":0,\"cached_tokens\":0},\"output_tokens\":24,\"output_tokens_details\":{\"reasoning_tokens\":0},\"total_tokens\":189},\"user\":null,\"metadata\":{}},\"sequence_number\":27}\n\n"
+    }
+  ]
+}

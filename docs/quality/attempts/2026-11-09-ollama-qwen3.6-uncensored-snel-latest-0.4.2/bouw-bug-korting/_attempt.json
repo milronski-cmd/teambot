@@ -1,0 +1,8 @@
+{
+ "task": "bouw-bug-korting",
+ "final": "Alle tests slagen nu:\n\n- ✔ geen korting onder de 5 stuks\n- ✔ 10% korting vanaf 5 stuks\n- ✔ 15% korting vanaf 10 stuks\n- ✔ regels samen tellen voor de korting",
+ "questions": [],
+ "deleted": [],
+ "skipped": [],
+ "status": "ok"
+}

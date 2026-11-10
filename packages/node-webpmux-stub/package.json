@@ -1,0 +1,11 @@
+{
+  "name": "node-webpmux",
+  "version": "3.2.1-teambot.0",
+  "description": "TeamBot stand-in for node-webpmux (LGPL). whatsapp-web.js only needs it to build stickers, which TeamBot never does.",
+  "license": "Apache-2.0",
+  "main": "index.js",
+  "files": [
+    "index.js",
+    "README.md"
+  ]
+}

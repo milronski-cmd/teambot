@@ -1,0 +1,25 @@
+# Caddy in front of TeamBot Cloud: TLS for the apex and every workspace subdomain.
+# Copy to cloud/Caddyfile. Choose ONE of the two TLS options below.
+{
+	# Option A (simple): on-demand TLS, a certificate per workspace host on first visit. The cloud only says yes
+	# for the apex and existing workspaces, so nobody can make Caddy request certificates for random names.
+	on_demand_tls {
+		ask http://teambot-cloud:8080/_tls/ask
+	}
+}
+
+{$CLOUD_DOMAIN}, *.{$CLOUD_DOMAIN} {
+	tls {
+		on_demand
+		# Option B (recommended for many workspaces): one wildcard certificate via the DNS-01 challenge.
+		# Needs a Caddy build with your DNS provider module (xcaddy, e.g. github.com/caddy-dns/cloudflare):
+		#   dns cloudflare {env.CF_API_TOKEN}
+		# and remove "on_demand" above.
+	}
+	encode zstd gzip
+	reverse_proxy teambot-cloud:8080 {
+		# Stream event responses right away (WebSockets are proxied by Caddy automatically)
+		flush_interval -1
+	}
+	header Strict-Transport-Security "max-age=31536000"
+}

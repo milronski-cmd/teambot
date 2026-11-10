@@ -1,0 +1,9 @@
+<tool_call>
+<function=write_file>
+<parameter=path>
+roas.py
+<parameter=content>
+print('ok')
+</parameter>
+</function>
+</tool_call>

@@ -1,0 +1,6 @@
+{
+  "mcpServers": {
+    "linear": { "url": "https://mcp.linear.app/sse" },
+    "notion": { "url": "https://mcp.notion.com/mcp" }
+  }
+}

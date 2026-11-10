@@ -1,0 +1,13 @@
+[
+ { "code": "nl", "name": "Nederlands", "english": "Dutch", "locale": "nl-NL", "dir": "ltr", "source": true },
+ { "code": "en", "name": "English", "english": "English", "locale": "en-GB", "dir": "ltr" },
+ { "code": "de", "name": "Deutsch", "english": "German", "locale": "de-DE", "dir": "ltr" },
+ { "code": "fr", "name": "Français", "english": "French", "locale": "fr-FR", "dir": "ltr" },
+ { "code": "es", "name": "Español", "english": "Spanish", "locale": "es-ES", "dir": "ltr" },
+ { "code": "it", "name": "Italiano", "english": "Italian", "locale": "it-IT", "dir": "ltr" },
+ { "code": "pt", "name": "Português", "english": "Portuguese (Brazil)", "locale": "pt-BR", "dir": "ltr" },
+ { "code": "pl", "name": "Polski", "english": "Polish", "locale": "pl-PL", "dir": "ltr" },
+ { "code": "tr", "name": "Türkçe", "english": "Turkish", "locale": "tr-TR", "dir": "ltr" },
+ { "code": "uk", "name": "Українська", "english": "Ukrainian", "locale": "uk-UA", "dir": "ltr" },
+ { "code": "ar", "name": "العربية", "english": "Arabic (Modern Standard)", "locale": "ar-u-nu-latn", "dir": "rtl" }
+]

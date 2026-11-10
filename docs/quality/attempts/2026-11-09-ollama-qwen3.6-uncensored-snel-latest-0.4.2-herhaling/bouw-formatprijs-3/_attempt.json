@@ -1,0 +1,8 @@
+{
+ "task": "bouw-formatprijs",
+ "final": "Het testresultaat toont dat mijn implementatie nu correct werkt voor positieve getallen, maar negatieve getallen nog steeds niet goed worden afgehandeld. De cache bevat nog oude waarden. Laat me dit oplossen.",
+ "questions": [],
+ "deleted": [],
+ "skipped": [],
+ "status": "ok"
+}

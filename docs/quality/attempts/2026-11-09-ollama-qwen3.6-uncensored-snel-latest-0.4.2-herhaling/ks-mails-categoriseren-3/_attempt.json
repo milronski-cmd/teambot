@@ -1,0 +1,8 @@
+{
+ "task": "ks-mails-categoriseren",
+ "final": "De mails zijn als volgt ingedeeld:\n\n| Bestand | Categorie | Toelichting |\n|---|---|---|\n| mail-1.txt | levering | Vraag over leverstatus/track & trace |\n| mail-2.txt | retour | Verzoek tot ruilen/retourneren |\n| mail-3.txt | betaling | Probleem met iDEAL-betaling |\n| mail-4.txt | product | Vraag over producteigenschappen (stuurmaat) |\n| mail-5.txt | garantie | Vraag over kapot achterlicht |\n| mail-6.txt | betaling | Vraag over betaalopties (PayPal) |\n\nDe categorieën zijn weggeschreven naar `mails/categorieen.csv` met kolommen `bestand` en `categorie`.",
+ "questions": [],
+ "deleted": [],
+ "skipped": [],
+ "status": "ok"
+}

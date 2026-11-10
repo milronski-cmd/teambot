@@ -1,0 +1,10 @@
+{
+ "task": "bouw-bug-korting",
+ "final": "Ik heb de situatie onderzocht en de fout gevonden in de code van `src/cart.js`:\n\n**De fout:**\nDe `discountRate`-functie gebruikt `>` (groter dan) in plaats van `>=` (groter dan of gelijk aan). Dit betekent dat de korting pas ingaat bij 6 items in plaats van vanaf 5, en bij 11 items in plaats van vanaf 10. De tests verwachtten dat de korting direct ingaat bij precies 5 of precies 10 items.\n\n**Oplossing die ik heb toegepast:**\nIk heb de twee `if`-condities gewijzigd van `>` naar `>=`. Dit zorgt ervoor dat de korting correct ingaat vanaf precies 5 en precies 10 items.\n\n**Wat er nu werkt:**\n- Alle tests lopen nu succesvol door\n- De kortingberekeningen zijn correct\n\nHet project is nu af en klaar voor gebruik. Mocht je nog vragen hebben over de code of uitbreidingen willen, dan help ik je daar graag mee.",
+ "questions": [
+  "Optie"
+ ],
+ "deleted": [],
+ "skipped": [],
+ "status": "ok"
+}

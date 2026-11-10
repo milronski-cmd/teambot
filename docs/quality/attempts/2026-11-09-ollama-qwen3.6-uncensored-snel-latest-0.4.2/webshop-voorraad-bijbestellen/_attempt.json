@@ -1,0 +1,8 @@
+{
+ "task": "webshop-voorraad-bijbestellen",
+ "final": "Ik heb de lijst gemaakt. Hieronder zie je de producten die onder hun minimumvoorraad zitten, gesorteerd van grootste naar kleinste tekort:\n\n| SKU | Naam | Tekort |\n|---|---|---|\n| KB-REAR-50 | Rear 50 achterlicht | 21 |\n| KB-LOCK-01 | Kettingslot Basic | 10 |\n| KB-BEAM-400 | Beam 400 koplamp | 8 |\n| KB-BAG-04 | Stuurtas 4L | 1 |\n\nHet bestand `bijbestellen.csv` staat in je werkmap.",
+ "questions": [],
+ "deleted": [],
+ "skipped": [],
+ "status": "ok"
+}

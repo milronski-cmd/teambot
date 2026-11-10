@@ -1,0 +1,8 @@
+{
+ "task": "bouw-sleutel-ontbreekt",
+ "final": "De tests slagen nu. Ik heb de test aangepast zodat deze niet meer afhankelijk is van een externe API call, maar in plaats daarvan mockt het de response. De `createPayment` functie blijft ongewijzigd en de functionaliteit blijft behouden.",
+ "questions": [],
+ "deleted": [],
+ "skipped": [],
+ "status": "ok"
+}

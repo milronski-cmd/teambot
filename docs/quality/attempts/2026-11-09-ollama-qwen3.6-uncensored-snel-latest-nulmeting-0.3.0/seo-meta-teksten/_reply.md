@@ -1,0 +1,1 @@
+Ik heb de SEO-titels en metabeschrijvingen voor de drie pagina's opgeschreven en in meta.json gezet. Elke titel en beschrijving bevat het focuszoekwoord van de pagina en houdt zich binnen de gewenste tekengrenzen.

@@ -1,0 +1,98 @@
+{
+  "source": "recorded live on 2026-11-07 by tests/e2e/providers-live.mjs",
+  "note": "Parallel tool calls",
+  "entries": [
+    {
+      "url": "https://api.openai.com/v1/chat/completions",
+      "method": "POST",
+      "request": {
+        "model": "gpt-6-luna",
+        "stream": true,
+        "messages": [
+          {
+            "role": "system",
+            "content": "Antwoord kort, in het Nederlands."
+          },
+          {
+            "role": "user",
+            "content": "Wat is het weer in Amsterdam en in Utrecht? Roep de tool voor beide steden tegelijk aan."
+          }
+        ],
+        "tools": [
+          {
+            "type": "function",
+            "function": {
+              "name": "get_weather",
+              "description": "Geeft het weer in een stad.",
+              "parameters": {
+                "type": "object",
+                "properties": {
+                  "city": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "city"
+                ]
+              }
+            }
+          }
+        ],
+        "stream_options": {
+          "include_usage": true
+        },
+        "reasoning_effort": "low",
+        "max_completion_tokens": 600
+      },
+      "status": 400,
+      "contentType": "application/json",
+      "body": "{\n  \"error\": {\n    \"message\": \"Function tools with reasoning_effort are not supported for gpt-6-luna in /v1/chat/completions. To use function tools, use /v1/responses or set reasoning_effort to 'none'.\",\n    \"type\": \"invalid_request_error\",\n    \"param\": \"reasoning_effort\",\n    \"code\": null\n  }\n}"
+    },
+    {
+      "url": "https://api.openai.com/v1/chat/completions",
+      "method": "POST",
+      "request": {
+        "model": "gpt-6-luna",
+        "stream": true,
+        "messages": [
+          {
+            "role": "system",
+            "content": "Antwoord kort, in het Nederlands."
+          },
+          {
+            "role": "user",
+            "content": "Wat is het weer in Amsterdam en in Utrecht? Roep de tool voor beide steden tegelijk aan."
+          }
+        ],
+        "tools": [
+          {
+            "type": "function",
+            "function": {
+              "name": "get_weather",
+              "description": "Geeft het weer in een stad.",
+              "parameters": {
+                "type": "object",
+                "properties": {
+                  "city": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "city"
+                ]
+              }
+            }
+          }
+        ],
+        "stream_options": {
+          "include_usage": true
+        },
+        "reasoning_effort": "none",
+        "max_completion_tokens": 600
+      },
+      "status": 200,
+      "contentType": "text/event-stream; charset=utf-8",
+      "body": "data: {\"id\":\"chatcmpl-EhRYTPyYyBNcjwKUqo7n3Nm3bfc7l\",\"object\":\"chat.completion.chunk\",\"created\":1794022733,\"model\":\"gpt-6-luna\",\"service_tier\":\"default\",\"system_fingerprint\":null,\"usage\":null,\"choices\":[{\"index\":0,\"delta\":{\"role\":\"assistant\",\"content\":null},\"finish_reason\":null}],\"obfuscation\":\"JDnhYQGz5f8hs\"}\n\ndata: {\"id\":\"chatcmpl-EhRYTPyYyBNcjwKUqo7n3Nm3bfc7l\",\"object\":\"chat.completion.chunk\",\"created\":1794022733,\"model\":\"gpt-6-luna\",\"service_tier\":\"default\",\"system_fingerprint\":null,\"usage\":null,\"choices\":[{\"index\":0,\"delta\":{\"tool_calls\":[{\"index\":0,\"id\":\"call_3vhToj9Z6mHxCpo0x4ywN9pI\",\"type\":\"function\",\"function\":{\"name\":\"get_weather\",\"arguments\":\"\"}}]},\"finish_reason\":null}],\"obfuscation\":\"GSTObuDts5I7\"}\n\ndata: {\"id\":\"chatcmpl-EhRYTPyYyBNcjwKUqo7n3Nm3bfc7l\",\"object\":\"chat.completion.chunk\",\"created\":1794022733,\"model\":\"gpt-6-luna\",\"service_tier\":\"default\",\"system_fingerprint\":null,\"usage\":null,\"choices\":[{\"index\":0,\"delta\":{\"tool_calls\":[{\"index\":0,\"function\":{\"arguments\":\"{\\\"ci\"}}]},\"finish_reason\":null}],\"obfuscation\":\"vjT\"}\n\ndata: {\"id\":\"chatcmpl-EhRYTPyYyBNcjwKUqo7n3Nm3bfc7l\",\"object\":\"chat.completion.chunk\",\"created\":1794022733,\"model\":\"gpt-6-luna\",\"service_tier\":\"default\",\"system_fingerprint\":null,\"usage\":null,\"choices\":[{\"index\":0,\"delta\":{\"tool_calls\":[{\"index\":0,\"function\":{\"arguments\":\"ty\\\": \"}}]},\"finish_reason\":null}],\"obfuscation\":\"C2\"}\n\ndata: {\"id\":\"chatcmpl-EhRYTPyYyBNcjwKUqo7n3Nm3bfc7l\",\"object\":\"chat.completion.chunk\",\"created\":1794022733,\"model\":\"gpt-6-luna\",\"service_tier\":\"default\",\"system_fingerprint\":null,\"usage\":null,\"choices\":[{\"index\":0,\"delta\":{\"tool_calls\":[{\"index\":0,\"function\":{\"arguments\":\"\\\"Amste\"}}]},\"finish_reason\":null}],\"obfuscation\":\"6\"}\n\ndata: {\"id\":\"chatcmpl-EhRYTPyYyBNcjwKUqo7n3Nm3bfc7l\",\"object\":\"chat.completion.chunk\",\"created\":1794022733,\"model\":\"gpt-6-luna\",\"service_tier\":\"default\",\"system_fingerprint\":null,\"usage\":null,\"choices\":[{\"index\":0,\"delta\":{\"tool_calls\":[{\"index\":0,\"function\":{\"arguments\":\"rdam\"}}]},\"finish_reason\":null}],\"obfuscation\":\"DI87\"}\n\ndata: {\"id\":\"chatcmpl-EhRYTPyYyBNcjwKUqo7n3Nm3bfc7l\",\"object\":\"chat.completion.chunk\",\"created\":1794022733,\"model\":\"gpt-6-luna\",\"service_tier\":\"default\",\"system_fingerprint\":null,\"usage\":null,\"choices\":[{\"index\":0,\"delta\":{\"tool_calls\":[{\"index\":0,\"function\":{\"arguments\":\"\\\"}\"}}]},\"finish_reason\":null}],\"obfuscation\":\"NPCxe\"}\n\ndata: {\"id\":\"chatcmpl-EhRYTPyYyBNcjwKUqo7n3Nm3bfc7l\",\"object\":\"chat.completion.chunk\",\"created\":1794022733,\"model\":\"gpt-6-luna\",\"service_tier\":\"default\",\"system_fingerprint\":null,\"usage\":null,\"choices\":[{\"index\":0,\"delta\":{\"tool_calls\":[{\"index\":1,\"id\":\"call_Ym3lvZyGXG5yHxlTVIM4qsao\",\"type\":\"function\",\"function\":{\"name\":\"get_weather\",\"arguments\":\"\"}}]},\"finish_reason\":null}],\"obfuscation\":\"5rfOT254giEk\"}\n\ndata: {\"id\":\"chatcmpl-EhRYTPyYyBNcjwKUqo7n3Nm3bfc7l\",\"object\":\"chat.completion.chunk\",\"created\":1794022733,\"model\":\"gpt-6-luna\",\"service_tier\":\"default\",\"system_fingerprint\":null,\"usage\":null,\"choices\":[{\"index\":0,\"delta\":{\"tool_calls\":[{\"index\":1,\"function\":{\"arguments\":\"{\\\"ci\"}}]},\"finish_reason\":null}],\"obfuscation\":\"sJI\"}\n\ndata: {\"id\":\"chatcmpl-EhRYTPyYyBNcjwKUqo7n3Nm3bfc7l\",\"object\":\"chat.completion.chunk\",\"created\":1794022733,\"model\":\"gpt-6-luna\",\"service_tier\":\"default\",\"system_fingerprint\":null,\"usage\":null,\"choices\":[{\"index\":0,\"delta\":{\"tool_calls\":[{\"index\":1,\"function\":{\"arguments\":\"ty\\\": \"}}]},\"finish_reason\":null}],\"obfuscation\":\"cN\"}\n\ndata: {\"id\":\"chatcmpl-EhRYTPyYyBNcjwKUqo7n3Nm3bfc7l\",\"object\":\"chat.completion.chunk\",\"created\":1794022733,\"model\":\"gpt-6-luna\",\"service_tier\":\"default\",\"system_fingerprint\":null,\"usage\":null,\"choices\":[{\"index\":0,\"delta\":{\"tool_calls\":[{\"index\":1,\"function\":{\"arguments\":\"\\\"Utrec\"}}]},\"finish_reason\":null}],\"obfuscation\":\"H\"}\n\ndata: {\"id\":\"chatcmpl-EhRYTPyYyBNcjwKUqo7n3Nm3bfc7l\",\"object\":\"chat.completion.chunk\",\"created\":1794022733,\"model\":\"gpt-6-luna\",\"service_tier\":\"default\",\"system_fingerprint\":null,\"usage\":null,\"choices\":[{\"index\":0,\"delta\":{\"tool_calls\":[{\"index\":1,\"function\":{\"arguments\":\"ht\\\"}\"}}]},\"finish_reason\":null}],\"obfuscation\":\"t1n\"}\n\ndata: {\"id\":\"chatcmpl-EhRYTPyYyBNcjwKUqo7n3Nm3bfc7l\",\"object\":\"chat.completion.chunk\",\"created\":1794022733,\"model\":\"gpt-6-luna\",\"service_tier\":\"default\",\"system_fingerprint\":null,\"choices\":[{\"index\":0,\"delta\":{},\"finish_reason\":\"tool_calls\"}],\"usage\":null,\"obfuscation\":\"p7sEv0\"}\n\ndata: {\"id\":\"chatcmpl-EhRYTPyYyBNcjwKUqo7n3Nm3bfc7l\",\"object\":\"chat.completion.chunk\",\"created\":1794022733,\"model\":\"gpt-6-luna\",\"service_tier\":\"default\",\"system_fingerprint\":null,\"choices\":[],\"usage\":{\"prompt_tokens\":157,\"completion_tokens\":48,\"total_tokens\":205,\"prompt_tokens_details\":{\"cached_tokens\":0,\"cache_write_tokens\":0,\"audio_tokens\":0},\"completion_tokens_details\":{\"reasoning_tokens\":0,\"audio_tokens\":0,\"accepted_prediction_tokens\":0,\"rejected_prediction_tokens\":0}},\"obfuscation\":\"8kRRNnjz\"}\n\ndata: [DONE]\n\n"
+    }
+  ]
+}
