@@ -95,6 +95,12 @@ export class RunManager {
         this.busyKeys.delete(key);
         // The conversation (or its bot) was deleted while the run was busy: its row is gone. Whoever waits for it
         // still hears that it is over, and the next queued run still starts.
+        // The run is over: an approval or question it left open can no longer be answered into anything.
+        try {
+          ctx.broker.expireForRun(run.id);
+        } catch (e) {
+          ctx.log.error('[runs] expire approvals of ended run', e);
+        }
         const row = ctx.store.run(run.id);
         const fin = row || { ...r, status: 'cancelled' as const, finished_at: now() };
         if (row) this.emit(row);

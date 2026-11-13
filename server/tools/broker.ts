@@ -329,6 +329,24 @@ export class Broker {
     return rows.length;
   }
 
+  /**
+   * A run ended for good (done, error or cancelled) while it still had an open approval or question: nobody waits for
+   * the answer any more, so the card expires and leaves "Wacht op jou" (approval.updated). Never for an interrupted
+   * run: that approval stays open on purpose, deciding it resumes the work (expireStale / supersedeInterrupted).
+   */
+  expireForRun(runId: string): number {
+    const ctx = this.getCtx();
+    const run = ctx.store.run(runId);
+    if (!run || !['done', 'error', 'cancelled'].includes(run.status)) return 0;
+    const rows = ctx.store.all<any>("SELECT id, user_id FROM approvals WHERE status = 'pending' AND run_id = ?", runId);
+    for (const r of rows) {
+      this.pending.delete(r.id);
+      ctx.store.update('approvals', r.id, { status: 'expired', decided_at: now() });
+      ctx.events.emit(r.user_id, 'approval.updated', this.view(ctx.store.get('approvals', r.id)));
+    }
+    return rows.length;
+  }
+
   view(a: any) {
     if (!a) return a;
     // A shared bot asking a member (agent/shared.ts): "always allow" would change someone else's bot, so the card
