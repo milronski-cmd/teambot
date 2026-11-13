@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { ArrowDown, ArrowUp, Bell, Bot, CircleCheck, CircleX, Copy, GitBranch, Hand, History, Pencil, Play, Plus, RotateCcw, Square, Trash2, Workflow as WorkflowIcon } from 'lucide-react';
+import { ArrowDown, ArrowUp, Bell, Bot, CircleCheck, CircleX, Copy, GitBranch, Hand, History, Pencil, Play, Plus, RotateCcw, Square, Trash2, Workflow as WorkflowIcon, LayoutTemplate, ListOrdered, Clock } from 'lucide-react';
 import { Fold, Menu, Skeleton, SkeletonRows } from '../../components/overview';
 import { MoreInfo } from '../../components/MoreInfo';
 import { api } from '../../lib/api';
@@ -8,9 +8,11 @@ import { navigate } from '../../lib/router';
 import { agentById, useApp } from '../../lib/store';
 import type { Approval } from '../../lib/types';
 import { BotAvatar } from '../../components/BotFace';
-import { askConfirm, Badge, Button, Card, EmptyState, Field, Input, Modal, Page, PageHeader, SectionTitle, Select, Spinner, Textarea, Toggle, timeAgo, toast, toastError, useAsync } from '../../components/ui';
+import { askConfirm, Badge, Button, Card, EmptyState, Field, Input, Modal, Page, PageHeader, SectionTitle, Select, Spinner, Textarea, Toggle, timeAgo, toast, toastError, useAsync, copyText } from '../../components/ui';
 import { Markdown } from '../../shell/Markdown';
+import { useDecide } from '../../shell/approvalDecide';
 import { DAY_NAMES, STATUS_TEXT, STATUS_TONE, TRIGGER_TEXT, newStepId, useRun, useWorkflows, type Run, type RunRow, type Schedule, type Step, type Template, type TraceItem, type Version, type Workflow } from './api';
+import { tText } from '../../lib/format';
 
 const KIND_ICON = { bot: Bot, condition: GitBranch, approval: Hand, notify: Bell } as const;
 const KIND_TEXT: Record<Step['kind'], string> = { bot: 'Een bot doet iets', condition: 'Controle', approval: 'Jouw akkoord', notify: 'Melding aan jou' };
@@ -45,15 +47,16 @@ export function StartModal({ w, hint, onClose }: { w: Workflow; hint?: string; o
   const { busy, run } = useAsync();
   const go = () =>
     run(async () => {
+      const from = location.hash;
       const r = await api.post<Run>(`/workflows/${w.id}/run`, { input });
       onClose();
-      navigate(`#/m/workflows/run/${r.id}`);
+      navigate(`#/m/workflows/run/${r.id}`, { from });
     });
   return (
     <Modal
       open
       onClose={onClose}
-      title={`“${w.name}” starten`}
+      title={tText('“{0}” starten', w.name)}
       footer={
         <>
           <Button onClick={onClose}>Annuleren</Button>
@@ -63,7 +66,7 @@ export function StartModal({ w, hint, onClose }: { w: Workflow; hint?: string; o
         </>
       }
     >
-      <Field label="Waar moet de workflow mee werken?" hint={hint || 'Bijvoorbeeld het product, het onderwerp of het bericht. Mag leeg blijven.'}>
+      <Field label="Waar moet de workflow mee werken?" hint={hint || 'Bijvoorbeeld de opdracht, het onderwerp of het bericht. Mag leeg blijven.'}>
         <Textarea rows={5} value={input} onChange={(e) => setInput(e.target.value)} autoFocus />
       </Field>
     </Modal>
@@ -149,10 +152,11 @@ export function WorkflowsPage() {
   const [using, setUsing] = useState<string | null>(null);
   const use = async (tpl: Template) => {
     setUsing(tpl.id);
+    const from = location.hash;
     try {
       const w = await api.post<Workflow>('/workflows', { template: tpl.id });
       toast('Workflow gemaakt. Controleer per stap of de juiste bot is gekozen.', 'ok');
-      navigate(`#/m/workflows/w/${w.id}`);
+      navigate(`#/m/workflows/w/${w.id}`, { from });
     } catch (e) {
       toastError(e);
     } finally {
@@ -207,7 +211,7 @@ export function WorkflowsPage() {
         )}
         {!!data?.templates.length && !!agents.length && (
           <div className="space-y-3">
-            <SectionTitle>Voorbeelden</SectionTitle>
+            <SectionTitle icon={LayoutTemplate}>Voorbeelden</SectionTitle>
             <div className="grid gap-3 sm:grid-cols-2">
               {data.templates.map((tpl) => (
                 <TemplateCard key={tpl.id} tpl={tpl} busy={using === tpl.id} onUse={() => use(tpl)} />
@@ -383,7 +387,7 @@ function AutoStart({ w, schedule, setSchedule }: { w: Workflow | null; schedule:
           {hook && (
             <div className="flex flex-wrap items-center gap-2 rounded-control bg-surface-2 px-3 py-2 text-xs">
               <code className="min-w-0 flex-1 break-all">{url}</code>
-              <Button size="sm" variant="ghost" icon={<Copy className="h-4 w-4" />} onClick={() => navigator.clipboard.writeText(url).then(() => toast('Adres gekopieerd', 'ok'), toastError)}>
+              <Button size="sm" variant="ghost" icon={<Copy className="h-4 w-4" />} onClick={() => void copyText(url, 'Adres gekopieerd')}>
                 Kopiëren
               </Button>
             </div>
@@ -391,7 +395,7 @@ function AutoStart({ w, schedule, setSchedule }: { w: Workflow | null; schedule:
           {hook && key && (
             <div className="flex flex-wrap items-center gap-2 rounded-control bg-warn-soft px-3 py-2 text-xs">
               <code className="min-w-0 flex-1 break-all">{key}</code>
-              <Button size="sm" icon={<Copy className="h-4 w-4" />} onClick={() => navigator.clipboard.writeText(key).then(() => toast('Sleutel gekopieerd', 'ok'), toastError)}>
+              <Button size="sm" icon={<Copy className="h-4 w-4" />} onClick={() => void copyText(key, 'Sleutel gekopieerd')}>
                 Kopiëren
               </Button>
               <span className="basis-full">Bewaar deze sleutel nu: TeamBot laat hem niet opnieuw zien.</span>
@@ -504,15 +508,17 @@ export function WorkflowEditorPage({ params }: { params: string[] }) {
     run(async () => {
       const body = { name, description, steps, schedule, enabled };
       if (isNew) {
+        const from = location.hash;
         const made = await api.post<Workflow>('/workflows', body);
-        navigate(`#/m/workflows/w/${made.id}`);
+        navigate(`#/m/workflows/w/${made.id}`, { from });
       } else take(await api.patch<Workflow>(`/workflows/${id}`, body));
     }, 'Opgeslagen');
   const remove = async () => {
     if (!(await askConfirm(`Workflow “${name}” verwijderen? Ook de runs en eerdere versies gaan weg.`, { ok: 'Verwijderen', danger: true }))) return;
+    const from = location.hash;
     await run(async () => {
       await api.del(`/workflows/${id}`);
-      navigate('#/m/workflows');
+      navigate('#/m/workflows', { from });
     });
   };
   const add = (kind: Step['kind']) => setSteps((s) => [...s, blank(kind, agents[0]?.id || '')]);
@@ -566,7 +572,7 @@ export function WorkflowEditorPage({ params }: { params: string[] }) {
       <div className="mx-auto max-w-4xl space-y-6 px-4 pb-8 pt-4 sm:px-6">
         <Card className="grid gap-3 p-4">
           <Field label="Naam">
-            <Input value={name} placeholder="Bijv. Productpagina van idee tot live" onChange={(e) => setName(e.target.value)} />
+            <Input value={name} placeholder="Bijv. Wekelijks overzicht" onChange={(e) => setName(e.target.value)} />
           </Field>
           <Field label="Wat levert het op? (één zin)">
             <Input value={description} onChange={(e) => setDescription(e.target.value)} />
@@ -575,7 +581,7 @@ export function WorkflowEditorPage({ params }: { params: string[] }) {
         </Card>
 
         <div className="space-y-3">
-          <SectionTitle>Stappen</SectionTitle>
+          <SectionTitle icon={ListOrdered} tone="teal">Stappen</SectionTitle>
           {!steps.length && <p className="text-sm text-muted">Voeg de eerste stap toe: meestal een bot die iets maakt of uitzoekt.</p>}
           {steps.map((s, i) => (
             <StepCard key={s.id} step={s} index={i} steps={steps} onChange={(n) => setSteps((all) => all.map((x) => (x.id === s.id ? n : x)))} onMove={(d) => move(i, d)} onRemove={() => setSteps((all) => all.filter((x) => x.id !== s.id))} />
@@ -598,14 +604,14 @@ export function WorkflowEditorPage({ params }: { params: string[] }) {
         </div>
 
         <div className="space-y-3">
-          <SectionTitle>Automatisch starten</SectionTitle>
+          <SectionTitle icon={Clock} tone="orange">Automatisch starten</SectionTitle>
           <AutoStart w={w} schedule={schedule} setSchedule={setSchedule} />
         </div>
 
         {w && (
           <>
             <div className="space-y-3">
-              <SectionTitle>Runs</SectionTitle>
+              <SectionTitle icon={History}>Runs</SectionTitle>
               <RunsList id={w.id} key={w.lastRun?.id || 'none'} />
             </div>
             <Versions w={w} onRestored={take} />
@@ -755,20 +761,9 @@ export function WorkflowRunPage({ params }: { params: string[] }) {
 
 /** "Jouw akkoord" of a workflow: what you approve, with the result so far. Never "altijd toestaan". */
 export function WorkflowApprovalCard({ a }: { a: Approval }) {
-  const [busy, setBusy] = useState<string | null>(null);
+  const { busy, decide } = useDecide(a);
   const [open, setOpen] = useState(false);
   const result = String(a.input?.result || '');
-  const decide = async (decision: 'approve' | 'deny') => {
-    setBusy(decision);
-    try {
-      await api.post(`/approvals/${a.id}`, { decision });
-      useApp.setState((s) => ({ approvals: s.approvals.filter((x) => x.id !== a.id) }));
-    } catch (e) {
-      toastError(e);
-    } finally {
-      setBusy(null);
-    }
-  };
   return (
     <div role="group" aria-label="Akkoord voor een workflow" className="tb-ask w-full rounded-card border p-4">
       <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted">

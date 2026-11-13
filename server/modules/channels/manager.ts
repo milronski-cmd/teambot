@@ -1,4 +1,5 @@
 import { TERMINAL } from '../../agent/runs.js';
+import { userTz } from '../../agent/prompt.js';
 import fs from 'node:fs';
 import { tr, trUser, trUserText, userLanguage, userLocale } from '../../core/i18n.js';
 import path from 'node:path';
@@ -1854,7 +1855,7 @@ export class ChannelManager {
   private handoffText(b: Binding, cust: CustomerConfig): string {
     const store = this.ctx.store;
     if (cust.hours.enabled) {
-      const tz = store.getSetting<string>(b.user_id, 'timezone', '') || Intl.DateTimeFormat().resolvedOptions().timeZone || 'Europe/Amsterdam';
+      const tz = userTz(this.ctx, b.user_id);
       const locale = userLocale(store, b.user_id);
       if (isOpen(cust.hours, new Date(), tz)) return trUser(store, b.user_id, TEXT.handoffOpen, hoursSummary(cust.hours, locale));
       const next = nextOpening(cust.hours, new Date(), tz, locale);

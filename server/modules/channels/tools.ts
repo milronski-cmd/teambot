@@ -1,10 +1,11 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import type { Agent, Ctx, Thread, ToolDef } from '../../core/types.js';
-import { mimeOf, resolveInWorkspace } from '../../tools/builtin/files.js';
+import { mimeOf, refuseReadOf, resolveInWorkspace } from '../../tools/builtin/files.js';
 import { preview } from './format.js';
 import { OWNER_TARGETS, type ChannelManager } from './manager.js';
 import type { Binding, OutFile } from './types.js';
+import { words } from '../../../shared/i18n-core.js';
 
 export const CHANNEL_GROUP = 'channels';
 const MAX_FILES = 10;
@@ -69,9 +70,9 @@ export function channelTools(ctx: Ctx, m: ChannelManager) {
     };
     const describeTarget = (args: any) => {
       const b = findBinding(m, list, args?.binding);
-      if (!b) return { b, label: 'onbekend kanaal', to: String(args?.to || '?') };
+      if (!b) return { b, label: words('onbekend kanaal'), to: String(args?.to || '?') };
       const t = m.classifyTarget(b, String(args?.to || ''));
-      const to = t.owner ? 'jou (eigenaar)' : t.conv?.title ? `${t.conv.title} (${args?.to})` : String(args?.to || '?');
+      const to = t.owner ? words('jou (eigenaar)') : t.conv?.title ? `${t.conv.title} (${args?.to})` : String(args?.to || '?');
       return { b, label: `${m.def(b)?.label || b.adapter} “${b.name}”`, to };
     };
     const ownerFree = m.sendRules(agent.id).some((r) => r.target === 'owner');
@@ -82,7 +83,7 @@ export function channelTools(ctx: Ctx, m: ChannelManager) {
         risk: 'read',
         description: `Toon je gekoppelde kanalen (${names}) en de bekende gesprekken daarin, om een ontvanger voor channel_send te kiezen.${seenNames ? ` Ook kanalen van andere teams waar je mag meekijken (alleen bekijken, niet versturen): ${seenNames}.` : ''}`,
         parameters: { type: 'object', properties: { binding: { type: 'string', description: 'Naam of id van de koppeling (optioneel)' } } },
-        summarize: () => 'Kanalen en gesprekken bekijken',
+        summarize: () => words('Kanalen en gesprekken bekijken'),
         async run(args) {
           const all = [...list, ...seen];
           const sel = args?.binding ? ([findBinding(m, all, args.binding)].filter(Boolean) as Binding[]) : all;
@@ -156,10 +157,12 @@ export function channelTools(ctx: Ctx, m: ChannelManager) {
           const txt = String(a?.text || '').trim();
           // To a customer the owner approves the exact text, not a preview.
           const full = !!d.b && m.customerOn(d.b) && !m.classifyTarget(d.b, String(a?.to || '')).owner;
-          return `Bericht via ${d.label} naar ${d.to}: ${txt ? `“${full ? txt.slice(0, 1500) : preview(txt, 160)}”` : '(geen tekst)'}${files.length ? ` + ${files.length === 1 ? '1 bestand' : `${files.length} bestanden`}: ${files.slice(0, 5).join(', ')}${files.length > 5 ? ', …' : ''}` : ''}`;
+          const msg = words('Bericht via {0} naar {1}: {2}', d.label, d.to, txt ? words('“{0}”', full ? txt.slice(0, 1500) : preview(txt, 160)) : words('(geen tekst)'));
+          if (!files.length) return msg;
+          return words('{0} + {1, plural, one {# bestand} other {# bestanden}}: {2}', msg, files.length, `${files.slice(0, 5).join(', ')}${files.length > 5 ? ', …' : ''}`);
         },
         // Another team's channel: refused before an approval card (approving could never make it allowed).
-        refuse: (args) => wallFor(args?.binding),
+        refuse: (args, t) => wallFor(args?.binding) || refuseReadOf('files')(args, t),
         async run(args, t) {
           const wall = wallFor(args.binding);
           if (wall) return { text: wall, isError: true };

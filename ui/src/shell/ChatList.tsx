@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { ArrowDownUp, Check, ChevronDown, ChevronUp, Ellipsis, FolderPlus, GripVertical, Pin, PinOff, Settings2 } from 'lucide-react';
 import { useShallow } from 'zustand/react/shallow';
 import { api } from '../lib/api';
@@ -9,10 +9,11 @@ import type { Agent, Thread } from '../lib/types';
 import { LiveBotAvatar, StackedFaces } from '../components/BotFace';
 import { Button, cx, listTime, toastError } from '../components/ui';
 import { MenuSeparator, Pop, menuKeys, menuRow, useDismiss } from '../components/Menu';
-import { t } from '../lib/i18n';
+import { dictionaryLoaded, onDictionary, ownText, t } from '../lib/i18n';
 import { isUnread } from './unread';
 import { useRoomList, type RoomSummary } from './rooms';
 import { previewText } from '../lib/preview';
+import { Words } from '../components/Words';
 import { splitPinned } from './pinned';
 import { TeamDot } from './TeamDot';
 import { compareManual, dropIndex, moveItem, type BotOrderMode } from './botOrder';
@@ -137,7 +138,24 @@ export function StatusDot({ state, size, className }: { state: DotState; size: '
   );
 }
 
+/**
+ * The desktop row's tooltip in the reader's language: a question waiting for you, what the bot does now, or its last
+ * message. A message, a question's line, a role or a description is someone's own words and stays as written.
+ */
+function deskTip(mood: Mood, text: string, o: { approvals: number; firstApproval: string; live: string; last?: Thread['last']; agent: Agent }): string {
+  if (mood === 'waiting') return o.approvals > 1 ? t('{0, plural, one {# vraag wacht op je} other {# vragen wachten op je}}', o.approvals) : o.firstApproval ? ownText('Wacht op jou: {0}', o.firstApproval) : t('Wacht op jou');
+  if (mood === 'working') return t(o.live || 'Is aan het werk…');
+  if (mood === 'limit') return text;
+  if (mood === 'error') return t('Er ging iets mis bij het laatste antwoord');
+  const last = o.last;
+  if (last?.note?.text) return text;
+  if (last) return last.role === 'user' ? ownText('Jij: {0}', previewText(last.content)) : last.role === 'event' ? t(previewText(last.content)) : previewText(last.content);
+  return o.agent.role || o.agent.description || t('Nog geen gesprek');
+}
+
 function BotRow({ agent, thread, active, size, onNavigate }: { agent: Agent; thread?: Thread; active: boolean; size: 'desk' | 'phone'; onNavigate?(): void }) {
+  // Words made here in the reader's language (the desktop row, its tooltip) render again once the dictionary is there.
+  useSyncExternalStore(onDictionary, dictionaryLoaded);
   const mood = useAgentMood(agent);
   const limitUntil = useLimitUntil(agent.id);
   const main = useMainBotId() === agent.id;
@@ -171,26 +189,47 @@ function BotRow({ agent, thread, active, size, onNavigate }: { agent: Agent; thr
   } else if (mood === 'error') {
     text = 'Er ging iets mis bij het laatste antwoord';
     tone = 'text-danger';
+  } else if (last?.note?.text) {
+    text = ownText(last.note.text, ...(last.note.values || []));
+    tone = unread ? 'text-fg' : 'text-muted';
   } else if (last) {
     text = (last.role === 'user' ? 'Jij: ' : '') + previewText(last.content);
     tone = unread ? 'text-fg' : 'text-muted';
   } else text = agent.role || agent.description || 'Nog geen gesprek';
+  // What the line shows when the bot is idle: a TeamBot note as its line for the owner; a message, the role or the
+  // description as written (never translated, also not in part); "Jij: " and a TeamBot event are interface text.
+  const idle = mood === 'idle';
+  const preview =
+    idle && last?.note?.text ? (
+      <Words text={last.note.text} values={last.note.values} />
+    ) : idle && last && last.role !== 'event' ? (
+      <>
+        {last.role === 'user' && 'Jij: '}
+        <span translate="no">{previewText(last.content)}</span>
+      </>
+    ) : idle && !last && (agent.role || agent.description) ? (
+      <span translate="no">{text}</span>
+    ) : (
+      text
+    );
   const href = thread ? `#/t/${thread.id}` : `#/a/${agent.id}`;
   const signal = <Signal state={dotState(mood)} approvals={approvals} unread={unread} problem={mood === 'error' || mood === 'limit'} />;
-  const whose = agent.shared_from ? <span className="shrink-0 truncate text-xs text-muted">van {agent.shared_from.name}</span> : agent.settings?.shared === true ? <span className="shrink-0 truncate text-xs text-muted">gedeeld met het team</span> : null;
+  const whose = agent.shared_from ? <Words className="shrink-0 truncate text-xs text-muted" text="van {0}" values={[agent.shared_from.name]} /> : agent.settings?.shared === true ? <span className="shrink-0 truncate text-xs text-muted">{t('gedeeld met het team')}</span> : null;
   if (size === 'desk') {
-    // The sidebar: one line per bot (40 px): a small face, the name, and at the end one signal. What the bot last said
+    // The sidebar: one line per bot (40 px): a face, the name, and at the end one signal. What the bot last said
     // or does now is one hover away (the row's tooltip); the row's own menu shows on hover or keyboard focus.
     const own = !agent.shared_from;
     return (
-      // The main bot is the one you talk to most: a larger row (52 px) with a larger face, its role under the name.
-      <div className={cx('group/row relative flex items-center transition-colors', main ? 'h-[52px] rounded-2xl' : 'h-9 rounded-xl', rowBg(active))}>
-        <a href={href} onClick={onNavigate} aria-current={active ? 'page' : undefined} title={text} className={cx('flex h-full min-w-0 flex-1 items-center rounded-[inherit] px-2', main ? 'gap-3' : 'gap-2.5')}>
-          <LiveBotAvatar bot={agent} size={main ? 36 : 24} />
+      // The main bot is the one you talk to most: a larger row (58 px) with a larger face, its role under the name.
+      <div className={cx('group/row relative flex items-center transition-colors', main ? 'h-[58px] rounded-2xl' : 'h-10 rounded-xl', rowBg(active))}>
+        {/* The tooltip says what the bot last said or does now, someone's words in it as written: the row is marked as a
+            whole and TeamBot's few words in it are given in the reader's language here (deskTip, t). */}
+        <a href={href} onClick={onNavigate} aria-current={active ? 'page' : undefined} title={deskTip(mood, text, { approvals, firstApproval, live, last, agent })} translate="no" className={cx('flex h-full min-w-0 flex-1 items-center rounded-[inherit] px-2', main ? 'gap-3' : 'gap-2.5')}>
+          <LiveBotAvatar bot={agent} size={main ? 42 : 30} />
           {main ? (
             <span className="flex min-w-0 flex-col leading-tight">
               <span className="truncate text-[15px] font-semibold text-fg">{agent.name}</span>
-              <span className="truncate text-xs text-muted">Hoofdbot</span>
+              <span className="truncate text-xs text-muted">{t('Hoofdbot')}</span>
             </span>
           ) : (
             <span className={cx('min-w-0 truncate text-sm', active || unread ? 'font-semibold text-fg' : 'font-medium')}>{agent.name}</span>
@@ -216,8 +255,8 @@ function BotRow({ agent, thread, active, size, onNavigate }: { agent: Agent; thr
         <span className="flex items-center gap-2">
           {/* Chat content is never translated; a TeamBot event as last line ("De gratis limiet van OpenCode is bereikt …") is
               interface text and is (acceptance round 5, C-15: it stood in Dutch in the English chat list). */}
-          <span className={cx('block min-w-0 flex-1 truncate text-[14px]', tone, unread && mood === 'idle' && 'font-medium')} title={mood === 'limit' ? text : undefined} translate={last && mood === 'idle' && last.role !== 'event' ? 'no' : undefined}>
-            {text}
+          <span className={cx('block min-w-0 flex-1 truncate text-[14px]', tone, unread && mood === 'idle' && 'font-medium')} title={mood === 'limit' ? text : undefined}>
+            {preview}
           </span>
           {signal}
         </span>
@@ -238,23 +277,23 @@ function Signal({ state, approvals, unread, problem }: { state: DotState; approv
       {approvals > 0 ? (
         <span className="flex h-[18px] min-w-[18px] items-center justify-center rounded-full bg-warn-strong px-1 text-[11px] font-bold tabular-nums text-warn-fg">
           <span aria-hidden>{approvals}</span>
-          <span className="sr-only">{approvals === 1 ? '1 wacht op jou' : `${approvals} wachten op jou`}</span>
+          <span className="sr-only">{approvals === 1 ? t('1 wacht op jou') : t('{0} wachten op jou', approvals)}</span>
         </span>
       ) : state === 'waiting' ? (
         <span className={cx(dot, 'bg-warn-strong')}>
-          <span className="sr-only">wacht op jou</span>
+          <span className="sr-only">{t('wacht op jou')}</span>
         </span>
       ) : state === 'working' ? (
         <span className={cx(dot, 'tb-pulse bg-ok')}>
-          <span className="sr-only">bezig</span>
+          <span className="sr-only">{t('bezig')}</span>
         </span>
       ) : problem ? (
         <span className={cx(dot, 'bg-danger')}>
-          <span className="sr-only">vraagt aandacht</span>
+          <span className="sr-only">{t('vraagt aandacht')}</span>
         </span>
       ) : unread ? (
         <span className={cx(dot, 'bg-fg')}>
-          <span className="sr-only">ongelezen</span>
+          <span className="sr-only">{t('ongelezen')}</span>
         </span>
       ) : null}
     </span>
@@ -341,9 +380,9 @@ function RoomRow({ room, active, size, onNavigate }: { room: RoomSummary; active
   const signal = <Signal state={approvals ? 'waiting' : working ? 'working' : 'idle'} approvals={approvals} unread={false} />;
   if (size === 'desk')
     return (
-      <a href={`#/t/${room.thread_id}`} onClick={onNavigate} aria-current={active ? 'page' : undefined} title={text} className={cx('flex h-9 items-center gap-2.5 rounded-control px-2 transition-colors', rowBg(active))}>
-        <StackedFaces bots={faces} size={24} />
-        <span className={cx('min-w-0 truncate text-sm', active ? 'font-semibold text-fg' : 'font-medium')}>{room.name}</span>
+      <a href={`#/t/${room.thread_id}`} onClick={onNavigate} aria-current={active ? 'page' : undefined} title={text} className={cx('flex h-10 items-center gap-2.5 rounded-control px-2 transition-colors', rowBg(active))}>
+        <StackedFaces bots={faces} size={30} />
+        <span className={cx('min-w-0 truncate text-sm', active ? 'font-semibold text-fg' : 'font-medium')} translate="no">{room.name}</span>
         <span className="ms-auto flex shrink-0 items-center">{signal}</span>
       </a>
     );
@@ -352,7 +391,7 @@ function RoomRow({ room, active, size, onNavigate }: { room: RoomSummary; active
       <StackedFaces bots={faces} size={face} />
       <span className="min-w-0 flex-1">
         <span className="flex items-baseline justify-between gap-2">
-          <span className="truncate text-[15.5px] font-semibold">{room.name}</span>
+          <span className="truncate text-[15.5px] font-semibold" translate="no">{room.name}</span>
           {room.last && <span className="shrink-0 text-xs tabular-nums text-muted">{listTime(room.last.created_at)}</span>}
         </span>
         <span className="flex items-center gap-2">
@@ -449,14 +488,7 @@ function TeamSection({ id, name, color, children }: { id: string; name: string; 
 function OrderMenu({ mode, onMode, onReorder, onNewFolder, size, section }: { mode: BotOrderMode; onMode(m: BotOrderMode): void; onReorder(): void; onNewFolder(): void; size: 'desk' | 'phone'; section?: { closed: boolean; toggle(): void } }) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    if (!open) return;
-    const f = (e: MouseEvent) => ref.current && !ref.current.contains(e.target as Node) && setOpen(false);
-    const k = (e: KeyboardEvent) => e.key === 'Escape' && setOpen(false);
-    document.addEventListener('mousedown', f);
-    document.addEventListener('keydown', k);
-    return () => (document.removeEventListener('mousedown', f), document.removeEventListener('keydown', k));
-  }, [open]);
+  useDismiss(open, ref, () => setOpen(false));
   const item = cx(menuRow, 'font-normal');
   return (
     <div className="flex items-center justify-between ps-2" ref={ref}>
@@ -562,7 +594,7 @@ function ReorderBots({ size, onDone }: { size: 'desk' | 'phone'; onDone(): void 
               <button
                 type="button"
                 className="flex h-9 w-8 shrink-0 cursor-grab touch-none items-center justify-center rounded-lg text-muted hover:bg-surface-2 hover:text-fg active:cursor-grabbing coarse:h-11 coarse:w-11"
-                aria-label={`${a.name} verplaatsen (pijltjestoetsen omhoog of omlaag)`}
+                aria-label={t('{0} verplaatsen (pijltjestoetsen omhoog of omlaag)', a.name)}
                 aria-roledescription="versleepbaar"
                 onPointerDown={(e) => {
                   e.currentTarget.setPointerCapture(e.pointerId);
@@ -593,10 +625,10 @@ function ReorderBots({ size, onDone }: { size: 'desk' | 'phone'; onDone(): void 
               </button>
               <LiveBotAvatar bot={a} size={face} />
               <span className="min-w-0 flex-1 truncate text-sm font-semibold">{a.name}</span>
-              <Button size="iconSm" variant="ghost" className="coarse:h-11 coarse:w-11" aria-label={`${a.name} omhoog`} disabled={i === 0} onClick={() => moveTo(id, i - 1)}>
+              <Button size="iconSm" variant="ghost" className="coarse:h-11 coarse:w-11" aria-label={t('{0} omhoog', a.name)} disabled={i === 0} onClick={() => moveTo(id, i - 1)}>
                 <ChevronUp className="h-4 w-4" />
               </Button>
-              <Button size="iconSm" variant="ghost" className="coarse:h-11 coarse:w-11" aria-label={`${a.name} omlaag`} disabled={i === list.length - 1} onClick={() => moveTo(id, i + 1)}>
+              <Button size="iconSm" variant="ghost" className="coarse:h-11 coarse:w-11" aria-label={t('{0} omlaag', a.name)} disabled={i === list.length - 1} onClick={() => moveTo(id, i + 1)}>
                 <ChevronDown className="h-4 w-4" />
               </Button>
             </li>

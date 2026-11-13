@@ -28,6 +28,20 @@ if (argv[0] === 'sandbox') {
   const cmd = argv.slice(argv.indexOf('--') + 1).join(' ');
   const canary = (cmd.match(/["']([^"']+kanarie\.txt)["']/) || [])[1];
   const mxc = process.platform !== 'win32' || argv.includes('windows.sandbox="mxc"');
+  // The whole disk writable with a deny entry (TeamBot's check for "Volledige toegang"). FAKE_CODEX_ROOT=held: it holds
+  // (the file outside is written, the denied folder is neither read nor written); unset: Codex refuses the write rule.
+  if (profile.includes('":root"="write"')) {
+    if (process.env.FAKE_CODEX_ROOT !== 'held') {
+      console.error('error: permission profile has a write rule the active runtime cannot enforce: ":root"');
+      process.exit(1);
+    }
+    process.stdout.write(fs.readFileSync(path.join(dir, 'binnen.txt'), 'utf8') + '\n');
+    const token = (cmd.match(/TB-SCHRIJF-[0-9a-f]+/) || [])[0];
+    const target = (cmd.match(/["']([^"']+geschreven\.txt)["']/) || [])[1];
+    if (token && target) fs.writeFileSync(target, token);
+    console.error('Toegang geweigerd.');
+    process.exit(1);
+  }
   if (profile.includes('":minimal"') && !(kind === 'mxc' && mxc)) {
     console.error('windows sandbox failed: elevated Windows sandbox requires effective `:root` read access');
     process.exit(1);
@@ -62,6 +76,8 @@ if (argv[0] === 'exec' && argv.includes('-o')) {
     out({ type: 'turn.completed', usage: { input_tokens: 20, cached_input_tokens: 5, output_tokens: 8 } });
   });
 } else if (argv[0] === 'app-server') {
+  // The arguments TeamBot started the app-server with (its permission profile), for tests/permission-gate.test.ts.
+  if (process.env.FAKE_CODEX_LOG_START) log({ mode: 'app-server', argv });
   const send = (o) => process.stdout.write(JSON.stringify(o) + '\n');
   let nextId = 500;
   let activeTurn = null;
@@ -86,6 +102,9 @@ if (argv[0] === 'exec' && argv.includes('-o')) {
       const snap = { limitId: 'codex', primary: { usedPercent: 42, windowDurationMins: 300, resetsAt: now + 3600 }, secondary: { usedPercent: 97, windowDurationMins: 10080, resetsAt: now + 4 * 86400 }, credits: null, planType: 'plus', rateLimitReachedType: null };
       return send({ id: m.id, result: { ordinaryUsageAllowed: true, rateLimits: snap, rateLimitsByLimitId: { codex: snap }, rateLimitResetCredits: null, accountId: 'acc-geheim', rateLimitUpsell: null } });
     }
+    // FAKE_CODEX_MODELS (comma-separated): the models this login has (`model/list`); unset: an older Codex without it.
+    if (m.method === 'model/list' && process.env.FAKE_CODEX_MODELS)
+      return send({ id: m.id, result: { data: process.env.FAKE_CODEX_MODELS.split(',').map((id, i) => ({ id, model: id, displayName: id, isDefault: i === 0, supportedReasoningEfforts: ['low', 'medium', 'high'], defaultReasoningEffort: 'medium', inputModalities: ['text'] })) } });
     if (m.method === 'thread/start') return send({ id: m.id, result: { thread: { id: 'th-new' }, model: 'gpt-fake' } });
     if (m.method === 'thread/resume') return send({ id: m.id, result: { thread: { id: p.threadId }, model: 'gpt-fake' } });
     if (m.method === 'turn/interrupt') return send({ id: m.id, result: {} });
@@ -136,6 +155,32 @@ if (argv[0] === 'exec' && argv.includes('-o')) {
       if (r.result?.decision === 'accept') fs.writeFileSync(target, 'hallo');
       send({ method: 'item/completed', params: { threadId, turnId: 'turn-s', item: { id: 'fc-s', type: 'fileChange', changes: [{ path: target, kind: { type: 'add' } }], status: r.result?.decision === 'accept' ? 'completed' : 'declined' } } });
       return finish('Geschreven met apply_patch.');
+    }
+    // SCENARIO:stappen STAPPEN:<base64url JSON>: asks approval for every step and does none of them (the case table of
+    // tests/permission-gate.test.ts). A step is { command, cwd? }, { changes: [{ path, kind }] }, { permissions } or
+    // { elicitation: { serverName, mode } } (Codex's own question before it uses a tool of an MCP server).
+    if (m.method === 'turn/start' && /SCENARIO:stappen/.test(inputText)) {
+      const steps = JSON.parse(Buffer.from(/STAPPEN:([\w-]+)/.exec(inputText)[1], 'base64url').toString('utf8'));
+      const threadId = p.threadId;
+      const turnId = 'turn-st';
+      send({ id: m.id, result: { turn: { id: turnId, status: 'inProgress', items: [] } } });
+      send({ method: 'turn/started', params: { threadId, turn: { id: turnId } } });
+      const got = [];
+      for (const [i, st] of steps.entries()) {
+        const itemId = `st${i}`;
+        let r;
+        if (st.changes) {
+          send({ method: 'item/started', params: { threadId, turnId, item: { id: itemId, type: 'fileChange', changes: st.changes, status: 'inProgress' } } });
+          r = await call('item/fileChange/requestApproval', { threadId, turnId, itemId, startedAtMs: Date.now() });
+        } else if (st.permissions) r = await call('item/permissions/requestApproval', { threadId, turnId, itemId, permissions: st.permissions });
+        else if (st.elicitation) r = await call('mcpServer/elicitation/request', { threadId, turnId, ...st.elicitation });
+        else r = await call('item/commandExecution/requestApproval', { threadId, turnId, itemId, command: st.command, cwd: st.cwd });
+        got.push(r.result?.decision || (r.result?.action === 'accept' || (r.result?.permissions && Object.keys(r.result.permissions).length) ? 'accept' : 'decline'));
+      }
+      log({ stappen: got });
+      send({ method: 'item/agentMessage/delta', params: { threadId, turnId, itemId: 'am-st', delta: 'Stappen gevraagd.' } });
+      send({ method: 'turn/completed', params: { threadId, turn: { id: turnId, status: 'completed', error: null } } });
+      return;
     }
     if (m.method === 'turn/start') {
       const threadId = p.threadId;

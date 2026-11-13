@@ -6,11 +6,15 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import http from 'node:http';
 import type { AddressInfo } from 'node:net';
-import { setup } from './proactive-helpers.js';
+import { give, setup } from './proactive-helpers.js';
 import { wordMatch, cleanPresets, rolesFor } from '../server/modules/routines/duties/catalog.js';
 import { pick, compare } from '../server/modules/routines/duties/checks.js';
-import { cleanMeasure, SETUP_KEY } from '../server/modules/routines/duties/service.js';
+import { cleanMeasure } from '../server/modules/routines/duties/service.js';
 import { GOOGLE_SERVICES } from '../server/modules/mcp/google.js';
+
+// These tests are about bots that are not the main bot: without this the first bot would be it (teams `autoMain`,
+// covered in works-right-away.test.ts).
+process.env.TEAMBOT_TEST_NO_AUTO_MAIN = '1';
 
 test('presets are data: words recognise a bot; measurements are general building blocks', () => {
   assert.equal(wordMatch('Technische SEO', 'seo'), true);
@@ -29,27 +33,27 @@ test('presets are data: words recognise a bot; measurements are general building
   assert.equal(compare(3, '<=', 3), true);
 });
 
-test('a role nobody foresaw: the bot proposes its own duties, TeamBot measures them, the owner adds a preset, and chat makes one', async () => {
+test('any role: nothing by itself; asked in chat the bot sets its duties, TeamBot measures them, and the owner’s own preset applies', async () => {
   const env = await setup({ start: '2026-11-09T07:00:00Z' });
   try {
     const eva = await env.t.agent({ name: 'Eva', role: 'Advocaat arbeidsrecht', description: 'Houdt dossiers en termijnen van het kantoor bij.', tool_groups: ['team'] });
     env.site.pages['https://rechtspraak.test/uitspraken'] = { body: '<html><title>Uitspraken</title>Nieuwe uitspraken arbeidsrecht</html>' };
     await env.t.app.ctx.services.teamdata.run(env.userId, { type: 'system', id: null, name: 'TeamBot' } as any, 'CREATE TABLE termijnen (id INTEGER PRIMARY KEY, zaak TEXT, verloopt TEXT, gehaald INTEGER DEFAULT 0)', [], 'execute');
 
-    // No preset fits "Advocaat": the bot gets one run in which it sets its own duties (no hardcoded role involved).
+    // No bot gets a duty by itself, whatever its role: nothing is made, and no model is asked to think something up.
+    await env.at('2026-11-09T07:03:00Z');
+    assert.deepEqual(env.duties.duties(env.userId, eva.id), [], 'nothing was seeded');
+    assert.equal(env.t.requests.length, 0, 'and no run "Vaste taken bedenken"');
+    // The owner asks for it in a conversation: then the bot sets them (measured by TeamBot where it can).
+    const evaChat = await env.t.api('POST', '/threads', { agentId: eva.id });
     env.t.script.push(
       { toolCalls: [{ name: 'duty_set', args: { title: 'Open termijnen', check: 'Staan er termijnen open die niet gehaald zijn?', ok_when: 'geen open termijn', on_problem: 'ask', every_minutes: 30, measure: { kind: 'query', sql: 'SELECT COUNT(*) FROM termijnen WHERE gehaald = 0', op: '=', value: 0 } } }] },
       { toolCalls: [{ name: 'duty_set', args: { title: 'Rechtspraak bereikbaar', check: 'Is de uitsprakenpagina bereikbaar en gaat hij over arbeidsrecht?', ok_when: 'de pagina antwoordt en noemt arbeidsrecht', on_problem: 'task', times: ['08:30'], measure: { kind: 'url', url: 'https://rechtspraak.test/uitspraken', contains: 'arbeidsrecht' } } }] },
-      { toolCalls: [{ name: 'duty_report', args: { status: 'in_orde', samenvatting: '2 vaste taken ingesteld: Open termijnen, Rechtspraak bereikbaar' } }] },
       { text: 'Ingesteld.' },
     );
-    await env.at('2026-11-09T07:03:00Z');
-    const asked = JSON.stringify(env.t.requests[0].messages);
-    assert.match(asked, /Je rol is: Advocaat arbeidsrecht\. Houdt dossiers en termijnen van het kantoor bij\./);
-    assert.match(asked, /stel elk in met duty_set/);
+    await env.t.say(evaChat.id, 'Houd de open termijnen en de uitsprakenpagina voor me in de gaten.');
     const mine = () => env.duties.duties(env.userId, eva.id);
-    assert.deepEqual(mine().map((r) => r.name).sort(), ['Open taken afmaken', 'Open termijnen', 'Rechtspraak bereikbaar', 'Vaste taken bedenken']);
-    assert.equal(env.duty(eva.id, SETUP_KEY).status, 'completed', 'asked once');
+    assert.deepEqual(mine().map((r) => r.name).sort(), ['Open termijnen', 'Rechtspraak bereikbaar']);
     const termijnen = mine().find((r) => r.name === 'Open termijnen')!;
     assert.deepEqual(termijnen.schedule.kind, 'interval');
     assert.ok(env.notes().some((n) => n.title === 'Eva heeft een vaste taak ingesteld' && /Open termijnen/.test(n.body)), 'the owner hears what was set up');
@@ -79,12 +83,12 @@ test('a role nobody foresaw: the bot proposes its own duties, TeamBot measures t
     await env.at('2026-11-10T08:05:00Z');
     assert.equal((await env.taken()).find((x) => x.titel.startsWith('Open termijnen'))!.status, 'klaar');
 
-    // The owner's own preset is the same thing as a built-in one: a bot it recognises gets its duties, no setup run.
+    // The owner's own preset is his instruction: a bot it recognises gets its duties (a built-in one never applies by itself).
     const put = await env.t.api('PUT', '/proactive/presets', { presets: [{ label: 'YouTube-kanaal', words: ['youtube', 'videomaker'], duties: [{ title: 'Uploadritme', check: 'Is er deze week een video geplaatst?', okWhen: 'minstens 1 video in de laatste 7 dagen', onProblem: 'task', days: [1], times: ['09:00'] }] }] });
     assert.ok(put.presets.some((x: any) => x.id === 'youtube-kanaal') && put.presets.some((x: any) => x.id === 'seo'), 'next to the built-in ones');
     const yt = await env.t.agent({ name: 'Vic', role: 'Videomaker', tool_groups: ['team'] });
     await env.at('2026-11-10T08:07:00Z');
-    assert.deepEqual(env.duties.duties(env.userId, yt.id).map((r) => r.options.duty!.key).sort(), ['werk.afmaken', 'youtube-kanaal.uploadritme']);
+    assert.deepEqual(env.duties.duties(env.userId, yt.id).map((r) => r.options.duty!.key).sort(), ['youtube-kanaal.uploadritme']);
 
     // And simply by asking a bot in chat.
     const th = await env.t.api('POST', '/threads', { agentId: yt.id });
@@ -136,6 +140,9 @@ test('Google connected: the duties name and use the built-in Google tools (Searc
     const sem = await env.t.agent({ name: 'Sem', role: 'Technische SEO', tool_groups: ['team', 'mcp'] });
     const mo = await env.t.agent({ name: 'Mo', role: 'Merchant Center', tool_groups: ['team', 'mcp'] });
     const ans = await env.t.agent({ name: 'Ans', role: 'Persoonlijke assistent', tool_groups: ['team', 'mcp'] });
+    await give(env, sem, ['seo.posities', 'seo.indexering']);
+    await give(env, mo, ['merchant.afkeuringen', 'merchant.feed']);
+    await give(env, ans, ['agenda.vandaag']);
     await env.at('2026-11-09T04:01:00Z');
     assert.match((await env.t.api('GET', '/proactive/duties')).duties.find((d: any) => d.duty.key === 'seo.posities').needs, /Koppel Search Console/);
 
@@ -159,7 +166,12 @@ test('Google connected: the duties name and use the built-in Google tools (Searc
     );
     await env.at('2026-11-09T06:00:05Z');
     assert.match(JSON.stringify(turn('Posities en klikken in Google')[0].messages), /Gebruik deze tools: mcp_google_gsc_inspect_url, mcp_google_gsc_search_analytics, mcp_google_gsc_sitemaps, mcp_google_gsc_sites\./);
-    assert.ok(turn('Posities en klikken in Google')[0].tools.some((x: any) => x.name === 'mcp_google_gsc_search_analytics'), 'the tool is offered in the duty run');
+    // The duty names its tools: they are in the list of that run (tools/selection.ts `wanted`); the rest of the app
+    // stays on demand.
+    const sent = turn('Posities en klikken in Google')[0].tools.map((x: any) => x.name);
+    for (const n of ['mcp_google_gsc_inspect_url', 'mcp_google_gsc_search_analytics', 'mcp_google_gsc_sitemaps', 'mcp_google_gsc_sites']) assert.ok(sent.includes(n), `${n} listed for the duty that names it`);
+    assert.ok(!sent.includes('mcp_google_gmail_send'));
+    assert.match(turn('Posities en klikken in Google')[0].system, /ook een tool die je instructies, een opdracht of een skill noemen, zoek je met tools_find/);
     assert.equal(toolText(/kozijnen vergelijken/).length, 1, 'rankings were read from (the stand-in for) Search Console');
     assert.equal(env.runs(env.duty(sem.id, 'seo.posities').id).at(-1).summary, 'In orde: 41 klikken, positie 11,4 op “kozijnen vergelijken” (Search Console, 9 nov)');
 
@@ -205,6 +217,7 @@ test('unanswered customer messages are measured from the channel data, without a
   try {
     const ctx = env.t.app.ctx;
     const kim = await env.t.agent({ name: 'Kim', role: 'Klantenservice', tool_groups: ['team'] });
+    await give(env, kim, ['klant.onbeantwoord']);
     await env.at('2026-11-09T07:01:00Z');
     const duty = env.duty(kim.id, 'klant.onbeantwoord');
     assert.match(env.duties.needs(duty, ctx.store.agent(kim.id)!)!, /Koppel een mailbox of chat-app/);

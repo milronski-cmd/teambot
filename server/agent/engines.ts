@@ -10,6 +10,8 @@ import { applySharedModel, checkSharedSpend } from '../api/provider-policy.js';
 import { prettyModel } from '../../shared/modelLabel.js';
 import { enginePrivacy, engineTier, fallbackList, limitAccount, meetsLevel, privateSafe, TIER_RANK, weekUse, type ChainEntry, type EngineTier, type Privacy, type WorkFlags } from './fallback.js';
 import { sharedRunOf } from './shared.js';
+import { PLACE } from '../../shared/places.js';
+import { listText } from '../core/i18n.js';
 
 /**
  * An engine the run can use. `tier`/`privacy`: see agent/fallback.ts (default chain); `chain`: added by the default
@@ -28,10 +30,7 @@ export const engineName = (a: Active) => {
   return !m ? a.cfg.name : a.cfg.name.includes('(') ? `${a.cfg.name} · ${m}` : `${a.cfg.name} (${m})`;
 };
 /** "A", "A en B", "A, B en C" (names of engines, never translated). */
-export const listNames = (names: string[]) => {
-  const u = [...new Set(names)];
-  return u.length <= 1 ? u[0] || '' : `${u.slice(0, -1).join(', ')} en ${u[u.length - 1]}`;
-};
+export const listNames = (names: string[]) => listText([...new Set(names)]);
 
 /** The model an engine runs: the one asked for, else the connection's own default, else the first of its kind. */
 const modelFor = (cfg: ProviderConfig, kind: ProviderKind | undefined, wanted: string | undefined): string => wanted || cfg.config?.defaultModel || kind?.defaultModel || kind?.models?.[0] || '';
@@ -57,7 +56,7 @@ export class Engines {
       providerId = ctx.store.getSetting<string | null>(engineOwner, 'defaultProvider', null);
       model = model || ctx.store.getSetting<string>(engineOwner, 'defaultModel', '');
     }
-    if (!providerId) throw new Error('Deze bot heeft nog geen AI. Koppel er een via Instellingen › AI-diensten en kies hem bij de bot.');
+    if (!providerId) throw new Error(`Deze bot heeft nog geen AI. Koppel er een via ${PLACE.ai} en kies hem bij de bot.`);
     const { cfg, adapter } = ctx.providers.adapter(providerId);
     if (!ctx.providers.canUse(userId, cfg) && !ctx.providers.canUse(engineOwner, cfg)) throw new Error('Je hebt geen toegang tot deze provider');
     const refused = ctx.providers.refuseFor(agent, cfg);

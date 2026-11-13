@@ -212,7 +212,7 @@ export function Composer({ threadId, agentId, busy, disabled, replyTo, onCancelR
                   <FileText className="h-3.5 w-3.5 text-muted" />
                 )}
                 <span className="max-w-[160px] truncate">{f.name}</span>
-                <button aria-label={`${f.name} verwijderen`} onClick={() => setFiles((x) => x.filter((y) => y.id !== f.id))} className="text-muted hover:text-fg">
+                <button aria-label={t('{0} verwijderen', f.name)} onClick={() => setFiles((x) => x.filter((y) => y.id !== f.id))} className="text-muted hover:text-fg">
                   <X className="h-3 w-3" />
                 </button>
               </div>

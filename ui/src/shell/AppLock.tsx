@@ -1,9 +1,11 @@
 import { useEffect, useId, useRef, useState } from 'react';
 import { create } from 'zustand';
 import { Delete, Fingerprint, Lock, LogOut } from 'lucide-react';
-import { Button, Card, Field, Input, Modal, Select, Toggle, cx, toast } from '../components/ui';
+import { Button, Card, CardHead, Field, Input, Modal, Select, Toggle, cx, toast } from '../components/ui';
 import { MoreInfo } from '../components/MoreInfo';
 import { Segmented } from '../components/SettingControls';
+import { t, translate } from '../lib/i18n';
+import { formatList } from '../lib/format';
 import {
   DELAYS, PIN_MAX, PIN_MIN, hashPin, loadFails, loadLock, registerFailure, saveFails, saveLock, shouldLockAfterHidden, triesLeft, validPin, verifyPin, waitMs,
   type LockConfig,
@@ -288,6 +290,10 @@ const DELAY_OPTIONS = DELAYS.map((d) => ({ value: String(d.value), label: SHORT_
 
 const delayText = (m: number) => (m === 0 ? 'meteen als je de app verlaat' : m === 1 ? 'na 1 minuut in de achtergrond' : `na ${m} minuten in de achtergrond`);
 
+/** How this device locks, in one line: "pincode (6 cijfers) en vingerafdruk of gezicht · vergrendelt meteen …". */
+const lockedHow = (cfg: LockConfig) =>
+  t('{0} · vergrendelt {1}', formatList([cfg.pin ? t('pincode ({0} cijfers)', cfg.pin.length) : '', cfg.bio ? translate('vingerafdruk of gezicht') : ''].filter(Boolean)), translate(delayText(cfg.after)));
+
 /** Instellingen › Beveiliging: "App-vergrendeling op dit apparaat". */
 export function AppLockCard() {
   const cfg = useLock((s) => s.cfg);
@@ -355,19 +361,18 @@ export function AppLockCard() {
   };
 
   return (
-    <Card className="space-y-3 p-4">
-      <div className="flex items-start gap-3">
-        <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-control bg-surface-3">
-          <Lock className="h-[18px] w-[18px]" aria-hidden />
-        </span>
-        <div className="min-w-0 flex-1">
-          <h3 className="text-sm font-semibold">App-vergrendeling op dit apparaat</h3>
-          <p className="text-xs text-muted">
+    <Card className="space-y-3 p-5">
+      <CardHead
+        icon={Lock}
+        tone="rose"
+        title="App-vergrendeling op dit apparaat"
+        hint={
+          <>
             Pincode, vingerafdruk of gezicht als je TeamBot opent.{' '}
             <MoreInfo>Geldt alleen voor deze browser of telefoon. Je pincode verlaat dit apparaat nooit.</MoreInfo>
-          </p>
-        </div>
-      </div>
+          </>
+        }
+      />
       {!cfg ? (
         <Button variant="primary" onClick={() => (reset(), setUseBio(false), setAfter(1), setSetup(true))}>
           Vergrendeling instellen
@@ -375,7 +380,7 @@ export function AppLockCard() {
       ) : (
         <div className="space-y-3">
           <p className="text-sm">
-            <span className="font-semibold text-ok">Aan</span> · {[cfg.pin ? `pincode (${cfg.pin.length} cijfers)` : '', cfg.bio ? 'vingerafdruk of gezicht' : ''].filter(Boolean).join(' en ')} · vergrendelt {delayText(cfg.after)}
+            <span className="font-semibold text-ok">Aan</span> · {lockedHow(cfg)}
           </p>
           <div className="space-y-1.5">
             <div className="text-[13px] font-semibold">Vergrendelen</div>

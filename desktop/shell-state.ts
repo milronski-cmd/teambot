@@ -22,6 +22,12 @@ export interface ShellState {
   lang?: string;
   /** The owner's accent colour at the last run (settings.ui.accent): the window icon is right before the server is up. */
   accent?: string;
+  /**
+   * When TeamBot switched "Starten bij inloggen" on by itself (once, at the first start after installing): bots and
+   * routines only work while TeamBot runs, so after a restart of the pc it must come back without anyone thinking of
+   * it. The owner can switch it off in the tray menu; it is never switched on a second time.
+   */
+  loginItemAt?: string;
 }
 
 const FILE = 'shell.json';
@@ -38,6 +44,7 @@ export function readShellState(dir: string): ShellState {
     const s: ShellState = {};
     if (raw?.window && isRect(raw.window.bounds)) s.window = { bounds: raw.window.bounds, maximized: raw.window.maximized === true };
     if (typeof raw?.closeTipAt === 'string') s.closeTipAt = raw.closeTipAt;
+    if (typeof raw?.loginItemAt === 'string') s.loginItemAt = raw.loginItemAt;
     if (typeof raw?.lang === 'string' && /^[a-z]{2,3}$/.test(raw.lang)) s.lang = raw.lang;
     if (typeof raw?.accent === 'string' && /^[a-z][a-z0-9-]{0,30}$/.test(raw.accent)) s.accent = raw.accent;
     return s;

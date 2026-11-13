@@ -1,46 +1,14 @@
 import { useEffect, useRef, useState } from 'react';
-import { AlertTriangle, Download, Mic, MicOff, PhoneOff } from 'lucide-react';
+import { AlertTriangle, Download } from 'lucide-react';
 import { api, on } from '../../lib/api';
 import { t } from '../../lib/i18n';
 import { clock } from './api';
 import { formatSeconds } from '../../lib/format';
 import { agentById } from '../../lib/store';
-import { Button, Modal, toastError } from '../../components/ui';
+import { Button, Spinner, toastError } from '../../components/ui';
 import { BotAvatar } from '../../components/BotFace';
 import { DuplexCall, type DuplexLatency, type DuplexPhase, type DuplexStatus } from './duplex';
-
-/** Download of the two small call parts (voice activity + turn detection), only after this tap; sizes are shown. */
-export function DuplexPartsButton({ status, onChange }: { status: DuplexStatus; onChange(s: DuplexStatus): void }) {
-  const [busy, setBusy] = useState(false);
-  useEffect(() => on('voice.duplex.progress', () => void api.get<DuplexStatus>('/voice/duplex').then(onChange).catch(() => {})), [onChange]);
-  const missing = status.parts.filter((p) => p.status !== 'installed');
-  if (!missing.length || !status.canManage) return null;
-  const downloading = missing.some((p) => p.status === 'downloading' || p.status === 'verifying');
-  const got = missing.reduce((n, p) => n + (p.received || 0), 0);
-  return (
-    <div className="space-y-1">
-      <Button
-        size="sm"
-        variant="secondary"
-        icon={<Download className="h-4 w-4" />}
-        disabled={busy || downloading}
-        onClick={async () => {
-          setBusy(true);
-          try {
-            onChange(await api.post<DuplexStatus>('/voice/duplex/install'));
-          } catch (e) {
-            toastError(e);
-          } finally {
-            setBusy(false);
-          }
-        }}
-      >
-        {downloading ? t('Downloaden… {0}%', Math.round((100 * got) / Math.max(1, status.download))) : t('Gesprekshulp downloaden ({0})', status.downloadText)}
-      </Button>
-      <div className="text-xs text-muted">{missing.map((p) => `${p.label} · ${p.licence}`).join(' · ')}</div>
-    </div>
-  );
-}
+import { CallBar } from './CallBar';
 
 interface Line {
   id: number;
@@ -126,67 +94,60 @@ export function DuplexCallView({ threadId, agentId, onEnded }: { threadId: strin
   const label =
     phase === 'connecting' ? 'Verbinden…' : phase === 'listening' ? 'Ik luister' : phase === 'thinking' ? t('{0} denkt na…', name) : phase === 'speaking' ? t('{0} praat. Praat gerust door hem heen.', name) : 'Opgehangen';
 
+  // A compact bar above the message field, not a window: the chat behind it stays in use (CallBar.tsx).
   return (
-    <Modal
-      open
-      onClose={() => call.current?.hangup()}
-      title={t('Live gesprek met {0}', name)}
-      footer={
+    <CallBar
+      label={t('Live gesprek met {0}', name)}
+      face={<BotAvatar bot={agent || { name: '?' }} size={30} />}
+      status={
         <>
-          <Button
-            variant="secondary"
-            icon={muted ? <MicOff className="h-4 w-4" /> : <Mic className="h-4 w-4" />}
-            aria-pressed={muted}
-            onClick={() => {
-              call.current?.setMuted(!muted);
-              setMuted(!muted);
-            }}
-          >
-            {muted ? 'Microfoon aan' : 'Microfoon uit'}
-          </Button>
-          <Button variant="danger" icon={<PhoneOff className="h-4 w-4" />} onClick={() => call.current?.hangup()}>
-            Ophangen
-          </Button>
+          {phase === 'connecting' || phase === 'thinking' ? <Spinner /> : null}
+          <span className="line-clamp-2">{label}</span>
         </>
       }
+      tone={phase === 'listening' ? 'ok' : undefined}
+      meta={
+        <>
+          {clock(elapsed)} · gratis, op je eigen pc
+          {latency ? ` · ${t('eerste klank na {0}', formatSeconds(latency.totalMs))}` : ''}
+        </>
+      }
+      muted={muted}
+      onMute={() => {
+        call.current?.setMuted(!muted);
+        setMuted(!muted);
+      }}
+      onHangup={() => call.current?.hangup()}
+      alerts={
+        echoOff || error ? (
+          <div className="space-y-2 px-2.5 pt-2">
+            {echoOff && (
+              <div className="flex gap-2 rounded-lg bg-warn-soft p-2 text-xs text-warn">
+                <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+                <span>Je browser zet de echo-onderdrukking niet aan. Gebruik een koptelefoon, anders hoort de bot zichzelf.</span>
+              </div>
+            )}
+            {error && <div className="rounded-lg bg-danger-soft p-2 text-xs text-danger">{error}</div>}
+          </div>
+        ) : null
+      }
     >
-      <div className="space-y-3 text-sm">
-        <div className="flex items-center gap-3">
-          <BotAvatar bot={agent || { name: '?' }} size={48} />
-          <div className="min-w-0">
-            <div className="font-medium" role="status" aria-live="polite">
-              {label}
-            </div>
-            <div className="text-xs text-muted">
-              {clock(elapsed)} · gratis, op je eigen pc
-              {latency ? ` · ${t('eerste klank na {0}', formatSeconds(latency.totalMs))}` : ''}
-            </div>
+      <div ref={box} className="scroll-thin max-h-48 space-y-2 overflow-y-auto text-sm" aria-label="Wat er gezegd is">
+        {!lines.length && <div className="text-muted">Praat gewoon. Je kunt {name} onderbreken door te praten; zeg “dat was het” om op te hangen.</div>}
+        {lines.map((l) => (
+          <div key={l.id} className={l.role === 'user' ? 'text-end' : ''}>
+            <span className={l.role === 'user' ? 'inline-block rounded-xl bg-accent-soft px-3 py-1.5' : 'inline-block rounded-xl bg-surface-2 px-3 py-1.5'}>
+              {l.text}
+              {l.cut && <span className="ms-1 text-xs text-muted">(onderbroken)</span>}
+            </span>
           </div>
-        </div>
-        {echoOff && (
-          <div className="flex gap-2 rounded-lg bg-warn-soft p-2 text-xs text-warn">
-            <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
-            <span>Je browser zet de echo-onderdrukking niet aan. Gebruik een koptelefoon, anders hoort de bot zichzelf.</span>
-          </div>
-        )}
-        {error && <div className="rounded-lg bg-danger-soft p-2 text-xs text-danger">{error}</div>}
-        <div ref={box} className="max-h-64 space-y-2 overflow-y-auto" aria-label="Wat er gezegd is">
-          {!lines.length && <div className="text-muted">Praat gewoon. Je kunt {name} onderbreken door te praten; zeg “dat was het” om op te hangen.</div>}
-          {lines.map((l) => (
-            <div key={l.id} className={l.role === 'user' ? 'text-end' : ''}>
-              <span className={l.role === 'user' ? 'inline-block rounded-xl bg-accent-soft px-3 py-1.5' : 'inline-block rounded-xl bg-surface-2 px-3 py-1.5'}>
-                {l.text}
-                {l.cut && <span className="ms-1 text-xs text-muted">(onderbroken)</span>}
-              </span>
-            </div>
-          ))}
-        </div>
-        {latency && (
-          <div className="text-xs text-muted">
-            {t('Herkenning {0} ms · beurt {1} ms · bot {2} ms · stem {3} ms', latency.sttMs, latency.turnMs, latency.brainMs, latency.ttsMs)}
-          </div>
-        )}
+        ))}
       </div>
-    </Modal>
+      {latency && (
+        <div className="text-xs text-muted">
+          {t('Herkenning {0} ms · beurt {1} ms · bot {2} ms · stem {3} ms', latency.sttMs, latency.turnMs, latency.brainMs, latency.ttsMs)}
+        </div>
+      )}
+    </CallBar>
   );
 }

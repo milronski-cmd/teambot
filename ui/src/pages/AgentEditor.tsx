@@ -1,15 +1,15 @@
 import type React from 'react';
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Archive, ChevronDown, CircleAlert, Copy, MessageSquare, Sparkles, Trash2 } from 'lucide-react';
-import { EditorSaveContext, changedFields, dirtySectionKeys, flushSections, listNl, prepareSections, unsavedLabels, type EditorSaveApi, type EditorSection } from '../lib/editorSave';
+import { Archive, ChevronDown, CircleAlert, Copy, MessageSquare, Sparkles, Trash2, Settings2, ShieldCheck, ScrollText } from 'lucide-react';
+import { EditorSaveContext, changedFields, dirtySectionKeys, flushSections, prepareSections, unsavedLabels, type EditorSaveApi, type EditorSection } from '../lib/editorSave';
+import { formatList, tText } from '../lib/format';
 import { api } from '../lib/api';
 import { useApp } from '../lib/store';
-import { accessUnsupported } from '../lib/access';
 import { navigate, query, setLeaveGuard } from '../lib/router';
 import type { Agent, ModelInfo, ProviderView, ToolGroup } from '../lib/types';
 import { uiModules } from '../modules';
 import { AgentHistory } from './AgentHistory';
-import { askConfirm, Badge, Button, Card, EmptyState, Field, Input, Modal, Page, PageHeader, Spinner, Tabs, Textarea, Toggle, cx, toast, toastError, useAsync } from '../components/ui';
+import { askConfirm, Badge, Button, Card, EmptyState, Field, Input, Modal, Page, PageHeader, Spinner, Textarea, Toggle, cx, toast, toastError, useAsync, CardHead } from '../components/ui';
 import { BUSY_POLICIES, busyPolicy } from '../shell/busyPolicy';
 import { BotDeleteDialog } from '../shell/BotDeleteDialog';
 import { BotAvatar } from '../components/BotFace';
@@ -21,14 +21,17 @@ import { t, translate } from '../lib/i18n';
 import { BotLanguageSelect } from '../components/LanguagePicker';
 import { ModelChoice } from '../components/ModelPicker';
 import { Dropdown, Segmented, SettingRow, SwitchRow } from '../components/SettingControls';
+import { settingOptions, settingText } from '../../../shared/settings.js';
 import { Listbox } from '../components/Listbox';
 import { AgentPrivacyLine } from '../modules/network/Privacy';
-import { ContextWindowField, ModelFacts, REASONING_LABELS, effectiveModel, levelsFor } from '../components/ModelFacts';
+import { ContextWindowField, ModelFacts, REASONING_LABELS, effectiveModel, hasModelFacts, levelsFor } from '../components/ModelFacts';
 import { NewBot } from './newbot/NewBot';
 import { MAX_RESERVES, reservesPatch } from './agentReserves';
+import { EXTRA_ARGS, accessLevels, accessLine, accessOn, busyShown, changedRows, guardLine, rowWorks, stepsOf, switchAi, withSteps, withoutKeptAccess, type LevelGuard } from './agentRows';
 import { useMultiTeam } from '../modules/teams/scope';
 import { OwnRules } from '../modules/botrules/OwnRules';
 import { WerkplekLine } from '../modules/folders/Werkplek';
+import { AgentOrders } from './AgentOrders';
 
 // (Up here, before any markup: the extractor reads text between placeholders in markup as a fragment of its own.)
 /** Why a member cannot edit a bot shared with the team, with its owner's name when the list has it. */
@@ -65,59 +68,61 @@ function useOpenSections() {
 }
 
 /**
- * The bot page has five tabs; every section (the editor's own and those of the modules) has one home.
- * A module section that is listed nowhere lands at the end of "Kunnen".
- */
-type TabId = 'overzicht' | 'instructies' | 'meer';
-const TABS: { id: TabId; label: string }[] = [
-  { id: 'overzicht', label: 'Overzicht' },
-  { id: 'instructies', label: 'Instructies' },
-  { id: 'meer', label: 'Meer' },
-];
-/** Links from before the page had three tabs (#/agents/<id>?tab=rechten). */
-const OLD_TABS: Record<string, TabId> = { kunnen: 'meer', routines: 'meer', rechten: 'meer' };
-/**
- * Where each closed section sits. Instructies: what shapes how the bot thinks and talks. Meer has four parts: what the
- * bot may do (rights), what it can use (`kan`: only with "Zelf kiezen"; `apps`; `kanMeer` behind "Meer opties"), when
- * it works by itself and where you reach it (routines), and the rest (`rest`, behind "Meer opties").
+ * The bot page ("ik zie nog veel instellingen staan waar ik niet veel van snap"). What everyone sees is what a bot IS:
+ * its face and name, its role, the AI and model it uses (with what it goes on with when that AI is used up), what it
+ * must do, and what it may do. Nothing else on the first level.
+ *
+ * Everything optional sits in ONE clearly named fold, "Meer mogelijkheden", and there every part is the same thing:
+ * one row with a title and one line that says what it is; a click opens that one part. Nothing in it has to be set:
+ * the defaults work, and a bot changes its own settings when you ask it in the chat. Every section (the editor's own
+ * and those of the modules) has one home:
+ *  - `kan`: what the bot can use, inside the row "Onderdelen en skills", only shown with "Zelf kiezen";
+ *  - `adv`: the rows of Meer mogelijkheden, in this order. A module section that is listed nowhere lands at the end.
+ *
+ * Per kind of AI (a model through a key, a local model, Claude Code, Codex, an ACP program): the page shows exactly
+ * the rows, fields and choices that work on the AI the bot uses now. What cannot work there is not shown (never greyed
+ * out with an explanation), and the same thing is the same row with the same words on every AI that has it. Which row
+ * works where is one table, read from the server's code: pages/agentRows.ts. A row or field that depends on the AI
+ * carries `data-row`, so the check per AI (tests/e2e/agent-page-per-ai.mjs) can read what is shown.
  */
 const PLACES = {
-  instructies: ['memory:memory', 'specialists:specialist', 'quality:quality', 'voice:voice'],
-  rechten: ['usage:cap', 'teams:main', 'teams:teams', 'core:sharing'],
   kan: ['core:tools', 'skills:skills'],
-  apps: ['mcp:apps'],
-  kanMeer: ['browser:computer', 'core:workspace', 'script-keys:keys'],
-  routines: ['routines:routines', 'channels:channels', 'rooms:rooms', 'notifications:meldingen'],
-  rest: ['core:engine', 'engine-chain:privacy', 'cli-agents:cli', 'skills:template', 'core:history'],
+  adv: [
+    'routines:routines',
+    'channels:channels',
+    'rooms:rooms',
+    'core:engine',
+    'core:turn',
+    'core:program',
+    'mcp:apps',
+    'memory:memory',
+    'specialists:specialist',
+    'quality:quality',
+    'voice:voice',
+    'browser:computer',
+    'core:workspace',
+    'script-keys:keys',
+    'usage:cap',
+    'teams:main',
+    'teams:teams',
+    'core:sharing',
+    'notifications:meldingen',
+    'engine-chain:privacy',
+    'skills:template',
+    'core:history',
+  ],
 } as const;
 type Place = keyof typeof PLACES;
-/** A module section that is listed nowhere lands with "what the bot can use", behind "Meer opties". */
-const placeOf = (key: string): Place => (Object.keys(PLACES) as Place[]).find((x) => (PLACES[x] as readonly string[]).includes(key)) || 'kanMeer';
+const placeOf = (key: string): Place => (Object.keys(PLACES) as Place[]).find((x) => (PLACES[x] as readonly string[]).includes(key)) || 'adv';
 /** Tool groups that follow from where the bot works (Computer & bestanden sets them): not part of "Automatisch". */
 const COMPUTER_GROUPS = new Set(['browser', 'desktop', 'rehearsal', 'container', 'remote']);
-const tabOfSection = (key: string): TabId => (placeOf(key) === 'instructies' ? 'instructies' : 'meer');
-/** The tab of a bot field that is not inside a collapsible section (for the dot on a tab with unsaved changes). */
-const FIELD_TAB: Record<string, TabId> = {
-  name: 'overzicht',
-  avatar: 'overzicht',
-  color: 'overzicht',
-  role: 'overzicht',
-  description: 'overzicht',
-  provider_id: 'overzicht',
-  model: 'overzicht',
-  instructions: 'instructies',
-  'settings.language': 'instructies',
-  'settings.answerStyle': 'instructies',
-  access_mode: 'meer',
-  'settings.fullAccessExternal': 'meer',
-  'settings.autoReview': 'meer',
-};
+/** Old links to a tab of the bot page (#/agents/<id>?tab=rechten): they open Meer mogelijkheden, where those parts live now. */
+const ADVANCED_TABS = new Set(['meer', 'kunnen', 'rechten', 'instructies']);
 /** One line under a closed module section, so you know what is in it without opening it. */
 const SECTION_HINT: Record<string, string> = {
   'browser:computer': 'Waar de bot werkt: zijn werkmap, een browser, je bureaublad of een server',
   'channels:channels': 'Telegram, Discord, Slack, e-mail of WhatsApp',
-  'cli-agents:cli': 'Stappen, tijdslimieten en tools van de CLI-engine',
-  'mcp:apps': 'Gekoppelde apps en connectors (MCP)',
+  'mcp:apps': 'Geef je bots toegang tot je diensten.',
   'script-keys:keys': 'Geheime sleutels voor de scripts van deze bot',
   'memory:memory': 'Wat de bot onthoudt en welk geheugen hij leest',
   'rooms:rooms': 'Groepsgesprekken waar de bot in zit',
@@ -137,7 +142,7 @@ const SECTION_HINT: Record<string, string> = {
 const SECTION_ALIAS = (k: string) => (k.startsWith('folders:') ? 'core:workspace' : k);
 
 /**
- * A collapsible advanced section. Its content mounts on first open and then stays mounted (hidden when closed), so a
+ * One row of Meer mogelijkheden: a title, one line, and its content when opened. Its content mounts on first open and then stays mounted (hidden when closed), so a
  * section with its own unsaved state keeps it when you close it, and the main "Opslaan" still saves it.
  */
 function Section({ id, title, summary, open, onToggle, dirty, children }: { id: string; title: string; summary?: React.ReactNode; open: boolean; onToggle(): void; dirty?: boolean; children: React.ReactNode }) {
@@ -174,10 +179,10 @@ function Section({ id, title, summary, open, onToggle, dirty, children }: { id: 
 }
 
 const ACCESS: { id: Agent['access_mode']; label: string; text: string }[] = [
-  { id: 'chat', label: 'Alleen chat', text: 'Geen tools. Praat alleen.' },
+  { id: 'chat', label: 'Alleen chat', text: 'Praat alleen; doet verder niets.' },
   { id: 'readonly', label: 'Alleen lezen', text: 'Mag lezen en zoeken, niets wijzigen.' },
-  { id: 'ask', label: 'Vraagt toestemming', text: 'Wijzigen alleen na jouw akkoord. Aanbevolen.' },
-  { id: 'auto', label: 'Automatisch', text: 'Werkt zelf; verzenden, betalen en wat niet terug kan, vragen altijd.' },
+  { id: 'ask', label: 'Vraagt toestemming', text: 'De bot vraagt je akkoord voordat hij iets wijzigt.' },
+  { id: 'auto', label: 'Automatisch', text: 'De bot werkt zelf door. Versturen naar anderen, betalen en wat niet terug kan, vraagt hij eerst.' },
   { id: 'full', label: 'Volledige toegang', text: 'Werkt zonder te vragen op je hele computer; versturen en betalen vragen wel. Alleen voor bots die je vertrouwt.' },
 ];
 /** A rule for one tool: follow the access level, or always allow, ask or refuse. */
@@ -214,6 +219,7 @@ export function AgentEditor({ id }: { id: string | 'new' }) {
  * What people rarely change sits in closed sections with one line that says what is in them.
  */
 function BotPage({ id }: { id: string }) {
+  const page = location.hash;
   const providers = useApp((s) => s.providers);
   const settings = useApp((s) => s.settings);
   // "Gedeeld met het team" (server mode; the server's owner or an admin, for his own bots): server/agent/shared.ts.
@@ -223,24 +229,26 @@ function BotPage({ id }: { id: string }) {
   const [delBot, setDelBot] = useState(false);
   const duplicateBot = async () => {
     if (!existing) return;
+    const from = location.hash;
     try {
       const a = await api.post<Agent>(`/agents/${existing.id}/duplicate`);
       useApp.setState((s) => ({ agents: [...s.agents.filter((x) => x.id !== a.id), a] }));
       toast(`Kopie gemaakt: ${a.name}. Gesprekken en geheugen gaan niet mee.`, 'ok');
-      navigate(`/agents/${a.id}`);
+      navigate(`/agents/${a.id}`, { from });
     } catch (e) {
       toastError(e);
     }
   };
   const archiveBot = async () => {
     if (!existing) return;
+    const from = location.hash;
     const to = !existing.archived;
     if (to && !(await askConfirm(`${existing.name} archiveren? De bot doet niets meer tot je hem terughaalt (Alle bots › Archief).`, { ok: 'Archiveren' }))) return;
     try {
       const a = await api.patch<Agent>(`/agents/${existing.id}`, { archived: to });
       useApp.setState((s) => ({ agents: s.agents.map((x) => (x.id === a.id ? a : x)) }));
       toast(to ? `${a.name} staat in het archief` : `${a.name} is terug uit het archief`, 'ok');
-      if (to) navigate('/');
+      if (to) navigate('/', { from });
     } catch (e) {
       toastError(e);
     }
@@ -260,19 +268,12 @@ function BotPage({ id }: { id: string }) {
   const [genErr, setGenErr] = useState('');
   // The engine for the profile is at its limit: a local model to try with one click, as the chat offers it.
   const [genLimited, setGenLimited] = useState(false);
-  // The tab in view (#/agents/<id>?tab=rechten opens one); a tab mounts when first shown and then keeps its state.
-  const [tab, setTab] = useState<TabId>(() => TABS.find((x) => x.id === query().get('tab'))?.id || OLD_TABS[query().get('tab') || ''] || 'overzicht');
-  // "Zelf kiezen" under Meer › Wat kan de bot: null follows what the bot has (all parts on = Automatisch).
+  // "Zelf kiezen" under Meer mogelijkheden: null follows what the bot has (all parts on = Automatisch).
   const [ownTools, setOwnTools] = useState<boolean | null>(null);
-  const [seen, setSeen] = useState<TabId[]>([tab]);
-  const showTab = (x: TabId) => (setTab(x), setSeen((cur) => (cur.includes(x) ? cur : [...cur, x])));
-  // A link to a tab of the page that is already open (#/agents/<id>?tab=meer).
+  // Meer mogelijkheden opens by itself for an old link to a tab (#/agents/<id>?tab=rechten), also on the page that is open.
+  const [advOpen, setAdvOpen] = useState(() => ADVANCED_TABS.has(query().get('tab') || ''));
   useEffect(() => {
-    const f = () => {
-      const want = query().get('tab') || '';
-      const x = TABS.find((y) => y.id === want)?.id || OLD_TABS[want];
-      if (x) showTab(x);
-    };
+    const f = () => ADVANCED_TABS.has(query().get('tab') || '') && setAdvOpen(true);
     window.addEventListener('hashchange', f);
     return () => window.removeEventListener('hashchange', f);
   }, []);
@@ -340,7 +341,24 @@ function BotPage({ id }: { id: string }) {
 
   // What a CLI engine can read on this computer (Codex: checked per computer), for the access card and the warning.
   const [readAccess, setReadAccess] = useState<{ text: string; confined: boolean } | null>(null);
-  const cliProvider = providers.find((p) => p.id === d?.provider_id)?.type === 'cli' ? d?.provider_id : null;
+  // The AI the bot uses now: it decides which rows, fields and choices of this page are shown (agentRows.ts).
+  const engineProv = providers.find((p) => p.id === d?.provider_id);
+  const cliProvider = engineProv?.type === 'cli' ? d?.provider_id : null;
+  // Per level: does TeamBot guard the hard blocks (key files, closed folders, its own data) for this bot on this AI? The
+  // server says it for any AI and level (permissions.ts hardBlocks); until it has answered, nothing is said.
+  const [levelGuards, setLevelGuards] = useState<Partial<Record<string, LevelGuard>> | null>(null);
+  useEffect(() => {
+    setLevelGuards(null);
+    if (!d?.provider_id) return;
+    let alive = true;
+    api
+      .get<{ levels?: Record<string, LevelGuard> }>(`/cli-agents/hard-blocks/${encodeURIComponent(d.provider_id)}?agentId=${encodeURIComponent(id)}`)
+      .then((r) => alive && setLevelGuards(r.levels || null))
+      .catch(() => {});
+    return () => {
+      alive = false;
+    };
+  }, [d?.provider_id, id]);
   useEffect(() => {
     setReadAccess(null);
     if (!cliProvider) return;
@@ -398,9 +416,21 @@ function BotPage({ id }: { id: string }) {
   }, [d?.provider_id, infoFor, models, modelsLoading]);
 
   const set = (p: Draft) => setD((x) => ({ ...(x || {}), ...p }));
+  // A bot that was saved on a level its AI cannot be held to ("Alleen chat" on Codex: every turn was refused): the page
+  // shows the level that works there and saves that; the level that was chosen is kept for when the bot goes back to
+  // an AI that can be held to it.
+  const levelOk = !d || !engineProv || accessLevels(engineProv).includes((d.access_mode || 'ask') as Agent['access_mode']);
+  useEffect(() => {
+    if (levelOk || !d) return;
+    set({ access_mode: accessOn(engineProv, d.access_mode), settings: { ...(d.settings || {}), kept: { ...(d.settings?.kept || {}), access: d.settings?.kept?.access || d.access_mode } } });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [levelOk]);
   const sections = useMemo(() => uiModules.flatMap((m) => (m.agentSections || []).map((s) => ({ ...s, key: `${m.id}:${s.id}` }))), []);
   const regList = [...regs.current.values()];
-  const unsaved = d ? unsavedLabels(changedFields(saved, d), regList.filter((s) => s.dirty()).map((s) => s.label)) : [];
+  // The two rows about a turn and the program name themselves; what is only put aside for another AI is no change.
+  const rowsChanged = changedRows(saved?.settings, d?.settings);
+  const ownLabels = [rowsChanged.turn ? 'Duur van een beurt' : '', rowsChanged.program ? 'Programma' : ''].filter(Boolean);
+  const unsaved = d ? unsavedLabels(changedFields(saved, d).filter((f) => !['settings.cli', 'settings.maxTurns', 'settings.kept'].includes(f)), [...ownLabels, ...regList.filter((s) => s.dirty()).map((s) => s.label)]) : [];
   unsavedRef.current = unsaved;
 
   if (!d) {
@@ -450,7 +480,7 @@ function BotPage({ id }: { id: string }) {
       loadAgent(a);
       useApp.setState((s) => ({ agents: s.agents.map((x) => (x.id === a.id ? a : x)) }));
       if (r.failed.length) {
-        toast(`Bot opgeslagen, maar ${listNl(r.failed.map((f) => f.label))} niet: ${r.failed[0].error}`, 'danger');
+        toast(t('Bot opgeslagen, maar {0} niet: {1}', formatList(r.failed.map((f) => translate(f.label))), r.failed[0].error), 'danger');
         return false;
       }
       toast('Opgeslagen', 'ok');
@@ -466,7 +496,7 @@ function BotPage({ id }: { id: string }) {
       setGenErr('');
       setGenLimited(false);
       // The reason stays under the button (a toast disappears after a few seconds); nothing is saved on failure.
-      const r = await api.post<{ draft: Draft; model: string; provider_id: string }>('/agents/generate', { description: genFrom, provider_id: local?.id || d.provider_id || undefined }).catch((e) => {
+      const r = await api.post<{ draft: Draft; model: string; provider_id: string }>('/agents/generate', { description: genFrom, provider_id: local?.id || genEngine || undefined }).catch((e) => {
         setGenErr(e?.message || String(e));
         setGenLimited(e?.code === 'limit');
         throw e;
@@ -476,98 +506,95 @@ function BotPage({ id }: { id: string }) {
     });
 
   const providerOptions = providers.filter((p) => p.enabled);
+  // "Laat AI de instructies schrijven" asks an AI one loose question. The bot's own AI when it can answer one, else
+  // the AI new bots get, else the first connected one that can: a program that cannot (an ACP program other than
+  // OpenCode) is never asked, it could only fail. No AI that can: no button.
+  const genEngine = [engineProv, providerOptions.find((p) => p.id === settings.defaultProvider), ...providerOptions].find((p) => !!p && rowWorks('writeInstructions', p))?.id;
   // A local model that is connected (not the engine that just hit its limit): free here, without a daily limit.
-  const genEngine = d.provider_id || settings.defaultProvider || providerOptions[0]?.id;
   const localAlt = genLimited ? providerOptions.find((p) => p.billing === 'local' && p.id !== genEngine) : undefined;
 
   // What "Laat AI de instructies schrijven" starts from.
   const genFrom = [d.role, d.description].map((x) => x?.trim()).filter(Boolean).join('. ');
 
   const riskTone: Record<string, 'neutral' | 'warn' | 'danger'> = { read: 'neutral', write: 'warn', exec: 'warn', danger: 'danger' };
-  const isCli = providers.find((p) => p.id === d.provider_id)?.type === 'cli';
   const merged = { ...(existing || {}), ...d } as Agent;
   const renderMod = (x: (typeof sections)[number]) => <x.component agent={merged} onChange={(p) => set(p)} />;
   const groupsOn = groups.filter((g) => g.always || d.tool_groups?.includes(g.id)).length;
   const ownRules = Object.keys(d.tool_policy || {}).length;
   const extraFolders = Array.isArray(d.settings?.folders) ? d.settings.folders.length : 0;
-  // Thinking levels of the model the bot really uses (C-11): only the levels it takes, none when it has none.
-  const engineProv = providers.find((p) => p.id === d.provider_id);
+  // Thinking levels of the model the bot really uses (C-11): only the levels it takes. A model without levels, or an AI
+  // that is never given one (an ACP program), has no row for it.
   const curModel = effectiveModel(models, d.model || '', engineProv) || (customInfo && customInfo.id === infoFor ? customInfo : undefined);
   const { levels, known: levelsKnown } = levelsFor(curModel);
-  const noLevels = levelsKnown && !levels.length;
-  const reasonSummary = noLevels ? 'geen denkniveau' : d.reasoning ? `denkniveau ${(REASONING_LABELS[d.reasoning] || d.reasoning).replace(/ \(.*\)$/, '').toLowerCase()}` : 'denkniveau standaard';
+  const showLevels = rowWorks('reasoning', engineProv) && !(levelsKnown && !levels.length);
+  const busyNow = busyShown(engineProv, d.busy_policy);
+  const engineSummary = [
+    showLevels ? (d.reasoning ? `denkniveau ${(REASONING_LABELS[d.reasoning] || d.reasoning).replace(/ \(.*\)$/, '').toLowerCase()}` : 'denkniveau standaard') : '',
+    busyNow === 'interrupt' ? 'nieuw bericht onderbreekt' : busyNow === 'steer' ? 'nieuw bericht stuurt bij' : 'nieuw bericht wacht',
+  ].filter(Boolean);
+  // "Hoe lang mag een beurt duren" and "Programma": which of their fields work on this AI (agentRows.ts).
+  const cli = (d.settings?.cli || {}) as Record<string, any>;
+  const setCli = (patch: Record<string, any>) => set({ settings: { ...(d.settings || {}), cli: { ...cli, ...patch } } });
+  const num = (v: string) => (v === '' ? undefined : Math.max(1, Math.round(Number(v)) || 1));
+  const turn = { steps: rowWorks('steps', engineProv), time: rowWorks('time', engineProv), silence: rowWorks('silence', engineProv) };
+  const steps = stepsOf(d.settings, engineProv);
+  const turnSummary = [
+    turn.steps && steps ? t('max. {0, plural, one {# stap} other {# stappen}}', steps) : '',
+    turn.time && Number(cli.timeoutMin) > 0 ? t('max. {0, plural, one {# minuut} other {# minuten}}', Number(cli.timeoutMin)) : '',
+    turn.silence && Number(cli.idleMin) > 0 ? t('stopt na {0, plural, one {# minuut} other {# minuten}} stilte', Number(cli.idleMin)) : '',
+  ].filter(Boolean);
+  const prog = {
+    ownApps: rowWorks('ownApps', engineProv),
+    ownSettings: rowWorks('ownSettings', engineProv),
+    allow: rowWorks('alwaysAllow', engineProv, { access: d.access_mode }),
+    deny: rowWorks('alwaysDeny', engineProv),
+    extra: rowWorks('extraArgs', engineProv),
+  };
+  const full = d.access_mode === 'full';
+  const progSummary = formatList(
+    [prog.ownApps ? translate('je eigen apps') : '', prog.ownSettings ? translate('je eigen instellingen') : '', prog.deny ? translate('vaste regels per stap') : '', prog.extra ? translate('extra argumenten') : ''].filter(Boolean),
+  );
   const core: { key: string; title: string; summary?: React.ReactNode; body: React.ReactNode }[] = [
     ...(providerOptions.length
       ? [
           {
             key: 'core:engine',
-            title: 'Denken, drukte en reserve-engines',
-            summary: `${reasonSummary} · ${d.busy_policy === 'interrupt' ? 'nieuw bericht onderbreekt' : d.busy_policy === 'steer' ? 'nieuw bericht stuurt bij' : 'nieuw bericht wacht'} · ${fallbacks.length === 1 ? '1 reserve-engine' : fallbacks.length ? `${fallbacks.length} reserve-engines` : 'geen reserve-engine'}`,
+            title: 'Denken en drukte',
+            summary: engineSummary.join(' · '),
             body: (
               <>
                 <div className="grid gap-4 sm:grid-cols-2">
-                  {noLevels ? (
-                    <Field label="Denkniveau">
-                      <p className="text-sm text-muted" data-testid="no-levels">
-                        {engineProv?.kind === 'opencode' ? 'OpenCode kiest zelf hoe diep het model nadenkt; TeamBot heeft daar geen instelling voor.' : 'Dit model heeft geen denkniveaus om te kiezen.'}
-                      </p>
-                    </Field>
-                  ) : (
-                    <Field label="Denkniveau" hint="Hoger is grondiger, maar trager en duurder.">
-                      <Listbox
-                        value={d.reasoning || ''}
-                        onChange={(v) => set({ reasoning: v })}
-                        aria-label="Denkniveau"
-                        options={[
-                          { value: '', label: curModel?.defaultReasoning ? t('Standaard ({0})', translate(REASONING_LABELS[curModel.defaultReasoning] || curModel.defaultReasoning).replace(/ \(.*\)$/, '').toLocaleLowerCase()) : translate('Standaard') },
-                          ...levels.map((l) => ({ value: l, label: translate(REASONING_LABELS[l] || l) })),
-                          ...(d.reasoning && !levels.includes(d.reasoning) ? [{ value: d.reasoning, label: t('{0} — kent dit model niet', translate(REASONING_LABELS[d.reasoning] || d.reasoning)) }] : []),
-                        ]}
-                      />
-                    </Field>
+                  {showLevels && (
+                    <div data-row="denkniveau">
+                      <Field label="Denkniveau" hint="Hoger is grondiger, maar trager en duurder.">
+                        <Listbox
+                          value={d.reasoning || ''}
+                          onChange={(v) => set({ reasoning: v })}
+                          aria-label="Denkniveau"
+                          options={[
+                            { value: '', label: curModel?.defaultReasoning ? t('Standaard ({0})', translate(REASONING_LABELS[curModel.defaultReasoning] || curModel.defaultReasoning).replace(/ \(.*\)$/, '').toLocaleLowerCase()) : translate('Standaard') },
+                            ...levels.map((l) => ({ value: l, label: translate(REASONING_LABELS[l] || l) })),
+                            ...(d.reasoning && !levels.includes(d.reasoning) ? [{ value: d.reasoning, label: t('{0} — kent dit model niet', translate(REASONING_LABELS[d.reasoning] || d.reasoning)) }] : []),
+                          ]}
+                        />
+                      </Field>
+                    </div>
                   )}
-                  <div className="space-y-1.5">
+                  <div className="space-y-1.5" data-row="bezig">
                     <div className="text-[13px] font-semibold">Als de bot bezig is</div>
-                    <Segmented label="Als de bot bezig is" value={d.busy_policy || 'queue'} onChange={(v) => set({ busy_policy: v })} options={BUSY_POLICIES.map((p) => ({ value: p.id, label: p.label }))} />
+                    <Segmented
+                      label="Als de bot bezig is"
+                      value={busyNow}
+                      onChange={(v) => set({ busy_policy: v })}
+                      options={BUSY_POLICIES.filter((p) => p.id !== 'steer' || rowWorks('steer', engineProv)).map((p) => ({ value: p.id, label: p.label }))}
+                    />
                     <p className="text-xs leading-relaxed text-muted">
-                      {busyPolicy(d.busy_policy).text}
-                      {isCli && busyPolicy(d.busy_policy).cli ? ' ' + busyPolicy(d.busy_policy).cli : ''} <MoreInfo>Je kiest dit ook in de chat zolang de bot werkt.</MoreInfo>
+                      {busyPolicy(busyNow).text} <MoreInfo>Je kiest dit ook in de chat zolang de bot werkt.</MoreInfo>
                     </p>
                   </div>
                 </div>
                 <div className="space-y-3">
-                  <h4 className="text-sm font-semibold">Reserve-engines bij limiet of storing</h4>
-                  <p className="text-xs text-muted">
-                    Op volgorde, als de engine niet kan.{' '}
-                    <MoreInfo>Bij een limiet of storing gaat de beurt verder op de volgende. De chat meldt dat er gewisseld is.</MoreInfo>
-                  </p>
-                  {/* Up to 5 reserves (server MAX_FALLBACKS); the next empty slot appears once the previous is set. */}
-                  {Array.from({ length: MAX_RESERVES }, (_, i) => i).map((i) => {
-                    const f = fallbacks[i];
-                    if (i > fallbacks.length) return null;
-                    return (
-                      <div key={i} className="grid gap-2 sm:grid-cols-2">
-                        <Field label={`Reserve ${i + 1}`}>
-                          <Listbox
-                            value={f?.provider_id || ''}
-                            onChange={(v) => {
-                              const next = [...fallbacks];
-                              if (v) next[i] = { provider_id: v, model: f?.model || '' };
-                              else next.splice(i, 1);
-                              setFallbacks(next);
-                            }}
-                            options={[{ value: '', label: translate('Geen') }, ...providerOptions.map((p) => ({ value: p.id, label: p.name, noTranslate: true }))]}
-                          />
-                        </Field>
-                        {f && (
-                          <Field label="Model (leeg = standaard)">
-                            <Input value={f.model} onChange={(e) => setFallbacks(fallbacks.map((x, j) => (j === i ? { ...x, model: e.target.value } : x)))} />
-                          </Field>
-                        )}
-                      </div>
-                    );
-                  })}
-                  <div className="space-y-1.5">
+                  <div className="space-y-1.5" data-row="gebruikslimiet">
                     <div className="text-[13px] font-semibold">Bij een gebruikslimiet</div>
                     <Segmented
                       label="Bij een gebruikslimiet"
@@ -579,6 +606,100 @@ function BotPage({ id }: { id: string }) {
                   </div>
                 </div>
               </>
+            ),
+          },
+        ]
+      : []),
+    // How long one turn may take: the steps (TeamBot's own loop and Claude Code read one value, settings.maxTurns), and
+    // for a program the time and the silence after which its run is ended (settings.cli).
+    ...(engineProv && (turn.steps || turn.time || turn.silence)
+      ? [
+          {
+            key: 'core:turn',
+            title: 'Hoe lang mag een beurt duren',
+            summary: turnSummary.length ? turnSummary.join(' · ') : translate('Standaard'),
+            body: (
+              <div className="grid gap-3 sm:grid-cols-3">
+                {turn.steps && (
+                  <div data-row="stappen">
+                    <Field label="Max. stappen per beurt">
+                      <Input type="number" min={1} max={100000} value={steps ?? ''} placeholder={full ? '10000' : '40'} onChange={(e) => set({ settings: withSteps(d.settings, num(e.target.value)) })} />
+                    </Field>
+                  </div>
+                )}
+                {turn.time && (
+                  <div data-row="duur">
+                    <Field label="Max. duur (min)">
+                      <Input type="number" min={1} max={43200} value={cli.timeoutMin ?? ''} placeholder="4320" onChange={(e) => setCli({ timeoutMin: num(e.target.value) })} />
+                    </Field>
+                  </div>
+                )}
+                {turn.silence && (
+                  <div data-row="stilte">
+                    <Field label="Stoppen na stilte (min)" hint="Telt niet terwijl de bot op jou wacht">
+                      <Input type="number" min={1} max={1440} value={cli.idleMin ?? ''} placeholder="30" onChange={(e) => setCli({ idleMin: num(e.target.value) })} />
+                    </Field>
+                  </div>
+                )}
+              </div>
+            ),
+          },
+        ]
+      : []),
+    // What the program brings of its own (Claude Code, Codex, and the flags another program accepts): only the fields
+    // that program reads; no row at all for a program that reads none of them.
+    ...(engineProv && (prog.ownApps || prog.ownSettings || prog.allow || prog.deny || prog.extra)
+      ? [
+          {
+            key: 'core:program',
+            title: 'Programma',
+            summary: progSummary ? t('{0} van {1}', progSummary.charAt(0).toLocaleUpperCase() + progSummary.slice(1), engineProv.name) : undefined,
+            body: (
+              <div className="space-y-3">
+                <div className="divide-y divide-line">
+                  {prog.ownApps && (
+                    <div data-row="eigen-apps">
+                      <SwitchRow
+                        setting="agent.useUserMcp"
+                        hint={(cli.useUserMcp ?? full) ? 'Tools van die apps volgen de regels van het programma zelf.' : undefined}
+                        checked={cli.useUserMcp ?? full}
+                        onChange={(v) => setCli({ useUserMcp: v })}
+                      />
+                    </div>
+                  )}
+                  {prog.ownSettings && (
+                    <div data-row="eigen-instellingen">
+                      <SwitchRow
+                        setting="agent.loadUserSettings"
+                        hint={(cli.loadUserSettings ?? full) ? undefined : null}
+                        checked={cli.loadUserSettings ?? full}
+                        onChange={(v) => setCli({ loadUserSettings: v })}
+                      />
+                    </div>
+                  )}
+                </div>
+                {prog.allow && (
+                  <div data-row="altijd-toegestaan">
+                    <Field label="Altijd toegestane tools" hint="Regels van het programma, bijv. Bash(npm test). Ze slaan de goedkeuring over.">
+                      <ListText rows={2} value={cli.allowedTools} onChange={(v) => setCli({ allowedTools: v })} />
+                    </Field>
+                  </div>
+                )}
+                {prog.deny && (
+                  <div data-row="altijd-geweigerd">
+                    <Field label="Altijd geweigerde tools" hint="Bijv. WebFetch, Bash(git push:*)">
+                      <ListText rows={2} value={cli.disallowedTools} onChange={(v) => setCli({ disallowedTools: v })} />
+                    </Field>
+                  </div>
+                )}
+                {prog.extra && (
+                  <div data-row="extra-argumenten">
+                    <Field label="Extra argumenten" hint={t('Alleen toegestaan: {0}', (EXTRA_ARGS[engineProv.kind] || []).join(', '))}>
+                      <ListText words value={cli.extraArgs} onChange={(v) => setCli({ extraArgs: v })} placeholder={(EXTRA_ARGS[engineProv.kind]?.[0] || '').split(' ')[0]} />
+                    </Field>
+                  </div>
+                )}
+              </div>
             ),
           },
         ]
@@ -628,7 +749,7 @@ function BotPage({ id }: { id: string }) {
                         else delete p[t.name];
                         set({ tool_policy: p });
                       }}
-                      aria-label={`Beleid voor ${t.name}`}
+                      aria-label={tText('Beleid voor {0}', t.name)}
                       options={TOOL_POLICIES.map((o) => ({ value: o.value, label: translate(o.label) }))}
                     />
                   </div>
@@ -689,7 +810,7 @@ function BotPage({ id }: { id: string }) {
     ...(existing ? [{ key: 'core:history', title: 'Geschiedenis', summary: 'Eerdere versies van deze bot bekijken en terugzetten', body: <AgentHistory bare agent={existing} onRestored={(a) => loadAgent(a)} /> }] : []),
   ];
   const mods = sections
-    .filter((x) => SECTION_ALIAS(x.key) === x.key && !(x.key === 'cli-agents:cli' && !isCli) && !(x.key === 'teams:teams' && !multiTeam))
+    .filter((x) => SECTION_ALIAS(x.key) === x.key && !(x.key === 'teams:teams' && !multiTeam))
     .map((x) => ({ key: x.key, title: x.title, summary: SECTION_HINT[x.key], body: renderMod(x) }));
   const allSections = [...core, ...mods];
   const sectionsAt = (x: Place) => allSections.filter((y) => placeOf(y.key) === x).sort((a, b) => (PLACES[x] as readonly string[]).indexOf(a.key) - (PLACES[x] as readonly string[]).indexOf(b.key) || 0);
@@ -702,16 +823,17 @@ function BotPage({ id }: { id: string }) {
     setOwnTools(v);
     if (!v) set({ tool_groups: [...new Set([...(d.tool_groups || []), ...autoGroups])] });
   };
-  // One visible choice for the rights: asks first, or works by itself. The other levels are under "Meer opties".
-  const simpleAccess = d.access_mode === 'ask' || !d.access_mode ? 'ask' : d.access_mode === 'auto' ? 'auto' : '';
-  const dirtyKeys = new Set([...dirtySectionKeys(saved, d), ...[...regs.current.entries()].filter(([, r]) => r.dirty()).map(([k]) => SECTION_ALIAS(k.split(':').slice(0, 2).join(':')))]);
-
-  // A dot on every tab that holds unsaved changes.
-  const dirtyTabs = new Set<TabId>([
-    ...changedFields(saved, d)
-      .map((f) => FIELD_TAB[f])
-      .filter(Boolean),
-    ...[...dirtyKeys].map(tabOfSection),
+  const row = (key: string, title: string, summary: React.ReactNode, body: React.ReactNode) => (
+    <Section key={key} id={key} title={title} summary={summary} open={openSecs.open.includes(key)} onToggle={() => openSecs.toggle(key)} dirty={dirtyKeys.has(key)}>
+      {body}
+    </Section>
+  );
+  // (settings.cli belongs to two rows now: the length of a turn and the program; changedRows tells them apart.)
+  const dirtyKeys = new Set([
+    ...dirtySectionKeys(saved, d).filter((k) => k !== 'cli-agents:cli'),
+    ...(rowsChanged.turn ? ['core:turn'] : []),
+    ...(rowsChanged.program ? ['core:program'] : []),
+    ...[...regs.current.entries()].filter(([, r]) => r.dirty()).map(([k]) => SECTION_ALIAS(k.split(':').slice(0, 2).join(':'))),
   ]);
   const sectionList = (x: Place) =>
     sectionsAt(x).map((y) => (
@@ -719,14 +841,6 @@ function BotPage({ id }: { id: string }) {
         {y.body}
       </Section>
     ));
-  /** A tab's content: mounted when first shown, then kept (hidden), so unsaved changes survive switching tabs. */
-  const panel = (x: TabId, children: React.ReactNode) =>
-    seen.includes(x) && (
-      <div key={x} role="tabpanel" hidden={tab !== x} className="space-y-3" data-tab={x}>
-        {children}
-      </div>
-    );
-
   return (
     <EditorSaveContext.Provider value={editorApi}>
     <Page>
@@ -752,251 +866,269 @@ function BotPage({ id }: { id: string }) {
         }
       />
       <div className="mx-auto max-w-3xl space-y-4 px-4 pb-8 pt-3 sm:px-6">
-        <Tabs
-          tabs={TABS.map((x) => ({
-            id: x.id,
-            label: dirtyTabs.has(x.id) ? (
-              <span className="inline-flex items-center gap-1.5">
-                {x.label}
-                <span className="h-1.5 w-1.5 rounded-full bg-warn-strong" role="img" aria-label="niet opgeslagen" />
-              </span>
-            ) : (
-              x.label
-            ),
-          }))}
-          value={tab}
-          onChange={showTab}
-        />
-
-        {panel(
-          'overzicht',
-          <>
-            <Card className="space-y-4 p-5">
-              <div className="flex items-end gap-4">
-                <button
-                  type="button"
-                  aria-expanded={faceOpen}
-                  aria-controls="gezicht-kiezen"
-                  onClick={() => setFaceOpen((x) => !x)}
-                  className="flex shrink-0 flex-col items-center gap-1 rounded-card p-1 text-xs font-semibold text-muted transition-colors hover:bg-surface-2 hover:text-fg"
-                >
-                  <BotAvatar bot={{ id, name: d.name, avatar: d.avatar }} size={60} />
-                  <span className="flex items-center gap-0.5">
-                    Gezicht <ChevronDown className={cx('h-3 w-3 transition-transform', faceOpen && 'rotate-180')} aria-hidden />
-                  </span>
-                </button>
-                <Field label="Naam" className="min-w-0 flex-1 pb-1">
-                  <Input value={d.name || ''} onChange={(e) => set({ name: e.target.value })} maxLength={80} />
-                </Field>
-              </div>
-              {faceOpen && (
-                <div id="gezicht-kiezen" className="rounded-card border border-line p-4">
-                  <FacePicker seed={id} name={d.name || ''} avatar={d.avatar || ''} onChange={(avatar, color) => set(color ? { avatar, color } : { avatar })} />
-                </div>
-              )}
-              <div className="grid gap-4 sm:grid-cols-2">
-                <Field label="Rol">
-                  <Input value={d.role || ''} onChange={(e) => set({ role: e.target.value })} placeholder="Bijv. Onderzoeker" />
-                </Field>
-                <Field label="Korte beschrijving">
-                  <Input value={d.description || ''} onChange={(e) => set({ description: e.target.value })} />
-                </Field>
-              </div>
-            </Card>
-
-            <Card className="space-y-4 p-5">
-              <h2 className="text-[15px] font-bold tracking-tight">AI en model</h2>
-              {providerOptions.length === 0 ? (
-                <EmptyLine href="#/settings/providers" action="AI koppelen">
-                  Er is nog geen AI gekoppeld.
-                </EmptyLine>
-              ) : (
-                <div className="grid gap-4 sm:grid-cols-2">
-                  <Field label="AI">
-                    <Listbox
-                      value={d.provider_id || ''}
-                      onChange={(v) => set({ provider_id: v || null, model: '' })}
-                      placeholder={translate('Kies een AI')}
-                      options={providerOptions.map((p) => ({ value: p.id, label: p.name, noTranslate: true }))}
-                    />
-                  </Field>
-                  <Field label="Model" hint={modelsErr ? `Modellen ophalen mislukt: ${modelsErr}` : undefined}>
-                    <ModelChoice models={models} loading={modelsLoading} value={d.model || ''} onChange={(model) => set({ model })} />
-                  </Field>
-                </div>
-              )}
-              {engineProv && (
-                <>
-                  <AgentPrivacyLine agent={d} />
-                  <ModelFacts m={curModel} provider={engineProv} loading={modelsLoading} />
-                  {!modelsLoading && <ContextWindowField provider={engineProv} m={curModel} />}
-                </>
-              )}
-            </Card>
-
-            {existing && (
-              <Card className="flex flex-wrap items-center justify-between gap-x-4 gap-y-3 p-5">
-                {/* The actions themselves: a button that only led to the chat menu was a detour (owner, 0.4.4). */}
-                <h2 className="min-w-0 flex-1 basis-40 text-[15px] font-bold tracking-tight">Beheer</h2>
-                <div className="flex flex-wrap gap-2">
-                  <Button icon={<Copy className="h-4 w-4" />} onClick={duplicateBot}>
-                    Dupliceren
-                  </Button>
-                  <Button icon={<Archive className="h-4 w-4" />} onClick={archiveBot}>
-                    {existing.archived ? 'Uit archief halen' : 'Archiveren'}
-                  </Button>
-                  <Button icon={<Trash2 className="h-4 w-4" />} className="!text-danger" onClick={() => setDelBot(true)}>
-                    Verwijderen…
-                  </Button>
-                </div>
-                <BotDeleteDialog agent={existing} open={delBot} onClose={() => setDelBot(false)} onDeleted={() => navigate('/')} />
-              </Card>
-            )}
-          </>,
-        )}
-
-        {panel(
-          'instructies',
-          <>
-            <Card className="px-5 pb-2 pt-5">
-              <Field label="Instructies" hint="Concrete regels werken het best.">
-                <Textarea rows={12} value={d.instructions || ''} onChange={(e) => set({ instructions: e.target.value })} placeholder="Bijvoorbeeld: antwoord kort, en vraag door als iets onduidelijk is." className="font-mono text-[13px]" />
+        {/* ---------------- what everyone sees: who the bot is, its AI, what it is told, and one choice */}
+        <div className="space-y-4" data-tab="overzicht">
+          <Card className="space-y-4 p-5" data-row="wie">
+            <div className="flex items-end gap-4">
+              <button
+                type="button"
+                aria-expanded={faceOpen}
+                aria-controls="gezicht-kiezen"
+                onClick={() => setFaceOpen((x) => !x)}
+                className="flex shrink-0 flex-col items-center gap-1 rounded-card p-1 text-xs font-semibold text-muted transition-colors hover:bg-surface-2 hover:text-fg"
+              >
+                <BotAvatar bot={{ id, name: d.name, avatar: d.avatar }} size={60} />
+                <span className="flex items-center gap-0.5">
+                  Gezicht <ChevronDown className={cx('h-3 w-3 transition-transform', faceOpen && 'rotate-180')} aria-hidden />
+                </span>
+              </button>
+              <Field label="Naam" className="min-w-0 flex-1 pb-1">
+                <Input value={d.name || ''} onChange={(e) => set({ name: e.target.value })} maxLength={80} />
               </Field>
-              <div className="mt-3 space-y-1.5">
-                <Button size="sm" icon={<Sparkles className="h-4 w-4" />} loading={gen.busy} disabled={!genFrom || !genEngine} onClick={() => generate()} title={genFrom ? undefined : 'Vul eerst bij Overzicht een rol of korte beschrijving in'}>
-                  Laat AI de instructies schrijven
-                </Button>
-                {genErr && !gen.busy && (
-                  <p className="text-sm text-danger" role="alert">
-                    {genErr}
-                  </p>
-                )}
-                {localAlt && !gen.busy && (
-                  <div className="space-y-1.5" data-testid="generate-local">
-                    <Button size="sm" variant="primary" onClick={() => generate(localAlt)}>
-                      Probeer met {localAlt.name}
-                    </Button>
-                    <p className="text-[11px] text-muted">Gratis op deze computer. De bot houdt het model dat je koos.</p>
-                  </div>
-                )}
+            </div>
+            {faceOpen && (
+              <div id="gezicht-kiezen" className="rounded-card border border-line p-4">
+                <FacePicker seed={id} name={d.name || ''} avatar={d.avatar || ''} onChange={(avatar, color) => set(color ? { avatar, color } : { avatar })} />
               </div>
-              <div className="mt-4 divide-y divide-line border-t border-line">
-                <SettingRow label="Taal van de antwoorden" info="Standaard antwoordt de bot in jouw taal. Kies een vaste taal als dat anders moet.">
+            )}
+            <Field label="Rol">
+              <Input value={d.role || ''} onChange={(e) => set({ role: e.target.value })} placeholder="Bijv. Onderzoeker" />
+            </Field>
+          </Card>
+
+          <Card className="space-y-4 p-5">
+            <CardHead icon={Sparkles} tone="violet" title="AI en model" />
+            {providerOptions.length === 0 ? (
+              <EmptyLine href="#/settings/providers" action="AI koppelen">
+                Er is nog geen AI gekoppeld.
+              </EmptyLine>
+            ) : (
+              <div className="grid gap-4 sm:grid-cols-2" data-row="ai">
+                <Field label="AI">
+                  {/* Another AI: what does not apply there goes out of view and is kept for when the bot goes back
+                      (agentRows.ts switchAi); the rows of this page follow the new AI at once. */}
+                  <Listbox
+                    value={d.provider_id || ''}
+                    onChange={(v) => v !== (d.provider_id || '') && set(switchAi(d, engineProv, providers.find((p) => p.id === v)))}
+                    placeholder={translate('Kies een AI')}
+                    options={providerOptions.map((p) => ({ value: p.id, label: p.name, noTranslate: true }))}
+                  />
+                </Field>
+                <Field label="Model" hint={modelsErr ? `Modellen ophalen mislukt: ${modelsErr}` : undefined}>
+                  <ModelChoice models={models} loading={modelsLoading} value={d.model || ''} onChange={(model) => set({ model })} />
+                </Field>
+              </div>
+            )}
+            {/* One simple place for the reserve, the same for every kind of AI: when this AI is used up or down, the
+                turn goes on with the next one (settings.fallbacks, in order; the chat says when it switched). It may be
+                another AI, or the same one on another model. The next empty row appears once the previous one is set,
+                up to five. */}
+            {providerOptions.length > 0 && (
+              <div className="space-y-3" data-testid="reserves" data-row="reserve">
+                {Array.from({ length: MAX_RESERVES }, (_, i) => i).map((i) => {
+                  const f = fallbacks[i];
+                  if (i > fallbacks.length) return null;
+                  return (
+                    <div key={i} className="grid gap-x-4 gap-y-2 sm:grid-cols-2">
+                      <Field label={i === 0 ? 'Als deze AI op is, ga verder op' : 'En daarna op'}>
+                        <Listbox
+                          value={f?.provider_id || ''}
+                          onChange={(v) => {
+                            const next = [...fallbacks];
+                            // Another AI starts on its own usual model; the same AI keeps the model it had.
+                            if (v) next[i] = { provider_id: v, model: v === f?.provider_id ? f.model : '' };
+                            else next.splice(i, 1);
+                            setFallbacks(next);
+                          }}
+                          options={[{ value: '', label: translate('Geen') }, ...providerOptions.map((p) => ({ value: p.id, label: p.name, noTranslate: true }))]}
+                        />
+                      </Field>
+                      {f && (
+                        <Field label="Met welk model (leeg = het gewone)">
+                          <Input value={f.model} onChange={(e) => setFallbacks(fallbacks.map((x, j) => (j === i ? { ...x, model: e.target.value } : x)))} />
+                        </Field>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+            {engineProv && <AgentPrivacyLine agent={d} />}
+          </Card>
+
+          <Card className="space-y-3 p-5" data-row="instructies">
+            <CardHead icon={ScrollText} tone="amber" title="Instructies" hint="Zeg in gewone woorden wat de bot doet. Concrete regels werken het best." />
+            <Textarea
+              rows={7}
+              aria-label="Instructies"
+              value={d.instructions || ''}
+              onChange={(e) => set({ instructions: e.target.value })}
+              placeholder="Bijvoorbeeld: antwoord kort, en vraag door als iets onduidelijk is."
+              className="font-mono text-[13px]"
+            />
+            {/* What the owner told it in a conversation, in its Werknotities: here too, so all it must do is in one spot. */}
+            {existing && <AgentOrders agentId={existing.id} />}
+            <div className="space-y-1.5">
+              <Button size="sm" icon={<Sparkles className="h-4 w-4" />} loading={gen.busy} disabled={!genFrom || !genEngine} onClick={() => generate()} title={genFrom ? undefined : 'Vul eerst een rol in'}>
+                Laat AI de instructies schrijven
+              </Button>
+              {genErr && !gen.busy && (
+                <p className="text-sm text-danger" role="alert">
+                  {genErr}
+                </p>
+              )}
+              {localAlt && !gen.busy && (
+                <div className="space-y-1.5" data-testid="generate-local">
+                  <Button size="sm" variant="primary" onClick={() => generate(localAlt)}>
+                    Probeer met {localAlt.name}
+                  </Button>
+                  <p className="text-[11px] text-muted">Gratis op deze computer. De bot houdt het model dat je koos.</p>
+                </div>
+              )}
+            </div>
+          </Card>
+
+          <Card className="space-y-3 p-5" data-row="wat-mag">
+            <CardHead icon={ShieldCheck} tone="rose" title="Wat mag de bot?" />
+            <AccessChoice
+              value={d.access_mode || 'ask'}
+              engine={providers.find((p) => p.id === d.provider_id)}
+              guards={levelGuards}
+              onChange={async (v) => (v !== 'full' || d.access_mode === 'full' || (await askConfirm(fullWarning(readAccess), { danger: true }))) && set({ access_mode: v, settings: withoutKeptAccess(d.settings) })}
+            />
+            {/* What this AI can read outside the bot's folders: a warning stays in view, here with the choice (not
+                twice: where the line about the hard blocks already says the AI reads everything, that line is it). */}
+            {readAccess && !readAccess.confined && !guardLine(levelGuards, accessOn(engineProv, d.access_mode)) && (
+              <p className="flex items-start gap-1.5 text-xs text-warn" data-testid="read-access">
+                <CircleAlert className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden />
+                <span>{readAccess.text}</span>
+              </p>
+            )}
+          </Card>
+
+          {existing && (
+            <Card className="flex flex-wrap items-center justify-between gap-x-4 gap-y-3 p-5" data-row="beheer">
+              {/* The actions themselves: a button that only led to the chat menu was a detour (owner, 0.4.4). */}
+              <CardHead className="min-w-0 flex-1 basis-40" icon={Settings2} title="Beheer" />
+              <div className="flex flex-wrap gap-2">
+                <Button icon={<Copy className="h-4 w-4" />} onClick={duplicateBot}>
+                  Dupliceren
+                </Button>
+                <Button icon={<Archive className="h-4 w-4" />} onClick={archiveBot}>
+                  {existing.archived ? 'Uit archief halen' : 'Archiveren'}
+                </Button>
+                <Button icon={<Trash2 className="h-4 w-4" />} className="!text-danger" onClick={() => setDelBot(true)}>
+                  Verwijderen…
+                </Button>
+              </div>
+              <BotDeleteDialog agent={existing} open={delBot} onClose={() => setDelBot(false)} onDeleted={() => navigate('/', { from: page })} />
+            </Card>
+          )}
+        </div>
+
+        {/* ---------------- everything optional: ONE fold, and in it every part is one row with one line. */}
+        <div data-tab="meer" data-testid="bot-advanced">
+          <MoreOptions label="Meer mogelijkheden" defaultOpen={advOpen}>
+            <p className="text-xs leading-relaxed text-muted">Dit hoef je niet in te stellen: de bot werkt goed zoals hij is. Je kunt het hem ook gewoon in de chat vragen.</p>
+
+            {row(
+              'core:about',
+              'Beschrijving, taal en stijl',
+              'Een korte beschrijving, de taal van de antwoorden en de antwoordstijl',
+              <div className="divide-y divide-line">
+                <SettingRow setting="agent.description" stack>
+                  <Input value={d.description || ''} onChange={(e) => set({ description: e.target.value })} aria-label={settingText('agent.description').title} />
+                </SettingRow>
+                <SettingRow setting="agent.language" info="Standaard antwoordt de bot in jouw taal. Kies een vaste taal als dat anders moet.">
                   <BotLanguageSelect
                     value={d.settings?.language}
                     inherit={settings.botLanguage || 'auto'}
                     onChange={(v) => set({ settings: { ...(d.settings || {}), language: v || undefined } })}
                     className="min-w-[12rem] sm:w-auto"
-                    aria-label="Taal van de antwoorden"
+                    aria-label={settingText('agent.language').title}
                   />
                 </SettingRow>
                 {/* settings.answerStyle; unset = natural, the way bots always answered. Reaches every engine. */}
-                <SettingRow label="Antwoordstijl" hint="Natuurlijk: gewone zinnen. Zakelijk: de kern bovenaan, met kopjes.">
+                <SettingRow setting="agent.answerStyle">
                   <Segmented
-                    label="Antwoordstijl"
+                    label={settingText('agent.answerStyle').title}
                     value={d.settings?.answerStyle === 'business' ? 'business' : 'natural'}
                     onChange={(v) => set({ settings: { ...(d.settings || {}), answerStyle: v === 'natural' ? undefined : v } })}
-                    options={[
-                      { value: 'natural', label: 'Natuurlijk' },
-                      { value: 'business', label: 'Zakelijk' },
-                    ]}
+                    options={settingOptions<'natural' | 'business'>('agent.answerStyle')}
                   />
                 </SettingRow>
-              </div>
-            </Card>
-            {sectionsAt('instructies').length > 0 && <MoreOptions>{sectionList('instructies')}</MoreOptions>}
-          </>,
-        )}
+              </div>,
+            )}
 
-        {panel(
-          'meer',
-          <>
-            <Card className="space-y-3 p-5">
-              <h2 className="text-[15px] font-bold tracking-tight">Wat mag de bot?</h2>
-              <div className="space-y-1.5" data-testid="access-simple">
-                <Segmented
-                  label="Wat mag de bot?"
-                  value={simpleAccess}
-                  onChange={(v) => set({ access_mode: v as Agent['access_mode'] })}
-                  options={[
-                    { value: 'ask', label: 'Vraagt toestemming' },
-                    { value: 'auto', label: 'Doet het zelf' },
-                  ]}
-                />
-                <p className="text-xs text-muted">
-                  {simpleAccess === 'ask'
-                    ? 'Wijzigen alleen na jouw akkoord.'
-                    : simpleAccess === 'auto'
-                      ? 'Werkt zelf door; verzenden, betalen en wat niet terug kan, vraagt hij altijd.'
-                      : t('Nu: {0}. Dat pas je aan onder Meer opties.', translate((ACCESS.find((x) => x.id === d.access_mode) || ACCESS[2]).label))}
-                </p>
-              </div>
-              <MoreOptions>
-                <AccessChoice
-                  value={d.access_mode || 'ask'}
-                  engine={providers.find((p) => p.id === d.provider_id)}
-                  onChange={async (v) => (v !== 'full' || d.access_mode === 'full' || (await askConfirm(fullWarning(readAccess), { danger: true }))) && set({ access_mode: v })}
-                />
+            {row(
+              'core:rights',
+              'Eigen regels en rechten, precies',
+              'Regels voor alleen deze bot, en wat hij zonder vragen naar anderen mag sturen',
+              <>
                 {d.access_mode === 'full' && (
                   <SwitchRow
                     checked={!!d.settings?.fullAccessExternal}
                     onChange={(v) => set({ settings: { ...(d.settings || {}), fullAccessExternal: v } })}
-                    label="Ook versturen naar anderen zonder te vragen"
-                    hint="Berichten, formulieren en acties in gekoppelde apps. Betalen vraagt altijd."
+                    setting="agent.fullAccessExternal"
                   />
                 )}
                 {d.access_mode === 'auto' && (
                   <SwitchRow
                     checked={!!d.settings?.autoReview}
                     onChange={(v) => set({ settings: { ...(d.settings || {}), autoReview: v } })}
-                    label="Automatische controle (aanbevolen bij automatisch)"
-                    hint="Een tweede controle kijkt of elke wijziging past bij wat jij vroeg."
+                    setting="agent.autoReview"
                     info="Een tweede controle kijkt mee bij elke wijzigende actie en vraagt jou bij twijfel om akkoord. Kost extra tokens."
                   />
                 )}
-                {/* What a CLI engine can read: a warning stays in view; when it stays inside the bot's folders, behind (i). */}
-                {readAccess &&
-                  (readAccess.confined ? (
-                    <div className="text-xs text-muted" data-testid="read-access">
-                      <MoreInfo label="Wat deze engine mag lezen">{readAccess.text}</MoreInfo>
-                    </div>
-                  ) : (
-                    <p className="flex items-start gap-1.5 text-xs text-warn" data-testid="read-access">
-                      <CircleAlert className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden />
-                      <span>{readAccess.text}</span>
-                    </p>
-                  ))}
+                {readAccess?.confined && (
+                  <div className="text-xs text-muted" data-testid="read-access">
+                    <MoreInfo label="Wat deze AI mag lezen">{readAccess.text}</MoreInfo>
+                  </div>
+                )}
                 {existing && <OwnRules agentId={existing.id} mode={d.access_mode} />}
-                {sectionList('rechten')}
-              </MoreOptions>
-            </Card>
-
-            <Card className="space-y-3 p-5" data-testid="bot-can">
-              <h2 className="text-[15px] font-bold tracking-tight">Wat kan de bot?</h2>
-              <SwitchRow
-                label="Zelf kiezen"
-                hint={chooses ? 'Jij bepaalt welke onderdelen en skills de bot heeft.' : 'Automatisch: de bot krijgt wat hij voor zijn werk nodig heeft.'}
-                checked={chooses}
-                onChange={setChooses}
-              />
-              {chooses && sectionList('kan')}
-              {sectionList('apps')}
-              <MoreOptions>
-                {existing && <WerkplekLine agent={existing} />}
-                {sectionList('kanMeer')}
-              </MoreOptions>
-            </Card>
-
-            {sectionsAt('routines').length > 0 && (
-              <div className="space-y-3">
-                <h2 className="px-1 pt-2 text-[13px] font-semibold text-muted">Routines en kanalen</h2>
-                {sectionList('routines')}
-              </div>
+              </>,
             )}
 
-            <MoreOptions label="Overig">{sectionList('rest')}</MoreOptions>
-          </>,
-        )}
+            <div data-testid="bot-can">
+              {row(
+                'core:can',
+                'Onderdelen en skills',
+                chooses ? 'Jij bepaalt welke onderdelen en skills de bot heeft' : 'Automatisch: de bot krijgt wat hij voor zijn werk nodig heeft',
+                <>
+                  <SwitchRow
+                    setting="agent.ownTools"
+                    hint={chooses ? undefined : 'Automatisch: de bot krijgt wat hij voor zijn werk nodig heeft.'}
+                    checked={chooses}
+                    onChange={setChooses}
+                  />
+                  {chooses && sectionList('kan')}
+                  {/* The line under the folder follows the access level chosen on this page (also before Opslaan). */}
+                  {existing && <WerkplekLine agent={{ ...existing, access_mode: d.access_mode || existing.access_mode, settings: d.settings || existing.settings }} />}
+                </>,
+              )}
+            </div>
+
+            {/* What is known about the model (context, price), and its context window where TeamBot can set it; no row
+                when there is neither. */}
+            {engineProv &&
+              (hasModelFacts(curModel, engineProv) || rowWorks('contextWindow', engineProv)) &&
+              row(
+                'core:model',
+                'Over het model',
+                'Wat het model kan, hoeveel tekst het aankan en wat het kost',
+                <>
+                  <ModelFacts m={curModel} provider={engineProv} loading={modelsLoading} />
+                  {!modelsLoading && rowWorks('contextWindow', engineProv) && (
+                    <div data-row="contextvenster">
+                      <ContextWindowField provider={engineProv} m={curModel} />
+                    </div>
+                  )}
+                </>,
+              )}
+
+            {sectionList('adv')}
+          </MoreOptions>
+        </div>
       </div>
 
       {unsaved.length > 0 && (
@@ -1004,7 +1136,7 @@ function BotPage({ id }: { id: string }) {
           <div className="mx-auto flex max-w-3xl flex-wrap items-center gap-x-3 gap-y-2 rounded-card border border-line-strong bg-surface px-4 py-2.5 shadow-2xl">
             <CircleAlert className="h-4 w-4 shrink-0 text-warn" aria-hidden />
             <span className="min-w-0 flex-1 text-sm">
-              <span className="font-semibold">Niet opgeslagen:</span> {listNl(unsaved)}
+              <span className="font-semibold">Niet opgeslagen:</span> {formatList(unsaved.map((l) => translate(l)))}
             </span>
             <Button variant="primary" size="sm" loading={save.busy} onClick={submit}>
               Opslaan
@@ -1047,7 +1179,9 @@ function BotPage({ id }: { id: string }) {
         }
       >
         <p className="text-sm">
-          Je hebt {listNl(unsaved).toLowerCase() || 'deze bot'} gewijzigd maar nog niet opgeslagen. Zonder opslaan gaan die wijzigingen verloren.
+          {unsaved.length
+            ? t('Je hebt {0} gewijzigd maar nog niet opgeslagen. Zonder opslaan gaan die wijzigingen verloren.', formatList(unsaved.map((l) => translate(l))))
+            : 'Je hebt deze bot gewijzigd maar nog niet opgeslagen. Zonder opslaan gaan die wijzigingen verloren.'}
         </p>
       </Modal>
     </Page>
@@ -1068,20 +1202,50 @@ function EmptyLine({ href, action, children }: { href: string; action: string; c
 }
 
 /**
- * "Wat mag de bot?": the five access levels in one dropdown, with one line for the chosen one (or why a level cannot be
+ * "Wat mag de bot?": the ONE choice for what the bot may do: five levels in one dropdown, with one line for the chosen one (or why a level cannot be
  * used with this engine). Not offered when the engine cannot enforce it (lib/access.ts).
  */
-function AccessChoice({ value, engine, onChange }: { value: Agent['access_mode']; engine: ProviderView | undefined; onChange(v: Agent['access_mode']): void }) {
-  const cur = ACCESS.find((a) => a.id === value) || ACCESS[2];
+function AccessChoice({ value, engine, guards, onChange }: { value: Agent['access_mode']; engine: ProviderView | undefined; guards?: Partial<Record<string, LevelGuard>> | null; onChange(v: Agent['access_mode']): void }) {
+  // Only the levels this AI can be held to are in the list (agentRows.ts): a level that cannot work is not offered.
+  const levels = accessLevels(engine);
+  const shown = accessOn(engine, value);
+  const cur = ACCESS.find((a) => a.id === shown) || ACCESS[2];
+  // Where TeamBot cannot guard the hard blocks at this level on this AI: one plain line, only there.
+  const unguarded = guardLine(guards, shown);
   return (
     <div className="space-y-1.5" data-testid="access-choice">
-      <Dropdown
-        label="Wat mag de bot?"
-        value={value}
-        onChange={onChange}
-        options={ACCESS.map((a) => ({ value: a.id, label: a.label, disabled: accessUnsupported(a.id, engine) && a.id !== value }))}
-      />
-      <p className="text-xs leading-relaxed text-muted">{accessUnsupported(cur.id, engine) ? `Kan niet met ${engine?.name}: die engine laat zich niet beperken tot alleen praten. Kies "Alleen lezen".` : cur.text}</p>
+      <Dropdown label="Wat mag de bot?" value={shown} onChange={onChange} options={ACCESS.filter((a) => levels.includes(a.id)).map((a) => ({ value: a.id, label: a.label }))} />
+      <p className="text-xs leading-relaxed text-muted">{accessLine(engine, shown) || cur.text}</p>
+      {unguarded && (
+        <p className="text-xs leading-relaxed text-muted" data-testid="level-guard">
+          {unguarded}
+        </p>
+      )}
     </div>
   );
+}
+
+/**
+ * A list typed as text: rules separated by commas or lines, or (`words`) flags separated by spaces. Stored as a list on
+ * every change; a list that changes from outside (another AI chosen) is shown again.
+ */
+function ListText({ value, onChange, words, rows, placeholder }: { value: unknown; onChange(v: string[] | undefined): void; words?: boolean; rows?: number; placeholder?: string }) {
+  const sep = words ? ' ' : ', ';
+  const parse = (s: string) =>
+    s
+      .split(words ? /\s+/ : /[,\n]/)
+      .map((x) => x.trim())
+      .filter(Boolean);
+  const joined = (Array.isArray(value) ? value.filter((x): x is string => typeof x === 'string') : []).join(sep);
+  const [text, setText] = useState(joined);
+  useEffect(() => {
+    if (parse(text).join(sep) !== joined) setText(joined);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [joined]);
+  const change = (s: string) => {
+    setText(s);
+    const list = parse(s);
+    onChange(list.length ? list : undefined);
+  };
+  return words ? <Input value={text} onChange={(e) => change(e.target.value)} placeholder={placeholder} /> : <Textarea rows={rows} value={text} onChange={(e) => change(e.target.value)} />;
 }

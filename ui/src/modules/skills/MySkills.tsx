@@ -1,7 +1,8 @@
 import type React from 'react';
+import { formatBytes } from '../../lib/format';
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Bot, CheckCircle2, Download, Eye, FilePlus2, History, Pencil, Pin, PinOff, Power, Puzzle, RefreshCw, Share2, ShieldAlert, ShieldCheck, Trash2, Upload } from 'lucide-react';
-import { Badge, Button, Card, EmptyState, Field, Input, Modal, Page, PageHeader, Spinner, Tabs, Textarea, Toggle, askConfirm, cx, timeAgo, toast, useAsync } from '../../components/ui';
+import { Bot, CheckCircle2, Download, Eye, FilePlus2, History, Pencil, Pin, PinOff, Power, Puzzle, RefreshCw, Share2, ShieldAlert, ShieldCheck, Trash2, Upload, ScanSearch, BadgeCheck, Lock } from 'lucide-react';
+import { Badge, Button, Card, EmptyState, Field, Input, Modal, Page, PageHeader, Spinner, Tabs, Textarea, Toggle, askConfirm, cx, timeAgo, toast, useAsync, CardHead } from '../../components/ui';
 import { MoreInfo } from '../../components/MoreInfo';
 import { Dropdown } from '../../components/SettingControls';
 import { Fold, Menu, Skeleton, SkeletonRows } from '../../components/overview';
@@ -11,7 +12,7 @@ import { navigate } from '../../lib/router';
 import { t } from '../../lib/i18n';
 import { useApp } from '../../lib/store';
 import type { SkillDetail, SkillSummary, VersionView } from './api';
-import { SOURCE_TYPES, fmtDate, formatBytes } from './api';
+import { SOURCE_TYPES, fmtDate } from './api';
 import { Confirm, DiffView, FileList, FindingsList, LabelBadges, Md, PermissionsView, ScanBadge, SignatureBadge, SignaturePanel, VerifiedBadge, bodyOf, shareToast } from './common';
 import { ImportDialog } from './ImportDialog';
 import { BotPicker } from '../../components/BotPicker';
@@ -195,7 +196,7 @@ function SkillList({ initialFilter }: { initialFilter: Filter }) {
                       testId="skill-menu"
                       items={[
                         { label: 'Openen', icon: <Eye aria-hidden />, href: `#/m/skills/mine/${s.id}` },
-                        s.status !== 'draft' && { label: 'Bots kiezen', icon: <Bot aria-hidden />, href: `#/m/skills/mine/${s.id}/bots` },
+                        s.status !== 'draft' && { label: 'Vaste bots kiezen', icon: <Bot aria-hidden />, href: `#/m/skills/mine/${s.id}/bots` },
                         s.status !== 'draft' && { label: s.status === 'active' ? 'Uitzetten' : 'Aanzetten', icon: <Power aria-hidden />, disabled: act.busy, onSelect: () => toggle(s) },
                         { label: 'Downloaden', icon: <Download aria-hidden />, href: authUrl(`/skills/${s.id}/download`) },
                         'sep',
@@ -226,8 +227,8 @@ function RowSignal({ s }: { s: SkillSummary }) {
   if (hasUpdate(s)) return sig('ok', <RefreshCw aria-hidden />, 'Update beschikbaar');
   if (s.status === 'draft') return sig('warn', <Pencil aria-hidden />, 'Concept');
   if (s.status === 'disabled') return sig('muted', <Power aria-hidden />, 'Uit');
-  if (!s.agents.length) return sig('muted', null, 'Bij geen bot aan');
-  return sig('ok', <CheckCircle2 aria-hidden />, s.agents.length === 1 ? <span translate="no">{s.agents[0].name}</span> : t('{0, plural, one {# bot} other {# bots}}', s.agents.length));
+  // Every bot of the team can load an active skill; a bot's own list only says what it names first.
+  return sig('ok', <CheckCircle2 aria-hidden />, 'Aan voor het team');
 }
 
 // Four tabs; files, versions and the facts of a skill are folds under its instructions.
@@ -274,8 +275,9 @@ function SkillDetailView({ id, initialTab }: { id: string; initialTab: DTab }) {
   const isDraft = s.status === 'draft';
   const remove = () =>
     act.run(async () => {
+      const from = location.hash;
       await api.del(`/skills/${id}`);
-      navigate('/m/skills/mine');
+      navigate('/m/skills/mine', { from });
     }, isDraft ? 'Concept weggegooid' : 'Skill verwijderd');
   // One signal next to the name: what needs attention first.
   const state: { tone: 'accent' | 'ok' | 'warn' | 'danger' | 'neutral'; text: string } | null = s.blocked
@@ -362,7 +364,7 @@ function SkillDetailView({ id, initialTab }: { id: string; initialTab: DTab }) {
           onChange={(v) => setTab(v as DTab)}
           tabs={[
             { id: 'instructions', label: 'Instructies' },
-            ...(!isDraft ? [{ id: 'usage' as DTab, label: `Bots (${s.agents.length})` }, { id: 'tests' as DTab, label: 'Testen' }] : []),
+            ...(!isDraft ? [{ id: 'usage' as DTab, label: 'Bots' }, { id: 'tests' as DTab, label: 'Testen' }] : []),
             { id: 'security', label: 'Veiligheid' },
           ]}
         />
@@ -382,7 +384,7 @@ function SkillDetailView({ id, initialTab }: { id: string; initialTab: DTab }) {
         )}
         {!isDraft && tab === 'tests' && <TestsTab s={s} />}
         {tab === 'security' && <SecurityTab s={s} onChanged={load} />}
-        {!isDraft && tab === 'usage' && <UsageTab s={s} />}
+        {!isDraft && tab === 'usage' && <UsageTab s={s} onChanged={load} />}
       </div>
       {diffCommit && <UpdateDiffModal skillId={s.id} commit={diffCommit} onClose={() => (setDiffCommit(null), load())} />}
       <Confirm open={confirmDelete} onClose={() => setConfirmDelete(false)} title={isDraft ? 'Concept weggooien?' : `Skill ${s.name} verwijderen?`} confirmLabel={isDraft ? 'Weggooien' : 'Verwijderen'} danger busy={act.busy} onConfirm={remove}>
@@ -390,7 +392,9 @@ function SkillDetailView({ id, initialTab }: { id: string; initialTab: DTab }) {
         <ul className="list-disc space-y-0.5 ps-5">
           <li>{t('{0, plural, one {de skill en zijn enige versie in je bibliotheek;} other {de skill en alle # versies in je bibliotheek;}}', s.versions.length)}</li>
           {s.agents.length > 0 && <li>de koppeling met {s.agents.map((a) => a.name).join(', ')};</li>}
-          {s.kind === 'scripts' && <li>bestanden die TeamBot in de werkmap van bots heeft klaargezet (.skills/{s.name}). Eigen bestanden daarin blijven staan.</li>}
+          <li>
+            de map van de skill in de werkmap van elke bot (<code>.claude/skills/{s.name}</code> en <code>.agents/skills/{s.name}</code>). Een map waarin je zelf iets hebt veranderd, laat TeamBot staan.
+          </li>
         </ul>
         <p className="text-muted">Blijft bestaan: de oorspronkelijke bron en gesprekken waarin de skill gebruikt is.</p>
       </Confirm>
@@ -407,9 +411,10 @@ function DraftBanner({ s, onChanged }: { s: SkillDetail; onChanged(): void }) {
   const draftBot = agents.find((a) => a.id === s.draftAgentId);
   const publish = (mode?: 'update', confirmPermissions?: boolean) =>
     run(async () => {
+      const from = location.hash;
       const r = await api.post<SkillSummary>(`/skills/${s.id}/publish`, { mode, confirmPermissions, enableFor: enable && s.draftAgentId ? [s.draftAgentId] : [] });
       toast('Gepubliceerd', 'ok');
-      if (r.id !== s.id) navigate(`/m/skills/mine/${r.id}`);
+      if (r.id !== s.id) navigate(`/m/skills/mine/${r.id}`, { from });
       else onChanged();
     });
   return (
@@ -624,7 +629,7 @@ function FilesTab({ s, onSaved }: { s: SkillDetail; onSaved(): void }) {
           <Textarea aria-label="Inhoud" className="min-h-[260px] font-mono text-xs" value={edit || ''} onChange={(e) => setEdit(e.target.value)} />
         </div>
       </Modal>
-      <Confirm open={!!confirmDel} onClose={() => setConfirmDel(null)} title={`${confirmDel} verwijderen?`} confirmLabel="Verwijderen" danger busy={busy} onConfirm={() => confirmDel && saveFile(confirmDel, null)}>
+      <Confirm open={!!confirmDel} onClose={() => setConfirmDel(null)} title={t('{0} verwijderen?', confirmDel ?? '')} confirmLabel="Verwijderen" danger busy={busy} onConfirm={() => confirmDel && saveFile(confirmDel, null)}>
         <p>Er komt een nieuwe versie zonder dit bestand. De vorige versie blijft bewaard.</p>
       </Confirm>
     </div>
@@ -669,7 +674,7 @@ function VersionsTab({ s, onChanged }: { s: SkillDetail; onChanged(): void }) {
                 <Button size="sm" variant="ghost" onClick={() => run(async () => setView(await api.get(`/skills/${s.id}/versions/${v.rev}`)))}>
                   Bekijken
                 </Button>
-                <a className="inline-flex h-8 items-center rounded-lg px-2.5 text-sm hover:bg-surface-2" href={authUrl(`/skills/${s.id}/download?rev=${v.rev}`)} aria-label={`Versie ${v.rev} downloaden`}>
+                <a className="inline-flex h-8 items-center rounded-lg px-2.5 text-sm hover:bg-surface-2" href={authUrl(`/skills/${s.id}/download?rev=${v.rev}`)} aria-label={t('Versie {0} downloaden', v.rev)}>
                   <Download className="h-4 w-4" />
                 </a>
                 {!v.active && (
@@ -684,7 +689,7 @@ function VersionsTab({ s, onChanged }: { s: SkillDetail; onChanged(): void }) {
       </ul>
       {s.catalogItem && s.catalogItem.changelog.length > 0 && (
         <Card className="space-y-2 p-4">
-          <div className="text-sm font-semibold">Wijzigingen volgens de uitgever ({s.catalogItem.publisher})</div>
+          <CardHead icon={History} title={<>Wijzigingen volgens de uitgever ({s.catalogItem.publisher})</>} />
           <ul className="space-y-1 text-sm">
             {s.catalogItem.changelog.map((c, i) => (
               <li key={i}>
@@ -732,7 +737,7 @@ function SecurityTab({ s, onChanged }: { s: SkillDetail; onChanged(): void }) {
     <div className="space-y-4">
       <Card className="space-y-3 p-4">
         <div className="flex flex-wrap items-center gap-2">
-          <span className="font-semibold">Veiligheidsscan</span>
+          <CardHead icon={ScanSearch} tone="rose" title="Veiligheidsscan" />
           <ScanBadge level={s.scan.level} />
           <LabelBadges labels={s.scan.labels} />
         </div>
@@ -742,23 +747,21 @@ function SecurityTab({ s, onChanged }: { s: SkillDetail; onChanged(): void }) {
         <FindingsList findings={s.scan.findings} />
       </Card>
       <Card className="space-y-3 p-4">
-        <div className="font-semibold">Uitgever en handtekening</div>
+        <CardHead icon={BadgeCheck} tone="amber" title="Uitgever en handtekening" />
         <SignaturePanel sig={s.signature} onTrusted={onChanged} />
         {s.signature.state === 'unsigned' && <p className="text-sm text-muted">Een eigen of bewerkte skill is nooit ondertekend: na een bewerking hoort de inhoud niet meer bij de handtekening van de uitgever.</p>}
       </Card>
       <Card className="space-y-3 p-4">
-        <div className="font-semibold">Rechten en externe aanroepen</div>
+        <CardHead icon={Lock} tone="rose" title="Rechten en externe aanroepen" />
         <PermissionsView p={s.permissions} />
       </Card>
       {s.kind === 'scripts' && (
         <Card className="space-y-3 p-4">
-          <div className="flex items-center gap-2 font-semibold">
-            <ShieldCheck className="h-4 w-4" /> Scripts vertrouwen
-          </div>
+          <CardHead icon={ShieldCheck} tone="rose" title="Scripts vertrouwen" />
           <p className="text-sm text-muted">
-            Scripts: {s.trusted ? 'vertrouwd' : 'uit'}. Een vertrouwd script krijgt geen sleutels van deze computer, maar wel de sleutels voor scripts die je de bot hebt gegeven.{' '}
+            Scripts: {s.trusted ? 'vertrouwd' : 'niet vertrouwd'}. Een vertrouwd script krijgt geen sleutels van deze computer, maar wel de sleutels voor scripts die je de bot hebt gegeven.{' '}
             <MoreInfo>
-              Zolang je de skill niet vertrouwt, kunnen bots de scripts niet lezen of klaarzetten. Vertrouw je hem wel, dan vraagt de bot bij elk script om jouw toestemming. Het script draait dan in de werkmap (<code>.skills/{s.name}</code>) met een eigen tijdelijke thuismap, met de sleutels van Bot › Sleutels voor scripts. Dat is geen volledige afscherming door Windows: een script kan nog steeds andere mappen lezen als het daar zelf naartoe gaat. Verandert een script in een nieuwe versie, dan vervalt het vertrouwen.
+              Bij toevoegen staan de scripts meteen aan. Trek je het vertrouwen in, dan kunnen alleen bots op “Volledige toegang” de scripts lezen en uitvoeren; andere bots niet. Of een bot eerst om toestemming vraagt, hangt af van zijn toegang: op “Vraagt toestemming” vraagt hij het bij elk script, op “Automatisch” en “Volledige toegang” voert hij het zelf uit, tenzij een eigen regel van jou zegt dat hij moet vragen. Het script draait vanuit een verse kopie, in de werkmap van de bot, met een eigen tijdelijke thuismap en alleen de sleutels van Bot › Sleutels voor scripts. Dat is geen volledige afscherming: een script kan nog steeds andere mappen lezen als het daar zelf naartoe gaat. Een nieuwe versie die je toevoegt, neemt over wat je hier koos.
             </MoreInfo>
           </p>
           {s.trusted ? (
@@ -773,7 +776,7 @@ function SecurityTab({ s, onChanged }: { s: SkillDetail; onChanged(): void }) {
           {s.status === 'draft' && <p className="text-xs text-muted">Publiceer het concept eerst.</p>}
         </Card>
       )}
-      <Confirm open={ask} onClose={() => setAsk(false)} title={`Scripts van ${s.name} vertrouwen?`} confirmLabel="Vertrouwen" danger={s.scan.level === 'danger'} busy={busy} onConfirm={() => ok && setTrust(true)}>
+      <Confirm open={ask} onClose={() => setAsk(false)} title={t('Scripts van {0} vertrouwen?', s.name)} confirmLabel="Vertrouwen" danger={s.scan.level === 'danger'} busy={busy} onConfirm={() => ok && setTrust(true)}>
         <p>Deze bestanden worden uitvoerbaar voor bots die de skill hebben:</p>
         <ul className="list-disc ps-5">
           {s.permissions.scripts.map((x) => (
@@ -793,28 +796,35 @@ function SecurityTab({ s, onChanged }: { s: SkillDetail; onChanged(): void }) {
   );
 }
 
-function UsageTab({ s }: { s: SkillDetail }) {
+function UsageTab({ s, onChanged }: { s: SkillDetail; onChanged(): void }) {
   const agents = useApp((st) => st.agents);
   const list = useMemo(() => agents.filter((a) => !a.archived), [agents]);
-  const value = list.filter((a) => (a.skills || []).includes(s.id)).map((a) => a.id);
+  // The bots that have the skill now (the server's answer: every bot of the team, minus the ones it was taken from).
+  const value = list.filter((a) => s.agents.some((x) => x.id === a.id)).map((a) => a.id);
   const { busy, run } = useAsync();
-  // Saved at once (one request for "Alle bots"); the store follows via agent.updated.
+  // Saved at once (one request for "Alle bots"); a bot left out can no longer load the skill.
   const change = (ids: string[]) => {
     const added = ids.filter((x) => !value.includes(x)).length;
     const removed = value.filter((x) => !ids.includes(x)).length;
-    run(() => api.put(`/skills/${s.id}/agents`, { agentIds: ids }), added && !removed ? (added === 1 ? 'Ingeschakeld bij 1 bot' : `Ingeschakeld bij ${added} bots`) : removed && !added ? (removed === 1 ? 'Uitgeschakeld bij 1 bot' : `Uitgeschakeld bij ${removed} bots`) : 'Opgeslagen');
+    run(
+      async () => {
+        await api.put(`/skills/${s.id}/agents`, { agentIds: ids });
+        onChanged();
+      },
+      added && !removed ? (added === 1 ? 'Aan bij 1 bot' : `Aan bij ${added} bots`) : 'Opgeslagen',
+    );
   };
-  if (!list.length) return <EmptyState title="Nog geen bots">Maak eerst een bot; daarna kun je deze skill inschakelen.</EmptyState>;
+  if (!list.length) return <EmptyState title="Nog geen bots">Zodra je een bot hebt, kan hij deze skill meteen gebruiken.</EmptyState>;
   return (
     <Card className="space-y-3 p-4">
       <BotPicker
         value={value}
         onChange={change}
         disabled={busy || s.status !== 'active'}
-        label="Bots met deze skill"
+        label="Bots die deze skill hebben"
         hint={
           <>
-            Wijzigingen worden direct opgeslagen. Gebruikt: {s.useCount}× {s.lastUsedAt ? `(laatst ${timeAgo(s.lastUsedAt)})` : ''}. {s.status !== 'active' && 'Zet de skill eerst aan om hem bij bots te gebruiken.'}
+            Een nieuwe skill heeft elke bot van het team meteen. Vink je hier een bot uit, dan kan die bot de skill niet meer laden; vink je hem weer aan, dan heeft hij hem weer. Wijzigingen worden direct opgeslagen. Gebruikt: {s.useCount}× {s.lastUsedAt ? `(laatst ${timeAgo(s.lastUsedAt)})` : ''}. {s.status !== 'active' && 'De skill staat uit: geen bot kan hem nu laden.'}
           </>
         }
       />
@@ -829,9 +839,11 @@ function InfoTab({ s }: { s: SkillDetail }) {
     ...(s.source.url ? [['Adres', <span className="break-all">{s.source.url}</span>] as [string, React.ReactNode]] : []),
     ...(s.source.path ? [['Map', <code className="break-all">{s.source.path}</code>] as [string, React.ReactNode]] : []),
     ...(s.source.type === 'catalog' ? [['Marktplaats', <VerifiedBadge verified={!!s.source.verified} />] as [string, React.ReactNode]] : []),
-    ...(s.source.type === 'curated'
+    // A skill from GitHub on a pinned commit: of the checked catalogue, or added from the open search (not checked).
+    ...(s.source.type === 'curated' || s.source.commit
       ? ([
-          ['Vastgezette versie', <span className="break-all font-mono text-xs">{`${s.source.repo || ''} @ ${(s.source.commit || '').slice(0, 7)}${s.source.commitDate ? ` (${s.source.commitDate})` : ''}`}</span>],
+          ...(s.source.type !== 'curated' ? [['Controle', 'Niet door TeamBot gecontroleerd (toegevoegd uit Open in de marktplaats)']] : []),
+          ['Vastgezette versie', <span className="break-all font-mono text-xs">{`${s.source.repo || ''} @ ${/^[0-9a-f]{40}$/.test(s.source.commit || '') ? (s.source.commit || '').slice(0, 7) : s.source.commit || ''}${s.source.commitDate ? ` (${s.source.commitDate})` : ''}`}</span>],
           ['Licentie (bestand)', `${s.source.license || '—'}${s.source.licenseFile ? ` · ${s.source.licenseFile}` : ''}`],
           ...(s.source.dropped?.length ? [['Weggelaten', s.source.dropped.map((d) => d.path).join(', ')]] : []),
         ] as [string, React.ReactNode][])

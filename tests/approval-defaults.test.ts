@@ -10,16 +10,28 @@ import { commandRisk } from '../server/modules/cli-agents/permissions.js';
 import { callRisk } from '../server/tools/broker.js';
 import { shellTools } from '../server/tools/builtin/shell.js';
 import { createFoldersModule } from '../server/modules/folders/index.js';
+import { fillWords } from '../shared/i18n-core.js';
 
 test('shell commands: sending, publishing, pushing and deleting outside the trash are actions that ask', () => {
   for (const c of ['git push origin main', 'npm publish', 'curl -X POST https://x.test -d a=1', 'Invoke-RestMethod https://x -Method Post', 'ssh sanne@server.nl ls', 'rm notities.md', 'rm -rf build', 'Remove-Item .\\oud.txt', 'del /q *.log', 'cmd /c del rapport.docx', 'rmdir /s map', 'find . -name "*.tmp" -delete', 'git reset --hard HEAD~3', 'cd x && rm a.txt'])
     assert.equal(shellCommandRisk(c), 'danger', c);
   for (const c of ['npm test', 'ls -la', 'git status', 'git commit -m "x"', 'node build.mjs', 'Get-ChildItem', 'echo "rm is een woord"', 'python -c "print(1)"', 'curl https://example.com'])
     assert.equal(shellCommandRisk(c), 'exec', c);
-  // "Volledige toegang": deleting in the bot's own folders runs; anything outward still asks.
+  // "Volledige toegang": deleting, pushing, publishing and calling an API are the bot's own work; only a command that
+  // mails someone counts as "to others".
   assert.equal(shellCommandImpact('rm -rf build'), 'local');
-  assert.equal(shellCommandImpact('git push'), 'external');
-  assert.equal(shellCommandImpact('curl -X POST https://x.test --data a'), 'external');
+  assert.equal(shellCommandImpact('git push'), 'local');
+  assert.equal(shellCommandImpact('curl -X POST https://x.test --data a'), 'local');
+  assert.equal(shellCommandImpact('Send-MailMessage -To klant@example.com -Subject x'), 'external');
+  // A mail program where a command starts mails someone; the word in an argument, a file name or typed text does not
+  // (a bot on "Volledige toegang" waited for a card on `grep "… the account e-mail" tests`).
+  for (const c of ['mail -s Offerte klant@example.com < offerte.txt', 'echo hoi | mailx klant@example.com', 'cd x && /usr/sbin/sendmail -t < bericht.eml', 'bash -c "mutt -s x klant@example.com"'])
+    assert.equal(shellCommandImpact(c), 'external', c);
+  for (const c of ['grep -rl "auto-memory off, the account e-mail" tests | head -1', 'cat mail.txt', 'git log --grep mail', 'git commit -m "mail de klant morgen"', "cat >> notities.md <<'EOF'\nmail de klant morgen\nrm oud.txt\ngit push\nEOF"]) {
+    assert.equal(shellCommandImpact(c), 'local', c);
+    assert.equal(shellCommandRisk(c), 'exec', c);
+  }
+  assert.equal(shellCommandRisk("bash <<'EOF'\nrm oud.txt\nEOF"), 'danger', 'a heredoc a shell reads is run');
   // The CLI gate treats outward commands the same way (one list, two places).
   for (const c of ['git push origin main', 'npm publish', 'curl -X POST https://x.test -d a=1', 'rm -rf build']) assert.equal(commandRisk(c), 'danger', `CLI gate: ${c}`);
 });
@@ -30,8 +42,8 @@ test('run_command: the risk per call drives the broker; the card shows the exact
   assert.equal(callRisk(tool, { command: 'git push' }, t), 'danger');
   assert.equal(callRisk(tool, { command: 'npm test' }, t), 'exec');
   const long = `node -e "${'x'.repeat(900)}"`;
-  assert.ok(tool.summarize!({ command: long }).includes(long), 'not cut off at 300 characters');
-  assert.equal(tool.summarize!({ command: 'npm test', cwd: 'app' }), 'Opdracht: npm test (in app)');
+  assert.ok(fillWords(tool.summarize!({ command: long })).includes(long), 'not cut off at 300 characters');
+  assert.equal(fillWords(tool.summarize!({ command: 'npm test', cwd: 'app' })), 'Opdracht: npm test (in app)');
 });
 
 async function runTool(t: TestApp, agentId: string, name: string, args: any, decide?: 'approve' | 'deny') {

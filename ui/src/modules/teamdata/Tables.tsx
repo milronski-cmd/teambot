@@ -3,10 +3,12 @@ import { ChevronLeft, ChevronRight, Table2, Upload } from 'lucide-react';
 import { useApp } from '../../lib/store';
 import { BotAvatar, BotFace } from '../../components/BotFace';
 import { Badge, Button, Card, EmptyState, Modal, Spinner, cx, toast, toastError, useAsync } from '../../components/ui';
-import { type AuditRow, type ImportResult, type TableInfo, teamApi, useTeamChanged } from './api';
+import { type AuditRow, type TableInfo, teamApi, useTeamChanged } from './api';
+import type { ImportResult } from '../../../../shared/teamdata.js';
 import { BotName, Fields, Linkified, When } from './parts';
 import { t, uiLocale } from '../../lib/i18n';
 import { upload } from '../../lib/api';
+import { tText } from '../../lib/format';
 
 type Page = Awaited<ReturnType<typeof teamApi.table>>;
 
@@ -58,7 +60,7 @@ function Browser({ t, onBack }: { t: TableInfo; onBack(): void }) {
       ) : !page.rows.length ? (
         <EmptyState title="Deze tabel is leeg">Kolommen: {page.columns.join(', ') || '—'}</EmptyState>
       ) : (
-        <div className="scroll-thin max-w-full overflow-x-auto rounded-2xl border border-line bg-surface" tabIndex={0} aria-label={`Rijen van ${t.name}`}>
+        <div className="scroll-thin max-w-full overflow-x-auto rounded-2xl border border-line bg-surface" tabIndex={0} aria-label={tText('Rijen van {0}', t.name)}>
           <table className="w-full min-w-max text-start text-[13px]" translate="no">
             <thead className="bg-surface-2 text-xs text-muted">
               <tr>

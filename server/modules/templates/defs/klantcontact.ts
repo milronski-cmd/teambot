@@ -2,7 +2,7 @@ import type { TemplateDef } from '../types.js';
 
 /**
  * The customer-service team that talks with customers itself (a chat app or mail linked to the team chat). The
- * refreshed "Klantenservice" template writes drafts the owner sends; this one answers directly, within strict rules.
+ * refreshed "Klantenservice" template works from mail the owner hands over; this one talks with customers live, within strict rules.
  */
 export default {
   id: 'klantcontact',
@@ -27,7 +27,7 @@ export default {
   examples: [
     { task: 'Beantwoord een vraag over de levertijd', done: 'het antwoord gebruikt alleen de levertijd uit het profiel; staat die er niet in, dan is de vraag doorgezet naar de eigenaar' },
     { task: 'Een klant wil zijn geld terug', done: 'de klant weet dat een medewerker erop terugkomt, en de eigenaar heeft een samenvatting met bestelnummer en vraag' },
-    { task: 'Werk de veelgestelde vragen bij', done: 'een voorstel met nieuwe of aangepaste vragen en antwoorden, alleen uit antwoorden die de eigenaar gaf' },
+    { task: 'Werk de veelgestelde vragen bij', done: 'de lijst is bijgewerkt met nieuwe of aangepaste vragen en antwoorden, alleen uit antwoorden die de eigenaar gaf' },
   ],
   bots: [
     {
@@ -64,21 +64,21 @@ export default {
       does: [
         'Je zoekt voor de klanthulp het antwoord op in de teamkennis, het bedrijfsprofiel en de bestanden van het team.',
         'Je houdt een lijst bij met veelgestelde vragen en vaste antwoorden.',
-        'Je stelt nieuwe antwoorden voor als de eigenaar een doorgezette vraag heeft beantwoord.',
+        'Je zet een nieuw antwoord in de lijst zodra de eigenaar een doorgezette vraag heeft beantwoord.',
       ],
-      may: ['De bestanden van het team lezen en een voorstel voor de veelgestelde vragen in je map zetten.'],
+      may: ['De bestanden van het team lezen en de lijst met veelgestelde vragen zelf bijwerken.'],
       mayNot: ['Een antwoord in de kennis zetten dat de eigenaar niet heeft bevestigd.', 'Zelf klanten antwoorden.'],
       askWhen: ['twee antwoorden in de kennis elkaar tegenspreken', 'een antwoord verouderd lijkt, zoals een oude prijs of datum'],
       doneWhen: [
         { task: 'Opzoeken', done: 'het antwoord met de plek waar het staat, of de melding dat het nergens staat' },
-        { task: 'Veelgestelde vragen bijwerken', done: 'een voorstel met vraag, antwoord en wie het bevestigde' },
+        { task: 'Veelgestelde vragen bijwerken', done: 'de lijst is bijgewerkt, met per antwoord wie het bevestigde' },
       ],
       skills: [{ id: 'samenvatten', why: 'Lange antwoorden kort en eenduidig maken' }],
       routines: [
         {
           name: 'Kennis nalopen',
           prompt:
-            'Loop de lijst met veelgestelde vragen en vaste antwoorden in je map na. Noem wat verouderd lijkt (data, prijzen, openingstijden), wat elkaar tegenspreekt en welke vragen nog een antwoord van de eigenaar nodig hebben. Verander zelf niets. Is er nog geen lijst, zeg dan in één zin hoe de eigenaar er een kan maken.',
+            'Loop de lijst met veelgestelde vragen en vaste antwoorden in je map na. Noem wat verouderd lijkt (data, prijzen, openingstijden), wat elkaar tegenspreekt en welke vragen nog een antwoord van de eigenaar nodig hebben. Haal weg wat dubbel staat; de inhoud van een antwoord verander je alleen met wat de eigenaar bevestigde. Is er nog geen lijst, zeg dan in één zin hoe de eigenaar er een kan maken.',
           schedule: { kind: 'weekly', days: ['vr'], times: ['16:00'] },
         },
       ],

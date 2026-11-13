@@ -2,11 +2,11 @@ import type { Request, Response } from 'express';
 import type * as oidc from 'openid-client';
 import type { Ctx, User } from '../../core/types.js';
 import { newId, now } from '../../core/db.js';
+import { Limiter } from '../../core/util.js';
 import { HttpError, ah, bad, forbidden, requireRole, str } from '../../core/http.js';
 import {
   CLIENT_SECRET,
   DEFAULT_SSO,
-  Limiter,
   SCIM_PATH,
   SYSTEM,
   cookie,

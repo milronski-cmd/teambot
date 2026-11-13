@@ -3,7 +3,7 @@ import { ScanText, Trash2 } from 'lucide-react';
 import { api } from '../../lib/api';
 import { t } from '../../lib/i18n';
 import { formatBytes } from '../../lib/format';
-import { askConfirm, Badge, Button, Card, toastError, useAsync } from '../../components/ui';
+import { askConfirm, Badge, Button, Card, CardHead, toastError, useAsync } from '../../components/ui';
 import { MoreInfo } from '../../components/MoreInfo';
 import { Menu } from '../../components/overview';
 
@@ -19,8 +19,9 @@ interface OcrView {
 
 /**
  * Bestanden › "Scans en foto's lezen": text recognition (OCR) on this computer for scanned pdf's and photos of a page.
- * The language data (Dutch and English) is downloaded only when the owner clicks; nothing else leaves the computer.
- * One line with one button; the explanation is behind "Meer informatie".
+ * It is always on: the language data (Dutch and English) comes by itself the first time a bot reads a scan
+ * (server/modules/folders/ocr.ts `ensure`). The card says so, can fetch it now or again after a failed try, and can
+ * remove it. Nothing else leaves the computer; the explanation is behind "Meer informatie".
  */
 export function OcrCard() {
   const [v, setV] = useState<OcrView | null>(null);
@@ -44,40 +45,38 @@ export function OcrCard() {
   const size = formatBytes(v.bytes);
   const download = () => a.run(async () => setV({ ...(await api.post<OcrView>('/ocr/download')), mayDownload: v.mayDownload }));
   const remove = async () =>
-    (await askConfirm('De taaldata voor scans verwijderen? Bots kunnen dan geen scans meer lezen tot je hem opnieuw downloadt.', { ok: 'Verwijderen', danger: true })) &&
+    (await askConfirm('De taaldata voor scans verwijderen? Leest een bot later weer een scan, dan haalt TeamBot hem opnieuw op.', { ok: 'Verwijderen', danger: true })) &&
     api.del<OcrView>('/ocr').then((x) => setV({ ...x, mayDownload: v.mayDownload }), toastError);
   const off = v.state === 'absent' || v.state === 'error';
   return (
     <Card className="tb-in space-y-3 p-4">
-      <div className="flex flex-wrap items-start gap-x-3 gap-y-2 sm:items-center">
-        <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-control bg-surface-2 text-muted" aria-hidden>
-          <ScanText className="h-4 w-4" />
-        </span>
-        <div className="min-w-0 flex-1 basis-56">
-          <h2 className="text-sm font-semibold">Scans en foto’s lezen</h2>
-          <p className="text-[13px] text-muted">
+      <CardHead
+        icon={ScanText}
+        tone="amber"
+        title="Scans en foto’s lezen"
+        hint={
+          <>
             Je bots lezen ook een gescande pdf of een foto van een brief.{' '}
             <MoreInfo>
-              {t('Dat heet tekstherkenning en gebeurt op deze computer; er gaat niets naar internet. Er is eenmalig taaldata nodig voor Nederlands en Engels ({0}). TeamBot controleert elk bestand voordat het wordt gebruikt.', size)}
+              {t('Dat heet tekstherkenning en gebeurt op deze computer; er gaat niets naar internet. Alleen de taaldata voor Nederlands en Engels ({0}) wordt eenmalig opgehaald, vanzelf zodra een bot voor het eerst een scan leest. TeamBot controleert elk bestand voordat het wordt gebruikt.', size)}
             </MoreInfo>
-          </p>
-        </div>
-        {v.state === 'ready' && (
-          <>
-            <Badge tone="ok">Staat aan</Badge>
-            {v.mayDownload && <Menu label="Meer opties" items={[{ label: 'Taaldata verwijderen', icon: <Trash2 />, danger: true, onSelect: remove }]} />}
           </>
-        )}
-        {off &&
-          v.mayDownload && (
-            <Button variant={v.state === 'error' ? 'secondary' : 'primary'} loading={a.busy} onClick={download}>
-              {v.state === 'error' ? 'Opnieuw proberen' : t('Aanzetten ({0})', size)}
-            </Button>
-          )}
-      </div>
+        }
+        action={
+          <>
+            {v.state !== 'no-runtime' && <Badge tone="ok">Staat aan</Badge>}
+            {v.state === 'ready' && v.mayDownload && <Menu label="Meer opties" items={[{ label: 'Taaldata verwijderen', icon: <Trash2 />, danger: true, onSelect: remove }]} />}
+            {off && v.mayDownload && (
+              <Button variant="secondary" loading={a.busy} onClick={download}>
+                {v.state === 'error' ? 'Opnieuw proberen' : 'Nu ophalen'}
+              </Button>
+            )}
+          </>
+        }
+      />
       {v.state === 'no-runtime' && <p className="text-[13px] text-warn">Dit kan niet in deze installatie. Installeer TeamBot opnieuw.</p>}
-      {v.state === 'error' && <p className="text-[13px] text-danger">{t('Downloaden is niet gelukt: {0}', v.error || '')}</p>}
-      {off && !v.mayDownload && <p className="text-[13px] text-muted">Alleen de eigenaar of een beheerder kan dit aanzetten.</p>}
+      {v.state === 'absent' && <p className="text-[13px] text-muted">{t('De taaldata ({0}) komt vanzelf bij de eerste scan.', size)}</p>}
+      {v.state === 'error' && <p className="text-[13px] text-danger">{t('Ophalen is niet gelukt: {0}. Bij de volgende scan probeert TeamBot het opnieuw.', v.error || '')}</p>}
       {v.state === 'downloading' && (
         <div className="space-y-1" role="status">
           <div className="h-2 overflow-hidden rounded-full bg-surface-3">

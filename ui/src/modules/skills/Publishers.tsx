@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useState } from 'react';
 import { KeyRound, ShieldCheck, Trash2 } from 'lucide-react';
-import { Button, Card, EmptyState, Field, Input, Spinner, Textarea, cx, useAsync } from '../../components/ui';
+import { Button, Card, EmptyState, Field, Input, Spinner, Textarea, cx, useAsync, CardHead } from '../../components/ui';
 import { api } from '../../lib/api';
-import type { PublisherPolicy, PublishersView } from './api';
+import type { PublishersView } from './api';
+import type { PublisherPolicy } from '../../../../shared/skills.js';
 import { fmtDate } from './api';
 import { Confirm } from './common';
 
@@ -12,7 +13,7 @@ const POLICY_HELP: Record<PublisherPolicy, string> = {
   allowlist: 'Alleen pakketten van uitgevers in de lijst hieronder.',
 };
 
-/** Settings › Uitgevers en beleid: publisher policy and trusted publisher keys (members: read-only). */
+/** Settings › Vertrouwde makers: publisher policy and trusted publisher keys (members: read-only). */
 export function PublishersSettings() {
   const [data, setData] = useState<PublishersView | null>(null);
   const [error, setError] = useState('');
@@ -58,9 +59,7 @@ export function PublishersSettings() {
   return (
     <div className="space-y-4">
       <Card className="space-y-3 p-4">
-        <div className="flex items-center gap-2 font-semibold">
-          <ShieldCheck className="h-4 w-4 text-muted" /> Uitgevers en beleid
-        </div>
+        <CardHead icon={ShieldCheck} tone="rose" title="Vertrouwde makers" />
         <p className="text-sm text-muted">
           Skills, bot-sjablonen en connectors kunnen door hun uitgever digitaal ondertekend zijn (Ed25519). TeamBot controleert de handtekening en elk bestand bij installeren en bijwerken. Een ongeldige handtekening of een pakket dat niet past bij deze TeamBot-versie wordt altijd geweigerd. Een update van een andere uitgever dan de geïnstalleerde vraagt altijd om bevestiging.
         </p>
@@ -71,7 +70,7 @@ export function PublishersSettings() {
             <label key={p.id} className={cx('flex cursor-pointer items-start gap-3 rounded-lg border p-3 text-sm', data.policy === p.id ? 'border-accent bg-accent-soft' : 'border-line', !manage && 'cursor-default')}>
               <input type="radio" name="publisher-policy" className="mt-0.5 h-4 w-4" checked={data.policy === p.id} onChange={() => setPolicy(p.id)} />
               <span>
-                <span className="font-medium">{p.label}</span>
+                <span className="font-medium" translate="no">{p.label}</span>
                 <span className="block text-muted">{POLICY_HELP[p.id]}</span>
               </span>
             </label>
@@ -81,9 +80,7 @@ export function PublishersSettings() {
       </Card>
 
       <Card className="space-y-3 p-4">
-        <div className="flex items-center gap-2 font-semibold">
-          <KeyRound className="h-4 w-4 text-muted" /> Vertrouwde uitgevers
-        </div>
+        <CardHead icon={KeyRound} tone="amber" title="Vertrouwde uitgevers" />
         {!data.trusted.length ? (
           <EmptyState title="Nog geen vertrouwde uitgevers">
             {manage ? 'Voeg hieronder een publieke sleutel toe, of kies “Vertrouw deze uitgever” in de marktplaats.' : 'De beheerder heeft nog geen uitgevers toegevoegd.'}
@@ -141,7 +138,7 @@ export function PublishersSettings() {
         onConfirm={() => remove && run(async () => (setData(await api.del<PublishersView>(`/skills/publishers/trusted/${remove.fingerprint.replace(/ /g, '')}`)), setRemove(null)), 'Uitgever verwijderd')}
       >
         <p>
-          Pakketten van <strong>{remove?.name}</strong> blijven geïnstalleerd, maar tellen voortaan als “onbekende uitgever”. Met het beleid “alleen vertrouwde uitgevers” kunnen ze niet meer worden geïnstalleerd of bijgewerkt.
+          Pakketten van <strong translate="no">{remove?.name}</strong> blijven geïnstalleerd, maar tellen voortaan als “onbekende uitgever”. Met het beleid “alleen vertrouwde uitgevers” kunnen ze niet meer worden geïnstalleerd of bijgewerkt.
         </p>
       </Confirm>
     </div>

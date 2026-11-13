@@ -39,11 +39,11 @@ function ConflictCard({ p, onDone }: { p: { item: MemItem; conflict: MemItem | n
       <div className="text-[15px] font-bold leading-snug">Wat klopt?</div>
       <p className="break-words text-[13.5px]">
         <span className="text-muted">{'Nieuw: '}</span>
-        {p.item.content}
+        <span translate="no">{p.item.content}</span>
       </p>
       <p className="break-words text-[13.5px]">
         <span className="text-muted">{'Stond er al: '}</span>
-        {p.conflict?.content}
+        <span translate="no">{p.conflict?.content}</span>
       </p>
       <div className="flex flex-wrap gap-2">
         <Button size="sm" variant="primary" loading={busy === 'new'} disabled={!!busy} onClick={() => decide('new')}>

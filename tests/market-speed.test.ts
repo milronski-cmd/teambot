@@ -4,7 +4,6 @@ import crypto from 'node:crypto';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import AdmZip from 'adm-zip';
 import { createApp, type AppHandle } from '../server/app.js';
 import type { FetchResult, Fetcher } from '../server/modules/skills/fetch.js';
 import { FEATURED, normalizeServer } from '../server/modules/mcp/registry.js';
@@ -13,28 +12,15 @@ import { isComplete, mergeStable, refreshLabel } from '../ui/src/modules/skills/
 /**
  * B-01/B-12: the marketplace's first view is fast even when every source is slow, fills in without moving cards,
  * persists for the next start (stale-while-revalidate) and shows at least 40 apps without searching. Sources are
- * simulated (recorded registry records in tests/fixtures/market, generated archives) with network delays; no test
+ * simulated (recorded registry records in tests/fixtures/market, a delayed GitHub search and skill directory) with network delays; no test
  * here touches the network.
  */
 
 const FX = path.resolve('tests/fixtures/market');
 const FEATURED_FX: Record<string, any> = JSON.parse(fs.readFileSync(path.join(FX, 'registry-featured.json'), 'utf8'));
-const MIT = 'MIT License\n\nCopyright (c) 2026 Acme\n\nPermission is hereby granted, free of charge, to any person obtaining a copy of this software...\n';
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 const ok = (url: string, body: Buffer | object, headers: Record<string, string> = {}): FetchResult => ({ status: 200, contentType: 'application/json', url, body: Buffer.isBuffer(body) ? body : Buffer.from(JSON.stringify(body)), headers });
 const status = (url: string, s: number, headers: Record<string, string> = {}): FetchResult => ({ status: s, contentType: '', url, body: Buffer.alloc(0), headers });
-
-const REPOS = Array.from({ length: 13 }, (_, i) => `acme/c${String(i + 1).padStart(2, '0')}`);
-const SHA = 'c'.repeat(40);
-function repoZip(repo: string) {
-  const z = new AdmZip();
-  const top = `${repo.split('/')[1]}-${SHA}`;
-  z.addFile(`${top}/LICENSE`, Buffer.from(MIT));
-  for (const n of ['a', 'b']) z.addFile(`${top}/skills/${n}/SKILL.md`, Buffer.from(`---\nname: ${repo.split('/')[1]}-${n}\ndescription: Skill ${n} uit ${repo}.\n---\n\n# ${n}\n\nWerk stap voor stap.\n`));
-  z.addZipComment(SHA);
-  return z.toBuffer();
-}
-const ZIPS = new Map(REPOS.map((r) => [r, repoZip(r)]));
 
 /** A network that does not answer at all until the test opens it (then the normal delays apply). */
 function held() {
@@ -43,18 +29,18 @@ function held() {
   return { until, open };
 }
 
-/** GitHub, delayed: `delay(url)` ms before each answer (and nothing before `hold`). Counts calls. */
-function slowGithub(delay: (url: string) => number, hold?: Promise<void>) {
+/** GitHub's repository search, the skill directory and ClawHub, each answering after `ms` (and nothing before `hold`). Counts calls. */
+function slowOpen(ms: number, hold?: Promise<void>) {
   const calls: string[] = [];
   const f: Fetcher = async (url) => {
     calls.push(url);
     await hold;
-    await sleep(delay(url));
-    let m = /^https:\/\/github\.com\/(acme\/c\d\d)\/archive\/HEAD\.zip$/.exec(url);
-    if (m) return status(url, 302, { location: `https://codeload.github.com/${m[1]}/zip/${SHA}` });
-    m = /^https:\/\/codeload\.github\.com\/(acme\/c\d\d)\/zip\/[0-9a-f]{40}$/.exec(url);
-    if (m && ZIPS.has(m[1])) return ok(url, ZIPS.get(m[1])!);
-    if (url.startsWith('https://api.github.com/repos/acme/')) return ok(url, { full_name: url.split('/repos/')[1], stargazers_count: 7, license: { spdx_id: 'MIT' } });
+    await sleep(ms);
+    if (url.startsWith('https://api.github.com/search/repositories?')) {
+      return ok(url, { total_count: 1, items: [{ full_name: 'acme/skills', name: 'skills', description: 'Skills voor een test.', stargazers_count: 7, license: { spdx_id: 'MIT' }, pushed_at: '2026-11-01T00:00:00Z', created_at: '2026-01-01T00:00:00Z' }] });
+    }
+    if (/^https:\/\/skills\.sh\/api\/skills\/(all-time|trending)\/0$/.test(url)) return ok(url, { skills: [{ source: 'acme/skills', skillId: 'a', name: 'a', installs: 5 }], total: 1, hasMore: false, page: 0 });
+    if (url.startsWith('https://clawhub.ai/api/v1/skills?')) return ok(url, { items: [{ ownerHandle: 'acme', slug: 'b', displayName: 'b', summary: 'Skill b.', stats: { stars: 3, downloads: 40 }, createdAt: 1790000000000, updatedAt: 1794000000000, latestVersion: { version: '1.0.0', license: 'MIT' } }], nextCursor: null });
     return status(url, 404);
   };
   return { f, calls };
@@ -167,62 +153,37 @@ test('merge helpers: cards keep their place, new ones at the end; only a complet
   assert.equal(refreshLabel({ pending: [], refreshing: ['a'] }), 'Bijwerken…');
 });
 
-test('skills, cold start with slow sources: first cards at once (TeamBot), internet cards fill in, snapshot for the next start, offline', async () => {
+test('skills, open search with slow sources: the three sources are asked side by side, and what was seen comes back without waiting', async () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'tb-speed-'));
-  let b = await boot(dir);
+  const b = await boot(dir);
   try {
-    // Every archive takes 2.5-4 s; the HEAD check and the GitHub API are slow too.
-    const gh = slowGithub((u) => (u.includes('codeload') ? 2500 + (Number(/c(\d\d)/.exec(u)?.[1]) % 4) * 500 : 400));
-    b.app.ctx.services.skills.setFetcher(gh.f);
-    b.app.ctx.services.skills.setCollections(REPOS.map((repo) => ({ repo, note: '' })));
-    const first = await b.get('/skills/web/skills');
-    console.log(`  skills cold: first answer ${Math.round(first.ms)} ms, ${first.body.items.length} internet cards, ${first.body.starter.length} TeamBot cards, ${first.body.pending.length} pending`);
-    // The deadline (1.2 s) plus the answer itself; asked again, the archives (≥ 2.9 s) are still on their way.
-    await within(2000, 'skills cold: first view', first, () => b.get('/skills/web/skills'));
-    assert.equal(first.body.items.length, 0, 'the slow collections are not in yet');
-    assert.equal(first.body.pending.length, 13);
-    assert.ok(first.body.starter.length >= 6, 'TeamBot’s own skills fill the first view');
-    assert.ok(first.body.starterTotal >= first.body.starter.length);
-    assert.deepEqual(first.body.collections, { total: 13, ready: 0 });
-    const filled = await fillUntilDone(b, '/skills/web/skills', first.body, (i) => i.id);
-    console.log(`  skills cold: first internet cards after ${Math.round(filled.firstItemsAt + first.ms)} ms, all ${filled.shown.length} after the polls`);
-    assert.ok(filled.firstItemsAt + first.ms < 8000, 'first internet cards within 8 s');
-    assert.equal(filled.shown.length, 26);
-    assert.equal(filled.last.pending.length, 0);
-    assert.equal(filled.last.starter.length, 0, 'no TeamBot fill-in once the internet is in');
-    // Shared work: every archive was downloaded once, however often the page asked.
-    for (const r of REPOS) assert.equal(gh.calls.filter((u) => u.includes(`codeload.github.com/${r}/`)).length, 1, `${r} downloaded once`);
-
-    // Next start (same data folder): the last snapshot is shown at once, even when the check is due and GitHub hangs.
-    await b.app.close();
-    b = await boot(dir);
-    const net = held();
-    const slow = slowGithub(() => 300, net.until);
+    // GitHub's search, the skill directory and ClawHub each take 1.5 s.
+    const slow = slowOpen(1500);
     b.app.ctx.services.skills.setFetcher(slow.f);
-    b.app.ctx.services.skills.setCollections(REPOS.map((repo) => ({ repo, note: '' })));
-    for (const r of REPOS) ageCache(path.join(dir, 'cache', 'market-skills'), `head:${r}`, 2 * 3600_000); // last check 2 h ago
-    const warm = await b.get(`/skills/web/skills?${HELD_DEADLINE}`);
-    console.log(`  skills warm (check due, GitHub held, 20 s deadline): first answer ${Math.round(warm.ms)} ms, ${warm.body.items.length} cards, refreshing ${warm.body.refreshing.length}`);
-    await within(SNAPSHOT_MS, 'skills warm: snapshot', warm, () => b.get(`/skills/web/skills?${HELD_DEADLINE}`));
-    assert.equal(warm.body.items.length, 26);
-    assert.equal(warm.body.refreshing.length, 13, 'checked in the background');
-    assert.equal(warm.body.starter.length, 0);
-    assert.ok(slow.calls.length >= 13, 'the checks did start (and are held)');
-    net.open();
-    const again = await fillUntilDone(b, '/skills/web/skills', warm.body, (i) => i.id);
-    assert.equal(again.last.refreshing.length, 0);
-    assert.deepEqual(again.shown.map((i: any) => i.id), warm.body.items.map((i: any) => i.id), 'unchanged collections: same cards in the same order');
+    const first = await b.get('/skills/web/search');
+    console.log(`  open search, three sources of 1.5 s: first answer ${Math.round(first.ms)} ms, ${first.body.github.items.length} repository, ${first.body.directory.items.length} + ${first.body.clawhub.items.length} skills`);
+    assert.deepEqual([first.body.github.items.length, first.body.directory.items.length, first.body.clawhub.items.length], [1, 1, 1]);
+    assert.equal(slow.calls.length, 3, 'one request per source');
+    assert.ok(first.ms >= 1400, 'the first view of a search waits for its sources');
+    // Side by side: one after the other would take 4.5 s. (Another order is another search: every source again.)
+    await within(2900, 'open search: three slow sources side by side', first, () => b.get('/skills/web/search?sort=trending'));
 
-    // Offline: only the cache, no network, said so.
+    // The same search again while the network does not answer at all: from the cache, no request.
+    const net = held();
+    const stuck = slowOpen(0, net.until);
+    b.app.ctx.services.skills.setFetcher(stuck.f);
+    const again = await b.get('/skills/web/search');
+    await within(SNAPSHOT_MS, 'open search: seen before', again, () => b.get('/skills/web/search'));
+    assert.deepEqual([again.body.github.items.length, again.body.directory.items.length, again.body.clawhub.items.length, stuck.calls.length], [1, 1, 1, 0]);
+    net.open();
+
+    // Offline: the same, also after the hour the answers are kept for.
+    for (const key of ['ghsearch:stars::1', 'skillssh-list:all-time:0', 'clawhub-list:stars:1']) ageCache(path.join(dir, 'cache', 'market-skills'), key, 2 * 3600_000);
     process.env.TEAMBOT_OFFLINE = '1';
-    for (const r of REPOS) ageCache(path.join(dir, 'cache', 'market-skills'), `head:${r}`, 2 * 3600_000);
-    const n = slow.calls.length;
-    const off = await b.get('/skills/web/skills');
-    await within(SNAPSHOT_MS, 'skills offline', off, () => b.get('/skills/web/skills'));
-    assert.equal(off.body.offline, true);
-    assert.equal(off.body.items.length, 26);
-    assert.deepEqual([off.body.pending.length, off.body.refreshing.length], [0, 0], 'offline: nothing to wait for');
-    assert.equal(slow.calls.length, n, 'offline: never fetches');
+    const off = await b.get('/skills/web/search');
+    await within(SNAPSHOT_MS, 'open search offline', off, () => b.get('/skills/web/search'));
+    assert.deepEqual([off.body.github.items.length, off.body.github.stale, off.body.directory.items.length, off.body.clawhub.items.length, off.body.clawhub.stale, off.body.offline], [1, true, 1, 1, true, true]);
+    assert.equal(stuck.calls.length, 0, 'offline: never fetches');
   } finally {
     delete process.env.TEAMBOT_OFFLINE;
     await b.app.close();

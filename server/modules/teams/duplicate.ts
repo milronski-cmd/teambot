@@ -21,7 +21,7 @@ export async function duplicateTeam(ctx: Ctx, svc: TeamsService, userId: string,
     .filter((a): a is Agent => !!a && a.user_id === userId && !a.archived && a.id !== main)
     .sort((a, b) => a.created_at.localeCompare(b.created_at));
   const name = copyName(svc.list(userId).map((t) => t.name), from.name);
-  const to = svc.create(userId, { name, profile: from.profile });
+  const to = svc.create(userId, { name, profile: from.profile }, { starterRules: false });
   const agentMap: Record<string, string> = {};
   const warnings: string[] = [];
   try {

@@ -5,7 +5,7 @@ import { t, uiLocale } from '../../lib/i18n';
 import { capFirst } from '../../lib/format';
 import { useIsDesktop } from '../../lib/media';
 import { navigate } from '../../lib/router';
-import { Badge, Button, Card, EmptyState, Page, PageHeader, cx } from '../../components/ui';
+import { Badge, Button, Card, EmptyState, Page, PageHeader, cx, CardHead } from '../../components/ui';
 import { Skeleton, SkeletonRows } from '../../components/overview';
 import { Segmented } from '../../components/SettingControls';
 import { RUN_STATUS } from './lib';
@@ -72,6 +72,26 @@ const time = (iso: string) => new Date(iso).toLocaleTimeString(uiLocale(), { hou
 const runTone = (status: string) => (RUN_STATUS[status]?.tone === 'accent' ? 'neutral' : RUN_STATUS[status]?.tone || 'neutral');
 const NONE: DayEntries = { planned: [], runs: [] };
 
+/**
+ * A routine that runs three times or more on one day (every hour, every two hours) is ONE line for that day
+ * ("12× Inbox nalopen") instead of twelve, so a month stays readable; fewer runs keep their own time.
+ */
+interface PlanLine {
+  first: Planned;
+  last: Planned;
+  n: number;
+}
+function planLines(planned: Planned[]): PlanLine[] {
+  const by = new Map<string, Planned[]>();
+  for (const p of planned) by.set(p.routineId, [...(by.get(p.routineId) || []), p]);
+  const out: PlanLine[] = [];
+  for (const list of by.values()) {
+    if (list.length >= 3) out.push({ first: list[0], last: list[list.length - 1], n: list.length });
+    else for (const p of list) out.push({ first: p, last: p, n: 1 });
+  }
+  return out.sort((a, b) => a.first.at.localeCompare(b.first.at));
+}
+
 /** What already happened on a day, as dots; in words for a screen reader and on hover. */
 function Dots({ runs }: { runs: PastRun[] }) {
   if (!runs.length) return null;
@@ -105,13 +125,14 @@ function DayList({ e }: { e: DayEntries }) {
           </span>
         </li>
       ))}
-      {e.planned.slice(0, 50).map((p) => (
+      {planLines(e.planned).map(({ first: p, last, n }) => (
         <li key={p.routineId + p.at} className="flex items-baseline gap-2.5 text-sm">
           <span className="w-11 shrink-0 tabular-nums text-muted">{time(p.at)}</span>
           <span className="min-w-0 flex-1">
             <a className="font-medium [overflow-wrap:anywhere] hover:underline" href={`#/m/routines/r/${p.routineId}`} translate="no">
               {p.name}
             </a>
+            {n > 1 && <span className="text-muted"> · {t('{0}×, tot {1}', n, time(last.at))}</span>}
             {p.waitpoint && (
               <>
                 {' '}
@@ -121,7 +142,6 @@ function DayList({ e }: { e: DayEntries }) {
           </span>
         </li>
       ))}
-      {e.planned.length > 50 && <li className="text-xs text-muted">… en nog {e.planned.length - 50}</li>}
     </ul>
   );
 }
@@ -239,6 +259,7 @@ export function CalendarPage() {
                 {r.days.map((d) => {
                   const k = keyOf(d);
                   const e = byDay.get(k) || NONE;
+                  const lines = planLines(e.planned);
                   const out = mode === 'month' && d.getMonth() !== anchor.getMonth();
                   const label = `${d.toLocaleDateString(uiLocale(), { weekday: 'long', day: 'numeric', month: 'long' })}: ${e.planned.length} gepland, ${e.runs.length} gebeurd`;
                   return (
@@ -256,12 +277,12 @@ export function CalendarPage() {
                       )}
                     >
                       <span className={cx('flex h-6 w-6 items-center justify-center rounded-full text-[12.5px] font-semibold', k === today && 'bg-accent text-accent-fg')}>{d.getDate()}</span>
-                      {e.planned.slice(0, perCell).map((p) => (
+                      {lines.slice(0, perCell).map(({ first: p, n }) => (
                         <span key={p.routineId + p.at} className="block text-[12px] leading-[1.35] [overflow-wrap:anywhere]">
-                          <span className="tabular-nums text-muted">{time(p.at)}</span> {p.waitpoint && <Hourglass className="inline h-3 w-3 align-[-1px] text-muted" aria-label="wachtpunt" />} <span translate="no">{p.name}</span>
+                          <span className="tabular-nums text-muted">{n > 1 ? `${n}×` : time(p.at)}</span> {p.waitpoint && <Hourglass className="inline h-3 w-3 align-[-1px] text-muted" aria-label="wachtpunt" />} <span translate="no">{p.name}</span>
                         </span>
                       ))}
-                      {e.planned.length > perCell && <span className="text-[12px] font-medium text-muted">{t('+{0} meer', e.planned.length - perCell)}</span>}
+                      {lines.length > perCell && <span className="text-[12px] font-medium text-muted">{t('+{0} meer', lines.length - perCell)}</span>}
                       <Dots runs={e.runs} />
                     </button>
                   );
@@ -286,7 +307,7 @@ export function CalendarPage() {
               </span>
             </div>
             <Card className="space-y-3 p-4" aria-live="polite">
-              <h3 className="text-[14px] font-bold">{capFirst(new Date(selected + 'T12:00').toLocaleDateString(uiLocale(), { weekday: 'long', day: 'numeric', month: 'long' }))}</h3>
+              <CardHead as="h3" icon={CalendarDays} tone="orange" title={capFirst(new Date(selected + 'T12:00').toLocaleDateString(uiLocale(), { weekday: 'long', day: 'numeric', month: 'long' }))} />
               <DayList e={byDay.get(selected) || NONE} />
             </Card>
           </>

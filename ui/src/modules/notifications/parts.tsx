@@ -4,10 +4,10 @@ import type { LucideIcon } from 'lucide-react';
 import { useApp } from '../../lib/store';
 import { navigate } from '../../lib/router';
 import { useIsDesktop } from '../../lib/media';
-import { isRtl, uiLocale } from '../../lib/i18n';
+import { uiLocale } from '../../lib/i18n';
 import type { Agent } from '../../lib/types';
 import { BotAvatar } from '../../components/BotFace';
-import { Button, Card, EmptyState, Modal, Page, PageHeader, Spinner, Toggle, cx, listTime, toast, toastError } from '../../components/ui';
+import { Button, EmptyState, Modal, Page, PageHeader, Spinner, cx, listTime, toast, toastError } from '../../components/ui';
 import {
   KIND_LABEL,
   LEVEL_LABEL,
@@ -26,7 +26,9 @@ import {
   type NotifyPrefs,
 } from './api';
 import { Segmented, SettingRow, SettingsSection, SwitchRow, useSave } from '../../components/SettingControls';
+import { settingText } from '../../../../shared/settings.js';
 import { MoreInfo } from '../../components/MoreInfo';
+import { useDismiss } from '../../components/Menu';
 import { Menu, Skeleton } from '../../components/overview';
 
 const KIND_ICON: Record<string, LucideIcon> = {
@@ -201,14 +203,7 @@ export function NotificationBell({ className, size = 'md' }: { className?: strin
   const ref = useRef<HTMLDivElement>(null);
   const titleId = useId();
   const setOpen = (v: boolean) => useNotifications.setState({ panelOpen: v });
-  useEffect(() => {
-    if (!open) return;
-    const f = (e: MouseEvent) => ref.current && !ref.current.contains(e.target as Node) && setOpen(false);
-    const k = (e: KeyboardEvent) => e.key === 'Escape' && setOpen(false);
-    document.addEventListener('mousedown', f);
-    document.addEventListener('keydown', k);
-    return () => (document.removeEventListener('mousedown', f), document.removeEventListener('keydown', k));
-  }, [open]);
+  useDismiss(open, ref, () => setOpen(false));
   useEffect(() => {
     if (!desktop && open) setOpen(false);
   }, [desktop, open]);
@@ -303,22 +298,31 @@ function usePrefs() {
 }
 
 /** Settings › Meldingen: sound, notifications without a bot, and a level per bot. Every change saves at once. */
-export function NotificationSettings() {
+export function NotificationSettings({ simple }: { simple?: boolean } = {}) {
   const prefs = usePrefs();
   const agents = useApp((s) => s.agents).filter((a) => !a.archived);
   if (!prefs) return <Spinner />;
+  // The short page (Instellingen › Meldingen): the sound, nothing else. Levels per bot are under Geavanceerd.
+  if (simple)
+    return (
+      <SettingsSection title="Meldingen" icon={Bell} tone="amber" hint="Geldt overal: in TeamBot, op je computer en op je telefoon.">
+        <SoundRow prefs={prefs} />
+      </SettingsSection>
+    );
   const isDefault = prefs.sound && prefs.other === 'all' && Object.values(prefs.bots).every((l) => l === 'all');
   return (
     <div className="space-y-4">
       <SettingsSection
         title="Meldingen"
+        icon={Bell}
+        tone="orange"
         hint="Geldt overal: in TeamBot, op je computer en op je telefoon."
         isDefault={isDefault}
         onReset={() => savePrefs({ sound: true, other: 'all', bots: Object.fromEntries(Object.keys(prefs.bots).map((id) => [id, null])) })}
       >
         <NotifyRows prefs={prefs} />
       </SettingsSection>
-      <SettingsSection title="Per bot" hint="Hoeveel je van elke bot wilt horen." info={LEVEL_HINT}>
+      <SettingsSection title="Per bot" icon={Bot} tone="teal" hint="Hoeveel je van elke bot wilt horen." info={LEVEL_HINT}>
         {agents.length === 0 ? (
           <p className="py-3 text-sm text-muted">Nog geen bots.</p>
         ) : (
@@ -338,13 +342,18 @@ export function NotificationSettings() {
   );
 }
 
+function SoundRow({ prefs }: { prefs: NotifyPrefs }) {
+  const save = useSave();
+  return <SwitchRow checked={prefs.sound} onChange={(v) => void save(savePrefs({ sound: v }))} setting="notifications.sound" />;
+}
+
 function NotifyRows({ prefs }: { prefs: NotifyPrefs }) {
   const save = useSave();
   return (
     <>
-      <SwitchRow checked={prefs.sound} onChange={(v) => void save(savePrefs({ sound: v }))} label="Geluid bij een melding" />
-      <SettingRow label="Meldingen zonder bot" hint="Limieten, apps, kanalen en systeemmeldingen">
-        <LevelPicker label="Meldingen zonder bot" value={prefs.other} onChange={(v) => void save(savePrefs({ other: v }))} />
+      <SoundRow prefs={prefs} />
+      <SettingRow setting="notifications.other">
+        <LevelPicker label={settingText('notifications.other').title} value={prefs.other} onChange={(v) => void save(savePrefs({ other: v }))} />
       </SettingRow>
     </>
   );
@@ -357,7 +366,11 @@ function BotLevelRow({ agent, level }: { agent: Agent; level: NotifyLevel }) {
       <BotAvatar bot={agent} size={32} />
       <span className="min-w-0 flex-1">
         <span className="block truncate text-sm font-semibold">{agent.name}</span>
-        {agent.role && <span className="block truncate text-xs text-muted">{agent.role}</span>}
+        {agent.role && (
+          <span className="block truncate text-xs text-muted" translate="no">
+            {agent.role}
+          </span>
+        )}
       </span>
       <LevelPicker label={`Meldingen van ${agent.name}`} value={level} onChange={(v) => void save(savePrefs({ bots: { [agent.id]: v } }))} />
     </div>

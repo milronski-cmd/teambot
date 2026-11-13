@@ -1,10 +1,10 @@
 import { useEffect, useState } from 'react';
-import { ExternalLink } from 'lucide-react';
+import { KeyRound, Search } from 'lucide-react';
 import { api, on } from '../../lib/api';
 import { useApp } from '../../lib/store';
 import { t } from '../../lib/i18n';
 import { formatTime } from '../../lib/format';
-import { Badge, Button, Card, Field, Input, Spinner, Toggle, toast, toastError } from '../../components/ui';
+import { Badge, Button, Card, CardHead, Field, Input, Spinner, Toggle, toast, toastError, useAsync, ExtLink } from '../../components/ui';
 import { SelectBox as Select } from '../../components/Listbox';
 import { MoreInfo } from '../../components/MoreInfo';
 import { MoreOptions } from '../../components/MoreOptions';
@@ -57,15 +57,6 @@ const FREE_KEYS: KeyInfo[] = [
 ];
 const BRAVE_KEY: KeyInfo = { id: 'brave', hint: 'Voor wie al een sleutel van de Brave Search API heeft.', signup: 'https://api-dashboard.search.brave.com', link: 'Brave Search API', placeholder: 'Plak hier je sleutel' };
 
-function ExtLink({ href, children }: { href: string; children: React.ReactNode }) {
-  return (
-    <a className="inline-flex items-center gap-0.5 underline" href={href} target="_blank" rel="noreferrer">
-      {children}
-      <ExternalLink className="h-3 w-3 rtl-keep" aria-hidden />
-    </a>
-  );
-}
-
 export function WebSearchSettings() {
   const phone = useIsPhoneSession();
   const [s, setS] = useState<Status | null>(null);
@@ -110,7 +101,7 @@ export function WebSearchSettings() {
   return (
     <div className="space-y-6">
       <Card className="space-y-4 p-5">
-        <h2 className="text-[15px] font-bold tracking-tight">Zoeken op internet</h2>
+        <CardHead icon={Search} tone="blue" title="Zoeken op internet" />
         <div className="space-y-1">
           <p className="text-sm text-muted">Bots zoeken meteen, zonder sleutel of account.</p>
           <MoreInfo block>
@@ -154,8 +145,7 @@ export function WebSearchSettings() {
       </Card>
 
       <Card className="space-y-4 p-5">
-        <h2 className="text-[15px] font-bold tracking-tight">Eigen gratis sleutels</h2>
-        <p className="text-xs text-muted">Niet nodig, wel handig als reserve.</p>
+        <CardHead icon={KeyRound} tone="amber" title="Eigen gratis sleutels" hint="Niet nodig, wel handig als reserve." />
         {phone ? (
           <ComputerOnly>Sleutels voor zoekdiensten vul je op je computer in.</ComputerOnly>
         ) : (
@@ -184,32 +174,22 @@ export function WebSearchSettings() {
 /** One own key: paste and save (to Secrets, by its fixed name), or remove. The value never comes back. */
 function KeyRow({ k, has, reload }: { k: KeyInfo; has: boolean; reload(): void }) {
   const [v, setV] = useState('');
-  const [busy, setBusy] = useState(false);
+  const { busy, run } = useAsync();
   const name = NAME[k.id];
   const store = async () => {
-    setBusy(true);
-    try {
+    await run(async () => {
       await api.put(`/secrets/${SECRET[k.id]}`, { value: v.trim() });
       setV('');
       toast(t('Sleutel voor {0} opgeslagen', name), 'ok');
       reload();
-    } catch (e) {
-      toastError(e);
-    } finally {
-      setBusy(false);
-    }
+    });
   };
   const remove = async () => {
-    setBusy(true);
-    try {
+    await run(async () => {
       await api.del(`/secrets/${SECRET[k.id]}`);
       toast(t('Sleutel voor {0} verwijderd', name));
       reload();
-    } catch (e) {
-      toastError(e);
-    } finally {
-      setBusy(false);
-    }
+    });
   };
   return (
     <div className="space-y-1.5">

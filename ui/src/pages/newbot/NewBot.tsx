@@ -11,17 +11,17 @@ import { encodeFace, faceColor, randomTraits } from '../../lib/botface';
 import { activeTeamId } from '../../modules/teams/scope';
 import { NewBotTeam } from '../../modules/teams/NewBotTeam';
 import { BotKindQuestion, EngineChoices, connectChoice, useEngineChoices } from './Questions';
-import { DEFAULT_RULES } from './choices';
-import { STARTERS } from './starters';
+import { startAccess } from './choices';
+import { STARTERS, fromRole } from './starters';
 
 /** The tools a bot starts with when the list of parts cannot be read. */
-const DEFAULT_TOOLS = ['files', 'web', 'shell', 'memory', 'team', 'skills', 'routines', 'channels'];
+const DEFAULT_TOOLS = ['files', 'web', 'browser', 'shell', 'memory', 'team', 'skills', 'routines', 'channels'];
 /** Parts that follow from where the bot works (set under Computer & bestanden), not from "Automatisch". */
 const COMPUTER_GROUPS = new Set(['browser', 'desktop', 'rehearsal', 'container', 'remote']);
 
 /**
  * #/agents/new: a name, a role if you like, done. The AI is the best one that is connected (to change under "Meer
- * opties", with the kind of bot); the rules, tools and rights get good defaults and are changed later on
+ * mogelijkheden", with the kind of bot); the rules, tools and rights get good defaults and are changed later on
  * the bot's own page.
  */
 export function NewBot() {
@@ -47,14 +47,14 @@ export function NewBot() {
 
   const submit = () =>
     save.run(async () => {
+      const from = location.hash;
       const name = d.name?.trim();
       if (!name) throw new Error('Geef de bot een naam');
       if (!choice) throw new Error('Koppel eerst een AI');
       // An engine that was only found on this PC is connected now (no key needed).
       const p = await connectChoice(choice);
-      const role = d.role?.trim() || '';
-      // "Automatisch": a new bot gets every part it can use (what it may do with them is its access level, "Vraagt
-      // toestemming"); only what is needed in a turn is sent to the model (server/tools/selection.ts).
+      // "Automatisch": a new bot gets every part it can use (what it may do with them is its access level); only what
+      // is needed in a turn is sent to the model (server/tools/selection.ts).
       const parts = await api
         .get<{ groups: ToolGroup[] }>('/tools')
         .then((r) => r.groups.filter((g) => !g.always && !COMPUTER_GROUPS.has(g.id.split(':')[0])).map((g) => g.id))
@@ -63,19 +63,21 @@ export function NewBot() {
         name,
         avatar: d.avatar,
         color: d.color,
-        role,
-        description: starter?.description || role,
-        instructions: starter?.instructions || DEFAULT_RULES,
+        // The role, and an example's own sentence and rules; the owner's own text is empty unless he picked an example
+        // (how every bot works is in TeamBot's base prompt).
+        ...fromRole(d.role || ''),
         provider_id: p.id,
         model: '',
-        access_mode: 'ask',
-        tool_groups: parts.length ? parts : DEFAULT_TOOLS,
+        // Its own browser comes along too (the other computer parts stay a choice under Computer & bestanden): the owner
+        // can watch along from the first chat.
+        tool_groups: parts.length ? [...new Set([...parts, 'browser'])] : DEFAULT_TOOLS,
         busy_policy: 'queue',
-        settings: d.settings || {},
+        // "Volledige toegang": the bot does its work without asking; only paying still asks.
+        ...startAccess(useApp.getState().me?.role, d.settings || {}),
       });
       useApp.setState((s) => ({ agents: [...s.agents.filter((x) => x.id !== a.id), a] }));
       toast(t('{0} is aangemaakt', a.name), 'ok');
-      navigate(`/a/${a.id}`);
+      navigate(`/a/${a.id}`, { from });
     });
 
   return (
@@ -140,7 +142,7 @@ export function NewBot() {
           </Button>
         </Card>
         {!!choice && (
-          <MoreOptions key={String(more)} defaultOpen={more}>
+          <MoreOptions label="Meer mogelijkheden" key={String(more)} defaultOpen={more}>
             <fieldset>
               <legend className="text-[13px] font-semibold">Welke AI gebruikt hij?</legend>
               <EngineChoices engines={engines} engineKey={engineKey} onEngine={setPicked} />

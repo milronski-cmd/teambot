@@ -22,6 +22,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { createRequire } from 'node:module';
+import { fetchVerified } from '../../core/util.js';
 
 export interface BuiltinFile {
   name: string;
@@ -266,37 +267,7 @@ export class BuiltinModel {
         const verified: Record<string, string> = {};
         for (const f of this.files) {
           const dest = path.join(this.dir, f.name);
-          if (fs.existsSync(dest) && fs.statSync(dest).size === f.size && (await sha256File(dest)) === f.sha256) {
-            this.dl.done += f.size;
-            verified[f.name] = f.sha256;
-            continue;
-          }
-          const part = dest + '.part';
-          const r = await fetchImpl(f.url, { redirect: 'follow', signal: AbortSignal.timeout(60 * 60_000) });
-          if (!r.ok || !r.body) throw new Error(`HTTP ${r.status}`);
-          const hash = crypto.createHash('sha256');
-          const out = fs.createWriteStream(part);
-          let n = 0;
-          try {
-            const reader = r.body.getReader();
-            for (;;) {
-              const { value, done } = await reader.read();
-              if (done) break;
-              n += value.byteLength;
-              if (n > f.size) throw new Error('groter dan verwacht');
-              hash.update(value);
-              this.dl.done += value.byteLength;
-              if (!out.write(value)) await new Promise((res) => out.once('drain', res));
-            }
-          } finally {
-            await new Promise((res) => out.end(res));
-          }
-          const got = hash.digest('hex');
-          if (n !== f.size || got !== f.sha256) {
-            fs.rmSync(part, { force: true });
-            throw new Error('de controle van het bestand klopte niet');
-          }
-          fs.renameSync(part, dest);
+          await fetchVerified(fetchImpl, f, dest, { timeoutMs: 60 * 60_000, onBytes: (n) => (this.dl.done += n) });
           verified[f.name] = f.sha256;
         }
         fs.writeFileSync(this.marker(), JSON.stringify(verified, null, 1));
@@ -359,14 +330,4 @@ export class BuiltinModel {
     this.rt = null;
     void cur?.then((r) => r.close()).catch(() => {});
   }
-}
-
-export function sha256File(file: string): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const h = crypto.createHash('sha256');
-    fs.createReadStream(file)
-      .on('data', (c) => h.update(c))
-      .on('end', () => resolve(h.digest('hex')))
-      .on('error', reject);
-  });
 }

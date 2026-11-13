@@ -7,7 +7,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 
-const { createApp } = await import('../../server/app.ts');
+const { createApp } = await import('./server.mjs');
 const withRun = process.argv.includes('--run');
 const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'tb-usage-live-'));
 const app = await createApp({ dataDir: dir, port: 0, host: '127.0.0.1', mode: 'desktop', quiet: true });

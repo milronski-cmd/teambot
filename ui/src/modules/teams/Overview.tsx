@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { AlertTriangle, CheckCircle2, ChevronRight, CircleDot, Clock, Crown, Hourglass, Plus, Settings2, Users } from 'lucide-react';
-import { Badge, Button, Card, EmptyState, Page, PageHeader, Select, Spinner, cx, timeAgo, toast, toastError } from '../../components/ui';
+import { Badge, Button, Card, EmptyState, Page, PageHeader, Select, Spinner, cx, timeAgo, toast, toastError, CardHead } from '../../components/ui';
 import { MoreInfo } from '../../components/MoreInfo';
 import { SkeletonCards } from '../../components/overview';
 import { BotAvatar } from '../../components/BotFace';
@@ -112,9 +112,7 @@ function MainCard({ ov, reload }: { ov: Overview; reload(): void }) {
     };
     return (
       <Card className="space-y-3 p-5">
-        <div className="flex items-center gap-2 font-medium">
-          <Crown className="h-4 w-4 text-accent" aria-hidden /> Hoofdbot
-        </div>
+        <CardHead icon={Crown} tone="teal" title="Hoofdbot" />
         <p className="text-sm text-muted">
           Eén bot waar je mee praat; hij geeft het werk door. <MoreInfo>Hij geeft het werk aan de juiste bot of het juiste team. Een hoofdbot hoeft niet.</MoreInfo>
         </p>
@@ -174,8 +172,7 @@ function LeadersCard({ ov }: { ov: Overview }) {
   const names = new Map(ov.teams.map((x) => [x.id, x.name]));
   return (
     <Card className="space-y-2 p-5">
-      <div className="font-medium">Leiders</div>
-      <p className="text-xs text-muted">Bots die meer dan één team werk geven, onder de hoofdbot.</p>
+      <CardHead icon={Users} tone="teal" title="Leiders" hint="Bots die meer dan één team werk geven, onder de hoofdbot." />
       <ul className="space-y-1.5">
         {ov.leaders.map((l) => (
           <li key={l.id} className="flex flex-wrap items-center gap-2 text-sm">
@@ -251,7 +248,11 @@ function TeamCard({ team, multi }: { team: TeamView; multi: boolean }) {
               <a href={`#/a/${b.id}`} className="flex min-h-8 items-center gap-2 rounded-full border border-line py-1 pe-3 ps-1 hover:bg-surface-2 coarse:min-h-11">
                 <BotAvatar bot={b} size={24} />
                 <span className="text-sm font-medium">{b.name}</span>
-                {b.role && <span className="hidden text-xs text-muted sm:inline">{b.role}</span>}
+                {b.role && (
+                  <span className="hidden text-xs text-muted sm:inline" translate="no">
+                    {b.role}
+                  </span>
+                )}
                 {b.lead && <Badge tone="accent">teamleider</Badge>}
               </a>
             </li>
@@ -262,12 +263,15 @@ function TeamCard({ team, multi }: { team: TeamView; multi: boolean }) {
       )}
       {multi && others.length > 0 && <p className="text-xs text-muted">{t('Krijgt werk van: {0}.', others.map((x) => x.name).join(', '))}</p>}
 
-      <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-        <Stat icon={<CircleDot className="h-3.5 w-3.5" aria-hidden />} label="Open taken" value={team.open.count} />
-        <Stat icon={<Hourglass className="h-3.5 w-3.5" aria-hidden />} label="Wacht op jou" value={team.waiting.count} tone="warn" />
-        <Stat icon={<AlertTriangle className="h-3.5 w-3.5" aria-hidden />} label="Fouten" value={team.errors.count} tone="danger" />
-        <Stat icon={<Clock className="h-3.5 w-3.5" aria-hidden />} label="Gemiste runs" value={team.missed.count} tone="warn" />
-      </div>
+      {/* Only what there is: a row of four zeros says nothing (the lists below name the same things). */}
+      {team.open.count + team.waiting.count + team.errors.count + team.missed.count > 0 && (
+        <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+          {team.open.count > 0 && <Stat icon={<CircleDot className="h-3.5 w-3.5" aria-hidden />} label="Open taken" value={team.open.count} />}
+          {team.waiting.count > 0 && <Stat icon={<Hourglass className="h-3.5 w-3.5" aria-hidden />} label="Wacht op jou" value={team.waiting.count} tone="warn" />}
+          {team.errors.count > 0 && <Stat icon={<AlertTriangle className="h-3.5 w-3.5" aria-hidden />} label="Fouten" value={team.errors.count} tone="danger" />}
+          {team.missed.count > 0 && <Stat icon={<Clock className="h-3.5 w-3.5" aria-hidden />} label="Gemiste runs" value={team.missed.count} tone="warn" />}
+        </div>
+      )}
 
       <ItemList title="Wacht op jou" icon={<Hourglass className="h-4 w-4 text-warn" aria-hidden />} items={team.waiting.items} total={team.waiting.count} />
       <ItemList title="Recente resultaten" icon={<CheckCircle2 className="h-4 w-4 text-ok" aria-hidden />} items={team.results} />
@@ -275,7 +279,7 @@ function TeamCard({ team, multi }: { team: TeamView; multi: boolean }) {
       <ItemList title="Gemiste runs" icon={<Clock className="h-4 w-4 text-warn" aria-hidden />} items={team.missed.items} total={team.missed.count} />
       <ItemList title="Open taken" icon={<CircleDot className="h-4 w-4 text-muted" aria-hidden />} items={team.open.items} total={team.open.count} />
       {!team.waiting.count && !team.results.length && !team.errors.count && !team.missed.count && !team.open.count && <p className="text-sm text-muted">Geen open taken en niets dat op jou wacht.</p>}
-      {usage && <p className="text-xs text-muted">{usage}</p>}
+      {usage && <MoreInfo label="Gebruik">{usage}</MoreInfo>}
     </Card>
   );
 }

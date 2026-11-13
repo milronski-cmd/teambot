@@ -60,7 +60,7 @@ process.env.TEAMBOT_OPENCLAW_DIR = oc.state;
 process.env.TEAMBOT_OPENCLAW_HOME = oc.home;
 const ocBefore = snapshotFiles(oc.state);
 
-const { createApp } = await import('../../server/app.ts');
+const { createApp } = await import('./server.mjs');
 const { mockAdapter } = await import('../helpers.ts');
 const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'tb-switch-skills-'));
 const app = await createApp({ dataDir: dir, port: Number(process.env.TEAMBOT_E2E_PORT) || 0, host: '127.0.0.1', mode: 'desktop', quiet: true });
@@ -191,6 +191,9 @@ try {
   {
     const main = page.locator('#inhoud');
     await go(page, '#/settings/openbot-import-overstappen');
+    // The other apps are in the fold "Uit een andere app" (open by itself when there is no OpenBot).
+    await page.getByTestId('more-options').first().waitFor({ state: 'attached', timeout: 10000 });
+    await page.evaluate(() => document.querySelectorAll('[data-testid="more-options"]').forEach((x) => (x.open = true)));
     await main.getByText('Overstappen uit OpenClaw').first().waitFor({ timeout: 10000 }).catch(() => fail('[P7b] geen kaart "Overstappen uit OpenClaw" onder Instellingen › Overstappen'));
     await main.getByText(`Gevonden: ${oc.state}`, { exact: false }).waitFor({ timeout: 8000 }).catch(() => fail('[P7b] de nep-OpenClaw is niet gevonden'));
     await press(page, main.getByRole('button', { name: 'OpenClaw inlezen' }));
@@ -215,6 +218,8 @@ try {
     step('[P7b] computer: OpenClaw gevonden, voorvertoning (niets geschreven), 2 bots met routines uit, ongedaan gemaakt; OpenClaw onveranderd');
     const pm = phone.locator('#inhoud');
     await go(phone, '#/settings/openbot-import-overstappen');
+    await phone.getByTestId('more-options').first().waitFor({ state: 'attached', timeout: 10000 });
+    await phone.evaluate(() => document.querySelectorAll('[data-testid="more-options"]').forEach((x) => (x.open = true)));
     await pm.getByText('Overstappen uit OpenClaw').first().waitFor({ timeout: 10000 }).catch(() => fail('[P7b] telefoon: geen OpenClaw-kaart'));
     await screen(phone, 'p7b-telefoon');
     step('[P7b] telefoon: de kaart staat er, rustig en zonder fouten');

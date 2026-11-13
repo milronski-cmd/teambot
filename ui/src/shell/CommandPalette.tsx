@@ -211,6 +211,17 @@ function useLocalIndex(): PaletteItem[] {
   }, [agents, threads, me?.role, mode]);
 }
 
+/**
+ * Results whose title is someone's own words: a chat's or group's title, a file, a bot's name, a channel, skill, app,
+ * routine or task as it was named, a memory as written. TeamBot's own fallback for one without a title stays
+ * interface text ("Gesprek", "Groep", "Gevoelige herinnering").
+ */
+const OWN_TITLE = new Set<string>(['file', 'chat', 'group', 'message', 'bot', 'channel', 'skill', 'app', 'routine', 'task', 'memory']);
+const FALLBACK_TITLE = new Set(['Gesprek', 'Groep', 'Gevoelige herinnering']);
+const ownTitle = (it: PaletteItem & { origin?: string }) => OWN_TITLE.has(it.kind === 'recent' ? it.origin || '' : it.kind) && !FALLBACK_TITLE.has(it.title);
+/** A subtitle that is someone's own words: who wrote a message, a bot's role, a skill's description. */
+const ownSubtitle = (it: PaletteItem) => it.kind === 'message' || (it.kind === 'bot' && it.subtitle !== 'Bot') || (it.kind === 'skill' && it.subtitle !== 'Skill' && it.subtitle !== 'Skill · uit');
+
 function Leading({ it }: { it: PaletteItem }) {
   const bot = useApp((s) => (it.agentId ? s.agents.find((a) => a.id === it.agentId) : undefined));
   const showBot = !!bot && (it.kind === 'bot' || it.kind === 'chat' || it.kind === 'message' || (it.kind === 'recent' && (it.icon === 'bot' || it.icon === 'chat')));
@@ -384,18 +395,27 @@ export function PaletteView({ initialQuery = '', page, onDone }: { initialQuery?
                     <Leading it={it} />
                     <div className="min-w-0 flex-1">
                       <div className="flex items-baseline gap-2">
-                        <span className={cx('min-w-0 truncate text-[14px] font-semibold', it.id === 'stop-all' && 'text-danger')} translate={it.kind === 'file' ? 'no' : undefined}>
+                        <span className={cx('min-w-0 truncate text-[14px] font-semibold', it.id === 'stop-all' && 'text-danger')} translate={ownTitle(it) ? 'no' : undefined}>
                           {it.title}
                         </span>
                         {it.at && it.kind === 'message' && <span className="ms-auto shrink-0 text-[11.5px] text-muted">{listTime(it.at)}</span>}
                       </div>
                       {it.snippet ? (
                         <div className="line-clamp-2 text-[12.5px] leading-snug text-muted">
-                          {it.subtitle ? <span className="font-medium">{it.subtitle}: </span> : null}
+                          {it.subtitle ? (
+                            <span className="font-medium">
+                              <bdi translate={ownSubtitle(it) ? 'no' : undefined}>{it.subtitle}</bdi>:{' '}
+                            </span>
+                          ) : null}
                           <Snippet text={it.snippet} />
                         </div>
                       ) : (
-                        it.subtitle && <div className="truncate text-[12.5px] text-muted">{it.subtitle}</div>
+                        it.subtitle && (
+                          // A bot's role or a skill's description is the user's or its publisher's words.
+                          <div className="truncate text-[12.5px] text-muted" translate={ownSubtitle(it) ? 'no' : undefined}>
+                            {it.subtitle}
+                          </div>
+                        )
                       )}
                     </div>
                     {on && desktop && <CornerDownLeft className="h-3.5 w-3.5 shrink-0 text-muted" aria-hidden />}

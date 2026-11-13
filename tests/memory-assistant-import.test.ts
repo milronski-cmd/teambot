@@ -96,8 +96,19 @@ test('assistant import: the preview writes nothing; import = proposals; known fa
     const one = props.find((i: any) => i.content === 'Taal: Nederlands');
     await t.api('POST', `/memory/items/${one.id}/approve`, {});
     assert.equal(await count('active'), before[0] + 1);
+    // A bot's next turn carries what was imported and approved; undoing the import takes it out again.
+    const bot = await t.agent({ name: 'Ada' });
+    const nextTurn = async () => {
+      const th = await t.api('POST', '/threads', { agentId: bot.id });
+      const n = t.requests.length;
+      t.script.push({ text: 'ok' });
+      await t.say(th.id, 'Hoi');
+      return String(t.requests[n].system);
+    };
+    assert.match(await nextTurn(), /Taal: Nederlands/, 'the next turn carries the imported knowledge');
     const u = await t.api('POST', `/memory/import/${res.batch}/undo`, {});
     assert.deepEqual(u, { removed: 3, kept: 0 });
+    assert.doesNotMatch(await nextTurn(), /Taal: Nederlands/, 'undone: no longer in the next turn');
     assert.deepEqual([await count('active'), await count('proposed')], before);
     await assert.rejects(t.api('POST', `/memory/import/${res.batch}/undo`, {}), /404/);
     await assert.rejects(t.api('POST', '/memory/import/preview', { text: '  ' }), /400/);

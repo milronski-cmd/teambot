@@ -3,6 +3,7 @@ import type { Agent, Ctx, User } from '../../core/types.js';
 import { newId, now } from '../../core/db.js';
 import { HttpLike } from './service.js';
 import { newImportHandle, parseExport, VaultImportError, type ImportFormat } from './vault-import.js';
+import type { VaultEntryView, VaultImportPreview, VaultImportResult, VaultImportRow } from '../../../shared/vault.js';
 
 /**
  * Login vault ("Kluis"): site logins of the owner (exact origins, username, password, optional TOTP secret). The
@@ -206,22 +207,6 @@ export interface VaultRow {
   last_used_at: string | null;
 }
 
-/** What the owner's UI sees: never the password or the TOTP secret. */
-export interface VaultEntryView {
-  id: string;
-  label: string;
-  origins: string[];
-  username: string;
-  has_password: boolean;
-  has_totp: boolean;
-  insecure: boolean;
-  agent_ids: string[];
-  grants: { agent_id: string; origin: string; created_at: string }[];
-  created_at: string;
-  updated_at: string;
-  last_used_at: string | null;
-}
-
 /** Only for vault-fill.ts, inside the tool call that the owner approved. */
 export interface VaultCredentials {
   username: string;
@@ -229,37 +214,8 @@ export interface VaultCredentials {
   totp: TotpSpec | null;
 }
 
-/** One row of a CSV import preview as the owner sees it: never the password or the 2FA key. */
-export interface ImportRowView {
-  index: number;
-  line: number;
-  label: string;
-  origins: string[];
-  username: string;
-  has_totp: boolean;
-  insecure: boolean;
-  /** new = can be imported · duplicate = already in the vault (or twice in the file) · skip = not a usable login */
-  status: 'new' | 'duplicate' | 'skip';
-  reason?: string;
-  warning?: string;
-}
-
-export interface ImportPreviewView {
-  handle: string;
-  format: { id: string; label: string };
-  expires_at: string;
-  /** how many more logins fit in the vault */
-  room: number;
-  rows: ImportRowView[];
-}
-
-export interface ImportResultView {
-  imported: number;
-  skipped: { line: number; label: string; reason: string }[];
-}
-
 interface PendingRow {
-  view: ImportRowView;
+  view: VaultImportRow;
   username_enc: string | null;
   password_enc: string | null;
   totp_enc: string | null;
@@ -433,7 +389,7 @@ export class VaultService {
    * Parse an uploaded CSV export in memory and keep the rows (credentials already encrypted) behind a short-lived
    * handle. The answer has names, sites and usernames — never a password or 2FA key — and marks duplicates.
    */
-  importPreview(u: User, body: any): ImportPreviewView {
+  importPreview(u: User, body: any): VaultImportPreview {
     this.sweepImports();
     const text = body?.csv;
     if (typeof text !== 'string') throw new HttpLike(400, 'Kies een CSV-bestand met je wachtwoorden.');
@@ -449,7 +405,7 @@ export class VaultService {
     const accepted: { origins: string[]; username: string }[] = [];
     const rows: PendingRow[] = parsed.candidates.map((c, index) => {
       const key = { origins: c.origins, username: c.username.toLowerCase() };
-      let status: ImportRowView['status'] = 'new';
+      let status: VaultImportRow['status'] = 'new';
       let reason = c.skip;
       if (reason) status = 'skip';
       else if (existing.some((e) => VaultService.sameLogin(e, key))) {
@@ -475,7 +431,7 @@ export class VaultService {
   }
 
   /** Import the chosen rows of a preview (once). Summary: how many, and per skipped row a plain-Dutch reason. */
-  importRun(u: User, body: any): ImportResultView {
+  importRun(u: User, body: any): VaultImportResult {
     this.sweepImports();
     const handle = String(body?.handle ?? '');
     const p = this.imports.get(handle);
@@ -484,7 +440,7 @@ export class VaultService {
     const pick = new Set((Array.isArray(body?.rows) ? body.rows : []).map((x: unknown) => Number(x)).filter(Number.isInteger));
     const existing = this.existingKeys(u.id);
     let room = MAX_ENTRIES - (this.ctx.store.one<any>('SELECT COUNT(*) n FROM vault_logins WHERE user_id = ?', u.id)?.n ?? 0);
-    const skipped: ImportResultView['skipped'] = [];
+    const skipped: VaultImportResult['skipped'] = [];
     const ids: string[] = [];
     const t = now();
     this.ctx.store.tx(() => {

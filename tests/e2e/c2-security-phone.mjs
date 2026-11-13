@@ -1,8 +1,8 @@
 // End-to-end: the security log in plain words (A-84) and the phone (A-85, A-86, A-91).
 // Real UI + real server (desktop mode, temp data) + a fake OpenAI-compatible model, driven with Playwright (Edge):
-//  - Instellingen › Beveiliging › Logboek: sentences (wie, wat, wanneer, goedgekeurd door), no raw kinds/JSON/ids,
+//  - Instellingen › Meer mogelijkheden › Beveiliging › Logboek, walked as a person does it: sentences (wie, wat, wanneer, goedgekeurd door), no raw kinds/JSON/ids,
 //    category filter, search, bot filter, phone width (390/320 px) and dark theme;
-//  - phone: "Alles stoppen" always in reach (also when nothing runs), "Waar staat mijn data?" from the settings,
+//  - phone: "Alles stoppen" always in reach (also when nothing runs), "Privacy en gegevens" from the settings,
 //    app lock with PIN and with device biometrics (CDP virtual authenticator), wrong PIN + back-off, unlocking never
 //    approves anything, turning the lock off asks to unlock first.
 // Usage: npx vite build && node --import tsx tests/e2e/c2-security-phone.mjs
@@ -15,7 +15,7 @@ import { createRequire } from 'node:module';
 
 const require = createRequire(import.meta.url);
 const { chromium } = require('playwright-core');
-const { createApp } = await import('../../server/app.ts');
+const { createApp } = await import('./server.mjs');
 
 const step = (s) => console.log(`• ${s}`);
 const fail = (s) => {
@@ -111,6 +111,23 @@ const watch = (page) => {
   page.on('console', (m) => m.type() === 'error' && !/favicon|ERR_CONNECTION_REFUSED|NotAllowedError/.test(m.text()) && errors.push(m.text()));
 };
 const overflow = (page) => page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
+/**
+ * The way a person goes to the log: Instellingen (in the sidebar; on a phone via the tab Meer), the row Meer
+ * mogelijkheden, Beveiliging, and there the fold Logboek at the bottom.
+ */
+async function walkToLog(p, phone) {
+  if (phone) {
+    await p.getByRole('navigation', { name: 'Hoofdmenu' }).getByRole('link', { name: /^(\d+ )?Meer$/ }).tap();
+    await p.getByRole('main').getByRole('navigation', { name: 'Meer' }).getByRole('link', { name: 'Instellingen', exact: true }).tap();
+  } else await p.locator('aside a[href="#/settings"]').first().click();
+  const go = (loc) => (phone ? loc.tap() : loc.click());
+  await go(p.getByRole('navigation', { name: 'Instellingen' }).getByRole('link', { name: /^Meer mogelijkheden/ }).first());
+  await go(p.getByRole('main').getByRole('link', { name: /^Beveiliging/ }).first());
+  await p.waitForURL(/#\/settings\/security$/, { timeout: 8000 }).catch(() => fail(`${phone ? 'telefoon' : 'computer'}: Meer mogelijkheden › Beveiliging opent de beveiliging niet`));
+  const fold = p.getByRole('main').locator('summary', { hasText: 'Logboek' });
+  await fold.scrollIntoViewIfNeeded();
+  await go(fold);
+}
 try {
   // ================= item 1: the log (desktop) =================
   const desk = await browser.newContext({ viewport: { width: 1360, height: 880 } });
@@ -118,8 +135,8 @@ try {
   watch(page);
   await page.goto(`${app.url}/#token=${token}`);
   await page.waitForTimeout(800);
-  // The log is one fold ("Logboek") at the bottom of Privacy en back-ups; ?meer=1 opens it.
-  await page.goto(`${app.url}/#/settings/security?meer=1`);
+  // The log is one fold ("Logboek") at the bottom of Beveiliging (Meer mogelijkheden).
+  await walkToLog(page, false);
   const log =page.getByRole('list', { name: 'Gebeurtenissen' });
   await log.waitFor({ timeout: 15000 });
   const text = await log.innerText();
@@ -143,7 +160,7 @@ try {
   if (!timeTitle || !/\d{4}/.test(timeTitle)) fail('tijdstip zonder volledige datum bij aanwijzen');
   if (text.includes('Codeerhulp heeft een bestand geschreven: goed.txt.')) fail('logboek: dezelfde schrijfactie staat er twee keer in');
   step('logboek: één zin per gebeurtenis met wie, wat, wanneer en wie het goedkeurde; geen ruwe soort, JSON of ids; één regel per actie');
-  await page.getByRole('heading', { name: 'Logboek' }).scrollIntoViewIfNeeded();
+  await page.getByRole('heading', { name: 'Logboek', exact: true }).scrollIntoViewIfNeeded();
   await page.evaluate(() => document.getElementById('tb-audit-title')?.scrollIntoView({ block: 'start' }));
   await shot(page, 'c2-1-logboek-overzicht.png');
 
@@ -169,12 +186,14 @@ try {
   if (botRows.includes('Nepmodel') || !botRows.includes('Codeerhulp')) fail('botfilter toont regels van andere bots of instellingen');
   await page.getByLabel('Filter op bot').selectOption({ value: '' });
   step('logboek: filter per soort, zoeken in de zinnen en filter per bot');
-  // "Waar staat mijn data?" from the security settings
-  if (!(await page.getByRole('link', { name: /Waar staat mijn data\?/ }).count())) fail('beveiliging: link "Waar staat mijn data?" ontbreekt');
+  // "Privacy en gegevens" from the security settings
+  if (!(await page.getByRole('link', { name: /^Privacy en gegevens$/ }).count())) fail('beveiliging: link "Privacy en gegevens" ontbreekt');
   // Dark theme
   await page.emulateMedia({ colorScheme: 'dark' });
   await page.evaluate(() => localStorage.setItem('tb_theme', 'dark'));
   await page.reload();
+  // (A reload shows the page as it opens: the fold is closed again.)
+  await page.getByRole('main').locator('summary', { hasText: 'Logboek' }).click();
   await log.waitFor({ timeout: 10000 });
   await page.evaluate(() => document.getElementById('tb-audit-title')?.scrollIntoView({ block: 'start' }));
   await shot(page, 'c2-1-logboek-donker.png');
@@ -190,8 +209,8 @@ try {
   watch(p);
   await p.goto(`${base}/#token=${token}`);
   await p.waitForTimeout(800);
-  // Log on the phone
-  await p.goto(`${base}/#/settings/security?meer=1`);
+  // Log on the phone: Meer › Instellingen › Meer mogelijkheden › Beveiliging › Logboek
+  await walkToLog(p, true);
   await p.getByRole('list', { name: 'Gebeurtenissen' }).waitFor({ timeout: 10000 });
   if ((await overflow(p)) > 1) fail('logboek: horizontale overflow op 390 px');
   await p.getByRole('list', { name: 'Gebeurtenissen' }).scrollIntoViewIfNeeded();
@@ -202,18 +221,18 @@ try {
   await p.setViewportSize({ width: 390, height: 844 });
   step('logboek op de telefoon (390 en 320 px) zonder horizontaal scrollen');
 
-  // "Waar staat mijn data?" from the settings list on the phone: under the row Privacy en back-ups (two taps)
+  // "Privacy en gegevens" from the settings list on the phone: under the row Meer mogelijkheden (two taps)
   await p.goto(`${base}/#/settings`);
-  await p.getByRole('link', { name: 'Privacy en back-ups', exact: true }).click();
-  const dataLink = p.getByRole('link', { name: 'Waar staat mijn data?' });
-  await dataLink.waitFor({ timeout: 8000 }).catch(() => fail('instellingen (telefoon): "Waar staat mijn data?" ontbreekt'));
+  await p.getByRole('main').getByRole('link', { name: /^Meer mogelijkheden/ }).click();
+  const dataLink = p.getByRole('link', { name: /^Privacy en gegevens/ }).first();
+  await dataLink.waitFor({ timeout: 8000 }).catch(() => fail('instellingen (telefoon): "Privacy en gegevens" ontbreekt'));
   await shot(p, 'c2-4-data-link-instellingen.png');
   await dataLink.click();
-  await p.getByRole('heading', { name: 'Waar staat mijn data?' }).waitFor({ timeout: 8000 }).catch(() => fail('"Waar staat mijn data?" opent de uitleg niet'));
+  await p.getByRole('heading', { name: 'Privacy en gegevens' }).first().waitFor({ timeout: 8000 }).catch(() => fail('"Privacy en gegevens" opent de uitleg niet'));
   await p.getByText(dir.replace(/\\/g, '\\'), { exact: false }).first().waitFor({ timeout: 8000 }).catch(() => fail('de datamap staat niet in de uitleg'));
   await p.evaluate(() => document.getElementById('waar-staat-mijn-data')?.scrollIntoView({ block: 'start' }));
   await shot(p, 'c2-4-data-uitleg.png');
-  step('telefoon: "Waar staat mijn data?" vanuit Instellingen, met de datamap');
+  step('telefoon: "Privacy en gegevens" vanuit Instellingen, met de datamap');
 
   // "Alles stoppen" always in reach — nothing running
   await p.goto(`${base}/#/more`);
@@ -252,7 +271,10 @@ try {
   const cdp = await phone.newCDPSession(p);
   await cdp.send('WebAuthn.enable');
   await cdp.send('WebAuthn.addVirtualAuthenticator', { options: { protocol: 'ctap2', transport: 'internal', hasResidentKey: false, hasUserVerification: true, isUserVerified: true } });
-  await p.goto(`${base}/#/settings/security`);
+  // The lock has its own row in the settings list: Vergrendeling.
+  await p.goto(`${base}/#/settings`);
+  await p.getByRole('main').getByRole('link', { name: /^Vergrendeling/ }).click();
+  await p.waitForURL(/#\/settings\/slot/, { timeout: 8000 }).catch(() => fail('instellingen (telefoon): de rij Vergrendeling opent de vergrendeling niet'));
   await p.waitForTimeout(4500); // let earlier toasts go before the screenshot
   await p.getByRole('button', { name: 'Vergrendeling instellen' }).click();
   const dlg = p.getByRole('dialog', { name: 'App-vergrendeling instellen' });
@@ -324,7 +346,7 @@ try {
   await lock.waitFor({ state: 'detached', timeout: 8000 });
 
   // Turning it off asks to unlock first
-  await p.goto(`${base}/#/settings/security`);
+  await p.goto(`${base}/#/settings/slot`);
   await p.getByRole('button', { name: 'Vergrendeling uitzetten' }).click();
   const confirm = p.getByTestId('app-lock');
   await confirm.getByRole('heading', { name: 'Bevestig om de vergrendeling uit te zetten' }).waitFor({ timeout: 5000 }).catch(() => fail('uitzetten vraagt niet eerst om te ontgrendelen'));

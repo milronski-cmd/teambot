@@ -304,8 +304,7 @@ function Inner({ agent, onChange }: { agent: Agent; onChange(patch: Partial<Agen
                   <Select value={String(opts.monitor)} onChange={(e) => setOpt({ monitor: Number(e.target.value) })}>
                     {scr.data!.monitors.map((m) => (
                       <option key={m.index} value={m.index}>
-                        Scherm {m.index + 1}
-                        {m.primary ? ' (hoofdscherm)' : ''} — {m.w}×{m.h}
+                        {m.primary ? t('Scherm {0} (hoofdscherm) — {1}×{2}', m.index + 1, m.w, m.h) : t('Scherm {0} — {1}×{2}', m.index + 1, m.w, m.h)}
                       </option>
                     ))}
                   </Select>

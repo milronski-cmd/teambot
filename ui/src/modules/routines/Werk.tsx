@@ -1,11 +1,14 @@
 import { useCallback, useEffect, useState } from 'react';
 import { create } from 'zustand';
-import { AlarmClock, Check, CircleAlert, Lightbulb, ListChecks, Plug, ShieldCheck } from 'lucide-react';
-import { PageLinks, SkeletonRows } from '../../components/overview';
+import { Check, CircleAlert, Lightbulb, Plug, ShieldCheck, Newspaper, FolderKanban } from 'lucide-react';
+import { SkeletonRows } from '../../components/overview';
+import { MoreOptions } from '../../components/MoreOptions';
+import { TaskLinks } from './Head';
 import { api, on } from '../../lib/api';
 import { t } from '../../lib/i18n';
 import { useApp } from '../../lib/store';
-import { Badge, Button, Card, EmptyState, Input, Page, PageHeader, Select, Tabs, cx, timeAgo, toast, toastError } from '../../components/ui';
+import { PlannedList } from './Planned';
+import { Badge, Button, Card, EmptyState, Input, Page, PageHeader, Select, Tabs, cx, timeAgo, toast, toastError, CardHead, IconTile } from '../../components/ui';
 import { teamQuery, useTeamView } from '../teams/scope';
 import { TeamFilterNote } from '../teams/FilterNote';
 
@@ -27,8 +30,26 @@ interface DutyView {
   when: string;
   duty: { key: string; guard?: boolean };
   needs: string | null;
+  /** Parked by TeamBot until what it needs is there. */
+  parked?: boolean;
   last: { status: string | null; summary: string | null; at: string | null };
   openTasks: number;
+}
+/** A routine TeamBot once made by itself and archived at the clean-up because it never produced anything. */
+interface Archived {
+  id: string;
+  name: string;
+  agentName: string;
+  reason: string;
+  runs: number;
+}
+/** The work loop: what lies there for a bot now, and how its last turn went. */
+interface WorkView {
+  agentId: string;
+  agentName: string;
+  items: { ref: string; text: string }[];
+  last: { at: number; result: 'gewerkt' | 'niets' | 'fout'; text: string } | null;
+  waits: string | null;
 }
 interface Budget {
   limit: number;
@@ -122,7 +143,7 @@ function KansCard({ k, showTeam }: { k: Kans; showTeam: boolean }) {
   return (
     <Card className="space-y-2 p-4" data-testid="kans-card">
       <div className="flex flex-wrap items-center gap-2">
-        <Lightbulb className="h-4 w-4 text-accent" aria-hidden />
+        <IconTile icon={Lightbulb} tone="orange" />
         <h3 className="min-w-0 flex-1 font-semibold">{k.titel}</h3>
         {k.score !== null && <Badge tone="accent">Score {k.score}</Badge>}
         {k.status === 'ja' && <Badge tone="ok">Ja: mini-test loopt</Badge>}
@@ -187,6 +208,28 @@ export function KansenInbox() {
 
 // ------------------------------------------------------------------ the page
 
+/** The owner's optional maximum of projects in the sprint (empty = none, the default); over it a new one waits. */
+function SprintLimit({ settings, perTeam, onSaved }: { settings: Settings; perTeam: boolean; onSaved(): void }) {
+  const [n, setN] = useState(String(settings.maxSprint));
+  useEffect(() => setN(String(settings.maxSprint)), [settings.maxSprint]);
+  const save = async () => {
+    if ((Number(n) || 0) === settings.maxSprint) return;
+    try {
+      await api.put('/proactive/settings', { maxSprint: Number(n) || 0 });
+      onSaved();
+    } catch (e) {
+      toastError(e);
+    }
+  };
+  return (
+    <label className="flex flex-wrap items-center gap-2 text-sm text-muted">
+      <span>{perTeam ? 'Hoogstens tegelijk in de sprint, per team:' : 'Hoogstens tegelijk in de sprint:'}</span>
+      <Input className="w-24" type="number" min={0} value={n === '0' ? '' : n} placeholder="geen" onChange={(e) => setN(e.target.value || '0')} onBlur={() => void save()} aria-label="Hoogstens zoveel projecten tegelijk in de sprint (leeg = geen limiet)" />
+      <span>{settings.maxSprint > 0 ? 'projecten; de rest wacht op zijn beurt.' : 'projecten (leeg = geen limiet).'}</span>
+    </label>
+  );
+}
+
 function BudgetBar({ budget, settings, onSaved }: { budget: Budget; settings: Settings; onSaved(): void }) {
   const [n, setN] = useState(String(settings.runsPerDay));
   const [briefing, setBriefing] = useState(settings.briefing);
@@ -205,7 +248,7 @@ function BudgetBar({ budget, settings, onSaved }: { budget: Budget; settings: Se
   return (
     <Card className="flex flex-wrap items-end gap-x-6 gap-y-3 p-4" data-testid="proactive-budget">
       <label className="text-sm">
-        <span className="block font-semibold">Limiet per dag</span>
+        <span className="block font-semibold">Werk uit zichzelf: hoogstens per dag</span>
         <span className="flex items-center gap-2">
           <Input className="w-24" type="number" min={0} value={n === '0' ? '' : n} placeholder="geen" onChange={(e) => setN(e.target.value || '0')} onBlur={() => Number(n) !== settings.runsPerDay && void save({ runsPerDay: Number(n) || 0 })} aria-label="Limiet: botbeurten per dag voor proactief werk (leeg = geen limiet)" />
           <span className="text-muted">botbeurten (leeg = geen limiet)</span>
@@ -251,7 +294,7 @@ function DutyRow({ d, showTeam }: { d: DutyView; showTeam: boolean }) {
       </span>
       <span className="flex items-center gap-1.5">
         {d.duty.guard && <Badge>Bewaker</Badge>}
-        {d.status === 'paused' && <Badge tone="warn">Uit</Badge>}
+        {d.status === 'paused' && <Badge tone="warn">{d.parked ? 'Wacht' : 'Uit'}</Badge>}
         {d.openTasks > 0 && <Badge tone="warn">{d.openTasks === 1 ? '1 taak open' : `${d.openTasks} taken open`}</Badge>}
         {d.last.at && <span className="text-xs text-muted">{timeAgo(d.last.at)}</span>}
       </span>
@@ -272,13 +315,14 @@ function ProjectCard({ p, showTeam, onChanged }: { p: Project; showTeam: boolean
   return (
     <Card className="space-y-3 p-4" data-testid="project-card">
       <div className="flex flex-wrap items-center gap-2">
+        <IconTile icon={FolderKanban} tone="teal" />
         <h3 className="min-w-0 flex-1 font-semibold">{p.naam}</h3>
         {p.status === 'wacht' && <Badge>Wacht op plek</Badge>}
         {p.status === 'tiptop' && <Badge tone="ok">Tip-top</Badge>}
         {p.status === 'gestopt' && <Badge>Gestopt</Badge>}
         {showTeam && p.teamName && <Badge>{p.teamName}</Badge>}
       </div>
-      <ol className="flex gap-1" aria-label={`Stap ${Math.min(p.step + 1, 6)} van 6: ${STEPS[p.step]}`}>
+      <ol className="flex gap-1" aria-label={t('Stap {0} van 6: {1}', Math.min(p.step + 1, 6), t(STEPS[p.step]))}>
         {STEPS.map((s, i) => (
           <li key={s} className="min-w-0 flex-1">
             <div className={cx('h-1.5 rounded-full', i < p.step || p.status === 'tiptop' ? 'bg-ok' : i === p.step && p.status === 'sprint' ? 'bg-accent' : 'bg-surface-3')} />
@@ -377,6 +421,8 @@ export function WerkPage({ params }: { params: string[] }) {
   const multi = teams.length > 1;
   const agents = useApp((s) => s.agents);
   const [duties, setDuties] = useState<DutyView[] | null>(null);
+  const [archived, setArchived] = useState<Archived[]>([]);
+  const [work, setWork] = useState<WorkView[]>([]);
   const [budget, setBudget] = useState<Budget | null>(null);
   const [settings, setSettings] = useState<Settings | null>(null);
   const [projects, setProjects] = useState<Project[] | null>(null);
@@ -385,9 +431,10 @@ export function WerkPage({ params }: { params: string[] }) {
 
   const load = useCallback(() => {
     void api
-      .get<{ duties: DutyView[]; budget: Budget; settings: Settings }>(`/proactive/duties${teamQuery()}`)
+      .get<{ duties: DutyView[]; budget: Budget; settings: Settings; archived?: Archived[] }>(`/proactive/duties${teamQuery()}`)
       .then((r) => {
         setDuties(r.duties);
+        setArchived(r.archived || []);
         setBudget(r.budget);
         setSettings(r.settings);
       })
@@ -397,11 +444,12 @@ export function WerkPage({ params }: { params: string[] }) {
       .then((r) => setProjects(r.projects))
       .catch(toastError);
     void api.get<{ text: string; at: number }>('/proactive/briefing').then(setBriefing).catch(() => {});
+    void api.get<{ work: WorkView[] }>('/proactive/work').then((r) => setWork(r.work || [])).catch(() => {});
     void loadKansen();
   }, [activeId]);
   useEffect(() => {
     load();
-    const offs = [on('teamdata.changed', load), on('routine.updated', load), on('proactive.settings', load)];
+    const offs = [on('teamdata.changed', load), on('routine.updated', load), on('proactive.settings', load), on('proactive.work', load), on('rooms.task', load)];
     return () => offs.forEach((off) => off());
   }, [load]);
 
@@ -415,7 +463,16 @@ export function WerkPage({ params }: { params: string[] }) {
       toastError(e);
     }
   };
-  const needs = [...new Set((duties || []).filter((d) => d.needs && d.status === 'active').map((d) => d.needs!))];
+  const restore = async (a: Archived) => {
+    try {
+      await api.post(`/proactive/archived/${a.id}/restore`, {});
+      toast('Teruggezet.', 'ok');
+      load();
+    } catch (e) {
+      toastError(e);
+    }
+  };
+  const needs = [...new Set((duties || []).filter((d) => d.needs && (d.status === 'active' || d.parked)).map((d) => d.needs!))];
   const sprint = (projects || []).filter((p) => p.status === 'sprint');
   const rest = (projects || []).filter((p) => p.status !== 'sprint');
 
@@ -423,20 +480,37 @@ export function WerkPage({ params }: { params: string[] }) {
     <Page>
       <PageHeader title="Werk" subtitle="Wat je team uit zichzelf doet." back={{ href: '#/m/routines/', label: 'Automatisch' }} />
       <div className="mx-auto w-full max-w-4xl space-y-4 px-4 pb-10">
-        <PageLinks
-          label="Meer bij Taken"
-          items={[
-            { href: '#/tasks', label: 'Bord', icon: <ListChecks aria-hidden /> },
-            { href: '#/m/routines/werk', label: 'Werk', icon: <ShieldCheck aria-hidden />, current: true },
-            { href: '#/m/routines/', label: 'Routines', icon: <AlarmClock aria-hidden /> },
-          ]}
-        />
+        {/* The same two links as on Taken and Automatisch (this page hangs under Automatisch). */}
+        <TaskLinks current="auto" />
         <TeamFilterNote />
-        {budget && settings && <BudgetBar budget={budget} settings={settings} onSaved={load} />}
+        {/* The one list of everything that will start by itself, and what can be switched on. */}
+        <PlannedList />
         {briefing?.text && (
           <Card className="p-4" data-testid="last-briefing">
-            <div className="mb-1 text-sm font-semibold">Laatste overzicht {briefing.at ? <span className="font-normal text-muted">· {timeAgo(new Date(briefing.at).toISOString())}</span> : null}</div>
+            <CardHead className="mb-2" icon={Newspaper} tone="orange" title={<>Laatste overzicht {briefing.at ? <span className="font-normal text-muted">· {timeAgo(new Date(briefing.at).toISOString())}</span> : null}</>} />
             <div className="whitespace-pre-wrap text-sm">{briefing.text.replace(/\*\*/g, '').replace(/(^|\n)_|_(\n|$)/g, '$1$2')}</div>
+          </Card>
+        )}
+        {work.some((w) => w.items.length > 0) && (
+          <Card className="space-y-2 p-4" data-testid="work-now">
+            <CardHead icon={FolderKanban} tone="orange" title="Werk dat er nu ligt" />
+            {work
+              .filter((w) => w.items.length > 0)
+              .map((w) => (
+                <div key={w.agentId} className="border-t pt-2 text-sm first:border-t-0 first:pt-0">
+                  <span className="font-medium" translate="no">
+                    {w.agentName}
+                  </span>
+                  <span className="text-muted"> · {w.items.length === 1 ? '1 punt' : `${w.items.length} punten`}</span>
+                  {w.waits && <span className="text-muted"> · {w.waits}</span>}
+                  {w.items.slice(0, 3).map((i) => (
+                    <div key={i.ref} className="truncate text-muted">
+                      {i.text}
+                    </div>
+                  ))}
+                  {w.last?.text && <div className="truncate">Laatste beurt: {w.last.text}</div>}
+                </div>
+              ))}
           </Card>
         )}
         <Tabs tabs={TABS.map((t) => (t.id === 'kansen' && kansen.some((k) => k.status === 'voorgelegd') ? { ...t, label: `Kansen (${kansen.filter((k) => k.status === 'voorgelegd').length})` } : t))} value={tab} onChange={(v) => (location.hash = `#/m/routines/werk/${v}`)} />
@@ -448,7 +522,7 @@ export function WerkPage({ params }: { params: string[] }) {
             <div className="space-y-3">
               {needs.length > 0 && (
                 <Card className="space-y-1 p-4" data-testid="proactive-needs">
-                  <div className="text-sm font-semibold">Nodig van jou</div>
+                  <CardHead icon={CircleAlert} tone="orange" title="Nodig van jou" />
                   {needs.map((n) => (
                     <div key={n} className="text-sm">
                       {n}
@@ -458,10 +532,27 @@ export function WerkPage({ params }: { params: string[] }) {
               )}
               {duties.length === 0 ? (
                 <EmptyState title="Nog geen vaste taken" icon={<ShieldCheck className="h-6 w-6" />}>
-                  Geef een bot een rol, bijvoorbeeld “SEO” of “Klantenservice”.
+                  Een bot krijgt niets vanzelf. Vraag hem iets in de gaten te houden, bijvoorbeeld “kijk elke ochtend of de site werkt”.
                 </EmptyState>
               ) : (
                 duties.map((d) => <DutyRow key={d.id} d={d} showTeam={multi && !activeId} />)
+              )}
+              {archived.length > 0 && (
+                <Card className="space-y-2 p-4" data-testid="proactive-archived">
+                  <CardHead icon={ShieldCheck} tone="orange" title="Opgeruimd" />
+                  <p className="text-sm text-muted">Deze routines maakte TeamBot ooit zelf aan. Ze leverden nooit iets op en staan daarom uit. Niets is weg.</p>
+                  {archived.map((a) => (
+                    <div key={a.id} className="flex flex-wrap items-start gap-x-3 gap-y-1 border-t pt-2">
+                      <span className="min-w-0 flex-1">
+                        <span className="block text-sm font-medium">
+                          {a.name} <span className="font-normal text-muted">· <span translate="no">{a.agentName}</span></span>
+                        </span>
+                        <span className="block text-sm text-muted">{a.reason}</span>
+                      </span>
+                      <Button onClick={() => void restore(a)}>Terugzetten</Button>
+                    </div>
+                  ))}
+                </Card>
               )}
               {!hasPrive && agents.length > 0 && (
                 <div className="pt-2">
@@ -477,7 +568,7 @@ export function WerkPage({ params }: { params: string[] }) {
           ) : (
             <div className="space-y-3">
               <NewProject teamId={activeId} onDone={load} />
-              {settings && <p className="text-sm text-muted">Hoogstens {settings.maxSprint} tegelijk{multi ? ' per team' : ''}; de rest wacht op zijn beurt.</p>}
+              {settings && <SprintLimit settings={settings} perTeam={multi} onSaved={load} />}
               {sprint.map((p) => (
                 <ProjectCard key={`${p.teamId}:${p.id}`} p={p} showTeam={multi && !activeId} onChanged={load} />
               ))}
@@ -492,12 +583,18 @@ export function WerkPage({ params }: { params: string[] }) {
           <div className="space-y-3">
             {kansen.length === 0 ? (
               <EmptyState title="Nog geen kansen" icon={<Lightbulb className="h-6 w-6" />}>
-                Een bot met de rol “Researcher” zoekt twee keer per week wat nu werkt.
+                Vraag een bot om kansen te zoeken. Wat hij vindt, komt hier te staan.
               </EmptyState>
             ) : (
               [...kansen].sort((a, b) => Number(b.status === 'voorgelegd') - Number(a.status === 'voorgelegd') || (b.score || 0) - (a.score || 0)).map((k) => <KansCard key={`${k.teamId}:${k.id}`} k={k} showTeam={multi && !activeId} />)
             )}
           </div>
+        )}
+        {/* Rarely changed: the daily limit and how often the main bot reports. */}
+        {budget && settings && (
+          <MoreOptions>
+            <BudgetBar budget={budget} settings={settings} onSaved={load} />
+          </MoreOptions>
         )}
       </div>
     </Page>

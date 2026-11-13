@@ -3,6 +3,7 @@ import { ChevronRight, Lock, LogOut, Search } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { useApp } from '../lib/store';
 import { useIsDesktop } from '../lib/media';
+import { navigate } from '../lib/router';
 import { useInboxExtraCount } from '../modules';
 import { Page, PageHeader, cx } from '../components/ui';
 import { StopAllButton, logout } from '../shell/Sidebar';
@@ -42,15 +43,14 @@ export function MorePage() {
   const mode = useApp((s) => s.mode);
   useEffect(() => {
     if (!desktop) return;
-    history.replaceState(null, '', '#/settings');
-    dispatchEvent(new HashChangeEvent('hashchange'));
+    navigate('/settings', { from: '#/more', replace: true });
   }, [desktop]);
   if (desktop) return null;
   const items: Item[] = [
     ...phoneMoreDestinations().map((d) => ({ href: d.href, title: d.label, icon: d.icon, count: d.id === 'inbox' ? approvals : undefined })),
     { href: '#/search', title: 'Zoeken', icon: Search },
-    // "Waar staat mijn data?" stays one tap from Meer, as the lock next to Instellingen in the desktop sidebar (§15).
-    { href: '#/settings/data', title: 'Waar staat mijn data?', icon: Lock },
+    // "Privacy en gegevens" stays one tap from Meer, as the lock next to Instellingen in the desktop sidebar (§15).
+    { href: '#/settings/data', title: 'Privacy en gegevens', icon: Lock },
   ];
   return (
     <Page>

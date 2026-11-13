@@ -9,9 +9,10 @@ import { checkBudget, spentToday } from './usage.js';
 import { createCall } from './calls.js';
 import { botLanguage, languageNote } from '../../agent/language.js';
 import { delegationRules, openaiTools, specsFor } from './calltools.js';
+import { PLACE } from '../../../shared/places.js';
 
 export const NO_REALTIME =
-  'Live praten via OpenAI heeft een OpenAI API-sleutel nodig (Instellingen › AI-diensten › OpenAI; betaald per gebruik, los van ChatGPT Plus). Andere keuzes: Gemini Live met een Google AI Studio-sleutel, of het gratis gesprek op je eigen pc.';
+  `Live praten via OpenAI heeft een OpenAI API-sleutel nodig (plak hem bij ${PLACE.ai}; betaald per gebruik, los van ChatGPT Plus). Andere keuzes: Gemini Live met een Google AI Studio-sleutel, of het gratis gesprek op je eigen pc.`;
 
 /**
  * Instructions for the cloud voice model (OpenAI Realtime or Gemini Live). Only the bot persona (and optionally recent
@@ -59,6 +60,42 @@ export function buildInstructions(ctx: Ctx, agent: Agent, thread: Thread, mode: 
   return lines.join('\n').slice(0, 16_000);
 }
 
+/**
+ * What every cloud call (OpenAI Realtime, Gemini Live) starts with: the daily budget check, whether the voice model
+ * serves the bot or answers itself (asked for, else the bot's own choice, else the user's setting), and the price cap
+ * per call, never above what is left of the daily budget.
+ */
+export function liveCallStart(ctx: Ctx, userId: string, agent: Agent, settings: VoiceSettings, askedMode?: string) {
+  checkBudget(ctx, userId);
+  const av = sanitizeAgentVoice(agent.settings?.voice);
+  const mode: LiveMode = askedMode === 'agent' || askedMode === 'direct' ? askedMode : av.liveMode && av.liveMode !== 'default' ? av.liveMode : settings.realtime.mode;
+  let priceCapUsd = settings.priceCapUsd;
+  const daily = Number(ctx.store.getSetting(userId, 'dailyBudgetUsd', 0));
+  if (daily > 0) priceCapUsd = Math.max(0.01, Math.min(priceCapUsd > 0 ? priceCapUsd : Infinity, daily - spentToday(ctx, userId)));
+  return { av, mode, priceCapUsd };
+}
+
+/** A cloud call that started: its record (usage and transcript land on it) and the line in the audit log. */
+export function recordLiveCall(
+  ctx: Ctx,
+  o: { userId: string; agent: Agent; thread: Thread; settings: VoiceSettings; kind: 'realtime' | 'gemini'; mode: LiveMode; provider: { id: string; name: string }; model: string; voice: string; keepTranscript?: boolean; priceCap: number },
+) {
+  const call = createCall(ctx, {
+    userId: o.userId,
+    agentId: o.agent.id,
+    threadId: o.thread.id,
+    kind: 'realtime',
+    mode: o.mode,
+    providerId: o.provider.id,
+    model: o.model,
+    voice: o.voice,
+    keepTranscript: o.keepTranscript ?? o.settings.keepTranscripts,
+    priceCap: o.priceCap,
+  });
+  ctx.audit(o.userId, 'voice.call.started', { callId: call.id, kind: o.kind, mode: o.mode, model: o.model, provider: o.provider.name }, o.agent.id);
+  return call;
+}
+
 export interface RealtimeSessionResult {
   call: any;
   clientSecret: string;
@@ -89,19 +126,12 @@ export async function createRealtimeSession(
   const ep = resolveEndpoint(ctx, user.id, settings.realtime.providerId, { openaiOnly: true });
   if (!ep || !ep.key) throw new HttpError(400, NO_REALTIME, 'voice_no_openai');
   realtimeBase(ep);
-  checkBudget(ctx, user.id);
-  const av = sanitizeAgentVoice(agent.settings?.voice);
-  const mode: LiveMode = o.mode === 'agent' || o.mode === 'direct' ? o.mode : av.liveMode && av.liveMode !== 'default' ? av.liveMode : settings.realtime.mode;
+  const { av, mode, priceCapUsd } = liveCallStart(ctx, user.id, agent, settings, o.mode);
   const model = o.model || settings.realtime.model;
   if (!realtimeModel(model)) throw bad('Dit Realtime-model staat niet op de toegestane lijst');
   const voice = o.voice && REALTIME_VOICES.includes(o.voice) ? o.voice : av.realtimeVoice || settings.realtime.voice;
   const transcribeModel = settings.realtime.transcribeModel ? effective(REALTIME_TRANSCRIBE_MODELS, settings.realtime.transcribeModel)?.id || null : null;
   const estimate = realtimeEstimate(model, transcribeModel);
-
-  // Per-call cap, never above what is left of the daily budget.
-  let priceCapUsd = settings.priceCapUsd;
-  const daily = Number(ctx.store.getSetting(user.id, 'dailyBudgetUsd', 0));
-  if (daily > 0) priceCapUsd = Math.max(0.01, Math.min(priceCapUsd, daily - spentToday(ctx, user.id)));
 
   const hint = sttHint(settings.stt.language, voiceLanguage(ctx, user.id));
   const transcription = transcribeModel
@@ -152,19 +182,7 @@ export async function createRealtimeSession(
   const j: any = await res.json().catch(() => ({}));
   const secret = typeof j?.value === 'string' ? j.value : typeof j?.client_secret?.value === 'string' ? j.client_secret.value : '';
   if (!secret || secret === ep.key) throw new HttpError(502, 'OpenAI gaf geen geldig tijdelijk sleutelbewijs terug', 'voice_provider_error');
-  const call = createCall(ctx, {
-    userId: user.id,
-    agentId: agent.id,
-    threadId: thread.id,
-    kind: 'realtime',
-    mode,
-    providerId: ep.cfg.id,
-    model,
-    voice,
-    keepTranscript: o.keepTranscript ?? settings.keepTranscripts,
-    priceCap: priceCapUsd,
-  });
-  ctx.audit(user.id, 'voice.call.started', { callId: call.id, kind: 'realtime', mode, model, provider: ep.label }, agent.id);
+  const call = recordLiveCall(ctx, { userId: user.id, agent, thread, settings, kind: 'realtime', mode, provider: { id: ep.cfg.id, name: ep.label }, model, voice, keepTranscript: o.keepTranscript, priceCap: priceCapUsd });
   return {
     call,
     clientSecret: secret,

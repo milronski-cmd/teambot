@@ -37,7 +37,7 @@ const browser = await chromium.launch({ channel: process.env.TEAMBOT_E2E_BROWSER
 const home = fs.mkdtempSync(path.join(os.tmpdir(), 'tb-now-home-'));
 Object.assign(process.env, { APPDATA: path.join(home, 'AppData', 'Roaming'), LOCALAPPDATA: path.join(home, 'AppData', 'Local'), TEAMBOT_BROWSER_HEADLESS_ONLY: '1', TEAMBOT_IROH_PRESET: 'offline' });
 delete process.env.TEAMBOT_DATA;
-const { createApp } = await import('../../server/app.ts');
+const { createApp } = await import('./server.mjs');
 const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'tb-now-'));
 const app = await createApp({ dataDir: dir, port: Number(process.env.TEAMBOT_E2E_PORT) || 0, host: '127.0.0.1', mode: 'desktop', quiet: true });
 if (!app.ctx.config.uiDir) throw new Error('Bouw eerst de interface: npm run build:ui');

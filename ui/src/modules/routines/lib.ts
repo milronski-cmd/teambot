@@ -1,6 +1,5 @@
 import { useEffect, useState } from 'react';
 import { api } from '../../lib/api';
-import { toast } from '../../components/ui';
 import { uiLocale } from '../../lib/i18n';
 import { capFirst, formatUsd } from '../../lib/format';
 
@@ -49,6 +48,9 @@ export interface RoutineOptions {
   important?: boolean;
   /** Set by a bot with wait_for: fires once on its event (or times out) and continues in that conversation. */
   waitpoint?: { kind: 'file' | 'message' | 'webhook' | 'time'; what: string; threadId: string | null; until: string; firedAt?: string | null; how?: 'event' | 'timeout' | null };
+  /** A reminder TeamBot tells itself (no AI), and a vaste taak (duties): what the routine is underneath. */
+  reminder?: { text: string } | null;
+  duty?: Record<string, unknown> | null;
 }
 
 export interface RoutineView {
@@ -166,10 +168,16 @@ export interface Meta {
   global: GlobalSettings;
 }
 
+/** Standaarden voor routines (server: routines/schema.ts GlobalSettings). Every limit: 0 = no limit, the default. */
 export interface GlobalSettings {
   paused: boolean;
   maxRunsPerDay: number;
   maxCostPerDayUsd: number;
+  maxRoutines: number;
+  maxRemindersPerBot: number;
+  maxTriggersPerRoutine: number;
+  maxQueuedRuns: number;
+  maxChain: number;
 }
 
 type Tone = 'neutral' | 'accent' | 'ok' | 'warn' | 'danger';
@@ -272,11 +280,6 @@ export interface RunSummary {
   waiting: { id: string; routineId: string; routineName: string; until: string | null; reason: string }[];
 }
 
-export interface ChannelTargets {
-  available: boolean;
-  bindings: { id: string; name: string; adapter: string; enabled: boolean; conversations: { id: string; title: string; private: boolean }[] }[];
-}
-
 export const EVENT_STATUS: Record<string, { label: string; tone: Tone }> = {
   accepted: { label: 'Uitgevoerd', tone: 'ok' },
   filtered: { label: 'Gefilterd', tone: 'neutral' },
@@ -349,16 +352,6 @@ export function useMeta(): { meta: Meta | null; error: string | null; reload(): 
   return { meta, error, reload: () => setN((x) => x + 1) };
 }
 
-export async function copyText(text: string) {
-  try {
-    await navigator.clipboard.writeText(text);
-    toast('Gekopieerd', 'ok');
-  } catch {
-    toast('Kopiëren lukte niet; selecteer de tekst en kopieer handmatig', 'danger');
-  }
-}
-
-export const DAY_SHORT = ['zo', 'ma', 'di', 'wo', 'do', 'vr', 'za'];
 /** Short weekday name in the interface language (0 = Sunday): "Ma", "Mon", "Mo." — for day pickers. */
 export const dayShort = (d: number) => capFirst(new Date(2024, 0, 7 + d).toLocaleDateString(uiLocale(), { weekday: 'short' }));
 /** Monday-first order for pickers. */

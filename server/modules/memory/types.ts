@@ -1,12 +1,11 @@
-/** Shared types of the memory module. */
+import type { ItemStatus, ItemType, MemoryItemFields, MemoryItemShown, Scope, Sensitivity } from '../../../shared/memory.js';
 
-export type Scope = 'about_you' | 'agent' | 'dossier' | 'shared';
+/** Shared types of the memory module. A memory as the page sees it: shared/memory.ts. */
+
+export type { ItemStatus, ItemType, Scope, Sensitivity };
 export const SCOPES: Scope[] = ['about_you', 'agent', 'dossier', 'shared'];
 
-export type ItemType = 'fact' | 'preference' | 'instruction' | 'decision' | 'person' | 'event' | 'task' | 'lesson' | 'note';
 export const ITEM_TYPES: ItemType[] = ['fact', 'preference', 'instruction', 'decision', 'person', 'event', 'task', 'lesson', 'note'];
-
-export type Sensitivity = 'normal' | 'personal' | 'sensitive';
 
 /** Allowed review intervals in days: never, every month, 3 months, 6 months, year. */
 export const REVIEW_INTERVALS = [0, 30, 90, 180, 365];
@@ -20,60 +19,25 @@ export function nextReview(everyDays: number | null | undefined, fromMs = Date.n
 }
 export const SENSITIVITIES: Sensitivity[] = ['normal', 'personal', 'sensitive'];
 
-export type ItemStatus = 'active' | 'proposed' | 'archived' | 'superseded' | 'trashed' | 'rejected' | 'forgotten';
 /** `customer` (0.4.5): an identified customer's own words on a channel, about himself (data, never an instruction). */
 export type Trust = 'user' | 'agent' | 'external' | 'import' | 'system' | 'customer';
 export type SourceKind = 'message' | 'file' | 'url' | 'user' | 'import' | 'tool' | 'run' | 'consolidation' | 'attachment';
 export type Actor = 'user' | 'agent' | 'system' | 'import';
 
-export interface MemoryItemRow {
-  id: string;
-  ref: string;
-  user_id: string;
-  scope: Scope;
-  agent_id: string | null;
-  dossier_id: string | null;
-  type: ItemType;
-  canonical_key: string | null;
+/** The stored row: the fields of shared/memory.ts (narrowed where the server knows more) and what it keeps to itself. */
+export interface MemoryItemRow extends MemoryItemFields {
   key_norm: string | null;
-  content: string;
   content_enc: string | null;
   hash: string;
   source_kind: SourceKind;
-  source_ref: string | null;
-  source_thread_id: string | null;
-  source_excerpt: string | null;
   source_trust: Trust;
-  confidence: number;
-  sensitivity: Sensitivity;
-  status: ItemStatus;
-  proposal_reason: string | null;
-  conflict_with: string | null;
-  merge_of: string[] | null;
-  flags: string[];
-  pinned: boolean;
-  observed_at: string | null;
-  valid_from: string | null;
-  valid_to: string | null;
-  expires_at: string | null;
-  review_at: string | null;
-  /** Review interval in days (30, 90, 180, 365); null/0 = no recurring check. */
   review_every_days: number | null;
-  last_confirmed_at: string | null;
-  version: number;
-  supersedes_id: string | null;
-  superseded_by: string | null;
   created_by: Actor;
-  created_by_agent: string | null;
   origin_run_id: string | null;
   origin_call_id: string | null;
   idem_key: string | null;
-  use_count: number;
-  last_used_at: string | null;
   bytes: number;
   trashed_at: string | null;
-  created_at: string;
-  updated_at: string;
   /**
    * Team of a bot note or shared knowledge (scope agent/shared): a team id, ALL_TEAMS ('*', shared knowledge for every
    * team) or null (the owner's default team). "Over jou" is personal and dossier notes follow their dossier.
@@ -83,10 +47,7 @@ export interface MemoryItemRow {
   copy_of?: string | null;
   /** Keywords and synonyms (NL/EN) added when learning; indexed for word search, never shown as the memory itself. */
   terms?: string[] | null;
-  /** What kind of fact changes over time (price, version, rule, agreement, hours, contact): it has a review date. */
   review_kind?: ReviewKind | null;
-  /** Why this memory is "te controleren" (shown in Te beoordelen › Klopt dit nog?). */
-  review_note?: string | null;
   /** Why it no longer holds (0.4.4): the newer fact that ended it, "afgerond", a changed document. */
   invalid_reason?: string | null;
   /** When it was checked against what was already known (consolidate.ts). */
@@ -107,15 +68,7 @@ export const REVIEW_KINDS: Record<ReviewKind, { days: number; label: string }> =
 };
 
 /** Item as returned to callers (content decrypted, internals removed). */
-export interface MemoryItem extends Omit<MemoryItemRow, 'content_enc' | 'hash' | 'idem_key'> {
-  agent_name?: string | null;
-  dossier_title?: string | null;
-  source_thread_title?: string | null;
-  /** The item's team as the owner sees it (default team resolved; '*' = all teams; null = personal / no teams). */
-  team?: { id: string; name: string } | null;
-  /** Learned automatically from a conversation (0.4.5): from the owner's words, the bot's reply or a tool result. */
-  learned_from?: 'owner' | 'bot' | 'tool';
-}
+export interface MemoryItem extends Omit<MemoryItemRow, 'content_enc' | 'hash' | 'idem_key'>, MemoryItemShown {}
 
 /** Shared knowledge or a dossier "voor alle teams" (the owner's explicit choice). */
 export const ALL_TEAMS = '*';
@@ -211,6 +164,8 @@ export interface Outcome {
   item?: MemoryItem | null;
   existing?: MemoryItem | null;
   changeId?: string | null;
+  /** The dossier the text went into, when it became a line of a dossier (no note of its own: item is null). */
+  dossier?: { id: string; ref: string; title: string } | null;
   reason: string;
   /** Short Dutch message for tool output / UI. */
   message: string;

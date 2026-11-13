@@ -1,9 +1,10 @@
 import { useEffect, useState } from 'react';
-import { Coffee } from 'lucide-react';
+import { Coffee, Power } from 'lucide-react';
 import { api, on } from '../lib/api';
 import { useApp } from '../lib/store';
 import { cx } from '../components/ui';
 import { SettingsSection, SwitchRow, useSave } from '../components/SettingControls';
+import { t } from '../lib/i18n';
 
 /** "Houd de pc wakker terwijl routines of taken lopen" (A-76): state from the server's power module. */
 export interface PowerState {
@@ -30,12 +31,12 @@ export function usePowerState(): [PowerState | null, (p: PowerState) => void] {
   return [s, setS];
 }
 
-/** Settings › Algemeen: the option itself (off by default). */
+/** Settings › Algemeen: the option itself (on by default). */
 export function KeepAwakeSetting() {
   const [s, setS] = usePowerState();
   if (!s) return null;
   return (
-    <SettingsSection title="Pc en routines">
+    <SettingsSection icon={Power} tone="blue" title="Pc en routines">
       <KeepAwakeRow s={s} setS={setS} />
       {s.enabled && s.available && (
         <p className={cx('flex items-center gap-1.5 py-3 text-xs font-medium', s.active ? 'text-ok' : 'text-muted')} role="status">
@@ -63,8 +64,8 @@ function KeepAwakeRow({ s, setS }: { s: PowerState; setS(p: PowerState): void })
       checked={s.enabled}
       disabled={!canChange || busy}
       onChange={set}
-      label="Houd de pc wakker terwijl routines of taken lopen"
-      hint={s.available ? 'Het scherm mag wel uit. Staat standaard uit.' : 'Kan alleen in de desktop-app van TeamBot, op de pc waar TeamBot draait.'}
+      setting="power.enabled"
+      hint={s.available ? undefined : 'Kan alleen in de desktop-app van TeamBot, op de pc waar TeamBot draait.'}
       info={s.available ? 'De pc gaat dan niet in slaapstand zolang een bot aan het werk is of een routine binnen een half uur start. Kost iets meer stroom.' : undefined}
     />
   );
@@ -76,9 +77,9 @@ export function AwakeIndicator({ className }: { className?: string }) {
   if (!s?.active) return null;
   return (
     <a
-      href="#/settings/general"
+      href="#/settings/systeem"
       role="status"
-      title={`Pc blijft wakker: ${s.reason}. Uitzetten in Instellingen › Algemeen.`}
+      title={t('Pc blijft wakker: {0}. Uitzetten in Instellingen › Meer mogelijkheden › Deze computer.', t(s.reason ?? ''))}
       className={cx('flex h-8 items-center gap-2 rounded-control px-2.5 text-[12.5px] font-medium text-muted hover:bg-surface-2 hover:text-fg coarse:h-11', className)}
     >
       <Coffee className="h-3.5 w-3.5 shrink-0 text-ok" aria-hidden />

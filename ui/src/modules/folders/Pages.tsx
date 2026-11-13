@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { FolderOpen, FolderPlus, Settings, Trash2, Users } from 'lucide-react';
-import { Badge, Button, Card, EmptyState, Field, Input, Page, PageHeader, Spinner, Toggle, cx, toast, useAsync } from '../../components/ui';
+import { Badge, Button, Card, CardHead, EmptyState, Field, Input, Page, PageHeader, Spinner, Toggle, cx, toast, useAsync } from '../../components/ui';
 import { SelectBox as Select } from '../../components/Listbox';
 import { BotAvatar } from '../../components/BotFace';
 import { FolderName } from '../../components/FolderName';
@@ -16,6 +16,7 @@ import { OcrCard } from './OcrCard';
 import { folderMissing } from './missing';
 import { useEditorSection } from '../../lib/editorSave';
 import { api } from '../../lib/api';
+import { t } from '../../lib/i18n';
 
 /** The ?query of the hash, live (a search link to another file in the same folder page re-opens the browser there). */
 function useHashQuery() {
@@ -158,9 +159,7 @@ export function TeamFolderSettings({ teamId, bare }: { teamId?: string; /** insi
     <Card className="space-y-4 p-5">
       <div>
         {!bare && (
-          <div className="mb-1 flex items-center gap-2 font-medium">
-            <Users className="h-4 w-4 text-accent" /> {multi ? 'Teammap' : 'Gedeelde teammap'}
-          </div>
+          <CardHead className="mb-1" icon={Users} tone="amber" title={multi ? 'Teammap' : 'Gedeelde teammap'} />
         )}
         <p className="text-sm text-muted">
           {multi ? 'Een map die de bots van dit team samen gebruiken.' : 'Eén map die je bots samen gebruiken.'}{' '}
@@ -331,11 +330,11 @@ export function AgentFoldersSection({ agent, onChange }: { agent: Agent; onChang
             <FolderOpen className="h-4 w-4 text-muted" />
             <span className="font-medium">{f.label || f.path}</span>
             <code className="min-w-0 flex-1 break-all text-xs text-muted">{f.path}</code>
-            <Select className="w-auto" value={f.mode} onChange={(e) => set(folders.map((x, j) => (j === i ? { ...x, mode: e.target.value as 'rw' | 'ro' } : x)))} aria-label={`Rechten voor ${f.label || f.path}`}>
+            <Select className="w-auto" value={f.mode} onChange={(e) => set(folders.map((x, j) => (j === i ? { ...x, mode: e.target.value as 'rw' | 'ro' } : x)))} aria-label={t('Rechten voor {0}', f.label || f.path)}>
               <option value="ro">Alleen lezen</option>
               <option value="rw">Lezen en schrijven</option>
             </Select>
-            <Button size="icon" variant="ghost" aria-label={`${f.label || f.path} verwijderen`} onClick={() => set(folders.filter((_, j) => j !== i))}>
+            <Button size="icon" variant="ghost" aria-label={t('{0} verwijderen', f.label || f.path)} onClick={() => set(folders.filter((_, j) => j !== i))}>
               <Trash2 className="h-4 w-4" />
             </Button>
           </li>

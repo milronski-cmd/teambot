@@ -4,7 +4,7 @@ import type { TBEvent } from '../../core/events.js';
 import { bad, str } from '../../core/http.js';
 import { newId, now } from '../../core/db.js';
 import { redact } from '../../core/secrets.js';
-import { Limiter } from './limiter.js';
+import { Limiter } from '../../core/util.js';
 import { tr, trUserText, userLanguage } from '../../core/i18n.js';
 import { assertPushEndpoint, b64u, encryptPayload, generateVapidKeys, vapidAuthorization, type VapidKeys } from './webpush.js';
 import type { Apns } from './apns.js';

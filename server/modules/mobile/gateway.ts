@@ -1,6 +1,7 @@
 import http from 'node:http';
 import net from 'node:net';
 import type { Ctx } from '../../core/types.js';
+import { PLACE } from '../../../shared/places.js';
 
 export type GatewayBind = 'all' | 'tailscale' | 'loopback';
 
@@ -88,7 +89,7 @@ export class Gateway {
       } else {
         const k = this.tokenKind(tokenOf(req), req.method, c.path);
         if (k === 'unknown') return refuse(res, 401, 'Niet ingelogd');
-        if (k === 'other') return refuse(res, 403, 'Via de telefoon-toegang werken alleen gekoppelde apparaten. Koppel je telefoon via Instellingen → Telefoon.');
+        if (k === 'other') return refuse(res, 403, `Via de telefoon-toegang werken alleen gekoppelde apparaten. Koppel je telefoon via ${PLACE.phone}.`);
       }
     } else if (p === '/ws' || p === '/ws/voice') {
       return refuse(res, 400, 'Alleen WebSocket');

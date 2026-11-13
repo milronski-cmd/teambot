@@ -15,8 +15,10 @@ import { createRequire } from 'node:module';
 
 const require = createRequire(import.meta.url);
 const { chromium } = require('playwright-core');
-const { createApp } = await import('../../server/app.ts');
+const { createApp } = await import('./server.mjs');
 const { registerAttachment } = await import('../../server/tools/builtin/files.ts');
+const { LOCAL_MODELS } = await import('../../server/modules/voice/local/catalog.ts');
+const { markInstalled, fakeStt } = await import('../voice-fakes.ts');
 
 const step = (s) => console.log(`• ${s}`);
 const fail = (s) => {
@@ -375,6 +377,16 @@ try {
     await vp.goto(`${app.url}/#token=${token}`);
     await vp.waitForTimeout(800);
     await vp.goto(`${app.url}/#/t/${roomThread}`);
+    // A fresh install has no speech recognition yet: the button offers its download (one button, with the size).
+    await vp.getByRole('button', { name: 'Groepsgesprek (spraak)' }).click();
+    const setup5 = vp.getByRole('dialog', { name: 'Gratis spraakherkenning op deze computer' });
+    await setup5.getByRole('button', { name: /^Downloaden en bellen \(\d+ MB\)$/ }).waitFor({ timeout: 15000 }).then(() => step('groepsgesprek zonder spraakherkenning: één knop "Downloaden en bellen" met de grootte'), () => fail('groepsgesprek zonder spraakherkenning: geen knop "Downloaden en bellen"'));
+    await setup5.getByRole('button', { name: 'Later' }).click();
+    await setup5.waitFor({ state: 'detached', timeout: 5000 }).catch(() => {});
+    // From here the recogniser counts as downloaded (a stand-in: nothing is fetched, nothing real runs).
+    for (const m of LOCAL_MODELS.filter((x) => x.kind === 'stt')) markInstalled(dir, m.id);
+    fakeStt(() => 'Onderzoek, hoe laat is het in Berlijn?');
+    await vp.reload();
     await vp.getByRole('button', { name: 'Groepsgesprek (spraak)' }).click();
     const call5 = vp.getByRole('dialog');
     // On a computer you hold the space bar while you talk (0.4): hold it while the fake microphone speaks.

@@ -10,7 +10,7 @@ import { createRequire } from 'node:module';
 const require = createRequire(import.meta.url);
 const { chromium } = require('playwright-core');
 const { startTestApp } = await import('../helpers.ts');
-const { createApp } = await import('../../server/app.ts');
+const { createApp } = await import('./server.mjs');
 
 const N_MSG = Number(process.env.TEAMBOT_PERF_MESSAGES || 50_000);
 const N_THREADS = 500;

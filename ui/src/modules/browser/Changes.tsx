@@ -1,8 +1,9 @@
 import { useMemo, useState } from 'react';
+import { formatBytes } from '../../lib/format';
 import { AlertTriangle, Camera, Check, ChevronDown, ChevronRight, FlaskConical, RotateCcw, Trash2, Undo2, X } from 'lucide-react';
 import { api } from '../../lib/api';
 import { Badge, Button, Card, cx, EmptyState, Input, Modal, Spinner, Toggle, toast, useAsync } from '../../components/ui';
-import { fmtBytes, fmtTime, useLive, type FileChange, type HeldDeletion, type Rehearsal, type Snapshot } from './api';
+import { fmtTime, useLive, type FileChange, type HeldDeletion, type Rehearsal, type Snapshot } from './api';
 import { lineDiff, type Piece } from '../../shell/textDiff';
 import { t } from '../../lib/i18n';
 import { agentById } from '../../lib/store';
@@ -108,7 +109,7 @@ export function SideBySide({
   const lines = useMemo(() => lineDiff(before, after), [before, after]);
   const cell = 'min-w-0 whitespace-pre-wrap break-words px-1.5 py-px';
   return (
-    <div role="table" aria-label={`${leftTitle} naast ${rightTitle}`} className="scroll-thin max-h-[28rem] overflow-auto rounded-lg border border-line bg-canvas text-xs leading-5" data-testid="side-by-side">
+    <div role="table" aria-label={t('{0} naast {1}', t(leftTitle), t(rightTitle))} className="scroll-thin max-h-[28rem] overflow-auto rounded-lg border border-line bg-canvas text-xs leading-5" data-testid="side-by-side">
       <div role="row" className="sticky top-0 z-10 grid grid-cols-2 border-b border-line bg-surface-2 font-sans text-[11.5px] font-semibold">
         <div role="columnheader" className="px-2 py-1">
           {leftTitle}
@@ -544,7 +545,7 @@ function Snapshots({ agentId }: { agentId: string }) {
               <div className="min-w-0 flex-1">
                 <div className="truncate">{s.label}</div>
                 <div className="text-xs text-muted">
-                  {fmtTime(s.created_at)} · {s.files === 1 ? '1 bestand' : `${s.files} bestanden`} · {fmtBytes(s.bytes)}
+                  {fmtTime(s.created_at)} · {s.files === 1 ? '1 bestand' : `${s.files} bestanden`} · {formatBytes(s.bytes)}
                   {s.auto ? ' · automatisch' : ''}
                   {s.partial ? ' · alleen gewijzigde bestanden' : ''}
                 </div>
@@ -552,7 +553,7 @@ function Snapshots({ agentId }: { agentId: string }) {
               <Button size="sm" icon={<RotateCcw className="h-4 w-4" />} onClick={() => openRestore(s)}>
                 Herstel…
               </Button>
-              <Button size="icon" variant="ghost" aria-label={`Verwijder snapshot ${s.label}`} onClick={() => run(async () => (await api.del(`/computers/snapshots/${s.id}`), list.reload()), 'Snapshot verwijderd')}>
+              <Button size="icon" variant="ghost" aria-label={t('Verwijder snapshot {0}', s.label)} onClick={() => run(async () => (await api.del(`/computers/snapshots/${s.id}`), list.reload()), 'Snapshot verwijderd')}>
                 <Trash2 className="h-4 w-4" />
               </Button>
             </li>
@@ -562,7 +563,7 @@ function Snapshots({ agentId }: { agentId: string }) {
       <Modal
         open={!!restore}
         onClose={() => setRestore(null)}
-        title={`Herstellen: ${restore?.label || ''}`}
+        title={t('Herstellen: {0}', restore?.label || '')}
         wide
         footer={
           <>

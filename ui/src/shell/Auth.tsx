@@ -94,6 +94,20 @@ export function AuthScreen({ onDone }: { onDone(): void }) {
   }
 
   const set = (k: keyof typeof f) => (e: React.ChangeEvent<HTMLInputElement>) => setF({ ...f, [k]: e.target.value });
+  /** Name, e-mail and password: the same on the first account and on signing up (the name is required only on the first). */
+  const accountFields = (nameRequired: boolean) => (
+    <>
+      <Field label="Naam">
+        <Input value={f.name} onChange={set('name')} autoComplete="name" required={nameRequired} />
+      </Field>
+      <Field label="E-mail">
+        <Input type="email" value={f.email} onChange={set('email')} autoComplete="email" required />
+      </Field>
+      <Field label="Wachtwoord" hint="Minstens 12 tekens. Een paar woorden achter elkaar is makkelijk te onthouden.">
+        <Input type="password" value={f.password} onChange={set('password')} autoComplete="new-password" minLength={12} required />
+      </Field>
+    </>
+  );
   const ssoOn = !!sso?.enabled && status?.mode === 'server';
   const ssoOnly = ssoOn && !!sso?.requireSso;
   const showPassword = !ssoOnly || ownerLogin;
@@ -129,15 +143,7 @@ export function AuthScreen({ onDone }: { onDone(): void }) {
                   <Input value={f.setupCode} onChange={set('setupCode')} autoComplete="off" spellCheck={false} required />
                 </Field>
               )}
-              <Field label="Naam">
-                <Input value={f.name} onChange={set('name')} autoComplete="name" required />
-              </Field>
-              <Field label="E-mail">
-                <Input type="email" value={f.email} onChange={set('email')} autoComplete="email" required />
-              </Field>
-              <Field label="Wachtwoord" hint="Minstens 12 tekens. Een paar woorden achter elkaar is makkelijk te onthouden.">
-                <Input type="password" value={f.password} onChange={set('password')} autoComplete="new-password" minLength={12} required />
-              </Field>
+              {accountFields(true)}
               {err && <p className="text-sm text-danger">{err}</p>}
               <Button variant="primary" className="w-full justify-center" loading={busy}>
                 Account aanmaken
@@ -227,15 +233,7 @@ export function AuthScreen({ onDone }: { onDone(): void }) {
                   <Field label="Uitnodigingscode" hint={status?.allowSignup ? 'Optioneel op deze server.' : 'Vraag een code aan de eigenaar van deze server.'}>
                     <Input value={f.invite} onChange={set('invite')} required={!status?.allowSignup} placeholder="ABCD-EFGH-IJ" />
                   </Field>
-                  <Field label="Naam">
-                    <Input value={f.name} onChange={set('name')} autoComplete="name" />
-                  </Field>
-                  <Field label="E-mail">
-                    <Input type="email" value={f.email} onChange={set('email')} autoComplete="email" required />
-                  </Field>
-                  <Field label="Wachtwoord" hint="Minstens 12 tekens. Een paar woorden achter elkaar is makkelijk te onthouden.">
-                    <Input type="password" value={f.password} onChange={set('password')} autoComplete="new-password" minLength={12} required />
-                  </Field>
+                  {accountFields(false)}
                   {err && <p className="text-sm text-danger">{err}</p>}
                   <Button variant="primary" className="w-full justify-center" loading={busy}>
                     Account maken

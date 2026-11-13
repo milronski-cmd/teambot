@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { KeyRound, Server, Terminal, Trash2 } from 'lucide-react';
 import { api } from '../../lib/api';
 import { useApp } from '../../lib/store';
-import { Button, Card, EmptyState, Field, Input, Modal, Spinner, useAsync } from '../../components/ui';
+import { Button, Card, CardHead, EmptyState, Field, Input, Modal, Spinner, useAsync } from '../../components/ui';
 import { timeShort } from './shared';
 import { BotPicker, CopyField } from './forms';
 
@@ -30,9 +30,7 @@ const sendLine = (cli: CliInfo, bot: string | undefined, token?: string) =>
 function CliCard({ cli, botName }: { cli: CliInfo; botName?: string }) {
   return (
     <Card className="space-y-3 p-4 text-sm">
-      <div className="flex items-center gap-2 font-semibold">
-        <Terminal className="h-4 w-4" /> Vanuit een terminal of script
-      </div>
+      <CardHead icon={Terminal} tone="blue" title="Vanuit een terminal of script" />
       <p className="text-muted">
         Stuur een bericht naar een bot met <span className="font-mono">teambot send</span> en krijg het antwoord terug in je terminal, of gebruik het in een script. Ook hier houdt de bot zijn eigen toegangsmodus: acties met impact keur je goed in TeamBot.
       </p>
@@ -44,7 +42,7 @@ function CliCard({ cli, botName }: { cli: CliInfo; botName?: string }) {
         <p className="text-muted">Maak een token en kies de bots: je krijgt dan meteen de opdracht om te plakken.</p>
       )}
       <p className="text-xs leading-relaxed text-muted">
-        Alleen naar TeamBot op deze computer, tenzij je <span className="whitespace-nowrap font-mono">--sta-extern-toe</span> toevoegt (dan alleen via https). Meer opties, zoals niet wachten op het antwoord of de uitvoer als JSON:{' '}
+        Alleen naar TeamBot op deze computer, tenzij je <code className="whitespace-nowrap font-mono">--sta-extern-toe</code> toevoegt (dan alleen via https). Meer opties, zoals niet wachten op het antwoord of de uitvoer als JSON:{' '}
         <span className="whitespace-nowrap font-mono">teambot send --help</span>. Je hebt Node.js nodig.
       </p>
     </Card>
@@ -92,9 +90,7 @@ export function ServerTab() {
   return (
     <div className="space-y-4">
       <Card className="space-y-3 p-4 text-sm">
-        <div className="flex items-center gap-2 font-semibold">
-          <Server className="h-4 w-4" /> TeamBot als MCP-server
-        </div>
+        <CardHead icon={Server} tone="blue" title="TeamBot als MCP-server" />
         <p className="text-muted">
           Laat een andere MCP-client (bijv. Claude Code of Claude Desktop) met je bots praten. Per token kies je welke bots bereikbaar zijn. De client krijgt alleen de tools <span className="font-mono">list_bots</span> en{' '}
           <span className="font-mono">ask_bot</span>; je bots houden hun eigen toegangsmodus en vragen in TeamBot om toestemming.

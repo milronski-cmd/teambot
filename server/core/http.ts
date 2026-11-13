@@ -22,6 +22,16 @@ export function ah(fn: (req: Request, res: Response, next: NextFunction) => any)
   };
 }
 
+/**
+ * Send one of TeamBot's own files (a browser frame, a preview, recorded or spoken audio, a download). The data folder
+ * may lie under a folder whose name starts with a dot (~/.local/share/teambot on Linux, a trial or test folder under
+ * .data\): Express refuses such a path by default with a 404, so every frame and audio file was "not found" there.
+ * Resolves once the file is sent; rejects (for the error middleware) when it could not be sent and nothing went out.
+ */
+export function sendOwnFile(res: Response, file: string, opts: { headers?: Record<string, string>; lastModified?: boolean; acceptRanges?: boolean } = {}): Promise<void> {
+  return new Promise((resolve, reject) => res.sendFile(file, { ...opts, dotfiles: 'allow' }, (err: any) => (err && !res.headersSent ? reject(err) : resolve())));
+}
+
 export function user(req: Request): User {
   const u = (req as any).user as User | undefined;
   if (!u) throw new HttpError(401, 'Niet ingelogd');

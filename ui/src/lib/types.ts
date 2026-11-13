@@ -1,83 +1,19 @@
-// Mirrors server/core/types.ts (JSON shapes returned by the API).
+// JSON shapes returned by the API. The ones the server uses as well are in shared/types.ts; here the page adds the
+// few fields only its list endpoints send, and the shapes only the page reads.
+import type { Agent as SharedAgent, AttachmentRef, Billing, ModelInfo, PlanStep, ProviderKindInfo, ProviderTestResult as SharedTestResult, Thread as SharedThread, ToolCall } from '../../../shared/types.js';
 
-export type AccessMode = 'chat' | 'readonly' | 'ask' | 'auto' | 'full';
-export type Role = 'owner' | 'admin' | 'member';
+import type { Words } from '../../../shared/i18n-core.js';
 
-export interface User {
-  id: string;
-  email: string | null;
-  name: string;
-  role: Role;
-  disabled: boolean;
-  settings: Record<string, any>;
-  created_at: string;
-}
+export type { AccessMode, AttachmentRef, Billing, ModelInfo, PlanStep, Role, ToolCall, ToolGroup, User } from '../../../shared/types.js';
 
-export interface Agent {
-  id: string;
-  user_id: string;
+export interface Agent extends SharedAgent {
   /** A bot someone else shares with the team (server mode): whose it is. Only on bots from /agents/shared. */
   shared_from?: { id: string; name: string };
-  name: string;
-  avatar: string;
-  color: string;
-  role: string;
-  description: string;
-  instructions: string;
-  provider_id: string | null;
-  model: string;
-  reasoning: string;
-  access_mode: AccessMode;
-  workspace: string;
-  tool_groups: string[];
-  tool_policy: Record<string, 'allow' | 'ask' | 'deny'>;
-  skills: string[];
-  fallback: { provider_id: string; model: string } | null;
-  /** What a new message does while the bot works: wait in the queue, steer the running turn, or interrupt it. */
-  busy_policy: 'queue' | 'steer' | 'interrupt';
-  settings: Record<string, any>;
-  pinned: boolean;
-  archived: boolean;
-  sort: number;
-  created_at: string;
-  updated_at: string;
 }
 
-export interface Thread {
-  id: string;
-  user_id: string;
-  agent_id: string | null;
-  room_id: string | null;
-  kind: 'chat' | 'room' | 'routine' | 'delegation' | 'channel';
-  title: string;
-  parent_id: string | null;
-  provider_state: Record<string, any>;
-  meta: Record<string, any>;
-  pinned: boolean;
-  archived: boolean;
-  created_at: string;
-  updated_at: string;
-  last?: { content: string; author_name: string; created_at: string; role: string; status?: Message['status']; budgetUntil?: string } | null;
-}
-
-export interface ToolCall {
-  id: string;
-  name: string;
-  args: any;
-  status?: 'pending' | 'running' | 'done' | 'error' | 'denied' | 'waiting';
-  summary?: string;
-}
-
-export interface AttachmentRef {
-  id: string;
-  name: string;
-  mime: string;
-  size: number;
-}
-
-export interface PlanStep {
-  text: string;
-  status: 'pending' | 'in_progress' | 'completed';
+export interface Thread extends SharedThread {
+  /** The conversation list: the newest message; `note`: a TeamBot note's line for the owner (shell/SystemNote.tsx). */
+  last?: { content: string; author_name: string; created_at: string; role: string; status?: Message['status']; budgetUntil?: string; note?: { text: string; values?: (string | number)[] } } | null;
 }
 
 /** A run stopped by the daily budget (server/agent/budget.ts). */
@@ -104,7 +40,8 @@ export interface Message {
     toolResult?: { toolCallId: string; name: string; isError?: boolean };
     attachments?: AttachmentRef[];
     reasoning?: string;
-    activity?: { kind: string; title: string; detail?: string; ts: string }[];
+    /** `words`: a TeamBot tool's step as TeamBot's words with values (shown with components/Words.tsx). */
+    activity?: { kind: string; title: string; detail?: string; ts: string; words?: Words }[];
     /** The bot's plan as a checklist (plan card), updated while it works. */
     plan?: { steps: PlanStep[]; updated_at: string };
     error?: string;
@@ -158,6 +95,8 @@ export interface Approval {
   answer: string | null;
   /** Set when the run that asked was interrupted by a crash/restart; the approval stays open and resumes the run. */
   interrupted_at?: string | null;
+  /** Not answered in time: the bot went on with other work; deciding still reaches it. */
+  parked_at?: string | null;
   /** A bot someone else shares with the team asks you (in your own conversation): no "always allow" for it. */
   sharedBot?: boolean;
   created_at: string;
@@ -180,81 +119,15 @@ export interface ProviderView {
   created_at: string;
 }
 
-export interface ProviderKindView {
-  id: string;
-  label: string;
-  type: 'api' | 'cli';
-  group?: 'cloud' | 'local' | 'cli' | 'custom' | 'free';
-  baseUrl?: string;
-  needsKey: boolean;
-  keyOptional?: boolean;
-  keyUrl?: string;
-  keyPlaceholder?: string;
-  docsUrl?: string;
-  description: string;
-  authNote?: string;
-  billingNote?: string;
-  billing?: Billing;
-  models?: string[];
-  defaultModel?: string;
+export interface ProviderKindView extends ProviderKindInfo {
   canDetect: boolean;
   status?: { installed: boolean; version?: string; loggedIn?: boolean; detail?: string; baseUrl?: string } | null;
-  /** Section on the Providers page. */
-  section?: 'free' | 'subscription' | 'local' | 'key';
-  costNote?: string;
-  costCheckedAt?: string;
-  pricingUrl?: string;
-  keyLabel?: string;
-  fields?: { key: string; label: string; placeholder?: string; hint?: string; required?: boolean; options?: { value: string; label: string }[] }[];
-  experimental?: boolean;
-  retired?: string;
 }
 
 /** Result of "Test verbinding" / "Sleutel controleren": free check with a fix hint in plain Dutch. */
-export interface ProviderTestResult {
-  ok: boolean;
-  detail: string;
-  hint?: string;
-  category?: string;
-  verified?: boolean;
-  credit?: string;
+export interface ProviderTestResult extends SharedTestResult {
   models?: ModelInfo[];
 }
 
 /** Who pays for a model or engine (label in the UI). */
-export type Billing = 'free' | 'subscription' | 'paid' | 'local';
 export const BILLING_LABEL: Record<Billing, string> = { free: 'gratis', subscription: 'abonnement', paid: 'betaald', local: 'lokaal, gratis' };
-
-export interface ModelInfo {
-  id: string;
-  label?: string;
-  billing?: Billing;
-  context?: number;
-  vision?: boolean;
-  tools?: boolean;
-  /** USD per 1M tokens [input, output]. */
-  price?: [number, number];
-  free?: boolean;
-  recommended?: boolean;
-  /** Where the price comes from: lijst (provider's live list), tabel (dated table), eigen, gratis. */
-  priceSource?: string;
-  priceChecked?: string;
-  /** Thinking levels this model takes (none, minimal, low, medium, on, high, xhigh, max); [] = none; undefined = unknown. */
-  reasoningLevels?: string[];
-  defaultReasoning?: string;
-  reasoning?: boolean;
-  capSource?: string;
-  capChecked?: string;
-  /** Local models: memory per token of context (bytes), the window it is loaded with now, fixed at server start. */
-  memPerToken?: number;
-  loadedContext?: number;
-  contextFixed?: boolean;
-}
-
-export interface ToolGroup {
-  id: string;
-  label: string;
-  description: string;
-  defaultOn?: boolean;
-  always?: boolean;
-}

@@ -5,7 +5,7 @@ import type { Ctx, User } from '../../core/types.js';
 import { humanCode, type SessionInfo } from '../../core/auth.js';
 import { HttpError, bad, notFound, str } from '../../core/http.js';
 import { now } from '../../core/db.js';
-import { Limiter } from './limiter.js';
+import { Limiter } from '../../core/util.js';
 
 export const TICKET_TTL_SEC = 300;
 /** `baseUrl` for a QR code that only works through the TeamBot connection (iroh). */

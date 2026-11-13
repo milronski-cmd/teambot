@@ -1,6 +1,7 @@
 import type { Agent, Ctx, ToolDef } from '../../core/types.js';
 import type { TeamData } from './service.js';
 import { PROJECT_GROUP as GROUP } from './tools.js';
+import { words } from '../../../shared/i18n-core.js';
 
 /**
  * The project loop: inspectie (nulmeting with real numbers) → diagnose → plan (with "klaar als" and tasks) → uitvoeren
@@ -9,8 +10,8 @@ import { PROJECT_GROUP as GROUP } from './tools.js';
  *
  *  - a step is only taken with what it must deliver (a nulmeting with numbers, a diagnosis, a plan with tasks, every
  *    task closed, a new measurement);
- *  - at most `maxSprint` projects of a team are in the sprint at once (the owner's setting, default 3); a new one
- *    waits its turn and moves up by itself when a place comes free;
+ *  - no maximum of projects in the sprint, unless the owner sets one (`maxSprint`, 0 = none, the default); over it
+ *    a new one waits its turn and moves up by itself when a place comes free or the maximum goes up;
  *  - a project that reaches tip-top leaves a guard behind: its site stays watched by a vaste taak on a cheap engine.
  */
 
@@ -51,7 +52,8 @@ export interface ProjectView extends ProjectRow {
 
 export class ProjectError extends Error {}
 
-const text = (v: unknown, max: number) => String(v ?? '').replace(/\r/g, '').trim().slice(0, max);
+/** A text field as the team tables keep it: no carriage returns, trimmed, at most `max` characters. */
+export const text = (v: unknown, max: number) => String(v ?? '').replace(/\r/g, '').trim().slice(0, max);
 /** A measurement names at least one number. */
 const hasNumber = (s: string) => /\d/.test(s);
 const stamp = (ms: number) => new Date(ms).toISOString().slice(0, 16).replace('T', ' ');
@@ -65,15 +67,25 @@ export class ProjectService {
     private td: TeamData,
   ) {}
 
+  /** The owner's maximum of projects in the sprint per team; 0 = none (the default). */
   private maxSprint(userId: string): number {
-    return Number(this.ctx.services.routines?.duties?.settings?.(userId)?.maxSprint) || 3;
+    const n = Math.round(Number(this.ctx.services.routines?.duties?.settings?.(userId)?.maxSprint));
+    return n > 0 ? n : 0;
   }
 
-  private teamName(teamId: string | null): string {
+  /** Is the sprint of this team full? Never without a maximum. */
+  private async full(userId: string, teamId: string | null): Promise<boolean> {
+    const max = this.maxSprint(userId);
+    return max > 0 && (await this.sprintCount(userId, teamId)) >= max;
+  }
+
+  /** The name of a team ('' without teams). */
+  teamName(teamId: string | null): string {
     return (teamId && this.ctx.services.teams?.team?.(teamId)?.name) || '';
   }
 
-  private teamIds(userId: string): (string | null)[] {
+  /** The owner's teams, or [null] when there are none (one shared team table). */
+  teamIds(userId: string): (string | null)[] {
     const list: { id: string }[] = this.ctx.services.teams?.list?.(userId) || [];
     return list.length ? list.map((t) => t.id) : [null];
   }
@@ -119,6 +131,7 @@ export class ProjectService {
   async list(userId: string, teamId?: string | null): Promise<ProjectView[]> {
     const out: ProjectView[] = [];
     for (const tid of teamId ? [teamId] : this.teamIds(userId)) {
+      await this.fill(userId, tid);
       const rows: ProjectRow[] = await this.td.rows(userId, 'SELECT * FROM projecten ORDER BY id', [], true, tid);
       for (const p of rows) out.push(await this.view(userId, tid, p));
     }
@@ -161,8 +174,10 @@ export class ProjectService {
     if (!naam) throw new ProjectError('Geef het project een naam.');
     const dup = await this.td.rows(userId, "SELECT id FROM projecten WHERE lower(naam) = lower(?) AND status IN ('sprint','wacht') LIMIT 1", [naam], true, teamId);
     if (dup.length) throw new ProjectError(`Er loopt al een project “${naam}” (project ${dup[0].id}).`);
+    // Those that waited go first; then the new one waits only when the owner's maximum is reached.
+    await this.fill(userId, teamId);
     const max = this.maxSprint(userId);
-    const waits = (await this.sprintCount(userId, teamId)) >= max;
+    const waits = await this.full(userId, teamId);
     const site = text(d.site, 200) || null;
     const base = waits ? null : await this.measureSite(userId, site);
     const row = { werklog: null as string | null };
@@ -306,9 +321,21 @@ export class ProjectService {
     return this.view(userId, teamId, (await this.get(userId, teamId, id))!);
   }
 
+  /**
+   * Every waiting project that has a place now moves up, oldest first: after the owner raised his maximum or set none
+   * (duties setSettings), and before a list or a new project. One team, or all of the owner's teams.
+   */
+  async fill(userId: string, teamId?: string | null): Promise<string[]> {
+    const moved: string[] = [];
+    for (const tid of teamId !== undefined ? [teamId] : this.teamIds(userId)) {
+      for (let next = await this.promote(userId, tid); next; next = await this.promote(userId, tid)) moved.push(next);
+    }
+    return moved;
+  }
+
   /** A free place in the sprint goes to the project that waited longest. Returns its name. */
   private async promote(userId: string, teamId: string | null): Promise<string | null> {
-    if ((await this.sprintCount(userId, teamId)) >= this.maxSprint(userId)) return null;
+    if (await this.full(userId, teamId)) return null;
     const next: ProjectRow | undefined = (await this.td.rows(userId, "SELECT * FROM projecten WHERE status = 'wacht' ORDER BY id LIMIT 1", [], true, teamId))[0];
     if (!next) return null;
     const base = next.nulmeting ? null : await this.measureSite(userId, next.site);
@@ -356,9 +383,9 @@ export function projectTools(svc: ProjectService, ctx: Ctx): ToolDef[] {
       internal: true,
       description:
         'Start een project voor je team: iets dat je in een paar dagen tip-top maakt (een website, een feed, een campagne). Een project loopt in vaste stappen: inspectie (nulmeting) → diagnose → plan → uitvoeren → meten → tip-top. ' +
-        'Er zitten hoogstens een paar projecten tegelijk in de sprint; is het vol, dan wacht het nieuwe project vanzelf op zijn beurt.',
+        'Heeft de eigenaar een maximum aantal projecten tegelijk in de sprint ingesteld en is dat bereikt, dan wacht het nieuwe project vanzelf op zijn beurt.',
       parameters: { type: 'object', properties: { naam: { type: 'string' }, site: { type: 'string', description: 'De website of het account waar het om gaat (optioneel)' }, doel: { type: 'string', description: 'Wat er beter moet worden, meetbaar' } }, required: ['naam', 'doel'] },
-      summarize: (a) => `Project starten: “${String(a?.naam || '').slice(0, 80)}”`,
+      summarize: (a) => words('Project starten: “{0}”', String(a?.naam || '').slice(0, 80)),
       async run(a, t) {
         try {
           const r = await svc.start(t.agent.user_id, teamOf(t.agent), t.agent.name, { naam: a?.naam, site: a?.site, doel: a?.doel, eigenaar: t.agent.name });
@@ -392,7 +419,7 @@ export function projectTools(svc: ProjectService, ctx: Ctx): ToolDef[] {
         },
         required: ['project'],
       },
-      summarize: (a) => `Project ${a?.project}: ${a?.werklog && !a?.nulmeting && !a?.diagnose && !a?.plan && !a?.meting ? 'werklog bijwerken' : 'volgende stap'}`,
+      summarize: (a) => words(a?.werklog && !a?.nulmeting && !a?.diagnose && !a?.plan && !a?.meting ? 'Project {0}: werklog bijwerken' : 'Project {0}: volgende stap', a?.project),
       async run(a, t) {
         try {
           const id = Number(a?.project);
@@ -412,7 +439,7 @@ export function projectTools(svc: ProjectService, ctx: Ctx): ToolDef[] {
       risk: 'read',
       description: 'Toon de projecten van je team: welke in de sprint zitten, in welke stap, wat de stap nog nodig heeft, en welke wachten of tip-top zijn.',
       parameters: { type: 'object', properties: {} },
-      summarize: () => 'Projecten bekijken',
+      summarize: () => words('Projecten bekijken'),
       async run(_a, t) {
         const list = await svc.list(t.agent.user_id, teamOf(t.agent) || undefined);
         return list.length ? list.map(line).join('\n') : 'Er zijn nog geen projecten.';

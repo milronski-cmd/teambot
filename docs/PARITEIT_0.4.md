@@ -118,7 +118,7 @@ automatisch bijwerken, 17.1 vergelijkende duurtest. In 0.4.3 bijgewerkt: 8.3, 18
 | 7.2 | Installeren | op alle agents | per bot of op alle bots in één stap | werkt | [7.2], `tests/e2e/extensions-ui.mjs` |
 | 7.3 | Bijwerken en verwijderen | updates | versies, verschil, rechten-diff, terugzetten | beter | [7.3], `tests/skills.test.ts` |
 | 7.4 | Veiligheid | hashcontrole | scan, handtekening, uitgeversbeleid | beter | [7.4], `tests/publisher-sdk.test.ts` |
-| 7.5 | Skills maken | skill-creator | `skill_draft` uit een gesprek; knop *Bewaar als skill* in het chatmenu: concept van de bot, bewerken, voor de bot of het team | beter | [7.5], `tests/skill-from-chat.test.ts`, `tests/e2e/parity-small.mjs` |
+| 7.5 | Skills maken | skill-creator | `skill_save` uit een gesprek; knop *Bewaar als skill* in het chatmenu: concept van de bot, bewerken, voor de bot of het team | beter | [7.5], `tests/skill-from-chat.test.ts`, `tests/e2e/parity-small.mjs` |
 | 7.6 | In de composer | `$`-tag | `/`- en `$`-menu | werkt | [7.6], `tests/slash-menu.test.ts` |
 
 ## 8. Apps, MCP, connectors en kluis

@@ -1,16 +1,16 @@
 import { useEffect, useState } from 'react';
-import { CheckCircle2, CircleSlash, History, Mic, Save, Trash2 } from 'lucide-react';
+import { CheckCircle2, CircleSlash, Download, Keyboard, Mic, Phone, Radio, Save, ShieldCheck, Trash2, Volume2 } from 'lucide-react';
 import { api } from '../../lib/api';
 import { navigate } from '../../lib/router';
 import { MoreInfo } from '../../components/MoreInfo';
 import { MoreOptions } from '../../components/MoreOptions';
 import { useApp } from '../../lib/store';
-import { askConfirm, Badge, Button, Card, EmptyState, Field, Input, Modal, PageHeader, Page, Spinner, Textarea, Toggle, cx, timeAgo, toast, toastError, useAsync } from '../../components/ui';
+import { askConfirm, Badge, Button, Card, CardHead, EmptyState, Field, Input, Modal, PageHeader, Page, Spinner, Textarea, Toggle, cx, timeAgo, toast, toastError, useAsync } from '../../components/ui';
 import { SelectBox as Select } from '../../components/Listbox';
-import { type CallView, type HotkeyView, type LocalModelView, type VoiceSettings, clock, money, range, saveVoice, useLocalModels, useVoice } from './api';
+import { type CallView, type HotkeyView, type LocalModelView, type VoiceSettings, clock, mb, money, range, saveVoice, useLocalModels, useVoice } from './api';
 import { browserSttNote, browserSttSupported, micProblem } from './audio';
-import { TtsFields, langName, sortVoices } from './VoiceFields';
-import { LocalModelRow } from './LocalModels';
+import { TtsFields, langName, openaiVoiceOptions, sortVoices } from './VoiceFields';
+import { LocalModelRow, Progress } from './LocalModels';
 import { lastDictation } from './Dictate';
 import { getLang, t, translate, uiLocale } from '../../lib/i18n';
 import { formatBytes, formatSeconds, formatUsd } from '../../lib/format';
@@ -18,13 +18,17 @@ import { AUTO_APP, baseLang, isAutoLanguage, preferInstalled, sttModelLanguage, 
 
 const sec = (ms: number) => formatSeconds(ms);
 
+type LocalModels = ReturnType<typeof useLocalModels>;
+const isBusy = (m?: LocalModelView) => m?.status === 'downloading' || m?.status === 'verifying';
+const isMissing = (m?: LocalModelView) => m?.status === 'missing' || m?.status === 'error';
+
 /**
  * Downloadable free models, live progress, licences. What fits the language comes first and is marked (speech
  * models: the dictation language `lang`; voices: the interface language); speech models that do not know the
  * language say so. `auto`: the automatic choice is on (selected = what it picks).
  */
-function LocalModelsPanel({ kind, selected, onSelect, auto, lang: forLang }: { kind: 'stt' | 'tts'; selected?: string; onSelect?(id: string): void; auto?: boolean; lang?: string }) {
-  const { view, error, act } = useLocalModels();
+function LocalModelsPanel({ local, kind, selected, onSelect, auto, lang: forLang }: { local: LocalModels; kind: 'stt' | 'tts'; selected?: string; onSelect?(id: string): void; auto?: boolean; lang?: string }) {
+  const { view, error, act } = local;
   if (error) return <div className="text-xs text-danger">{error}</div>;
   if (!view) return <Spinner />;
   const lang = forLang || getLang();
@@ -78,22 +82,27 @@ function LocalModelsPanel({ kind, selected, onSelect, auto, lang: forLang }: { k
   );
 }
 
-/** Dictate into any program (desktop app): global key combination, off until the owner turns it on. */
-function HotkeyCard({ view, mode, value, saved, onChange }: { view?: HotkeyView; mode: string; value: VoiceSettings['hotkey']; saved: VoiceSettings['hotkey']; onChange(p: Partial<VoiceSettings['hotkey']>): void }) {
-  const [tried, setTried] = useState('');
+type HotkeyProps = { view?: HotkeyView; mode: string; value: VoiceSettings['hotkey']; saved: VoiceSettings['hotkey']; onChange(p: Partial<VoiceSettings['hotkey']>): void };
+const hotkeyOptions = (view: HotkeyView, value: VoiceSettings['hotkey']) => (view.presets.some((p) => p.accel === value.accelerator) ? view.presets : [...view.presets, { accel: value.accelerator, label: value.accelerator }]);
+const hotkeyPending = (value: VoiceSettings['hotkey'], saved: VoiceSettings['hotkey']) => value.enabled !== saved.enabled || value.accelerator !== saved.accelerator;
+
+/**
+ * Dictate into any program (desktop app): global key combination, off until the owner turns it on. This is the part in
+ * the first view (the card Dicteren): the switch, what it does and whether it works. The rest is HotkeyMore.
+ */
+function HotkeySwitch({ view, mode, value, saved, onChange }: HotkeyProps) {
   if (!view?.available)
     return mode === 'desktop' ? (
-      <Card className="space-y-1 p-4">
-        <h2 className="text-[15px] font-bold tracking-tight">Dicteren in elk programma (sneltoets)</h2>
+      <div className="space-y-0.5 border-t border-line pt-3">
+        <div className="text-sm font-medium">Dicteren in elk programma (sneltoets)</div>
         <div className="text-xs text-muted">Alleen in de TeamBot-app op je computer.</div>
-      </Card>
+      </div>
     ) : null;
-  const options = view.presets.some((p) => p.accel === value.accelerator) ? view.presets : [...view.presets, { accel: value.accelerator, label: value.accelerator }];
-  const label = options.find((p) => p.accel === value.accelerator)?.label || value.accelerator;
-  const pending = value.enabled !== saved.enabled || value.accelerator !== saved.accelerator;
+  const label = hotkeyOptions(view, value).find((p) => p.accel === value.accelerator)?.label || value.accelerator;
+  const pending = hotkeyPending(value, saved);
   return (
-    <Card className="space-y-3 p-4">
-      <h2 className="text-[15px] font-bold tracking-tight">Dicteren in elk programma (sneltoets)</h2>
+    <div className="space-y-1.5 border-t border-line pt-3">
+      <Toggle checked={value.enabled} onChange={(x) => onChange({ enabled: x })} label={<span>Dicteren in elk programma (sneltoets)</span>} />
       <div className="text-xs text-muted">
         Houd <b>{label}</b> ingedrukt en praat; de tekst komt in het programma waarin je typt.{' '}
         <MoreInfo>
@@ -101,25 +110,10 @@ function HotkeyCard({ view, mode, value, saved, onChange }: { view?: HotkeyView;
           scherm laat dat zien. Nooit in wachtwoordvelden of Windows-beveiligingsvensters; je klembord wordt na het plakken teruggezet. In programma’s die als administrator draaien kan Windows het plakken tegenhouden: de tekst staat dan op je klembord.
         </MoreInfo>
       </div>
-      <div className="grid gap-3 sm:grid-cols-2">
-        <div className="sm:col-span-2">
-          <Toggle checked={value.enabled} onChange={(x) => onChange({ enabled: x })} label={<span>Sneltoets aan</span>} />
-        </div>
-        <Field label="Sneltoets" hint="Kies een combinatie die je andere programma’s niet gebruiken.">
-          <Select value={value.accelerator} onChange={(e) => onChange({ accelerator: e.target.value })}>
-            {options.map((p) => (
-              <option key={p.accel} value={p.accel}>
-                {p.label}
-                {p.accel === 'Control+Alt+Space' ? ' (standaard)' : ''}
-              </option>
-            ))}
-          </Select>
-        </Field>
-        <div className="self-end text-sm" role="status">
+      {(pending || view.enabled) && (
+        <div className="text-sm" role="status">
           {pending ? (
             <span className="text-muted">Sla op om de sneltoets {value.enabled ? 'aan te zetten' : 'uit te zetten'}.</span>
-          ) : !view.enabled ? (
-            <span className="text-muted">Uit.</span>
           ) : view.registered ? (
             <span className="flex items-center gap-1.5 text-ok">
               <CheckCircle2 className="h-4 w-4 shrink-0" aria-hidden /> {view.label} werkt{view.hold ? '' : ' (tikken om te starten en te stoppen)'}.
@@ -130,6 +124,30 @@ function HotkeyCard({ view, mode, value, saved, onChange }: { view?: HotkeyView;
             </span>
           )}
         </div>
+      )}
+    </div>
+  );
+}
+
+/** The rest of the hotkey, behind "Meer opties": which key combination, and a box to try it in. */
+function HotkeyMore({ view, value, saved, onChange }: HotkeyProps) {
+  const [tried, setTried] = useState('');
+  if (!view?.available) return null;
+  const pending = hotkeyPending(value, saved);
+  return (
+    <Card className="space-y-3 p-4">
+      <CardHead icon={Keyboard} tone="violet" title="Dicteren in elk programma (sneltoets)" />
+      <div className="grid gap-3 sm:grid-cols-2">
+        <Field label="Sneltoets" hint="Kies een combinatie die je andere programma’s niet gebruiken.">
+          <Select value={value.accelerator} onChange={(e) => onChange({ accelerator: e.target.value })}>
+            {hotkeyOptions(view, value).map((p) => (
+              <option key={p.accel} value={p.accel}>
+                {p.label}
+                {p.accel === 'Control+Alt+Space' ? ' (standaard)' : ''}
+              </option>
+            ))}
+          </Select>
+        </Field>
       </div>
       {view.enabled && view.registered && !pending && (
         <Field label="Probeer het hier" hint={`Klik in dit vak, houd ${view.label} ingedrukt, zeg iets en laat los.`}>
@@ -141,21 +159,26 @@ function HotkeyCard({ view, mode, value, saved, onChange }: { view?: HotkeyView;
   );
 }
 
-function Status({ ok, label, detail }: { ok: boolean; label: string; detail: string }) {
+/** The calm "it works" mark in the head of a card. */
+function Works() {
   return (
-    <div className="flex items-start gap-2">
-      {ok ? <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-ok" /> : <CircleSlash className="mt-0.5 h-4 w-4 shrink-0 text-muted" />}
-      <div>
-        <div className="text-sm font-medium">{label}</div>
-        <div className="text-xs text-muted">{detail}</div>
-      </div>
-    </div>
+    <Badge tone="ok">
+      <CheckCircle2 className="me-0.5 inline h-3 w-3" aria-hidden />
+      werkt
+    </Badge>
   );
 }
 
-/** Instellingen › Spraak */
+/**
+ * Instellingen › Meer mogelijkheden › Spraak. The first view is three cards (Dicteren, Voorlezen, Gesprek): each says in one line whether it
+ * works, offers ONE action when something is missing (download what TeamBot picks for the language) and the one or two
+ * choices people make. Everything else (which engine or provider, the model list with licences and sources, the paid
+ * live call, what is kept) is behind "Meer opties": folded, never removed.
+ */
 export function VoiceSettingsTab() {
   const { info, error, reload } = useVoice();
+  // One live view of the downloads for the whole page (progress, download, stop, remove).
+  const localModels = useLocalModels();
   const [d, setD] = useState<VoiceSettings | null>(null);
   const { busy, run } = useAsync();
   useEffect(() => {
@@ -164,12 +187,17 @@ export function VoiceSettingsTab() {
   if (error) return <div className="p-4 text-sm text-danger">{error}</div>;
   if (!info || !d) return <Spinner className="m-6" />;
   const { status, catalog } = info;
+  const local = localModels.view || info.local;
+  const install = (ids: string[]) => async () => {
+    for (const id of ids) await localModels.act(id, 'install').catch(toastError);
+  };
   const dirty = JSON.stringify(d) !== JSON.stringify(info.settings);
   const set = (p: Partial<VoiceSettings>) => setD({ ...d, ...p });
   const setStt = (p: Partial<VoiceSettings['stt']>) => setD({ ...d, stt: { ...d.stt, ...p } });
   const setTts = (p: Partial<VoiceSettings['tts']>) => setD({ ...d, tts: { ...d.tts, ...p } });
   const setRt = (p: Partial<VoiceSettings['realtime']>) => setD({ ...d, realtime: { ...d.realtime, ...p } });
   const setCall = (p: Partial<VoiceSettings['call']>) => setD({ ...d, call: { ...d.call, ...p } });
+  const setHotkey = (p: Partial<VoiceSettings['hotkey']>) => setD({ ...d, hotkey: { ...d.hotkey, ...p } });
   const sttProvider = status.providers.find((p) => p.id === d.stt.providerId) || (d.stt.providerId ? undefined : status.providers.find((p) => p.kind === 'openai'));
   const openaiProviders = status.providers.filter((p) => p.kind === 'openai');
   const rtModel = catalog.realtimeModels.find((m) => m.id === d.realtime.model);
@@ -177,13 +205,56 @@ export function VoiceSettingsTab() {
   // '' = automatic: the model for the dictation language (a fixed language, or the hint of an automatic one), the
   // same rule as the server; worked out here so a change of language shows before saving.
   const sttLang = sttModelLanguage(d.stt.language, getLang());
-  const sttModels = info.local.models.filter((m) => m.kind === 'stt');
+  const sttModels = local.models.filter((m) => m.kind === 'stt');
   const sttFits = sttModelsFor(sttLang, sttModels);
   const sttAuto = preferInstalled(sttFits, (id) => sttModels.find((m) => m.id === id)?.status === 'installed')?.id || info.effective?.stt.localModel || '';
   const sttModel = d.stt.localModel || sttAuto;
   const sttChosen = sttModels.find((m) => m.id === sttModel);
   // The model's own name ("Whisper large-v3 turbo"), without the description after the dash.
   const sttName = sttChosen ? sttChosen.label.split(' — ')[0] : '';
+
+  // Dicteren: with recognition on this computer the one thing that can be missing is the speech model for the language.
+  const sttLocal = d.stt.engine === 'local' ? sttChosen : undefined;
+  const sttLoading = isBusy(sttLocal);
+  const sttGet = isMissing(sttLocal);
+  const sttWorks = status.stt.ready && !sttLoading && !sttGet;
+  // Voorlezen: the voice for the language (a Piper voice also needs the Piper program).
+  const ttsLocal = d.tts.engine === 'local' || d.tts.engine === 'auto';
+  const voiceId = ttsLocal ? d.tts.localVoice || info.effective?.tts.localVoice || '' : '';
+  const voice = voiceId ? local.models.find((m) => m.id === voiceId) : undefined;
+  const voiceParts = voice ? local.models.filter((m) => m.id === voiceId || (m.id === 'piper-runtime' && voice.voiceEngine !== 'vits')) : [];
+  const voiceLoading = voiceParts.find(isBusy);
+  const voiceGet = voiceLoading ? [] : voiceParts.filter(isMissing);
+  const voiceError = voiceGet.find((m) => m.status === 'error' && m.error)?.error;
+  const ttsWorks = status.tts.engine !== 'off' && status.tts.engine !== 'error';
+  const onlyOwner = !local.canManage && <div className="text-xs text-warn">Alleen de eigenaar van de TeamBot-computer kan dit downloaden.</div>;
+  /** A download in progress (speech model or voice), with Stoppen for whoever may manage the downloads. */
+  const downloading = (m: LocalModelView) => (
+    <div className="flex items-end gap-2">
+      <div className="min-w-0 flex-1">
+        <Progress m={m} />
+      </div>
+      {local.canManage && (
+        <Button size="sm" variant="ghost" onClick={() => localModels.act(m.id, 'cancel').catch(toastError)}>
+          Stoppen
+        </Button>
+      )}
+    </div>
+  );
+  /** The speech fields: the first ones on the Voorlezen card, the rest under Meer opties. */
+  const ttsFields = (part: 'main' | 'more') => (
+    <TtsFields
+      part={part}
+      value={d.tts}
+      onChange={(p) => setTts(p as any)}
+      status={status}
+      catalog={catalog}
+      local={local}
+      english
+      autoVoice={info.effective?.tts.localVoice ?? ''}
+      previewText="Hallo! Zo klinkt het als je bots hun antwoorden voorlezen."
+    />
+  );
 
   const save = () =>
     run(async () => {
@@ -193,71 +264,37 @@ export function VoiceSettingsTab() {
 
   return (
     <div className="space-y-4 pb-20">
-      <Card className="space-y-3 p-4">
-        <h2 className="text-[15px] font-bold tracking-tight">Wat werkt er nu</h2>
-        <div className="grid gap-3 sm:grid-cols-3">
-          <Status
-            ok={status.stt.ready}
-            label="Dicteren"
-            detail={status.stt.ready ? (status.stt.kind === 'local' ? 'Gratis op deze computer' : d.stt.engine === 'browser' ? 'Via je browser' : `Via ${status.stt.provider} (${status.stt.model})`) : status.stt.missing || 'Niet ingesteld'}
-          />
-          <Status
-            ok={status.tts.engine !== 'off' && status.tts.engine !== 'error'}
-            label="Voorlezen"
-            detail={
-              status.tts.engine === 'local'
-                ? `Gratis op deze computer · ${status.tts.voice}`
-                : status.tts.engine === 'provider'
-                  ? `${status.tts.provider} · ${status.tts.model} · ${status.tts.voice}`
-                  : status.tts.engine === 'browser'
-                    ? `Browserstem (gratis)${status.tts.localMissing ? ` — ${status.tts.localMissing}` : ''}`
-                    : status.tts.engine === 'off'
-                      ? 'Uit'
-                      : status.tts.error || ''
-            }
-          />
-          <Status ok={status.stt.ready || status.realtime.ready} label="Gesprek" detail={[status.stt.ready ? translate('Gratis gesprek met elke bot') : translate('Gratis gesprek: eerst spraakherkenning'), status.realtime.ready ? t('Live (Realtime) via {0}', status.realtime.provider || 'OpenAI') : translate('Live (Realtime) vraagt een OpenAI-sleutel')].join(' · ')} />
-        </div>
-        {/* The pages of Spraak, one click from here (TeamBot 0.4.2: Spraakgesprekken is no longer its own row in Instellingen). */}
-        <nav aria-label="Meer bij Spraak" className="flex flex-wrap gap-x-4 gap-y-1 text-[13px] font-semibold">
-          <a className="text-muted hover:text-fg" href="#/m/voice/">
-            Eerdere spraakgesprekken
-          </a>
-        </nav>
-        {lastDictation && (
-          <div className="text-xs text-muted">
-            {t('Laatst gemeten: {0} dicteren → tekst {1} na stoppen (waarvan {2} herkenning op de pc).', sec(lastDictation.seconds * 1000), sec(lastDictation.clientMs), sec(lastDictation.finalMs))}
-          </div>
-        )}
-        {mic && <div className="rounded-lg bg-warn-soft p-3 text-xs text-warn">{mic}</div>}
-        {!status.openai && (
-          <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2 border-t border-line pt-3 text-xs">
-            <div className="min-w-0 flex-1 basis-56 text-muted">
-              Alles werkt gratis op deze computer.{' '}
-              <MoreInfo>
-                Dicteren, voorlezen en het gratis gesprek met elke bot (ook vanaf je telefoon; die stuurt de audio naar je pc). Alleen “Live (OpenAI Realtime)” en de OpenAI-stemmen hebben een OpenAI API-sleutel nodig (betaald per gebruik, los van ChatGPT
-                Plus).
-              </MoreInfo>
-            </div>
-            <Button size="sm" variant="secondary" onClick={() => navigate('/settings/providers')}>
-              OpenAI-sleutel toevoegen (optioneel)
-            </Button>
-          </div>
-        )}
-      </Card>
+      {mic && <div className="rounded-lg bg-warn-soft p-3 text-xs text-warn">{mic}</div>}
 
       <Card className="space-y-3 p-4">
-        <h2 className="text-[15px] font-bold tracking-tight">Spraak naar tekst</h2>
+        <CardHead
+          icon={Mic}
+          tone="violet"
+          title="Dicteren"
+          hint={
+            sttLoading || sttGet
+              ? 'Je spraak wordt op deze computer omgezet in tekst. Eén keer downloaden; daarna werkt het offline.'
+              : status.stt.ready
+                ? status.stt.kind === 'local'
+                  ? 'Gratis op deze computer'
+                  : d.stt.engine === 'browser'
+                    ? 'Via je browser'
+                    : `Via ${status.stt.provider} (${status.stt.model})`
+                : status.stt.missing || 'Niet ingesteld'
+          }
+          action={sttWorks ? <Works /> : undefined}
+        />
+        {sttLocal && sttLoading && downloading(sttLocal)}
+        {sttLocal && sttGet && (
+          <div className="space-y-1.5">
+            <Button variant="primary" icon={<Download className="h-4 w-4" />} disabled={!local.canManage} onClick={install([sttLocal.id])} data-testid="voice-stt-install">
+              {t('Dicteren aanzetten (download {0})', mb(sttLocal.size))}
+            </Button>
+            {sttLocal.error && <div className="text-xs text-danger">{sttLocal.error}</div>}
+            {onlyOwner}
+          </div>
+        )}
         <div className="grid gap-3 sm:grid-cols-2">
-          <Field label="Herkenning door">
-            <Select value={d.stt.engine} onChange={(e) => setStt({ engine: e.target.value as any })}>
-              <option value="local">Lokaal op deze computer — gratis (aanbevolen)</option>
-              <option value="provider">Spraakprovider (OpenAI of eigen endpoint, betaald)</option>
-              <option value="browser" disabled={!browserSttSupported()}>
-                Browser (gratis{browserSttSupported() ? '' : ' — niet beschikbaar in deze browser'})
-              </option>
-            </Select>
-          </Field>
           <Field label="Taal" hint={isAutoLanguage(d.stt.language) && d.stt.language !== 'auto' ? 'TeamBot herkent de taal zelf; de taal tussen haakjes is een hint.' : undefined}>
             <Select value={d.stt.language} onChange={(e) => setStt({ language: e.target.value })}>
               {catalog.languages
@@ -268,6 +305,80 @@ export function VoiceSettingsTab() {
                     {l.id === AUTO_APP ? `Automatisch (voorkeur: ${langName(getLang())})` : l.label}
                   </option>
                 ))}
+            </Select>
+          </Field>
+        </div>
+        <HotkeySwitch view={info.hotkey} mode={info.mode} value={d.hotkey} saved={info.settings.hotkey} onChange={setHotkey} />
+      </Card>
+
+      <Card className="space-y-3 p-4">
+        <CardHead
+          icon={Volume2}
+          tone="violet"
+          title="Voorlezen"
+          hint={
+            status.tts.engine === 'local'
+              ? `Gratis op deze computer · ${status.tts.voice}`
+              : status.tts.engine === 'provider'
+                ? `${status.tts.provider} · ${status.tts.model} · ${status.tts.voice}`
+                : status.tts.engine === 'browser'
+                  ? `Browserstem (gratis)${status.tts.localMissing ? ` — ${status.tts.localMissing}` : ''}`
+                  : status.tts.engine === 'off'
+                    ? 'Uit'
+                    : status.tts.error || ''
+          }
+          action={ttsWorks ? <Works /> : undefined}
+        />
+        {voiceLoading && downloading(voiceLoading)}
+        {voiceGet.length > 0 && (
+          <div className="space-y-1.5">
+            <Button variant={ttsWorks ? 'secondary' : 'primary'} icon={<Download className="h-4 w-4" />} disabled={!local.canManage} onClick={install(voiceGet.map((m) => m.id))} data-testid="voice-tts-install">
+              {t('Stem downloaden ({0})', mb(voiceGet.reduce((n, m) => n + m.size, 0)))}
+            </Button>
+            {voiceError && <div className="text-xs text-danger">{voiceError}</div>}
+            {onlyOwner}
+          </div>
+        )}
+        {ttsFields('main')}
+      </Card>
+
+      <Card className="space-y-3 p-4">
+        <CardHead
+          icon={Phone}
+          tone="violet"
+          title="Gesprek"
+          hint={[status.stt.ready ? translate('Gratis gesprek met elke bot') : translate('Gratis gesprek: eerst spraakherkenning'), ...(status.realtime.ready ? [t('Live (Realtime) via {0}', status.realtime.provider || 'OpenAI')] : [])].join(' · ')}
+          action={status.stt.ready || status.realtime.ready ? <Works /> : undefined}
+        />
+        <div className="grid gap-3 sm:grid-cols-2">
+          <Field label="Praten" hint={<MoreInfo>Ingedrukt houden: je praat zolang je de spatiebalk of knop vasthoudt. Handsfree: een pauze beëindigt je beurt.</MoreInfo>}>
+            <Select value={d.call.talk} onChange={(e) => setCall({ talk: e.target.value as VoiceSettings['call']['talk'] })}>
+              <option value="auto">Automatisch (pc: ingedrukt houden, telefoon: handsfree)</option>
+              <option value="hold">Ingedrukt houden om te praten</option>
+              <option value="handsfree">Handsfree</option>
+            </Select>
+          </Field>
+        </div>
+        {/* The pages of Spraak, one click from here (TeamBot 0.4.2: Spraakgesprekken is no longer its own row in Instellingen). */}
+        <nav aria-label="Meer bij Spraak" className="flex flex-wrap gap-x-4 gap-y-1 text-[13px] font-semibold">
+          <a className="text-muted hover:text-fg" href="#/m/voice/">
+            Eerdere spraakgesprekken
+          </a>
+        </nav>
+      </Card>
+
+      {/* Rarely changed: which engine, provider or model, the downloads with their licences, paid live talking, what is kept. */}
+      <MoreOptions>
+      <Card className="space-y-3 p-4">
+        <CardHead icon={Mic} tone="violet" title="Spraak naar tekst" />
+        <div className="grid gap-3 sm:grid-cols-2">
+          <Field label="Herkenning door">
+            <Select value={d.stt.engine} onChange={(e) => setStt({ engine: e.target.value as any })}>
+              <option value="local">Lokaal op deze computer — gratis (aanbevolen)</option>
+              <option value="provider">Spraakprovider (OpenAI of eigen endpoint, betaald)</option>
+              <option value="browser" disabled={!browserSttSupported()}>
+                Browser (gratis{browserSttSupported() ? '' : ' — niet beschikbaar in deze browser'})
+              </option>
             </Select>
           </Field>
           {d.stt.engine === 'local' ? (
@@ -292,7 +403,7 @@ export function VoiceSettingsTab() {
                   {t('Automatisch kiezen (aanbevolen voor het {0})', langName(sttLang))}
                 </Button>
               )}
-              <LocalModelsPanel kind="stt" lang={sttLang} selected={sttModel} auto={!d.stt.localModel} onSelect={(id) => setStt({ localModel: id })} />
+              <LocalModelsPanel local={localModels} kind="stt" lang={sttLang} selected={sttModel} auto={!d.stt.localModel} onSelect={(id) => setStt({ localModel: id })} />
             </div>
           ) : d.stt.engine === 'provider' ? (
             <>
@@ -311,7 +422,7 @@ export function VoiceSettingsTab() {
                   <Select value={d.stt.model || 'gpt-transcribe'} onChange={(e) => setStt({ model: e.target.value })}>
                     {catalog.sttModels.map((m) => (
                       <option key={m.id} value={m.id}>
-                        {m.label} · {formatUsd(m.perMin, { max: 4 })}/min
+                        {translate(m.label)} · {formatUsd(m.perMin, { max: 4 })}/min
                       </option>
                     ))}
                   </Select>
@@ -324,22 +435,18 @@ export function VoiceSettingsTab() {
             <div className="text-xs text-muted sm:col-span-2">{browserSttNote} Spraakmemo’s (audio bewaren) vragen een spraakprovider.</div>
           )}
         </div>
+        {lastDictation && (
+          <div className="text-xs text-muted">
+            {t('Laatst gemeten: {0} dicteren → tekst {1} na stoppen (waarvan {2} herkenning op de pc).', sec(lastDictation.seconds * 1000), sec(lastDictation.clientMs), sec(lastDictation.finalMs))}
+          </div>
+        )}
       </Card>
 
-      <HotkeyCard view={info.hotkey} mode={info.mode} value={d.hotkey} saved={info.settings.hotkey} onChange={(p) => setD({ ...d, hotkey: { ...d.hotkey, ...p } })} />
+      <HotkeyMore view={info.hotkey} mode={info.mode} value={d.hotkey} saved={info.settings.hotkey} onChange={setHotkey} />
 
       <Card className="space-y-3 p-4">
-        <h2 className="text-[15px] font-bold tracking-tight">Voorlezen</h2>
-        <TtsFields
-          value={d.tts}
-          onChange={(p) => setTts(p as any)}
-          status={status}
-          catalog={catalog}
-          local={info.local}
-          english
-          autoVoice={info.effective?.tts.localVoice ?? ''}
-          previewText="Hallo! Zo klinkt het als je bots hun antwoorden voorlezen."
-        />
+        <CardHead icon={Volume2} tone="violet" title="Voorlezen" />
+        {ttsFields('more')}
         <div className="text-xs text-muted">Voor alle bots; per bot kun je een eigen stem kiezen.</div>
         {(d.tts.engine === 'local' || d.tts.engine === 'auto') && (
           <div>
@@ -351,14 +458,14 @@ export function VoiceSettingsTab() {
           <details className="rounded-lg border border-line p-2.5 text-sm" open={!!status.tts.localMissing}>
             <summary className="cursor-pointer font-medium">Lokale stemmen downloaden of verwijderen</summary>
             <div className="mt-2">
-              <LocalModelsPanel kind="tts" />
+              <LocalModelsPanel local={localModels} kind="tts" />
             </div>
           </details>
         )}
       </Card>
 
       <Card className="space-y-3 p-4">
-        <h2 className="text-[15px] font-bold tracking-tight">Gesprekken</h2>
+        <CardHead icon={Phone} tone="violet" title="Gesprekken" />
         <div className="grid gap-3 sm:grid-cols-2">
           <Field label="Standaard" hint={<MoreInfo>Het gratis gesprek praat met de bot zelf. Live (OpenAI of Gemini) is vloeiender.</MoreInfo>}>
             <Select value={d.call.engine} onChange={(e) => setCall({ engine: e.target.value as any })}>
@@ -369,13 +476,6 @@ export function VoiceSettingsTab() {
               <option value="gemini" disabled={!status.gemini?.ready}>
                 {status.gemini?.ready ? 'Live via Gemini Live (Google, spreekt Nederlands)' : 'Live via Gemini Live (Google-sleutel nodig)'}
               </option>
-            </Select>
-          </Field>
-          <Field label="Praten" hint={<MoreInfo>Ingedrukt houden: je praat zolang je de spatiebalk of knop vasthoudt. Handsfree: een pauze beëindigt je beurt.</MoreInfo>}>
-            <Select value={d.call.talk} onChange={(e) => setCall({ talk: e.target.value as VoiceSettings['call']['talk'] })}>
-              <option value="auto">Automatisch (pc: ingedrukt houden, telefoon: handsfree)</option>
-              <option value="hold">Ingedrukt houden om te praten</option>
-              <option value="handsfree">Handsfree</option>
             </Select>
           </Field>
           <Field label={t('Wachten na je laatste woord: {0}', sec(d.call.silenceMs))}hint="Alleen bij handsfree. Korter is sneller, langer onderbreekt je minder.">
@@ -390,13 +490,22 @@ export function VoiceSettingsTab() {
         </div>
       </Card>
 
-      {/* Rarely changed: paid live talking, what is kept and for how long. */}
-      <MoreOptions>
       <Card className="space-y-3 p-4">
-        <div className="flex flex-wrap items-center gap-2">
-          <h2 className="text-[15px] font-bold tracking-tight">Live praten (OpenAI Realtime)</h2>
-          <Badge>prijzen gecontroleerd {catalog.pricesChecked}</Badge>
-        </div>
+        <CardHead icon={Radio} tone="violet" title="Live praten (OpenAI Realtime)" action={<Badge>prijzen gecontroleerd {catalog.pricesChecked}</Badge>} />
+        {!status.openai && (
+          <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2 text-xs">
+            <div className="min-w-0 flex-1 basis-56 text-muted">
+              Alles werkt gratis op deze computer.{' '}
+              <MoreInfo>
+                Dicteren, voorlezen en het gratis gesprek met elke bot (ook vanaf je telefoon; die stuurt de audio naar je pc). Alleen “Live (OpenAI Realtime)” en de OpenAI-stemmen hebben een OpenAI API-sleutel nodig (betaald per gebruik, los van ChatGPT
+                Plus).
+              </MoreInfo>
+            </div>
+            <Button size="sm" variant="secondary" onClick={() => navigate('/settings/providers')}>
+              OpenAI-sleutel toevoegen (optioneel)
+            </Button>
+          </div>
+        )}
         {!openaiProviders.length ? (
           <div className="text-sm text-muted">Vraagt een OpenAI API-sleutel (betaald per gebruik, niet je ChatGPT-abonnement).</div>
         ) : (
@@ -423,12 +532,7 @@ export function VoiceSettingsTab() {
             </Field>
             <Field label="Stem">
               <Select value={d.realtime.voice} onChange={(e) => setRt({ voice: e.target.value })}>
-                {catalog.realtimeVoices.map((v) => (
-                  // A voice's name ("echo", "sage") is a name, never translated.
-                  <option key={v} value={v} translate="no">
-                    {v === 'marin' || v === 'cedar' ? t('{0} (aanbevolen)', v) : v}
-                  </option>
-                ))}
+                {openaiVoiceOptions(catalog.realtimeVoices)}
               </Select>
             </Field>
             <Field label="Ondertiteling van wat jij zegt">
@@ -436,7 +540,7 @@ export function VoiceSettingsTab() {
                 <option value="">Uit (geen ondertiteling/transcript van jouw kant)</option>
                 {catalog.transcribeModels.map((m) => (
                   <option key={m.id} value={m.id}>
-                    {m.label} · {formatUsd(m.perMin, { max: 3 })}/min
+                    {translate(m.label)} · {formatUsd(m.perMin, { max: 3 })}/min
                   </option>
                 ))}
               </Select>
@@ -453,11 +557,11 @@ export function VoiceSettingsTab() {
                 <option value="server">Op stilte</option>
               </Select>
             </Field>
-            <Field label="Prijsplafond per gesprek (USD)" hint="Waarschuwing bij 80 %, ophangen bij 100 %.">
-              <Input type="number" min={0.05} max={50} step={0.05} value={d.priceCapUsd} onChange={(e) => set({ priceCapUsd: Number(e.target.value) })} />
+            <Field label="Prijsplafond per gesprek (USD)" hint="0 = geen plafond.">
+              <Input type="number" min={0} max={50} step={0.05} value={d.priceCapUsd} onChange={(e) => set({ priceCapUsd: Number(e.target.value) })} />
             </Field>
-            <Field label="Maximale duur (minuten)">
-              <Input type="number" min={1} max={120} value={d.maxMinutes} onChange={(e) => set({ maxMinutes: Number(e.target.value) })} />
+            <Field label="Maximale duur (minuten)" hint="0 = geen maximum.">
+              <Input type="number" min={0} max={120} value={d.maxMinutes} onChange={(e) => set({ maxMinutes: Number(e.target.value) })} />
             </Field>
             <div className="space-y-2 sm:col-span-2">
               <Toggle checked={d.realtime.sendContext} onChange={(x) => setRt({ sendContext: x })} label={<span>Laatste 10 chatberichten als context meesturen naar OpenAI</span>} />
@@ -467,7 +571,7 @@ export function VoiceSettingsTab() {
       </Card>
 
       <Card className="space-y-3 p-4">
-        <h2 className="text-[15px] font-bold tracking-tight">Privacy en bewaren</h2>
+        <CardHead icon={ShieldCheck} tone="rose" title="Privacy en bewaren" />
         <Toggle checked={d.keepTranscripts} onChange={(x) => set({ keepTranscripts: x })} label={<span>Transcripten van live gesprekken standaard bewaren in het gesprek</span>} />
         <div className="grid gap-3 sm:grid-cols-2">
           <Field label="Audio van spraakmemo’s bewaren (dagen)" hint="0 = altijd. Het transcript blijft in het gesprek staan.">

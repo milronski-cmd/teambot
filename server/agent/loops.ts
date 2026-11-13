@@ -1,4 +1,5 @@
 import crypto from 'node:crypto';
+import { LOOP_DEFAULTS, LOOP_RANGE } from '../../shared/loopGuard.js';
 import type { ActivityItem, Agent, Ctx, Run, Thread } from '../core/types.js';
 
 /**
@@ -12,13 +13,22 @@ import type { ActivityItem, Agent, Ctx, Run, Thread } from '../core/types.js';
  * CLI engines (their own loop): the same step `repeat` times in a row (same kind, title and detail) stops the run.
  */
 
+/**
+ * Model steps in one turn. "Volledige toegang": no brake that stops real work (a build of hours is thousands of
+ * steps); the loop guard below stops a bot that is stuck. Other levels keep 40 unless the owner set a number.
+ */
+export function maxSteps(agent: Pick<Agent, 'access_mode' | 'settings'>): number {
+  const own = Number(agent.settings?.maxTurns);
+  if (own > 0) return own;
+  return agent.access_mode === 'full' && !agent.settings?.sharedRun ? 10_000 : 40;
+}
+
 export interface LoopLimits {
   repeat: number;
   idle: number;
 }
 
-export const LOOP_DEFAULTS: LoopLimits = { repeat: 3, idle: 6 };
-
+// (The numbers live in shared/loopGuard.ts: the bot editor shows the same defaults.)
 const clamp = (v: any, lo: number, hi: number, d: number) => {
   const n = Math.round(Number(v));
   return Number.isFinite(n) && n > 0 ? Math.min(hi, Math.max(lo, n)) : d;
@@ -28,7 +38,7 @@ const clamp = (v: any, lo: number, hi: number, d: number) => {
 export function loopLimits(agent: Agent): LoopLimits | null {
   const g = agent.settings?.quality?.loopGuard;
   if (g === false || (g && typeof g === 'object' && g.on === false)) return null;
-  return { repeat: clamp(g?.repeat, 2, 10, LOOP_DEFAULTS.repeat), idle: clamp(g?.idle, 3, 30, LOOP_DEFAULTS.idle) };
+  return { repeat: clamp(g?.repeat, LOOP_RANGE.repeat[0], LOOP_RANGE.repeat[1], LOOP_DEFAULTS.repeat), idle: clamp(g?.idle, LOOP_RANGE.idle[0], LOOP_RANGE.idle[1], LOOP_DEFAULTS.idle) };
 }
 
 export interface LoopStop {

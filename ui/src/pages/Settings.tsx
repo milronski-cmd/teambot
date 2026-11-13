@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { ArrowLeft, Bot, ChevronRight, Copy, Download, Gauge, Lock, MonitorSmartphone, Search, Settings2, Sparkles, Trash2 } from 'lucide-react';
+import { ArrowLeft, Bot, CalendarDays, ChevronRight, Copy, Cpu, Download, FileDown, Gauge, Languages, Laptop, Lock, MonitorSmartphone, Palette as IcPalette, Search, Settings2, ShieldCheck, SlidersHorizontal, Smartphone, Sparkles, Trash2, UserPlus } from 'lucide-react';
 import { Activity as IcActivity, AlarmClock as IcAlarm, ArrowRightLeft as IcSwitch, Bell as IcBell, BellRing as IcBellRing, Blocks as IcBlocks, Brain as IcBrain, DatabaseBackup as IcBackup, FolderOpen as IcFolder, Gift as IcGift, Globe as IcGlobe, GraduationCap as IcGrad, HardDrive as IcDrive, Image as IcImage, KeyRound as IcKey, LayoutGrid as IcGrid, Mic as IcMic, Monitor as IcMonitor, Network as IcNetwork, NotebookPen as IcNotes, RadioTower as IcRadio, Shuffle as IcShuffle, Smartphone as IcPhone, Terminal as IcTerminal, Trash as IcTrash, UserRound as IcUser, Users as IcUsers } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { api, authUrl } from '../lib/api';
@@ -7,14 +7,15 @@ import { useApp } from '../lib/store';
 import { useMedia } from '../lib/media';
 import { isSubEntry, settingsNav, settingsParentOf, settingsRowOf, settingsSearch, type SettingsNavRow, type SettingsRow } from '../lib/palette';
 import { MoreOptions } from '../components/MoreOptions';
+import { navigate, query } from '../lib/router';
 import { MoreInfo } from '../components/MoreInfo';
 import { uiModules } from '../modules';
-import { askConfirm, Badge, Button, Card, Field, Input, Page, Spinner, cx, timeAgo, toast, toastError } from '../components/ui';
+import { askConfirm, Badge, Button, Card, CardHead, Field, IconTile, Input, Page, Spinner, cx, timeAgo, toastError, copyText } from '../components/ui';
 import { setAdvanced, useAdvanced } from '../shell/advanced';
 import { ProvidersSettings } from './Providers';
 import { TeamUsageCard } from './TeamUsage';
 import { ScimCard, ScimGroupsCard, SsoCard, useScimGroupHints } from './Sso';
-import { AppearanceSettings } from './Appearance';
+import { AccentSetting, FaceStyleSetting, ThemeSetting } from './Appearance';
 import { ComputerOnly, useIsPhoneSession } from '../shell/computerOnly';
 import { t, translate, uiLocale } from '../lib/i18n';
 import { formatMoney, formatTime } from '../lib/format';
@@ -28,7 +29,11 @@ import { AuditLog } from '../shell/AuditLog';
 import { AppLockCard } from '../shell/AppLock';
 import { KeepAwakeSetting } from '../shell/power';
 import { WhatLeavesYourPc } from '../modules/network/DataPrivacy';
+import { RulesSettings } from '../modules/botrules/RulesPage';
+import { PlannedList } from '../modules/routines/Planned';
+import { TeamTemplateWizard } from '../modules/templates/TeamTemplateWizard';
 import { shownLanUrls } from './lanUrls';
+import { SETTINGS_PAGES, SETTINGS_ROWS, settingsPageTitle, settingText } from '../../../shared/settings.js';
 
 /** Dollars with a fixed number of decimals in the reader's notation (C-17: "US$ 0,15", not "$0.15" in Dutch). */
 const usdN = (n: number, d: number) => formatMoney(n || 0, 'USD', { minimumFractionDigits: d, maximumFractionDigits: d });
@@ -50,31 +55,66 @@ function timeZones(current: string): string[] {
   return [...new Set([current, ...list].filter(Boolean))].sort();
 }
 
-function General({ openMore }: { openMore?: boolean }) {
+/**
+ * Taal en uiterlijk: what everyone sets once. Your name (the bots call you by it), the language of the app, light or
+ * dark, the colour and the style of the bot figures. Nothing else; "Alle routines pauzeren" is on the Routines page
+ * itself (Taken › Routines › Meer opties), and under Meer mogelijkheden › Standaarden voor routines.
+ */
+function General() {
+  return (
+    <SettingsSection title="Jij en je app" icon={Languages} tone="orange">
+      <NameRow />
+      <SettingRow setting="language">
+        <LanguageSelect className="min-w-[12rem] sm:w-auto" aria-label={settingText('language').title} />
+      </SettingRow>
+      <ThemeSetting />
+      <AccentSetting />
+      <FaceStyleSetting />
+    </SettingsSection>
+  );
+}
+
+/** Meer mogelijkheden › Standaarden voor nieuwe bots: the language bots answer in, the default AI and model, time zone, daily budget. */
+function BotDefaultsPage() {
   const settings = useApp((s) => s.settings);
   const save = useSave();
   return (
     <>
-      <SettingsSection title="Jij en je taal">
-        <NameRow />
-        <SettingRow label="Taal van de app">
-          <LanguageSelect className="min-w-[12rem] sm:w-auto" aria-label="Taal van de app" />
-        </SettingRow>
-        <SettingRow label="Bots antwoorden in" hint="Per bot kun je dit apart instellen.">
-          <BotLanguageSelect value={settings.botLanguage} onChange={(v) => void save(putSettings({ botLanguage: v }))} className="min-w-[12rem] sm:w-auto" aria-label="Bots antwoorden in" />
+      <SettingsSection title="Taal van je bots" icon={Languages} tone="orange">
+        <SettingRow setting="botLanguage">
+          <BotLanguageSelect value={settings.botLanguage} onChange={(v) => void save(putSettings({ botLanguage: v }))} className="min-w-[12rem] sm:w-auto" aria-label={settingText('botLanguage').title} />
         </SettingRow>
       </SettingsSection>
-      {/* Uiterlijk (theme, colour, figures) lives on this page; #/settings/appearance still leads here. */}
-      <AppearanceSettings />
-      {/* What people rarely change in one fold; the old Geavanceerd page (#/settings/advanced) opens it. */}
-      <MoreOptions defaultOpen={openMore}>
-        <BotDefaults />
-        <KeepAwakeSetting />
-        <AdvancedSection />
-      </MoreOptions>
+      <BotDefaults />
     </>
   );
 }
+
+/** Meer mogelijkheden › Deze computer: keep the pc awake while work runs, and the expert panels of the app. */
+function SystemPage() {
+  return (
+    <>
+      <KeepAwakeSetting />
+      <AdvancedSection />
+    </>
+  );
+}
+
+/**
+ * Back-ups (the row of the list): make one and put one back. The lock has its own row (Vergrendeling); automatic and
+ * off-site back-ups, the full export and updates are one row under Meer mogelijkheden.
+ */
+function Safe() {
+  return <Backups simple />;
+}
+
+/** The short page of a module (its `simple` form): Telefoon = the QR code, Teams = the name. */
+function Simple({ tab }: { tab: string }) {
+  const C = uiModules.flatMap((m) => (m.settingsTabs || []).map((t) => ({ key: `${m.id}-${t.id}`, component: t.component }))).find((t) => t.key === tab)?.component as React.ComponentType<{ simple?: boolean }> | undefined;
+  return C ? <C simple /> : null;
+}
+/** The short pages and the module page each of them is the simple form of. */
+const SIMPLE_OF: Record<string, string> = { telefoon: 'mobile-telefoon', teams: 'teams-teams' };
 
 /** "Je naam": saved when you leave the field or press Enter. */
 function NameRow() {
@@ -87,8 +127,8 @@ function NameRow() {
     void save(api.patch('/me', { name: v }).then((r) => useApp.setState({ me: r.user })));
   };
   return (
-    <SettingRow label="Je naam">
-      <Input value={name} onChange={(e) => setName(e.target.value)} onBlur={store} onKeyDown={(e) => e.key === 'Enter' && store()} aria-label="Je naam" className="w-full sm:w-64" maxLength={80} />
+    <SettingRow setting="me.name">
+      <Input value={name} onChange={(e) => setName(e.target.value)} onBlur={store} onKeyDown={(e) => e.key === 'Enter' && store()} aria-label={settingText('me.name').title} className="w-full sm:w-64" maxLength={80} />
     </SettingRow>
   );
 }
@@ -126,11 +166,13 @@ function BotDefaults() {
   const isDefault = !settings.defaultModel && !settings.timezone && !budget;
   return (
     <SettingsSection
+      icon={Bot}
+      tone="teal"
       title="Standaarden voor nieuwe bots"
       isDefault={isDefault}
       onReset={() => (setOwnBudget(false), setBudgetText(''), putSettings({ defaultModel: '', timezone: '', dailyBudgetUsd: 0 }))}
     >
-      <SettingRow label="Standaard-AI">
+      <SettingRow setting="defaultProvider">
         <Dropdown
           value={provider}
           onChange={(v) => void save(putSettings({ defaultProvider: v || null, defaultModel: '' }))}
@@ -138,17 +180,14 @@ function BotDefaults() {
         />
       </SettingRow>
       {provider && (
-        <SettingRow label="Standaardmodel">
-          <ModelChoice models={models} loading={loading} value={settings.defaultModel || ''} onChange={(m) => void save(putSettings({ defaultModel: m }))} label="Standaardmodel" />
+        <SettingRow setting="defaultModel">
+          <ModelChoice models={models} loading={loading} value={settings.defaultModel || ''} onChange={(m) => void save(putSettings({ defaultModel: m }))} label={settingText('defaultModel').title} />
         </SettingRow>
       )}
-      <SettingRow label="Tijdzone" hint="Voor routines en tijden in de chat.">
+      <SettingRow setting="timezone">
         <Dropdown value={tz} onChange={(v) => void save(putSettings({ timezone: v }))} options={timeZones(tz).map((z) => ({ value: z, label: z.replace(/_/g, ' '), text: z.replace(/_/g, ' ') }))} />
       </SettingRow>
-      <SettingRow
-        label="Dagbudget"
-        hint={limits?.restricted ? t('Op deze server is je maximum {0} per dag (nu actief: {1}).', usdN(limits.policy?.dailyBudgetUsd ?? 0, 2), usdN(limits.dailyBudgetUsd ?? 0, 2)) : 'Betaalde bots stoppen bij dit bedrag per dag.'}
-      >
+      <SettingRow setting="dailyBudgetUsd" hint={limits?.restricted ? t('Op deze server is je maximum {0} per dag (nu actief: {1}).', usdN(limits.policy?.dailyBudgetUsd ?? 0, 2), usdN(limits.dailyBudgetUsd ?? 0, 2)) : undefined}>
         <div className="flex flex-wrap items-center gap-2">
           <Dropdown
             label="Dagbudget in USD"
@@ -205,7 +244,7 @@ function Usage() {
         <BudgetCard d={d} />
       </div>
       <Card className="p-4">
-        <h2 className="mb-3 text-[15px] font-bold tracking-tight">Per dag</h2>
+        <CardHead className="mb-3" icon={CalendarDays} tone="amber" title="Per dag" />
         {d.byDay.length === 0 ? (
           <p className="text-sm text-muted">Nog geen gebruik in deze periode.</p>
         ) : (
@@ -220,7 +259,7 @@ function Usage() {
       </Card>
       <div className="grid gap-4 sm:grid-cols-2">
         <Card className="p-4">
-          <h2 className="mb-2 text-[15px] font-bold tracking-tight">Per bot</h2>
+          <CardHead className="mb-2" icon={Bot} tone="teal" title="Per bot" />
           {d.byAgent.length === 0 && <p className="text-sm text-muted">Nog niets.</p>}
           {d.byAgent.map((x: any) => (
             <div key={x.agent_id || 'x'} className="flex justify-between py-1 text-sm">
@@ -230,7 +269,7 @@ function Usage() {
           ))}
         </Card>
         <Card className="p-4">
-          <h2 className="mb-2 text-[15px] font-bold tracking-tight">Per model</h2>
+          <CardHead className="mb-2" icon={Cpu} tone="violet" title="Per model" />
           {d.byModel.length === 0 && <p className="text-sm text-muted">Nog niets.</p>}
           {d.byModel.map((x: any) => (
             <div key={x.model + x.provider_id} className="flex justify-between py-1 text-sm">
@@ -267,11 +306,11 @@ function BudgetCard({ d }: { d: any }) {
         </p>
       )}
       {reached && d.today?.resetAt && <p className="mt-1 text-xs text-muted">{t('Om {0} begint een nieuwe dag en werken je betaalde bots weer.', formatTime(d.today.resetAt))}</p>}
-      {/* The "Daglimiet bereikt" message sends people here; the field itself lives under Algemeen. */}
+      {/* The "Daglimiet bereikt" message sends people here; the field itself lives under Geavanceerd › Standaarden. */}
       {d.today?.byAdmin ? (
         <p className="mt-1 text-xs text-muted">Dit maximum stelt de beheerder in.</p>
       ) : (
-        <a href="#/settings/general?meer=1" className="mt-1 inline-block text-xs text-accent underline">
+        <a href="#/settings/bot-defaults" className="mt-1 inline-block text-xs text-accent underline">
           Aanpassen
         </a>
       )}
@@ -279,7 +318,6 @@ function BudgetCard({ d }: { d: any }) {
   );
 }
 
-const H2 = 'text-[15px] font-bold tracking-tight';
 
 function Security() {
   const [sessions, setSessions] = useState<any[] | null>(null);
@@ -302,9 +340,9 @@ function Security() {
   useEffect(load, [phone]);
   return (
     <>
-      <AppLockCard />
+      {/* The lock itself has its own row in the list (#/settings/slot). */}
       <Card className="px-5 pb-2 pt-4">
-        <h2 className={H2}>Ingelogde apparaten</h2>
+        <CardHead icon={Laptop} tone="blue" title="Ingelogde apparaten" />
         {phone ? (
           <ComputerOnly>Inlogsessies beheer je op je computer.</ComputerOnly>
         ) : !sessions ? (
@@ -329,10 +367,16 @@ function Security() {
         )}
       </Card>
       <Card className="px-5 pb-2 pt-4">
-        <h2 className={H2}>Opgeslagen sleutels</h2>
-        <p className="mt-0.5 text-xs text-muted">
-          Welke sleutels TeamBot bewaart en waarvoor. <MoreInfo>Waarden verlaten de server nooit en komen niet in logs of chats.</MoreInfo>
-        </p>
+        <CardHead
+          icon={IcKey}
+          tone="amber"
+          title="Opgeslagen sleutels"
+          hint={
+            <>
+              Welke sleutels TeamBot bewaart en waarvoor. <MoreInfo>Waarden verlaten de server nooit en komen niet in logs of chats.</MoreInfo>
+            </>
+          }
+        />
         {phone ? (
           <ComputerOnly>Opgeslagen sleutels bekijken kan alleen op je computer.</ComputerOnly>
         ) : !secrets ? (
@@ -352,7 +396,7 @@ function Security() {
                     </span>
                   );
                 })()}
-                <Button size="sm" variant="ghost" aria-label={`${s.name} wissen`} onClick={async () => (await askConfirm(`Geheim "${s.name}" wissen?`, { danger: true })) && api.del(`/secrets/${encodeURIComponent(s.name)}`).then(load).catch(toastError)}>
+                <Button size="sm" variant="ghost" aria-label={t('{0} wissen', s.name)} onClick={async () => (await askConfirm(`Geheim "${s.name}" wissen?`, { danger: true })) && api.del(`/secrets/${encodeURIComponent(s.name)}`).then(load).catch(toastError)}>
                   <Trash2 className="h-3.5 w-3.5" />
                 </Button>
               </div>
@@ -364,6 +408,11 @@ function Security() {
       <MoreOptions label="Logboek">
         <AuditLog />
       </MoreOptions>
+      <p className="px-1 text-xs text-muted">
+        <a className="underline" href="#/settings/data">
+          Privacy en gegevens
+        </a>
+      </p>
     </>
   );
 }
@@ -377,7 +426,7 @@ function Data() {
   return (
     <>
       <Card className="space-y-3 p-5" id="waar-staat-mijn-data">
-        <h2 className={H2}>Wat staat waar</h2>
+        <CardHead icon={IcDrive} tone="blue" title="Wat staat waar" />
         <ul className="list-disc space-y-1 ps-5 text-sm">
           <li>Je bots, gesprekken en bestanden staan op deze computer.</li>
           <li>Een AI-dienst krijgt alleen wat een bot nodig heeft voor zijn antwoord.</li>
@@ -391,7 +440,7 @@ function Data() {
             <li>Sleutels en geheimen staan versleuteld en komen nooit in gesprekken, logboeken of exports.</li>
             <li>Iets van internet ophalen gebeurt alleen als jij of een bot erom vraagt (een webpagina, een app uit de marktplaats, zoeken naar updates als je dat aanzet).</li>
             <li>
-              Bots vragen toestemming voordat ze iets wijzigen; versturen, betalen en verwijderen wat niet terug kan, vragen altijd. Alles met gevolgen staat in het logboek onder <a className="underline hover:text-fg" href="#/settings/security">Beveiliging</a>.
+              Bots vragen toestemming voordat ze iets wijzigen; versturen, betalen en verwijderen wat niet terug kan, vragen altijd. Alles met gevolgen staat in het <a className="underline hover:text-fg" href="#/settings/security?meer=1">logboek</a>.
             </li>
           </ul>
         </MoreInfo>
@@ -473,7 +522,7 @@ function MemberPolicyCard() {
   }, []);
   if (!p) return <Spinner />;
   return (
-    <SettingsSection title="Regels voor leden" info="Bots van leden werken in hun eigen map, zonder toegang tot het interne netwerk.">
+    <SettingsSection icon={IcUsers} tone="rose" title="Regels voor leden" info="Bots van leden werken in hun eigen map, zonder toegang tot het interne netwerk.">
       <MemberPolicyRows p={p} setP={setP} />
     </SettingsSection>
   );
@@ -486,15 +535,14 @@ function MemberPolicyRows({ p, setP }: { p: MemberPolicy; setP(p: MemberPolicy):
   const save = (patch: Partial<MemberPolicy>) => void track(api.put('/admin/member-policy', { ...p, ...patch }).then(setP));
   return (
     <>
-      <SettingRow label="Dagbudget per lid (USD)" hint="0 = geen limiet.">
+      <SettingRow setting="members.dailyBudgetUsd">
         <Input className="w-28" inputMode="decimal" aria-label="Maximaal dagbudget per lid (USD)" defaultValue={String(p.dailyBudgetUsd)} onBlur={(e) => save({ dailyBudgetUsd: Number(e.target.value.replace(',', '.')) || 0 })} />
       </SettingRow>
-      <SettingRow label="Aantal bots per lid" hint="0 = geen limiet.">
+      <SettingRow setting="members.maxAgents">
         <Input className="w-28" inputMode="numeric" aria-label="Maximaal aantal bots per lid" defaultValue={String(p.maxAgents)} onBlur={(e) => save({ maxAgents: Number(e.target.value) || 0 })} />
       </SettingRow>
       <SwitchRow
-        label="Terminal toestaan voor leden"
-        hint="Alleen voor mensen die je volledig vertrouwt."
+        setting="members.allowShell"
         info="Opdrachten draaien dan met de rechten van deze server. Alleen de eigenaar kan dit aanzetten."
         checked={p.allowShell}
         disabled={me?.role !== 'owner'}
@@ -503,8 +551,7 @@ function MemberPolicyRows({ p, setP }: { p: MemberPolicy; setP(p: MemberPolicy):
         }}
       />
       <SwitchRow
-        label="Cloud-VM’s toestaan voor leden"
-        hint="Met hun eigen token en op hun eigen kosten."
+        setting="members.allowCloudVm"
         info="Leden kunnen hun bot dan een eigen VM bij Hetzner of DigitalOcean geven. Die VM's tellen niet mee voor het dagbudget."
         checked={!!p.allowCloudVm}
         onChange={(v) => save({ allowCloudVm: v })}
@@ -544,7 +591,7 @@ function UsersAdmin() {
   return (
     <>
       <Card className="px-5 pb-2 pt-4">
-        <h2 className={H2}>Gebruikers</h2>
+        <CardHead icon={IcUsers} tone="blue" title="Gebruikers" />
         {!users ? (
           <Spinner className="my-3" />
         ) : (
@@ -572,7 +619,7 @@ function UsersAdmin() {
       </Card>
       <Card className="space-y-3 p-5">
         <div>
-          <h2 className={H2}>Iemand uitnodigen</h2>
+          <CardHead icon={UserPlus} tone="teal" title="Iemand uitnodigen" />
           <p className="mt-0.5 text-xs text-muted">
             Een eigen account op deze server. <MoreInfo>Met eigen bots, gesprekken en sleutels. Gedeelde providers kunnen ze gebruiken zonder de sleutel te zien.</MoreInfo>
           </p>
@@ -604,7 +651,7 @@ function UsersAdmin() {
                   nog {i.uses_left}× · tot {new Date(i.expires_at).toLocaleDateString(uiLocale())} {i.note && `· ${i.note}`}
                 </span>
                 <span className="flex-1" />
-                <Button size="sm" variant="ghost" icon={<Copy className="h-3.5 w-3.5" />} onClick={() => navigator.clipboard?.writeText(link(i.code)).then(() => toast('Link gekopieerd', 'ok'))}>
+                <Button size="sm" variant="ghost" icon={<Copy className="h-3.5 w-3.5" />} onClick={() => void copyText(link(i.code), 'Link gekopieerd')}>
                   Link
                 </Button>
                 <Button size="sm" variant="ghost" onClick={() => api.del(`/admin/invites/${i.code}`).then(load).catch(toastError)}>
@@ -639,20 +686,27 @@ function downloadLink(href: string) {
 }
 
 /** Back-ups and the full export (also reached with Ctrl+K "back-up"). */
-function Backups() {
-  // One "Back-ups": the full backup settings of the backups module right here (owner and admins).
+function Backups({ simple }: { simple?: boolean }) {
+  // One "Back-ups": the backup page of the backups module right here (owner and admins). `simple` (Beveiliging en
+  // back-ups): only making one and putting one back; the full page is under Geavanceerd.
   const me = useApp((s) => s.me);
-  const Full = me?.role !== 'member' ? uiModules.find((m) => m.id === 'backups')?.settingsTabs?.find((t) => t.id === 'app')?.component : undefined;
+  const Full = (me?.role !== 'member' ? uiModules.find((m) => m.id === 'backups')?.settingsTabs?.find((t) => t.id === 'app')?.component : undefined) as React.ComponentType<{ simple?: boolean }> | undefined;
   const phone = useIsPhoneSession();
   return (
     <>
-      {Full && <Full />}
-      <Card className="flex flex-wrap items-center justify-between gap-x-4 gap-y-3 p-5">
+      {Full && <Full simple={simple} />}
+      {!simple && <Card className="flex flex-wrap items-center justify-between gap-x-4 gap-y-3 p-5">
         <div className="min-w-0 flex-1 basis-56">
-          <h2 className={H2}>Alles exporteren</h2>
-          <p className="mt-0.5 text-xs text-muted">
-            Alles als één bestand, zonder sleutels. <MoreInfo>Al je bots, gesprekken en instellingen als één bestand, zonder sleutels.</MoreInfo>
-          </p>
+          <CardHead
+            icon={FileDown}
+            tone="amber"
+            title="Alles exporteren"
+            hint={
+              <>
+                Alles als één bestand, zonder sleutels. <MoreInfo>Al je bots, gesprekken en instellingen als één bestand, zonder sleutels.</MoreInfo>
+              </>
+            }
+          />
         </div>
         {phone ? (
           <ComputerOnly>Al je gegevens exporteren kan alleen op je computer.</ComputerOnly>
@@ -663,7 +717,7 @@ function Backups() {
             Exporteren
           </Button>
         )}
-      </Card>
+      </Card>}
     </>
   );
 }
@@ -671,7 +725,7 @@ function Backups() {
 /** "Geavanceerd tonen" (shell/advanced.ts), saved at once for this user. The old Geavanceerd page is gone; this is its switch. */
 function AdvancedSection() {
   return (
-    <SettingsSection title="Weergave">
+    <SettingsSection icon={SlidersHorizontal} tone="neutral" title="Weergave">
       <AdvancedSwitch />
     </SettingsSection>
   );
@@ -683,8 +737,7 @@ function AdvancedSwitch() {
   const [busy, setBusy] = useState(false);
   return (
     <SwitchRow
-      label="Geavanceerd tonen"
-      hint="Toont ook de onderdelen voor gevorderden."
+      setting="ui.advanced"
       checked={on}
       disabled={busy}
       onChange={(v) => (setBusy(true), void save(setAdvanced(v)).finally(() => setBusy(false)))}
@@ -703,16 +756,9 @@ interface SettingsTab {
 /** Wide enough for the settings list next to the page (beside the sidebar). */
 const WIDE_QUERY = '(min-width: 1024px)';
 
-const ROW_ICONS: Record<string, LucideIcon> = { Settings2, Sparkles, Gauge, Bot, MonitorSmartphone, Lock };
-/** A colour per row, as on the website: the icon sits in a small soft tile, so the list reads at a glance. */
-const ROW_TILE: Record<string, string> = {
-  general: 'bg-[#ff9440]/15 text-[#e07a22] dark:text-[#ffab69]',
-  ai: 'bg-[#8b7cf6]/15 text-[#6d5ce0] dark:text-[#b3a8ff]',
-  bots: 'bg-[#35b8a6]/15 text-[#1f8f80] dark:text-[#6fdccd]',
-  apps: 'bg-[#4c9bf5]/15 text-[#2f7bd6] dark:text-[#8dc0ff]',
-  privacy: 'bg-[#e56b8a]/15 text-[#c94a6b] dark:text-[#ff9db5]',
-  gebruik: 'bg-[#d9a520]/15 text-[#a87b0a] dark:text-[#f2c655]',
-};
+const ROW_ICONS: Record<string, LucideIcon> = { Sparkles, Smartphone, Palette: IcPalette, ShieldCheck, DatabaseBackup: IcBackup, Lock, Bot, Users: IcUsers, Brain: IcBrain, RadioTower: IcRadio, Blocks: IcBlocks, FolderOpen: IcFolder, LayoutGrid: IcGrid };
+/** One short line under each row of the list on a narrow screen, and under the title of its page (shared/settings.ts). */
+const ROW_HINT: Record<string, string> = Object.fromEntries(SETTINGS_ROWS.map((r) => [r.id, r.hint]));
 
 /** One short line under an entry in a list of links ("Meer", Bots en teams, Apps en apparaten). */
 /** A stored key in plain words: what it is called and what it is for (never its value). */
@@ -732,92 +778,65 @@ function describeSecret(name: string, info: { apps: Record<string, string>; scri
   return { title: name, purpose: 'Bewaard door TeamBot' };
 }
 
-/** A small coloured icon for every entry of a settings list ("Meer", Bots en teams, Apps en apparaten), as on the website. */
-const ENTRY_ICON: Record<string, [LucideIcon, string]> = {
-  'notifications-meldingen': [IcBell, 'bg-[#ff9440]/15 text-[#e07a22] dark:text-[#ffab69]'],
-  'notifications/': [IcBellRing, 'bg-[#d9a520]/15 text-[#a87b0a] dark:text-[#f2c655]'],
-  'voice-spraak': [IcMic, 'bg-[#8b7cf6]/15 text-[#6d5ce0] dark:text-[#b3a8ff]'],
-  'voice/vergadering': [IcNotes, 'bg-[#8b7cf6]/15 text-[#6d5ce0] dark:text-[#b3a8ff]'],
-  'voice/': [IcMic, 'bg-[#8b7cf6]/15 text-[#6d5ce0] dark:text-[#b3a8ff]'],
-  'openbot-import-overstappen': [IcSwitch, 'bg-[#4c9bf5]/15 text-[#2f7bd6] dark:text-[#8dc0ff]'],
-  'health-status': [IcActivity, 'bg-[#35b8a6]/15 text-[#1f8f80] dark:text-[#6fdccd]'],
-  'network-proxy': [IcNetwork, 'bg-[#4c9bf5]/15 text-[#2f7bd6] dark:text-[#8dc0ff]'],
-  'agents/': [Bot, 'bg-[#35b8a6]/15 text-[#1f8f80] dark:text-[#6fdccd]'],
-  'teams-teams': [IcUsers, 'bg-[#4c9bf5]/15 text-[#2f7bd6] dark:text-[#8dc0ff]'],
-  'teams/alle': [IcGrid, 'bg-[#4c9bf5]/15 text-[#2f7bd6] dark:text-[#8dc0ff]'],
-  'memory/': [IcBrain, 'bg-[#8b7cf6]/15 text-[#6d5ce0] dark:text-[#b3a8ff]'],
-  'specialists/': [IcGrad, 'bg-[#d9a520]/15 text-[#a87b0a] dark:text-[#f2c655]'],
-  'routines-routines': [IcAlarm, 'bg-[#ff9440]/15 text-[#e07a22] dark:text-[#ffab69]'],
-  'users': [IcUser, 'bg-[#e56b8a]/15 text-[#c94a6b] dark:text-[#ff9db5]'],
-  'cli-agents-cli': [IcTerminal, 'bg-[#8b7cf6]/15 text-[#6d5ce0] dark:text-[#b3a8ff]'],
-  'free-models-gratis': [IcGift, 'bg-[#35b8a6]/15 text-[#1f8f80] dark:text-[#6fdccd]'],
-  'websearch-zoeken': [Search, 'bg-[#4c9bf5]/15 text-[#2f7bd6] dark:text-[#8dc0ff]'],
-  'images-afbeeldingen': [IcImage, 'bg-[#e56b8a]/15 text-[#c94a6b] dark:text-[#ff9db5]'],
-  'engine-chain-doorschakelen': [IcShuffle, 'bg-[#d9a520]/15 text-[#a87b0a] dark:text-[#f2c655]'],
-  'mobile-telefoon': [IcPhone, 'bg-[#4c9bf5]/15 text-[#2f7bd6] dark:text-[#8dc0ff]'],
-  'mobile/concepten': [IcPhone, 'bg-[#4c9bf5]/15 text-[#2f7bd6] dark:text-[#8dc0ff]'],
-  'browser/': [IcMonitor, 'bg-[#35b8a6]/15 text-[#1f8f80] dark:text-[#6fdccd]'],
-  'browser/kluis': [IcKey, 'bg-[#d9a520]/15 text-[#a87b0a] dark:text-[#f2c655]'],
-  'remote-desktop/': [MonitorSmartphone, 'bg-[#35b8a6]/15 text-[#1f8f80] dark:text-[#6fdccd]'],
-  'channels/': [IcRadio, 'bg-[#ff9440]/15 text-[#e07a22] dark:text-[#ffab69]'],
-  'mcp/': [IcBlocks, 'bg-[#8b7cf6]/15 text-[#6d5ce0] dark:text-[#b3a8ff]'],
-  'sites/': [IcGlobe, 'bg-[#4c9bf5]/15 text-[#2f7bd6] dark:text-[#8dc0ff]'],
-  'folders/': [IcFolder, 'bg-[#d9a520]/15 text-[#a87b0a] dark:text-[#f2c655]'],
-  'folders-teammap': [IcFolder, 'bg-[#d9a520]/15 text-[#a87b0a] dark:text-[#f2c655]'],
-  'folders/prullenbak': [IcTrash, 'bg-[#e56b8a]/15 text-[#c94a6b] dark:text-[#ff9db5]'],
-  'backups': [IcBackup, 'bg-[#35b8a6]/15 text-[#1f8f80] dark:text-[#6fdccd]'],
-  'data': [IcDrive, 'bg-[#4c9bf5]/15 text-[#2f7bd6] dark:text-[#8dc0ff]'],
-  'security': [Lock, 'bg-[#e56b8a]/15 text-[#c94a6b] dark:text-[#ff9db5]'],
-  'usage': [Gauge, 'bg-[#d9a520]/15 text-[#a87b0a] dark:text-[#f2c655]'],
-  'usage/': [Gauge, 'bg-[#d9a520]/15 text-[#a87b0a] dark:text-[#f2c655]'],
-  'general': [Settings2, 'bg-[#ff9440]/15 text-[#e07a22] dark:text-[#ffab69]'],
-  'providers': [Sparkles, 'bg-[#8b7cf6]/15 text-[#6d5ce0] dark:text-[#b3a8ff]'],
+/** The icon of every entry of a settings list ("Meer", Bots en teams, Apps en apparaten). */
+const ENTRY_ICON: Record<string, LucideIcon> = {
+  'notifications-meldingen': IcBell,
+  'notifications/': IcBellRing,
+  'voice-spraak': IcMic,
+  'voice/vergadering': IcNotes,
+  'voice/': IcMic,
+  'openbot-import-overstappen': IcSwitch,
+  'health-status': IcActivity,
+  'network-proxy': IcNetwork,
+  'agents/': Bot,
+  'teams-teams': IcUsers,
+  'teams/alle': IcGrid,
+  'memory/': IcBrain,
+  'specialists/': IcGrad,
+  'routines-routines': IcAlarm,
+  'users': IcUser,
+  'cli-agents-cli': IcTerminal,
+  'free-models-gratis': IcGift,
+  'websearch-zoeken': Search,
+  'images-afbeeldingen': IcImage,
+  'engine-chain-doorschakelen': IcShuffle,
+  'mobile-telefoon': IcPhone,
+  'mobile/concepten': IcPhone,
+  'browser/': IcMonitor,
+  'browser/kluis': IcKey,
+  'remote-desktop/': MonitorSmartphone,
+  'channels/': IcRadio,
+  'mcp/': IcBlocks,
+  'sites/': IcGlobe,
+  'folders/': IcFolder,
+  'folders-teammap': IcFolder,
+  'folders/prullenbak': IcTrash,
+  'backups': IcBackup,
+  'data': IcDrive,
+  'security': Lock,
+  'usage': Gauge,
+  'usage/': Gauge,
+  'general': IcPalette,
+  'regels': ShieldCheck,
+  'slot': Lock,
+  'rooms/organisatie': IcGrid,
+  'kant-en-klaar': IcGift,
+  'vanzelf': IcAlarm,
+  'teams': IcUsers,
+  'telefoon': IcPhone,
+  'veilig': IcBackup,
+  'bot-defaults': Bot,
+  'systeem': IcMonitor,
+  'ai-meer': Cpu,
+  'skills-uitgevers': IcKey,
+  'providers': Sparkles,
 };
-const ENTRY_HINT: Record<string, string> = {
-  'agents/': 'Al je bots, het archief en importeren.',
-  'teams-teams': 'Een eigen team per bedrijf of doel.',
-  'rooms/': 'Bots die samen in één gesprek werken.',
-  'memory/': 'Wat je bots over jou en je werk onthouden.',
-  'specialists/': 'Vakkennis die een bot erbij leert.',
-  'rooms/organisatie': 'Wie welke bot aanstuurt.',
-  'teams/alle': 'Al je teams naast elkaar.',
-  'routines-routines': 'Tijdzone en limieten voor terugkerende taken.',
-  users: 'Mensen uitnodigen, rollen en inloggen via je bedrijf.',
-  'mobile-telefoon': 'Koppel je telefoon met een QR-code.',
-  'browser/': 'Waar je bots op werken: een browser, je bureaublad of een server.',
-  'remote-desktop/': 'Je pc bekijken en bedienen vanaf je telefoon.',
-  'mobile/concepten': 'Berichten die je zonder verbinding schreef.',
-  'channels/': 'Telegram, WhatsApp, Discord, Slack en e-mail.',
-  'mcp/': 'Gmail, agenda, Notion en andere apps.',
-  'sites/': 'Pagina’s die je bots online zetten.',
-  'folders/': 'De mappen en bestanden van je bots.',
-  'folders-teammap': 'Eén map die al je bots delen.',
-  'folders/prullenbak': 'Verwijderde bestanden terughalen.',
-  'browser/kluis': 'Wachtwoorden en sleutels voor je bots.',
-  'voice/vergadering': 'Een gesprek opnemen en laten samenvatten.',
-  'voice/': 'Eerdere spraakgesprekken met je bots.',
-  'voice-spraak': 'Stem, dicteren en voorlezen.',
-  'openbot-import-overstappen': 'Neem je bots en gesprekken mee.',
-  'health-status': 'Snelheid en storingen van TeamBot zelf.',
-  'network-proxy': 'Voor een bedrijfsnetwerk met een proxy.',
-  'websearch-zoeken': 'Welke zoekdienst je bots gebruiken.',
-  'images-afbeeldingen': 'Met welke dienst je bots afbeeldingen maken.',
-  'engine-chain-doorschakelen': 'Gratis modellen als reserve bij een limiet.',
-  usage: 'Geschatte kosten per dag, bot en model.',
-  'notifications/': 'Alles wat je bots je hebben gemeld.',
-  data: 'Wat op deze computer blijft en wat naar een AI-dienst gaat.',
-  backups: 'Elke dag een back-up, terugzetten en bijwerken.',
-  'notifications-meldingen': 'Geluid, en hoeveel je van elke bot wilt horen.',
-  'skills-uitgevers': 'Van wie je skills en bots vertrouwt.',
-};
+/** One short line under an entry in a list of links (shared/settings.ts, where a bot finds the same words). */
+const ENTRY_HINT: Record<string, string> = Object.fromEntries(Object.entries(SETTINGS_PAGES).flatMap(([k, p]) => (p.hint ? [[k, p.hint]] : [])));
 
-/** The one line under the title of a settings page (only where the title alone does not say it). */
+/** The one line under the title of a settings page that is not the page of a row (those use ROW_HINT). */
 const PAGE_HINT: Record<string, string> = {
-  bots: 'Je bots, je teams en wat ze weten.',
-  apps: 'Wat je aan TeamBot koppelt en waar je bots bij kunnen.',
   usage: 'Een schatting op basis van publieke prijzen.',
-  security: 'Vergrendeling, ingelogde apparaten en het logboek.',
-  general: 'Je naam, je taal en hoe TeamBot eruitziet.',
 };
 
 /** Every settings tab this user has (module tabs included), with its component. */
@@ -826,15 +845,29 @@ function useSettingsTabs() {
   const mode = useApp((s) => s.mode);
   const isAdmin = me?.role !== 'member';
   const modTabs = uiModules.flatMap((m) => (m.settingsTabs || []).filter((t) => !t.adminOnly || isAdmin).map((t) => ({ ...t, key: `${m.id}-${t.id}` })));
+  const has = (key: string) => modTabs.some((t) => t.key === key);
   const tabs: SettingsTab[] = [
-    { id: 'general', label: 'Algemeen' },
-    { id: 'providers', label: 'AI-diensten' },
+    { id: 'general', label: settingsPageTitle('general') },
+    { id: 'providers', label: settingsPageTitle('providers') },
+    { id: 'regels', label: settingsPageTitle('regels') },
+    { id: 'slot', label: settingsPageTitle('slot') },
+    // Meer mogelijkheden › Kant-en-klare teams: the wizard that is also behind the "+" menu and Teams › Meer opties.
+    { id: 'kant-en-klaar', label: settingsPageTitle('kant-en-klaar') },
+    // Meer mogelijkheden › Wat start vanzelf: the same list as on Taken › Automatisch › Werk.
+    { id: 'vanzelf', label: settingsPageTitle('vanzelf') },
+    // The short pages of the list: the simple form of a module page (the full one is under Meer mogelijkheden).
+    ...(has('mobile-telefoon') ? [{ id: 'telefoon', label: settingsPageTitle('telefoon') }] : []),
+    ...(has('teams-teams') ? [{ id: 'teams', label: settingsPageTitle('teams') }] : []),
+    { id: 'veilig', label: settingsPageTitle('veilig') },
+    { id: 'bot-defaults', label: settingsPageTitle('bot-defaults') },
+    { id: 'ai-meer', label: settingsPageTitle('ai-meer') },
+    { id: 'systeem', label: settingsPageTitle('systeem') },
     ...modTabs.map((t) => ({ id: t.key, label: t.title })),
-    { id: 'usage', label: 'Kosten' },
-    { id: 'security', label: 'Beveiliging' },
-    { id: 'data', label: 'Waar staat mijn data?' },
-    { id: 'backups', label: 'Back-ups' },
-    ...(isAdmin && mode === 'server' ? [{ id: 'users', label: 'Gebruikers' }] : []),
+    { id: 'usage', label: settingsPageTitle('usage') },
+    { id: 'security', label: settingsPageTitle('security') },
+    { id: 'data', label: settingsPageTitle('data') },
+    { id: 'backups', label: settingsPageTitle('backups') },
+    ...(isAdmin && mode === 'server' ? [{ id: 'users', label: settingsPageTitle('users') }] : []),
   ];
   return { tabs, modTabs };
 }
@@ -850,24 +883,20 @@ function useSettings(current: string | null) {
   return { tabs, modTabs, rows, row, sub };
 }
 
-/** A list of links to settings pages: a title, one short line, a chevron. */
-function EntryList({ sections, label }: { sections: SettingsNavRow['more']; label?: string }) {
+/** A list of links to settings pages: a title, one short line, a chevron. `columns`: two side by side where the page is wide enough (the long list of Meer mogelijkheden). */
+function EntryList({ sections, label, columns }: { sections: SettingsNavRow['more']; label?: string; columns?: boolean }) {
   return (
     <nav aria-label={label || 'Onderdelen'} className="space-y-4">
       {sections.map((s, i) => (
         <section key={s.title || i}>
           {(s.title || label) && <h2 className="mb-2 px-1 text-[13px] font-semibold text-muted">{s.title || label}</h2>}
-          <ul className="divide-y divide-line overflow-hidden rounded-card border border-line bg-surface">
+          <ul className={cx('overflow-hidden rounded-card border border-line', columns ? 'grid gap-px bg-line xl:grid-cols-2' : 'divide-y divide-line bg-surface')}>
             {s.rows.map((r) => (
-              <li key={r.key}>
-                <a href={r.href} className="flex min-h-[52px] items-center gap-3 px-4 py-2 transition-colors hover:bg-surface-2">
+              <li key={r.key} className={columns ? 'bg-surface xl:last:odd:col-span-2' : undefined}>
+                <a href={r.href} className="flex h-full min-h-[52px] items-center gap-3 px-4 py-2 transition-colors hover:bg-surface-2">
                   {(() => {
-                    const [Icon, tile] = ENTRY_ICON[r.key] || [Settings2, 'bg-surface-3 text-muted'];
-                    return (
-                      <span className={cx('flex size-8 shrink-0 items-center justify-center rounded-lg', tile)} aria-hidden>
-                        <Icon className="h-[18px] w-[18px]" />
-                      </span>
-                    );
+                    const Icon = ENTRY_ICON[r.key] || Settings2;
+                    return <Icon className="h-[18px] w-[18px] shrink-0 text-muted" aria-hidden />;
                   })()}
                   <span className="min-w-0 flex-1">
                     <span className="block text-sm font-medium">{r.title}</span>
@@ -885,8 +914,9 @@ function EntryList({ sections, label }: { sections: SettingsNavRow['more']; labe
 }
 
 /**
- * The Settings list: one flat list of plain rows (lib/palette.ts SETTINGS_ROWS), and a filter that matches titles and
- * the words people use ("donker", "back-up", "telegram") and finds every entry, also those under "Meer" of a row.
+ * The Settings list: one flat list of plain rows (lib/palette.ts SETTINGS_ROWS). First what you set yourself, then under
+ * one small heading what your bots have, and last the one row for everything optional (Meer mogelijkheden). The filter
+ * matches titles and the words people use ("donker", "back-up", "telegram") and finds every entry, also the optional ones.
  */
 function SettingsNav({ rows, tabs, current, big }: { rows: SettingsNavRow[]; tabs: SettingsTab[]; current: string | null; big?: boolean }) {
   const [q, setQ] = useState('');
@@ -898,7 +928,7 @@ function SettingsNav({ rows, tabs, current, big }: { rows: SettingsNavRow[]; tab
         aria-current={on ? 'page' : undefined}
         className={cx(
           'flex items-center gap-3 text-sm transition-colors',
-          big ? 'min-h-[52px] px-4 font-medium hover:bg-surface-2' : 'min-h-10 rounded-control px-2 py-1.5 coarse:min-h-11',
+          big ? 'min-h-[56px] px-4 py-2 font-medium hover:bg-surface-2' : 'min-h-10 rounded-control px-2 py-1.5 coarse:min-h-11',
           !big && (on ? 'bg-surface-3 font-semibold text-fg' : 'font-medium text-muted hover:bg-surface-2 hover:text-fg'),
         )}
       >
@@ -908,6 +938,29 @@ function SettingsNav({ rows, tabs, current, big }: { rows: SettingsNavRow[]; tab
     </li>
   );
   const listClass = big ? 'divide-y divide-line overflow-hidden rounded-card border border-line bg-surface' : 'space-y-0.5';
+  const part = (list: SettingsNavRow[], title?: string) =>
+    list.length > 0 && (
+      <div key={title || list[0].id} role={title ? 'group' : undefined} aria-label={title}>
+        {title && <div className={cx('mb-1.5 text-[12.5px] font-semibold text-muted', big ? 'px-1' : 'px-2')}>{title}</div>}
+        <ul className={listClass}>
+          {list.map((r) =>
+            link(
+              r.id,
+              r.href,
+              current === r.id,
+              <>
+                <IconTile icon={ROW_ICONS[r.icon] || Settings2} size="sm" />
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate">{r.title}</span>
+                  {big && ROW_HINT[r.id] && <span className="block text-xs font-normal leading-snug text-muted">{ROW_HINT[r.id]}</span>}
+                </span>
+              </>,
+            ),
+          )}
+        </ul>
+      </div>
+    );
+  const optional = rows.filter((r) => !r.hasMain);
   return (
     <nav aria-label="Instellingen" className="space-y-3">
       <div className="relative">
@@ -940,22 +993,14 @@ function SettingsNav({ rows, tabs, current, big }: { rows: SettingsNavRow[]; tab
           </ul>
         )
       ) : (
-        <ul className={listClass}>
-          {rows.map((r) => {
-            const Icon = ROW_ICONS[r.icon] || Settings2;
-            return link(
-              r.id,
-              r.href,
-              current === r.id,
-              <>
-                <span className={cx('flex shrink-0 items-center justify-center rounded-lg', big ? 'size-8' : 'size-7', ROW_TILE[r.id] || 'bg-surface-3 text-muted')} aria-hidden>
-                  <Icon className={big ? 'h-[18px] w-[18px]' : 'h-4 w-4'} />
-                </span>
-                <span className="min-w-0 flex-1 truncate">{r.title}</span>
-              </>,
-            );
-          })}
-        </ul>
+        <div className={big ? 'space-y-5' : 'space-y-4'}>
+          {part(rows.filter((r) => r.hasMain && !r.work))}
+          {part(
+            rows.filter((r) => r.hasMain && r.work),
+            'Van je bots',
+          )}
+          {part(optional)}
+        </div>
       )}
     </nav>
   );
@@ -1077,14 +1122,23 @@ export function SettingsFrame({ current, children }: { current: string; children
 export function SettingsPage({ tab }: { tab?: string }) {
   useInSettings();
   const wide = useMedia(WIDE_QUERY);
-  // The old Geavanceerd page: Algemeen with "Meer opties" open (its switch lives there now).
-  const openMore = tab === 'advanced';
-  const asked = openMore || tab === 'appearance' ? 'general' : tab || null;
+  // An old link (advanced, geavanceerd, appearance, meldingen) opens the page that has it now; a module tab with an
+  // alias (backups-app, usage-limits) keeps its own page.
+  const alias = settingsRowOf(tab || null);
+  const ownTab = !!tab && uiModules.some((m) => (m.settingsTabs || []).some((x) => `${m.id}-${x.id}` === tab));
+  const asked = (ownTab ? tab : alias) || null;
   const all = useSettings(asked);
   const hubAsked = all.rows.find((r) => !r.hasMain && r.id === asked);
   const found = hubAsked?.id || all.tabs.find((t) => t.id === asked)?.id || null;
-  const current = found || (wide ? 'general' : null);
-  const { tabs, modTabs, rows, row, sub } = found && found === asked ? all : { ...all, row: all.rows.find((r) => r.id === 'general'), sub: false };
+  // An old link to an overview that is gone (#/settings/bots, #/settings/apps): the row with that id opens its own page now.
+  const moved = asked && !found ? all.rows.find((r) => r.id === asked && r.kind === 'page') : undefined;
+  useEffect(() => {
+    if (moved) navigate(moved.href, { replace: true });
+  }, [moved]);
+  // Nothing asked on a wide screen: the first row (AI-diensten), the one thing nobody can do without.
+  const current = found || (wide ? 'providers' : null);
+  const { tabs, modTabs, rows, row, sub } = found && found === asked ? all : { ...all, row: all.rows.find((r) => r.id === 'ai'), sub: false };
+  if (moved) return null;
 
   if (!current)
     return (
@@ -1093,7 +1147,7 @@ export function SettingsPage({ tab }: { tab?: string }) {
           <div className="-mt-1 mb-1">
             <LeaveSettings />
           </div>
-          <h1 className="mb-4 text-[22px] font-bold leading-tight tracking-tight">Instellingen</h1>
+          <h1 className="mb-4 text-xl font-bold leading-tight tracking-tight sm:text-[22px]">Instellingen</h1>
           <SettingsNav rows={rows} tabs={tabs} current={null} big />
         </div>
       </Page>
@@ -1104,26 +1158,40 @@ export function SettingsPage({ tab }: { tab?: string }) {
   const entry = row?.more.flatMap((s) => s.rows).find((r) => r.key === current);
   const title = !sub && row ? row.title : entry?.title || tabs.find((t) => t.id === current)?.label || '';
   const back = backOf(row, sub, wide);
+  const hint = !sub && row ? ROW_HINT[row.id] : PAGE_HINT[current];
   const page = (
     <Page>
-      <div className={cx('mx-auto px-4 pb-10 pt-5 sm:px-6', wide && 'pt-8', current === 'providers' || current === 'users' ? 'max-w-4xl' : 'max-w-3xl')}>
+      <div className={cx('mx-auto px-4 pb-10 pt-5 sm:px-6', wide && 'pt-8', 'max-w-4xl')}>
         {back && (
           <div className="-mt-1 mb-1">
             <BackLink {...back} />
           </div>
         )}
-        <h1 className="text-[22px] font-bold leading-tight tracking-tight sm:text-2xl">{title}</h1>
-        {PAGE_HINT[current] && <p className="mt-1 text-sm text-muted">{PAGE_HINT[current]}</p>}
+        {/* Every settings page opens the same way: the title and at most one line under it. */}
+        <div className="min-w-0">
+          <h1 className="text-xl font-bold leading-tight tracking-tight sm:text-[22px]">{title}</h1>
+          {hint && <p className="mt-1 text-[13px] leading-snug text-muted">{hint}</p>}
+        </div>
         <div className="mt-5 space-y-4">
-          {current === 'general' && <General openMore={openMore} />}
-          {current === 'providers' && <ProvidersSettings />}
+          {current === 'general' && <General />}
+          {/* An old link with ?meer=1 still shows the whole page (the catalogue of other services opened). */}
+          {current === 'providers' && <ProvidersSettings part={query().has('meer') ? undefined : 'main'} />}
+          {current === 'ai-meer' && <ProvidersSettings part="more" />}
+          {SIMPLE_OF[current] && <Simple tab={SIMPLE_OF[current]} />}
+          {current === 'veilig' && <Safe />}
+          {current === 'regels' && <RulesSettings />}
+          {current === 'slot' && <AppLockCard />}
+          {current === 'vanzelf' && <PlannedList />}
+          {current === 'kant-en-klaar' && <TeamTemplateWizard onCancel={() => navigate('#/settings/meer')} />}
+          {current === 'bot-defaults' && <BotDefaultsPage />}
+          {current === 'systeem' && <SystemPage />}
           {current === 'usage' && <Usage />}
           {current === 'security' && <Security />}
           {current === 'data' && <Data />}
           {current === 'backups' && <Backups />}
           {current === 'users' && <Users />}
           {Mod && <Mod />}
-          {hub && <EntryList sections={hub.more} />}
+          {hub && <EntryList sections={hub.more} columns />}
           {!hub && !sub && !!row?.more.length && <EntryList sections={row.more} label="Meer" />}
         </div>
       </div>

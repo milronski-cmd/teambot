@@ -31,8 +31,8 @@ export function UptimeNote({ meta }: { meta: Meta }) {
         {desktop && (
           <span className="mt-1 block">
             De pc wakker houden terwijl routines lopen:{' '}
-            <a className="underline" href="#/settings/general">
-              Instellingen › Algemeen › Pc en routines
+            <a className="underline" href="#/settings/systeem">
+              Instellingen › Meer mogelijkheden › Deze computer
             </a>
             .
           </span>

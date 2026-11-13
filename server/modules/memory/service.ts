@@ -2,7 +2,7 @@ import crypto from 'node:crypto';
 import type { Agent, Ctx, Thread } from '../../core/types.js';
 import { newId, now } from '../../core/db.js';
 import { estimateTokens } from '../../core/tokens.js';
-import { canonicalKey, clean, containment, ftsQuery, jaccard, normalize, tokens } from './text.js';
+import { canonicalKey, clean, containment, ftsQuery, guessKey, jaccard, normalize, tokens } from './text.js';
 import type {
   Actor,
   AgentMemorySettings,
@@ -16,8 +16,9 @@ import type {
 } from './types.js';
 import { ALL_TEAMS, REF_PREFIX, reviewInterval } from './types.js';
 import { bytesText } from '../../core/i18n.js';
-import { Semantic, family, type QVec } from './semantic.js';
+import { Semantic, family, isArchiveLine, type QVec } from './semantic.js';
 import { builtinSynonyms, compoundHeads } from './synonyms.js';
+import { matchingLines } from './living.js';
 
 export const DEFAULT_SETTINGS: UserMemorySettings = {
   learnMode: 'auto',
@@ -38,7 +39,8 @@ export const DEFAULT_SETTINGS: UserMemorySettings = {
   budgetTokens: 1200,
   profileCap: 4000,
   trashDays: 30,
-  modelDailyCap: 100,
+  /** At most this many background model calls per day; 0 = no limit (the default: no built-in brake). */
+  modelDailyCap: 0,
   quotas: {
     about_you: { items: 300, bytes: 256_000 },
     agent: { items: 500, bytes: 512_000 },
@@ -107,6 +109,10 @@ export interface ChangeInput {
   undoable?: boolean;
   /** Days this change can be undone (default 30; cleanup changes longer, so the monthly report can still undo them). */
   undoDays?: number;
+  /** The capture this change came from (a message, a lesson about one event): the same capture never writes twice. */
+  idemKey?: string | null;
+  /** The chat message this was learned from (shown under that message, with undo). */
+  source?: { threadId?: string | null; ref?: string | null } | null;
 }
 
 function rand36(n: number) {
@@ -155,7 +161,8 @@ export class MemoryService {
     s.budgetTokens = Math.max(0, Math.min(lim.budgetTokens, Number(s.budgetTokens) || 0));
     s.profileCap = Math.max(0, Math.min(lim.profileCap, Number(s.profileCap) || 0));
     s.trashDays = Math.max(1, Math.min(365, Number(s.trashDays) || 30));
-    s.modelDailyCap = Math.max(0, Math.min(5000, Number(s.modelDailyCap) || 0));
+    // (5000 was the old default, and its highest value: no limit then, so none now either.)
+    s.modelDailyCap = Number(s.modelDailyCap) === 5000 ? 0 : Math.max(0, Math.min(100_000, Number(s.modelDailyCap) || 0));
     if (!['off', 'explicit', 'auto'].includes(s.learnMode)) s.learnMode = 'auto';
     if (!['heuristic', 'own', 'free', 'model'].includes(s.extractor)) s.extractor = 'own';
     if (!['own', 'never'].includes(s.autoApply)) s.autoApply = 'own';
@@ -248,9 +255,25 @@ export class MemoryService {
     // 0.4.5: a channel conversation with an identified customer (private chat, customer mode, e-mail only with a
     // passed sender check) reads that customer's dossier and nothing else; every other channel thread stays public.
     if (thread.kind === 'channel' && !members.length && thread.user_id === ownerId && this.customerDossierOf(thread)) return 'customer';
+    // The owner himself writing to his own bot on a channel (WhatsApp, Telegram …; the channel verified the sender in a
+    // one-to-one chat): his bot knows there what it knows in the app, and keeps the dossiers up to date from there too.
+    if (thread.kind === 'channel' && !members.length && thread.user_id === ownerId && this.ownerChannel(thread)) return 'private';
     if (thread.kind === 'channel' || members.length || thread.user_id !== ownerId) return 'public';
     if (thread.kind === 'room' || thread.room_id) return 'room';
     return 'private';
+  }
+
+  /** Is the latest incoming message of this channel thread from the verified owner, one-to-one (channels/manager.ts)? */
+  ownerChannel(thread: Thread): boolean {
+    const m = this.store.one<any>("SELECT author_type, parts FROM messages WHERE thread_id = ? AND role = 'user' ORDER BY seq DESC LIMIT 1", thread.id);
+    if (!m || m.author_type !== 'external') return false;
+    let ch: any = null;
+    try {
+      ch = (typeof m.parts === 'string' ? JSON.parse(m.parts) : m.parts)?.channel;
+    } catch {
+      return false;
+    }
+    return ch?.isOwner === true && ch?.private !== false && !ch?.outbound;
   }
 
   /** The dossier of the identified customer of a channel thread (customers.ts), or null. Set by the module. */
@@ -566,8 +589,12 @@ export class MemoryService {
     // Team walls first (a dossier of a team the bot may not read is closed, whatever its bot list says), then the
     // dossier's own bot list (null = every bot that may read its team).
     const own = this.store
-      .all<any>(`SELECT id, agent_ids, team_id FROM memory_dossiers WHERE user_id = ? AND status IN ('active','closed'${o.archived ? ",'archived'" : ''})`, reader.userId)
+      .all<any>(`SELECT id, agent_ids, team_id, core FROM memory_dossiers WHERE user_id = ? AND status IN ('active','closed'${o.archived ? ",'archived'" : ''})`, reader.userId)
       .filter((d) => {
+        // The owner's dossier is personal: not for a bot with "Over jou" off, never where strangers read along. A team's
+        // overview and lessons are its shared knowledge: not for a bot that does not read that.
+        if (d.core === 'owner' && (!reader.readAboutYou || reader.audience === 'public')) return false;
+        if ((d.core === 'overview' || d.core === 'lessons') && !reader.readShared) return false;
         if (!this.readerSeesTeam(reader, d.team_id)) return false;
         let ids: any = d.agent_ids;
         if (typeof ids === 'string') {
@@ -831,6 +858,8 @@ export class MemoryService {
       undoable: c.undoable !== false,
       undo_until: c.undoable === false ? null : new Date(Date.now() + (c.undoDays || 30) * 864e5).toISOString(),
       redacted: false,
+      ...(c.idemKey ? { idem_key: c.idemKey } : {}),
+      ...(c.source?.threadId && c.source.ref ? { source_thread_id: c.source.threadId, source_ref: c.source.ref } : {}),
       created_at: ts,
     });
     return id;
@@ -962,7 +991,7 @@ export class MemoryService {
         return [row.content, row.canonical_key || '', row.type, ...terms, ...builtinSynonyms([row.content, ...terms].join(' '))].join(' ');
       }
       case 'dossier':
-        return [row.title, row.summary, ...(row.tags || []), ...builtinSynonyms(row.title || '', 12)].join(' ');
+        return [row.title, row.summary, row.body || '', ...(row.tags || []), ...builtinSynonyms(row.title || '', 12)].join(' ');
       case 'episode':
         return [row.title, row.summary, ...(row.decisions || []).map((d: any) => d.text), ...(row.actions || []).map((d: any) => d.text), ...(row.questions || []).map((d: any) => d.text)].join(' ');
       case 'source':
@@ -970,6 +999,12 @@ export class MemoryService {
       case 'chunk':
         return row.text;
       default:
+        // (A line of a dossier's archive is found like the note it once was: synonyms of what it says, not only its title.)
+        // (Its subject too, as a note had its key: "Ik woon in Utrecht" is found with "woonplaats".)
+        if (isArchiveLine(row)) {
+          const keys = String(row.body || '').split('\n').map((l) => guessKey(l.replace(/^[\s>*-]+/, '')).key).filter(Boolean);
+          return [row.title, row.body, ...keys, ...builtinSynonyms(`${row.body || ''} ${keys.join(' ')}`, 24)].join(' ');
+        }
         return [row.title, row.body, row.owner || '', ...(row.data?.aliases || []), row.data?.question || '', ...builtinSynonyms(row.title || '', 12)].join(' ');
     }
   }
@@ -999,6 +1034,7 @@ export class MemoryService {
     const row = this.store.get<any>(table, id);
     // The vector goes in the same transaction as the change (forget, trash, sensitive, new text).
     if (kind === 'item') this.semantic.sync('item', id, row || null);
+    else if (ftsKind === 'record') this.semantic.sync('record', id, row || null);
     if (!row) return;
     const live = kind === 'item' ? INDEXED_STATUSES.has(row.status) : !['trashed', 'forgotten', 'rejected'].includes(row.status);
     if (!live) return;
@@ -1013,7 +1049,7 @@ export class MemoryService {
 
   unindex(kind: string, id: string) {
     this.ftsDrop(kind, id);
-    if (kind === 'item' || kind === 'chunk') this.semantic.drop(kind, id);
+    if (kind === 'item' || kind === 'chunk' || kind === 'record') this.semantic.drop(kind, id);
   }
 
   /** Every FTS row of one user (or of everyone) out, with the rowid map. */
@@ -1164,6 +1200,42 @@ export class MemoryService {
   }
 
   /**
+   * Dossiers and their records for a query (memory_search), weighed like notes (searchItems): a word hit by how many
+   * of the search words the text the bot will see covers (its matching lines; a record's title and text, synonyms
+   * included), and a line of a dossier's archive also by meaning (what went out of a dossier's text is found like the
+   * note it once was). Best first; the caller checks access per hit.
+   */
+  dossierMatch(userIds: string[], q: string, qvec: QVec | null | undefined, dossierIds: string[], limit = 20): { kind: 'dossier' | 'record'; rid: string; score: number }[] {
+    const hits = this.ftsMatch(userIds, q, ['dossier', 'record'], 160);
+    const bestBm = hits.reduce((m, h) => Math.max(m, h.bm), 0) || 1;
+    const qt = tokens(q);
+    const fam = qvec ? family(qvec.model) : null;
+    const wl = fam ? fam.words ?? 0.8 : 1;
+    const covW = fam ? 0.8 : 0.6;
+    const cover = (text: string) => {
+      if (!qt.length) return 1;
+      const have = tokens(`${text} ${builtinSynonyms(text).join(' ')}`, 400);
+      return qt.filter((t) => have.some((h) => h === t || (Math.min(h.length, t.length) >= 4 && (h.startsWith(t) || t.startsWith(h))))).length / qt.length;
+    };
+    const out = new Map<string, { kind: 'dossier' | 'record'; rid: string; lex: number; sem: number }>();
+    for (const h of hits) {
+      const row = h.kind === 'dossier' ? this.store.get<any>('memory_dossiers', h.rid) : this.store.get<any>('memory_records', h.rid);
+      if (!row) continue;
+      const seen = h.kind === 'dossier' ? (row.body ? matchingLines(String(row.body), q).join(' ') : `${row.title} ${row.summary || ''}`) : `${row.title} ${row.body || ''}`;
+      out.set(h.rid, { kind: h.kind as 'dossier' | 'record', rid: h.rid, lex: Math.max(0.05, h.bm / bestBm) * (1 - covW + covW * cover(seen)), sem: 0 });
+    }
+    if (qvec)
+      for (const [id, s] of [...this.semantic.recordScores(qvec, userIds, dossierIds)].sort((a, b) => b[1] - a[1]).slice(0, 20)) {
+        const cur = out.get(id) || { kind: 'record' as const, rid: id, lex: 0, sem: 0 };
+        out.set(id, { ...cur, sem: s });
+      }
+    return [...out.values()]
+      .map((x) => ({ kind: x.kind, rid: x.rid, score: wl * x.lex + x.sem }))
+      .sort((a, b) => b.score - a.score)
+      .slice(0, limit);
+  }
+
+  /**
    * Document chunks of these owners for a query: FTS rank blended with meaning (when `qvec`), best first. The caller
    * checks dossier access per chunk, as for words alone.
    */
@@ -1277,8 +1349,12 @@ export class MemoryService {
 
   /** A dossier's content changed (a document, a note, a record): it is read again against its facts (reread.ts). */
   markDossierChanged(dossierId: string | null | undefined) {
-    if (dossierId) this.store.exec('UPDATE memory_dossiers SET changed_at = ? WHERE id = ?', now(), dossierId);
+    if (!dossierId) return;
+    this.store.exec('UPDATE memory_dossiers SET changed_at = ? WHERE id = ?', now(), dossierId);
+    this.onDossierChanged?.();
   }
+  /** Set by the module: a dossier changed, so the one planner is asked for a look after a moment (index.ts). */
+  onDossierChanged: (() => void) | null = null;
 
   emit(userId: string, data: any) {
     this.ctx.events.emit(userId, 'memory.updated', data);

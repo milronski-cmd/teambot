@@ -1,6 +1,7 @@
 import type { Ctx, ProviderConfig, User } from '../../core/types.js';
 import { HttpError } from '../../core/http.js';
 import { assertPublicUrl } from '../../tools/builtin/web.js';
+import { PLACE } from '../../../shared/places.js';
 
 export interface Endpoint {
   cfg: ProviderConfig;
@@ -13,7 +14,7 @@ export interface Endpoint {
 }
 
 export const NO_OPENAI =
-  'Hiervoor is een OpenAI API-sleutel nodig (Instellingen › AI-diensten › OpenAI). Gratis alternatieven: browserstem voor voorlezen en een eigen (lokale) OpenAI-compatibele spraakserver voor spraakherkenning.';
+  `Hiervoor is een OpenAI API-sleutel nodig (plak hem bij ${PLACE.ai}). Gratis alternatieven: browserstem voor voorlezen en een eigen (lokale) OpenAI-compatibele spraakserver voor spraakherkenning.`;
 
 /** API providers (not CLI agents) this user may use: own + shared by an admin. */
 export function apiProviders(ctx: Ctx, userId: string): ProviderConfig[] {

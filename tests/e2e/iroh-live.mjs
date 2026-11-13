@@ -18,7 +18,7 @@ process.env.TEAMBOT_DATA = path.join(tmp, 'data');
 fs.mkdirSync(process.env.APPDATA, { recursive: true });
 delete process.env.TEAMBOT_IROH_PRESET;
 
-const { createApp } = await import('../../server/app.ts');
+const { createApp } = await import('./server.mjs');
 const { startIrohPhone } = await import('../iroh-phone.ts');
 
 const args = process.argv.slice(2);

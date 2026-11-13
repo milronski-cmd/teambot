@@ -1,11 +1,10 @@
-// LIVE test of the internet marketplace against the real internet (MCP Registry, skills.sh, GitHub), in a temporary
+// LIVE test of the internet marketplace against the real internet (MCP Registry, skills.sh, GitHub search), in a temporary
 // TeamBot data folder (never your own data). Installs 2 skills and 2 MCP servers, uses one of each in a real bot run,
 // then updates and uninstalls them, and checks that browsing still works offline from the cache.
 //   OPENAI_KEY_FILE=<file with an OpenAI key> npm run market:live
 // Without OPENAI_KEY_FILE the bot run is skipped. The npm server needs npx on PATH. Costs a cent or two on the key.
 import fs from 'node:fs';
 
-process.env.TEAMBOT_SKILL_COLLECTIONS ??= 'anthropics/skills,mattpocock/skills,obra/superpowers,openai/skills,remotion-dev/skills';
 const KEY_FILE = process.env.OPENAI_KEY_FILE;
 const MODEL = process.env.MARKET_LIVE_MODEL || 'gpt-4.1-mini';
 
@@ -18,35 +17,31 @@ const check = (name, ok, detail = '') => {
 const t = await startTestApp();
 const q = (o) => new URLSearchParams(o).toString();
 try {
-  // ---------------------------------------------------------------- skills
-  const list = await t.api('GET', '/skills/web/skills?budget=20000');
-  check('internetskills geïndexeerd uit GitHub-collecties', list.items.length > 20, `${list.items.length} skills, wacht nog op: ${list.pending.join(', ') || '-'}`);
-  const restricted = list.items.find((i) => i.license.status === 'restricted');
-  const unknown = list.items.find((i) => i.license.status === 'unknown' && !i.partial);
-  check('licenties per skill herkend', list.items.some((i) => i.license.status === 'open'), `open ${list.items.filter((i) => i.license.status === 'open').length}, beperkt ${list.items.filter((i) => i.license.status === 'restricted').length}, onbekend ${list.items.filter((i) => i.license.status === 'unknown').length}`);
-  if (restricted) await t.api('POST', '/skills/web/install', { repo: restricted.repo, path: restricted.path }).then(() => check('beperkende licentie geweigerd', false), (e) => check('beperkende licentie geweigerd', /403/.test(e.message), `${restricted.id} (${restricted.license.label})`));
-  if (unknown) await t.api('POST', '/skills/web/install', { repo: unknown.repo, path: unknown.path }).then(() => check('skill zonder licentie geweigerd', false), (e) => check('skill zonder licentie geweigerd', /403/.test(e.message), unknown.id));
-
-  const sh = await t.api('GET', `/skills/web/skills?${q({ q: 'grill-me' })}`);
-  const fromSh = sh.items.find((i) => i.installs && /mattpocock\/skills/.test(i.repo || ''));
-  check('skills.sh-zoekresultaat met installaties', !!fromSh, fromSh ? `${fromSh.id}: ${fromSh.installs} installaties` : sh.skillsSh.error || 'niets');
+  // ---------------------------------------------------------------- skills: everything public
+  const list = await t.api('GET', '/skills/web/search');
+  check('open zoeken: repositories op GitHub, meeste sterren eerst', list.github.items.length > 10, `${list.github.items.length} van ${list.github.total}${list.limit ? ` · ${list.limit.text}` : ''}`);
+  check('open zoeken: losse skills uit skills.sh', (list.directory?.items.length || 0) > 10, `${list.directory?.items.length || 0} skills`);
+  check('open zoeken: skills van ClawHub, met zijn eigen sterren en downloads', (list.clawhub?.items.length || 0) > 10, `${list.clawhub?.items.length || 0} skills${list.clawhub?.error ? ` · ${list.clawhub.error}` : ''}`);
+  const sh = await t.api('GET', `/skills/web/search?${q({ q: 'grill-me' })}`);
+  const fromSh = sh.directory?.items.find((i) => i.installs && i.repo === 'mattpocock/skills');
+  check('skills.sh-zoekresultaat met installaties', !!fromSh, fromSh ? `${fromSh.id}: ${fromSh.installs} installaties` : sh.directory?.error || 'niets');
 
   const agent = await t.agent({ name: 'MarktBot' });
-  const installSkill = async (body, label) => {
-    const detail = await t.api('GET', `/skills/web/item?${q(body)}`);
-    const pv = await t.api('POST', '/skills/web/install', body);
-    const c = pv.candidates[0];
-    const r = await t.api('POST', '/skills/import/commit', { stagingId: pv.stagingId, enableFor: [agent.id], acknowledge: c.needsAcknowledge, confirmPermissions: true });
-    const res = r.results[0];
-    check(`skill geïnstalleerd: ${label}`, ['created', 'updated', 'unchanged'].includes(res.status), `${res.status}, licentie ${detail.license.label}, scan ${detail.scan.level}, ${detail.files.length} bestanden`);
-    return { detail, skillId: res.skillId };
+  const installSkill = async (id, label) => {
+    const detail = await t.api('GET', `/skills/curated/item?${q({ id })}`);
+    let r = await t.api('POST', '/skills/curated/install', { id });
+    // Serious scan findings or a look-alike publisher: the click becomes a confirmation (confirmed here).
+    const asked = !!r.staging;
+    if (r.staging) r = (await t.api('POST', '/skills/import/commit', { stagingId: r.staging.stagingId, acknowledge: true, confirmPermissions: true })).results[0];
+    check(`skill toegevoegd: ${label}`, ['created', 'installed', 'updated', 'unchanged'].includes(r.status), `${r.status}${asked ? ' (na bevestiging)' : ''}, ${detail.checked ? 'gecontroleerd' : 'niet gecontroleerd'}, commit ${String(detail.commit).slice(0, 7)}, licentie ${detail.licenseFound.spdx || 'niet gevonden'}, scan ${detail.scan.level}, ${detail.files.length} bestanden`);
+    return { detail, skillId: r.skillId };
   };
-  const a = await installSkill({ repo: 'anthropics/skills', path: 'skills/frontend-design' }, 'anthropics/skills · frontend-design');
-  const b = await installSkill(fromSh ? { source: 'mattpocock/skills', skillId: 'grill-me' } : { repo: 'obra/superpowers', path: 'skills/brainstorming' }, fromSh ? 'mattpocock/skills · grill-me (via skills.sh)' : 'obra/superpowers · brainstorming');
+  const a = await installSkill('github/anthropics/skills/frontend-design', 'anthropics/skills · frontend-design');
+  const b = await installSkill(fromSh ? fromSh.id : 'github/obra/superpowers/skills/brainstorming', fromSh ? 'mattpocock/skills · grill-me (via skills.sh)' : 'obra/superpowers · brainstorming');
   const mine = await t.api('GET', '/skills');
-  check('skills staan in Mijn skills met bron', mine.filter((s) => s.catalogRef?.startsWith('github/')).length === 2, mine.map((s) => s.catalogRef).join(', '));
-  const after = await t.api('GET', '/skills/web/skills?' + q({ repo: 'anthropics/skills' }));
-  check('marktplaats toont “geïnstalleerd”', after.items.some((i) => i.path === 'skills/frontend-design' && i.installed));
+  check('skills staan in Mijn skills met bron en vaste commit', mine.filter((s) => s.catalogRef?.startsWith('curated/') && s.source?.commit).length === 2, mine.map((s) => `${s.catalogRef}@${String(s.source?.commit).slice(0, 7)}`).join(', '));
+  const after = await t.api('GET', `/skills/web/repo?${q({ repo: 'anthropics/skills' })}`);
+  check('marktplaats toont “toegevoegd”', after.skills.some((i) => i.name === 'frontend-design' && i.installed));
 
   // ---------------------------------------------------------------- apps
   const featured = await t.api('GET', '/mcp/registry/servers');
@@ -95,15 +90,14 @@ try {
   await t.api('PUT', `/skills/${a.skillId}/content`, { skillMd: a.detail.skillMd + '\n\nLokale wijziging.\n' });
   const changed = (await t.api('GET', '/skills')).find((s) => s.id === a.skillId);
   check('skill: eigen wijziging is geen update (bronversie staat al in de versies)', !changed.catalogUpdate, JSON.stringify(changed.catalogUpdate));
-  const re = await t.api('POST', '/skills/web/install', { repo: 'anthropics/skills', path: 'skills/frontend-design' });
-  const rr = await t.api('POST', '/skills/import/commit', { stagingId: re.stagingId, confirmPermissions: true, acknowledge: true });
-  check('skill teruggezet op de bronversie', rr.results[0].status === 'updated', rr.results[0].status);
+  const rr = await t.api('POST', '/skills/curated/update', { skillId: a.skillId, commit: a.detail.commit, confirmPermissions: true, acknowledge: true });
+  check('skill teruggezet op de bronversie', rr.status === 'updated', rr.status);
 
   // ---------------------------------------------------------------- offline from cache
   process.env.TEAMBOT_OFFLINE = '1';
   const off1 = await t.api('GET', `/mcp/registry/servers?${q({ q: 'microsoft-learn' })}`);
-  const off2 = await t.api('GET', '/skills/web/skills');
-  check('offline: register en skills uit de cache', off1.items.length > 0 && off2.items.length > 0, `${off1.items.length} apps, ${off2.items.length} skills, verouderd: ${off1.stale || off2.stale}`);
+  const off2 = await t.api('GET', '/skills/web/search');
+  check('offline: register en open zoeken uit de cache', off1.items.length > 0 && off2.github.items.length > 0, `${off1.items.length} apps, ${off2.github.items.length} repositories, verouderd: ${off1.stale || off2.github.stale}`);
   delete process.env.TEAMBOT_OFFLINE;
 
   // ---------------------------------------------------------------- uninstall

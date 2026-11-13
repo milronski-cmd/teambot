@@ -3,23 +3,28 @@
 // measurement, and is closed by the next measurement; proactive work stays inside one budget and on a free engine.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { setup, teamWithSite, page } from './proactive-helpers.js';
-import { defaultDuties, rolesFor } from '../server/modules/routines/duties/catalog.js';
+import { give, setup, teamWithSite, page } from './proactive-helpers.js';
+import { BUILTIN_KEYS, builtinDuty, cleanPresets, defaultDuties, rolesFor } from '../server/modules/routines/duties/catalog.js';
 import { checkSites, robotsBlocksAll, pageFacts, sample } from '../server/modules/routines/duties/checks.js';
 import { cleanProactive } from '../server/modules/routines/duties/types.js';
 
-test('a role brings its duties; a bot without a role gets none', () => {
-  const keys = (role: string, name = 'Bot', main = false) => defaultDuties({ role, name, description: '' }, { main }).map((d) => d.key);
-  assert.deepEqual(keys('Technische SEO'), ['seo.techniek', 'seo.posities', 'seo.indexering', 'werk.afmaken']);
-  assert.deepEqual(keys('Merchant Center'), ['merchant.afkeuringen', 'merchant.feed', 'werk.afmaken']);
-  assert.deepEqual(keys('Google Ads'), ['ads.kosten', 'werk.afmaken']);
-  assert.deepEqual(keys('Klantenservice'), ['klant.onbeantwoord', 'werk.afmaken']);
-  assert.deepEqual(keys('Researcher'), ['kansen.zoeken', 'werk.afmaken']);
-  assert.deepEqual(keys('Persoonlijke assistent'), ['agenda.vandaag', 'werk.afmaken']);
-  assert.deepEqual(keys('Content NL'), ['werk.afmaken'], 'a role without a guard duty still finishes its own tasks');
-  assert.deepEqual(keys(''), [], 'no role, no duties');
-  assert.deepEqual(keys('Hoofdbot', 'Baas', true), ['kansen.scoren'], 'the main bot scores opportunities and does no team work');
-  // Roles from the team templates that must not be mistaken for a guard.
+// These tests are about bots that are not the main bot: without this the first bot would be it (teams `autoMain`,
+// covered in works-right-away.test.ts).
+process.env.TEAMBOT_TEST_NO_AUTO_MAIN = '1';
+
+test('no bot gets a duty by itself: the built-in presets are a library, only the owner’s own presets apply', () => {
+  const keys = (role: string, name = 'Bot', presets?: any) => defaultDuties({ role, name, description: '' }, { presets }).map((d) => d.key);
+  for (const role of ['Technische SEO', 'Merchant Center', 'Google Ads', 'Klantenservice', 'Researcher', 'Persoonlijke assistent', 'Content NL', 'Hoofdbot', '']) assert.deepEqual(keys(role), [], `nothing for “${role}”`);
+  // The owner's own preset is his instruction: it applies to the bots it recognises.
+  const own = cleanPresets([{ label: 'Advocatuur', words: ['advocaat'], duties: [{ key: 'adv.termijnen', title: 'Termijnen', check: 'Lopen er termijnen af?' }] }]);
+  assert.deepEqual(keys('Advocaat arbeidsrecht', 'Eva', own), ['adv.termijnen']);
+  assert.deepEqual(keys('Technische SEO', 'Sem', own), []);
+  // The library is still there to pick from.
+  assert.ok(BUILTIN_KEYS.has('seo.techniek') && BUILTIN_KEYS.has('werk.afmaken') && BUILTIN_KEYS.has('vaste-taken.bedenken'));
+  assert.equal(builtinDuty('seo.techniek')!.title, 'Websites: technische fouten en indexeerbaarheid');
+  assert.equal(builtinDuty('eigen'), null);
+  // Words recognise a role; roles from the team templates must not be mistaken for a guard.
+  assert.deepEqual(rolesFor({ role: 'Technische SEO', name: 'Sem', description: '' }).map((r) => r.id), ['seo']);
   assert.deepEqual(rolesFor({ role: 'zoekwoorden en concurrentie', name: 'Zoekwoordonderzoeker', description: '' }), []);
   assert.deepEqual(rolesFor({ role: 'test en meldt fouten', name: 'Tester', description: '' }), []);
 });
@@ -47,14 +52,18 @@ test('the site check measures real numbers and names what is wrong', async () =>
   assert.deepEqual(up.findings, [], 'the uptime check only asks: does it answer');
 });
 
-test('a fresh SEO bot watches the team website by itself: quiet when in order, one task with proof when not, closed by measuring', async () => {
+test('an SEO bot given the website check: quiet when in order, one task with proof when not, closed by measuring; nothing was seeded', async () => {
   const env = await setup();
   try {
     const sem = await env.t.agent({ name: 'Sem', role: 'Technische SEO', tool_groups: ['team', 'files', 'web'] });
     await teamWithSite(env);
-    await env.at('2026-11-09T04:01:00Z'); // the planner gives every bot the duties of its role
+    await env.at('2026-11-09T04:01:00Z');
+    assert.deepEqual(env.duties.duties(env.userId, sem.id), [], 'a new bot gets nothing by itself, whatever its role says');
+    assert.equal(env.t.app.ctx.store.one<any>('SELECT COUNT(*) n FROM routines')!.n, 0);
+    // The owner picks two checks for him.
+    await give(env, sem, ['seo.techniek', 'seo.posities']);
     const names = env.duties.duties(env.userId, sem.id).map((r) => r.options.duty!.key);
-    assert.deepEqual(names.sort(), ['seo.indexering', 'seo.posities', 'seo.techniek', 'werk.afmaken'], 'the owner wrote no routine');
+    assert.deepEqual(names.sort(), ['seo.posities', 'seo.techniek']);
     const tech = env.duty(sem.id, 'seo.techniek');
     assert.equal(tech.status, 'active');
     assert.equal(tech.options.notify, 'errors');
@@ -70,11 +79,15 @@ test('a fresh SEO bot watches the team website by itself: quiet when in order, o
     assert.equal(env.notes().length, 0, 'and nobody was told: nothing to tell');
     assert.deepEqual(await env.taken(), []);
 
-    // A duty whose source is not connected waits quietly and says what it needs.
+    // A duty whose source is not connected has nothing to look at: it says what it needs and parks itself, so it is
+    // not scheduled again for nothing.
     const pos = env.duty(sem.id, 'seo.posities');
     await env.at('2026-11-09T06:00:05Z'); // Monday 07:00
-    assert.equal(env.runs(pos.id)[0].status, 'no_update');
+    assert.equal(env.runs(pos.id)[0].status, 'skipped');
     assert.match(env.runs(pos.id)[0].summary, /^Wacht: Koppel Search Console/);
+    assert.equal(env.duty(sem.id, 'seo.posities').status, 'paused');
+    assert.match(env.duty(sem.id, 'seo.posities').paused_reason, /^Wacht: Koppel Search Console/);
+    assert.equal(env.duty(sem.id, 'seo.posities').next_run_at, null);
     assert.equal(env.t.requests.length, 0);
     assert.equal(env.notes().length, 0);
 
@@ -109,10 +122,12 @@ test('a fresh SEO bot watches the team website by itself: quiet when in order, o
     assert.equal(runs[1].meta.duty.model, 1);
     assert.equal(env.duties.budget(env.userId).used, 1);
 
-    // 09:30: "open taken afmaken" wakes Sem with his two open tasks; he cannot fix them and hands them to the owner.
+    // The work loop: the two tasks are on his name, so he gets a turn for them (no clock in between). He cannot fix
+    // them and hands them to the owner.
     env.t.script.push({ toolCalls: [{ name: 'team_execute', args: { sql: "UPDATE taken SET status = 'wacht_op_eigenaar', resultaat = ? WHERE id IN (?, ?)", params: ['De noindex staat in het thema: de bouwer of de eigenaar moet dit aanpassen.', '1', '2'] } }] }, { text: 'Beide taken wachten op de eigenaar.' });
-    await env.at('2026-11-10T08:30:05Z');
-    assert.match(JSON.stringify(env.t.requests[1].messages), /Er staan 2 taken op jouw naam open/);
+    assert.equal(await env.workNow(), 1);
+    assert.match(JSON.stringify(env.t.requests[1].messages), /Op jouw naam:[\s\S]*taak 1 \(teamdatabase, tabel taken, open\): raamwinkel\.test: de startpagina staat op noindex[\s\S]*taak 2 /);
+    assert.equal(await env.workNow(), 0, 'nothing open on his name any more: no turn at all');
     assert.deepEqual((await env.taken()).map((x) => x.status), ['wacht_op_eigenaar', 'wacht_op_eigenaar']);
     const calls = env.t.requests.length;
 
@@ -148,7 +163,8 @@ test('a fresh SEO bot watches the team website by itself: quiet when in order, o
     assert.equal(told.length, 1, 'and the bot hears what is still wrong');
     env.site.pages['https://raamwinkel.test'] = { body: page() };
     env.t.script.push({ toolCalls: [{ name: 'team_execute', args: { sql: "UPDATE taken SET status = 'klaar', resultaat = 'Noindex verwijderd in het thema' WHERE id = ?", params: ['3'] } }] }, { text: 'Nu echt opgelost.' });
-    await env.at('2026-11-13T08:30:05Z'); // 09:30: "open taken afmaken" wakes Sem with the task
+    await env.at('2026-11-13T08:30:05Z');
+    assert.equal(await env.workNow(), 1, 'the task is open on his name again: the work loop gives him a turn');
     taken = await env.taken();
     assert.equal(taken[2].status, 'klaar');
     assert.match(taken[2].bewijs, /TeamBot mat opnieuw op 2026-11-13 08:30 UTC: 1 website, 3 pagina’s gecontroleerd, dit probleem niet meer gevonden\./);
@@ -171,9 +187,10 @@ test('a fresh SEO bot watches the team website by itself: quiet when in order, o
 test('no cap by default: the bot’s own model, any frequency; a limit and "gratis eerst" only when the owner sets them', async () => {
   const env = await setup({ free: true });
   try {
-    assert.deepEqual(cleanProactive({}), { runsPerDay: 0, cheapFirst: false, maxSprint: 3, briefing: 'dag', briefingTime: '08:00', interests: '' }, 'no limit, no engine rule');
+    assert.deepEqual(cleanProactive({}), { runsPerDay: 0, cheapFirst: false, maxSprint: 0, briefing: 'uit', interests: '' }, 'no limit (also none on projects in the sprint), no engine rule, and no overview that nobody asked for');
     const sem = await env.t.agent({ name: 'Sem', role: 'SEO', tool_groups: ['team'] });
     await teamWithSite(env);
+    await give(env, sem, ['seo.techniek']);
     await env.at('2026-11-09T04:01:00Z');
     const tech = env.duty(sem.id, 'seo.techniek');
     assert.equal(tech.options.maxRunsPerDay, 0, 'a duty has no run limit of its own');
@@ -215,19 +232,18 @@ test('no cap by default: the bot’s own model, any frequency; a limit and "grat
     // The optional limit: 5 bot turns a day, 4 are used. One more wake, then proactive work waits, quietly.
     await env.t.api('PUT', '/proactive/settings', { runsPerDay: 5 });
     assert.deepEqual(env.duties.budget(env.userId), { limit: 5, used: 4, left: 1 });
-    const work = env.duty(sem.id, 'werk.afmaken');
     await env.t.app.ctx.services.teamdata.write(env.userId, [{ sql: "INSERT INTO taken (titel, eigenaar, status) VALUES ('Sitemap nalopen', 'Sem', 'open')" }]);
-    env.t.script.push({ text: 'Bezig.' });
-    await env.at('2026-11-09T08:30:05Z'); // 09:30: the fifth turn
-    assert.equal(env.runs(work.id).at(-1).meta.duty.model, 1);
+    env.t.script.push({ toolCalls: [{ name: 'team_execute', args: { sql: "UPDATE taken SET status = 'klaar', resultaat = 'Nagelopen', bewijs = 'sitemap.xml: 3 adressen, alle 200' WHERE titel = 'Sitemap nalopen'" } }] }, { text: 'Sitemap nagelopen.' });
+    assert.equal(await env.workNow(), 1, 'the fifth turn: his open task');
+    assert.deepEqual(env.duties.budget(env.userId), { limit: 5, used: 5, left: 0 }, 'a work turn counts for the owner’s own limit');
+    await env.t.app.ctx.services.teamdata.write(env.userId, [{ sql: "INSERT INTO taken (titel, eigenaar, status) VALUES ('Robots nalopen', 'Sem', 'open')" }]);
     const notes = env.notes().length;
     const calls = env.t.requests.length;
-    await env.at('2026-11-09T13:30:05Z'); // 14:30: over the limit
-    const wr = env.runs(work.id).at(-1);
-    assert.equal(wr.status, 'limited');
-    assert.match(wr.summary, /De limiet voor proactief werk is voor vandaag bereikt \(5 van 5 botbeurten\)/);
+    assert.equal(await env.workNow(), 0, 'over the limit he set: no turn');
     assert.equal(env.t.requests.length, calls, 'no model call over the limit');
     assert.equal(env.notes().length, notes, 'and no noise about it');
+    assert.match((await env.t.api('GET', '/proactive/work')).work.find((w: any) => w.agentName === 'Sem').waits, /je limiet voor proactief werk is voor vandaag bereikt \(5 van 5 botbeurten\)/);
+    await env.t.app.ctx.services.teamdata.write(env.userId, [{ sql: "UPDATE taken SET status = 'geannuleerd' WHERE titel = 'Robots nalopen'" }]);
     await env.t.api('PUT', '/proactive/settings', { runsPerDay: 0 });
 
     // The optional "gratis eerst": the free engine, and the run never moves on to a paid one.
@@ -283,18 +299,16 @@ test('a duty on a connected source ends with duty_report: in orde is silent, a p
     assert.match(taken[0].beschrijving, /€ 420 staat 41 dagen open/);
     assert.equal(env.notes().filter((n) => n.title === 'Mia: probleem gevonden').length, 1);
 
-    // "Open taken afmaken" wakes Mia with that task; she cannot do it and says so honestly.
+    // The task is on her name: the work loop gives her a turn. She cannot do it and says so honestly.
     env.t.script.push({ toolCalls: [{ name: 'team_execute', args: { sql: "UPDATE taken SET status = 'wacht_op_eigenaar', resultaat = ? WHERE id = ?", params: ['Klant reageert niet; de eigenaar moet bellen.', '1'] } }] }, { text: 'Taak 1 wacht op de eigenaar: de klant reageert niet.' });
-    await env.at('2026-11-10T08:30:05Z');
-    assert.match(JSON.stringify(env.t.requests.at(-2)!.messages), /taak 1 \(open\): Factuur Jansen te laat/);
+    assert.equal(await env.workNow(), 1);
+    assert.match(JSON.stringify(env.t.requests.at(-2)!.messages), /taak 1 \(teamdatabase, tabel taken, open\): Factuur Jansen te laat/);
     assert.equal((await env.taken())[0].status, 'wacht_op_eigenaar');
-    // Nothing open for her any more: the afternoon check is quiet and wakes nobody.
-    const work = env.duty(mia.id, 'werk.afmaken');
+    // Nothing open for her any more: no turn is started, and there is no routine that runs to find that out.
     const calls = env.t.requests.length;
-    await env.at('2026-11-10T13:30:05Z');
-    assert.equal(env.runs(work.id).at(-1).status, 'no_update');
-    assert.equal(env.runs(work.id).at(-1).summary, 'In orde: geen open taken op het bord.');
+    assert.equal(await env.workNow(), 0);
     assert.equal(env.t.requests.length, calls);
+    assert.deepEqual(env.duties.duties(env.userId, mia.id).map((r) => r.name), ['Openstaande facturen'], 'only the duty the owner wrote');
 
     // The same problem the next day: the same task.
     await env.at('2026-11-11T06:59:00Z');

@@ -77,14 +77,15 @@ en een auditregel (`cli.unapproved_action`). Die CLI draait daarna niet meer in 
 eigenaar hem in Instellingen › CLI-agents na controle opnieuw toestaat (`cli.safety_reset`). Automatische modus blijft
 werken. Zo is ook een nog niet live geteste agent nooit stilletjes ruimer dan de bot mag.
 
-Extra regels die in elke modus gelden (`permissions.ts`):
+Extra regels die in elke modus gelden (`permissions.ts` schrijft het verzoek op als stap; de ene poort `tools/gate.ts` beslist, dezelfde als voor de tools van TeamBot):
 - Paden van tool-aanroepen moeten binnen de werkmap(pen) van de bot vallen (`resolveInWorkspace`, incl. symlinks en
   beschermde bestanden zoals `.env`/`.ssh`); anders geweigerd zonder te vragen.
 - URL's van WebFetch e.d. gaan door `assertPublicUrl` (SSRF-blokkade).
 - Vaste blokkeerlijst (format, `rm -rf /`, shutdown, …) → altijd geweigerd.
 - Shell-opdrachten met impact (`git push`, `gh pr create`, `npm publish`, `curl -X POST`, `rm -r`, `ssh user@host`, deploys,
-  …) krijgen risico `danger` → altijd een menselijke goedkeuring, ook in auto. Ze krijgen een eigen beleidsnaam
-  (`<cli>:<tool>:danger`), zodat een eerdere “altijd toestaan” voor de tool ze nooit dekt.
+  …) krijgen risico `danger` → altijd een menselijke goedkeuring, ook in auto. Een tool heeft één beleidsnaam
+  (`<cli>:<tool>`): *nooit* of *eerst vragen* van de eigenaar geldt voor elke opdracht; een eerdere “altijd toestaan”
+  dekt een `danger`-opdracht nooit (dat regelt de Broker).
 - Onbekende tools (bijv. MCP-tools van derden in Claude Code) → `danger`.
 - Claude Code draait standaard met `--restricted` (negeert eigen `settings.json` met toestaan-regels) en
   `--strict-mcp-config` (geen eigen MCP-servers). Codex draait standaard met de eigen MCP-servers uit
@@ -173,7 +174,7 @@ gedeeld, config gevalideerd: `path`, of `command`/`args`/`authMethod` voor `acp-
 ## Tools, goedkeuringen, events, audit
 
 - Geen eigen `ToolDef`s: de CLI's gebruiken hun eigen tools. Goedkeuringen verschijnen als gewone Broker-verzoeken met
-  tool `<cli>:<tool>` (bijv. `claude-code:Write`, `claude-code:Bash:danger`, `codex-cli:bestanden`, `gemini-cli:execute`)
+  tool `<cli>:<tool>` (bijv. `claude-code:Write`, `claude-code:Bash`, `codex-cli:bestanden`, `gemini-cli:execute`)
   en het eerlijke risico (`read/write/exec/danger`).
 - Events: kern-events (`message.*`, `approval.*`, `run.updated`, `provider.updated`); chatbericht `role=event`
   met `parts.kind = 'cli_session'` bij providerwissel/reset.

@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { CalendarClock, Plus, Trash2, TriangleAlert } from 'lucide-react';
 import { api } from '../../lib/api';
 import { t } from '../../lib/i18n';
-import { formatTime } from '../../lib/format';
+import { formatTime, tText } from '../../lib/format';
 import { useApp } from '../../lib/store';
 import type { ToolGroup } from '../../lib/types';
 import { Badge, Button, Card, cx, Field, Input, Select, Textarea, Toggle, useAsync } from '../../components/ui';
@@ -112,7 +112,7 @@ function TimesEditor({ times, onChange }: { times: string[]; onChange(t: string[
       <div className="flex flex-wrap items-center gap-2">
         {times.map((t, i) => (
           <div key={i} className="flex items-center gap-1">
-            <Input type="time" value={t} aria-label={`Tijd ${i + 1}`} className="w-28" onChange={(e) => onChange(times.map((x, j) => (j === i ? e.target.value : x)))} />
+            <Input type="time" value={t} aria-label={tText('Tijd {0}', i + 1)} className="w-28" onChange={(e) => onChange(times.map((x, j) => (j === i ? e.target.value : x)))} />
             {times.length > 1 && (
               <Button size="icon" variant="ghost" type="button" aria-label="Tijd verwijderen" onClick={() => onChange(times.filter((_, j) => j !== i))}>
                 <Trash2 className="h-4 w-4" />
@@ -643,8 +643,8 @@ export function RoutineEditor({ meta, initial, onSave, onCancel, saveLabel = 'Op
               <Field label="Pauzeren na zoveel fouten op rij">
                 <NumberInput aria-label="Pauzeren na fouten" value={d.options.pauseAfterFailures} min={1} max={50} onChange={(n) => setOpt({ pauseAfterFailures: n })} />
               </Field>
-              <Field label="Maximale duur per run (minuten)">
-                <NumberInput aria-label="Maximale duur" value={d.options.timeoutMinutes} min={1} max={1440} onChange={(n) => setOpt({ timeoutMinutes: n })} />
+              <Field label="Maximale duur per run (minuten)" hint="0 = geen limiet">
+                <NumberInput aria-label="Maximale duur" value={d.options.timeoutMinutes} min={0} max={20160} onChange={(n) => setOpt({ timeoutMinutes: n })} />
               </Field>
               <Field label="Max. stappen per run" hint="Leeg = instelling van de bot">
                 <NumberInput aria-label="Max. stappen" value={ov.max_turns ?? NaN} min={1} max={200} onChange={(n) => setOv({ max_turns: Number.isFinite(n) ? n : undefined })} />

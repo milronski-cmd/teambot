@@ -1,12 +1,11 @@
 import type { Agent, Ctx, ProviderConfig, Thread, User } from '../../core/types.js';
 import { HttpError } from '../../core/http.js';
 import { GEMINI_ESTIMATE, GEMINI_LIVE_MODELS, GEMINI_VOICES } from './catalog.js';
-import { type LiveMode, getSettings, sanitizeAgentVoice } from './settings.js';
+import { type LiveMode, getSettings } from './settings.js';
 import { endpointUrl, providerError } from './providers.js';
-import { checkBudget, spentToday } from './usage.js';
-import { createCall } from './calls.js';
-import { buildInstructions } from './realtime.js';
+import { buildInstructions, liveCallStart, recordLiveCall } from './realtime.js';
 import { geminiTools, specsFor } from './calltools.js';
+import { PLACE } from '../../../shared/places.js';
 
 /**
  * Gemini Live (Google AI Studio API key): the server mints a single-use ephemeral token with the user's own key (the
@@ -16,7 +15,7 @@ import { geminiTools, specsFor } from './calltools.js';
  */
 
 export const NO_GEMINI =
-  'Gemini Live heeft een Google Gemini API-sleutel nodig (gratis aan te maken in Google AI Studio; Instellingen › AI-diensten › Google Gemini).';
+  `Gemini Live heeft een Google Gemini API-sleutel nodig (gratis aan te maken in Google AI Studio; plak hem bij ${PLACE.ai}).`;
 
 export interface GeminiEndpoint {
   cfg: ProviderConfig;
@@ -79,14 +78,9 @@ export async function createGeminiSession(
   const settings = getSettings(ctx, user.id);
   const ep = geminiEndpoint(ctx, user.id, settings.gemini.providerId);
   if (!ep) throw new HttpError(400, NO_GEMINI, 'voice_no_gemini');
-  checkBudget(ctx, user.id);
-  const av = sanitizeAgentVoice(agent.settings?.voice);
-  const mode: LiveMode = o.mode === 'agent' || o.mode === 'direct' ? o.mode : av.liveMode && av.liveMode !== 'default' ? av.liveMode : settings.realtime.mode;
+  const { mode, priceCapUsd } = liveCallStart(ctx, user.id, agent, settings, o.mode);
   const model = GEMINI_LIVE_MODELS.some((m) => m.id === settings.gemini.model) ? settings.gemini.model : GEMINI_LIVE_MODELS[0].id;
   const voice = o.voice && GEMINI_VOICES.includes(o.voice) ? o.voice : settings.gemini.voice;
-  let priceCapUsd = settings.priceCapUsd;
-  const daily = Number(ctx.store.getSetting(user.id, 'dailyBudgetUsd', 0));
-  if (daily > 0) priceCapUsd = Math.max(0.01, Math.min(priceCapUsd, daily - spentToday(ctx, user.id)));
 
   const specs = specsFor(ctx, agent);
   const setup = {
@@ -124,19 +118,7 @@ export async function createGeminiSession(
   if (!token || token.includes(ep.key)) throw new HttpError(502, 'Google gaf geen geldig tijdelijk sleutelbewijs terug', 'voice_provider_error');
   const wsBase = ep.origin.replace(/^http/, 'ws');
   const wsUrl = `${wsBase}/ws/google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContentConstrained?access_token=${encodeURIComponent(token)}`;
-  const call = createCall(ctx, {
-    userId: user.id,
-    agentId: agent.id,
-    threadId: thread.id,
-    kind: 'realtime',
-    mode,
-    providerId: ep.cfg.id,
-    model,
-    voice,
-    keepTranscript: o.keepTranscript ?? settings.keepTranscripts,
-    priceCap: priceCapUsd,
-  });
-  ctx.audit(user.id, 'voice.call.started', { callId: call.id, kind: 'gemini', mode, model, provider: ep.label }, agent.id);
+  const call = recordLiveCall(ctx, { userId: user.id, agent, thread, settings, kind: 'gemini', mode, provider: { id: ep.cfg.id, name: ep.label }, model, voice, keepTranscript: o.keepTranscript, priceCap: priceCapUsd });
   return {
     call,
     token,

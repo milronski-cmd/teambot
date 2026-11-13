@@ -8,7 +8,7 @@ context. Standaard aan; per bot uit te zetten. Niets gebeurt stil: wat is ingeko
 zijpaneel.
 
 Code: `server/agent/context-budget.ts` (meten, inkorten, de haak voor de runner), `server/agent/history.ts`
-(`buildHistory` met de saver), `server/tools/selection.ts` (toolselectie en `tools_load`),
+(`buildHistory` met de saver), `server/tools/selection.ts` (de toollijst: kern plus `tools_find` en `tools_call`),
 `server/providers/anthropic.ts` (`cacheParams`), `ui/src/shell/ContextUse.tsx` (zijpaneel).
 
 ## Meten
@@ -58,43 +58,69 @@ zelf toevoegde (`engineOwn`: eigen instructies, tools, sessie).
 
 **Nooit ingekort:** de systeemprompt (instructies en veiligheidsregels), de huidige vraag met zijn context, de eigen
 woorden van de eigenaar, de uitvoer van de huidige beurt, en de uitvoer van tools die het antwoord van de eigenaar of
-geladen instructies bevatten (`ask_user`, `ask_form`, `memory_get`, `memory_search`, `dossier_get`, `dossier_search`,
-`skill_load`, `skill_read_file`, `plan_update`, `notify_user`, `tools_load`). De originele berichten blijven altijd in
+geladen instructies bevatten (`ask_user`, `ask_form`, `memory_get`, `memory_search`, `dossier_get`,
+`skill_load`, `skill_read_file`, `plan_update`, `notify_user`, `tools_find`). De originele berichten blijven altijd in
 de database.
 
 ## Minder tooldefinities
 
-Een standaardbot stuurde 49 tools (±8–10k tokens) bij elke aanroep mee, met alle groepen aan 89 (±13k), plus de tools
-van gekoppelde apps. Zijn de definities samen groter dan het budget (standaard 6.000 tokens), dan gaan mee:
+Een bot met alle onderdelen aan heeft ruim honderd tools (110, de hoofdbot 118: `tests/dup-guard.test.ts`). Elke
+definitie ging bij elke stap mee: ±18.600 tokens voor een gewone bot op Claude Code, ±21.400 voor de hoofdbot, en
+evenveel bij een API-model. Een eerdere selectie (`tools_load`, onderdelen achter een label) is daarna weer
+uitgeschakeld omdat bots niet vonden wat ze nodig hadden. Sinds 12 november 2026 krijgt een model op elke engine (API,
+Claude Code, Codex, ACP) dezelfde korte lijst (`server/tools/selection.ts`):
 
-- altijd: basis, bestanden, internet, geheugen, terminal, container;
-- een onderdeel waarvan de systeemprompt of de eigen instructies een tool noemen (de prompt belooft hem:
-  `routine_no_update`, de teamdatabase, de browser van een browserbot);
-- wat de vraag of de instructies noemen: woorden ("elke ochtend" → routines, "website invullen" → browser), de naam
-  van een gekoppelde app, de naam van een andere bot (→ team); in een groepsgesprek altijd de teamtools;
-- wat eerder in dit gesprek is gebruikt of geladen (blijft voor de rest van het gesprek);
-- daarna de kleinste overige onderdelen zolang alles in het budget past.
+- **de kern**: wat bots dagelijks gebruiken (`ask_user`, `notify_user`, `plan_update`, `share_file`, `read_document`,
+  `memory_search`, `dossier_get`, `dossier_write`, `skill_load`, `delegate_task`, `ask_bot`), de ingang van de eigen
+  browser (`browser_open`, `browser_snapshot`), voor een API-model ook de bestands-, terminal- en webtools (een CLI
+  heeft die zelf), voor de hoofdbot `teambot_find` en `teambot_do`, en hele onderdelen die alleen in één soort run
+  bestaan of de computer van de bot zijn (routine-afronding, live gesprek, container, eigen server);
+- **waar de bot voor is ingericht en wat het bericht noemt** (`wanted`): een hulpmiddel dat zijn rol, beschrijving of
+  instructies bij naam noemen, en een onderdeel waarvan de tools bij elkaar horen in zijn geheel als die tekst het
+  onderdeel noemt ("Je werkt in je browser" geeft de hele browser). Een hulpmiddel dat het bericht bij naam noemt staat
+  er voor die run bij, bij zo'n onderdeel het hele onderdeel. Een licht model kwam van `tools_find` niet bij
+  `browser_click` en gaf twee keer geen antwoord (12 nov). Een bot zonder eigen tekst houdt de kern;
+- **`tools_find`**: geeft de uitleg en de velden van elk ander hulpmiddel van de bot. **In zijn beschrijving staat elke
+  naam**, per onderdeel ("je eigen browser: browser_navigate, browser_click, …"): een model hoeft nooit te raden of iets
+  bestaat;
+- **`tools_call`**: gebruikt zo'n hulpmiddel, met naam en velden.
 
-De rest staat in de beschrijving van **`tools_load`** ("deze onderdelen kun je laden: …"); de bot laadt ze in één stap,
-vanaf de volgende stap zijn ze er. Nooit meer dan de bot al heeft (altijd een deel van `ToolRegistry.forAgent`). Een
-tool die de bot toch rechtstreeks aanroept, werkt gewoon en hoort daarna bij de selectie. In het zijpaneel: "Niet
-meegestuurd (de bot kan ze zelf erbij halen): …".
+Een `tools_call` wordt vóór alles omgezet in de aanroep die hij noemt (`OnDemand.resolve`). Daarna is het die tool:
+dezelfde poort (`tools/execute.ts`: argumentcontrole, Broker, toolbeleid, Auto Review, goedkeuring, audit), dezelfde
+regel in de chat, dezelfde naam in het logboek en in de geschiedenis (`ToolCall.via` onthoudt alleen dat het model hem
+via `tools_call` schreef, zodat het zijn eigen stap terugleest zoals het hem schreef). Een tool die een model toch
+rechtstreeks bij zijn naam aanroept, werkt ook. Kloppen de velden niet, dan staat het schema bij de foutmelding.
 
-**CLI-bots (0.4.4).** Dezelfde selectie geldt voor de TeamBot-tools die een CLI-engine via MCP krijgt
-(`server/modules/cli-agents/toolhost.ts`), met `tools_load` als MCP-tool. Laadt de bot een onderdeel, dan stuurt de
-MCP-brug `notifications/tools/list_changed` en houdt het antwoord vast tot de engine de lijst opnieuw heeft gelezen
-(hooguit 1,5 s), zodat de volgende stap de tools al heeft. Wat een sessie kreeg, blijft voor die sessie
-(`provider_state[<engine>].teambotParts`), dus de lijst groeit alleen. Alleen voor engines die de lijst opnieuw lezen
-(`RELISTS`): Claude Code ja (bij `capabilities.tools.listChanged`, nagekeken in 2.1.319; `tools_load` heeft
-`_meta["anthropic/alwaysLoad"]`, zodat Claude Codes eigen tool search hem nooit uitstelt). Codex alleen achter zijn
-feature-vlag `mcp_tool_list_changed` en OpenCode niet nagekeken: die krijgen de volledige set, zoals voorheen. Een
-standaard hoofdbot op Claude Code: 46 tools, ±8.700 tokens (±10.100 als JSON over MCP) → 30 tools plus `tools_load`,
-±5.200 tokens bij een gewone vraag.
+**Eén tool van een onderdeel gebruikt, en het hele onderdeel is bekend.** Bij het eerste gebruik van een onderdeel
+waarvan de tools bij elkaar horen (browser, bureaublad, teamdatabase, projecten, repetitie, workflows, kanalen, een
+gekoppelde app) komen de velden van de andere tools van dat onderdeel mee met het resultaat, plus wat de bot over dat
+onderdeel moet weten (de *gids*, `ctx.tools.addGuide`, `PartGuide`: hoe zijn browser werkt, de regels voor het
+bureaublad, de tabellen van de teamdatabase, welke apps gekoppeld zijn). Geen zoekstap per tool dus: een licht model
+dat eerst voor elke browseractie moet zoeken, verliest daar een hele beurt aan. Dezelfde gids komt mee met wat
+`tools_find` vindt. Staan de tools van een onderdeel allemaal in de lijst ("zuinig" uit, of de bot is ervoor
+ingericht), dan staat de gids in de systeemprompt, zoals altijd; staat het onderdeel er alleen voor één bericht bij,
+dan komt de gids mee met het eerste gebruik. Wat al is meegegeven wordt onthouden zolang het model het nog weet: één run bij een
+API-model (oudere tool-uitvoer wordt ingekort), de sessie bij een CLI-engine (`provider_state[<engine>].teambotTold`).
+
+De lijst is voor een bot in elke stap van elk gesprek byte-gelijk, behalve in een run waarvan het bericht een
+hulpmiddel bij naam noemt; niets hangt af van een engine die zijn tools opnieuw opvraagt. Nooit meer dan de bot al heeft (altijd een deel van `ToolRegistry.forAgent`, bij CLI-bots na het filter van
+de Broker). In het zijpaneel: "Niet meegestuurd (de bot kan ze zelf erbij halen): …". Gemeten op een verse installatie
+(schatting van `core/tokens.ts`): gewone bot op Claude Code 16 tools, ±3.420 tokens (waarvan ±580 de namen van de 88
+tools op afroep); hoofdbot 18 tools, ±3.960; API-bot 24 tools, ±4.300. `tests/light-step.test.ts` bewaakt die groottes
+met een plafond, `tests/dup-guard.test.ts` het aantal.
+
+**CLI-bots.** De toolhost (`server/modules/cli-agents/toolhost.ts`) biedt dezelfde lijst aan over MCP; alle tools in de
+lijst hebben `_meta["anthropic/alwaysLoad"]`, zodat Claude Codes eigen tool search de korte lijst nooit uitstelt. De
+MCP-server stuurt geen eigen instructies meer mee (die stonden ook al in de instructies die elke engine krijgt).
+Claude Code hield de definities van TeamBots tools eerder zelf al grotendeels achter zijn eigen tool search (alleen de
+namen stonden in de prompt): daar is de winst per stap dus kleiner dan bij Codex, ACP en API-modellen, die elke
+definitie echt meekregen.
 
 ## Prompt caching blijft werken
 
-- **Systeemprompt en toollijst byte-gelijk tussen beurten** (getest over alle fixtures). De toollijst verandert alleen
-  als er een onderdeel bijkomt, nooit terug, in de volgorde van de bot zelf met `tools_load` achteraan.
+- **Systeemprompt en toollijst byte-gelijk tussen beurten** (getest over alle fixtures). De toollijst is de kern plus
+  waar de bot voor is ingericht, in de volgorde van de bot zelf, met `tools_find` en `tools_call` achteraan; alleen een
+  bericht dat een hulpmiddel bij naam noemt verandert hem, voor die ene run.
 - **Inkorten gebeurt in blokken**: oudere beurten per 3 beurten, lange runs per 5 stappen. Tussen die momenten is elke
   aanroep de vorige plus wat erbij kwam (alleen aanvullen), dus de prefix blijft in de cache. Gemeten: 0–2
   geschiedeniswijzigingen per fixturegesprek van 14–25 aanroepen.
@@ -129,8 +155,7 @@ al zijn bots; een bot kan het weer aanzetten). Standaardwaarden:
 | `oldToolChars` | 1.200 | oudere uitvoer wordt ingekort tot ±zoveel tekens |
 | `keepSteps` / `stepChunk` / `runToolChars` | 10 / 5 / 2.500 | lange runs |
 | `duplicates` | `true` | dezelfde uitvoer niet twee keer |
-| `selectTools` | `true` | alleen de tools die nodig lijken, met `tools_load` |
-| `toolTokens` | 6.000 | tooldefinities tot zoveel tokens gaan altijd volledig mee |
+| `selectTools` | `true` | alleen de kern in de toollijst, de rest op afroep (`tools_find`, `tools_call`); uit = elke definitie |
 | `delegationTokens` | 12.000 | geschiedenisbudget voor gedelegeerd werk en botberichten |
 
 In het zijpaneel staat de schakelaar *Zuinig met context* per bot (zet `settings.contextSaver.on`).
@@ -157,18 +182,18 @@ er staat, dat de uitvoer van de huidige beurt heel is, en aan het eind dat de fe
 - Schattingen (tekens/3,5); de echte telling van de engine staat ernaast.
 - Compaction (`agent/compaction.ts`) start nog op dezelfde ruwe grootte als in 0.3.0 (75% van `historyTokens`) en
   telt het inkorten niet mee; daardoor wordt soms eerder samengevat dan nodig.
-- CLI-engines: TeamBot kort hun sessie niet in en kiest hun tools niet (Claude Code heeft eigen tool search voor
-  MCP-tools); alleen de schatting en de telling.
+- CLI-engines: TeamBot kort hun sessie niet in en kiest hun eigen tools niet; van zijn eigen tools geeft het de korte
+  lijst (zie boven), en verder alleen de schatting en de telling.
 - Voor Anthropic zijn oudere delen in de cache al goedkoop (lezen uit de cache ±5–10% van de prijs): daar levert
   inkorten vooral een kleinere context op, en kost een verschuiving van het afsnijpunt eens per paar beurten een
   nieuwe cache-schrijfactie. Bij aanbieders zonder cache en bij gratis tegoed per token is de winst het grootst.
-- `tools_load` vraagt één extra stap als de bot een niet-meegestuurd onderdeel nodig heeft.
+- Een hulpmiddel buiten de lijst kost één zoekstap (`tools_find`) voordat de bot het de eerste keer gebruikt.
 
 ## Tests
 
 `tests/context-budget.test.ts`: −30% of meer op elke fixture met vraag, vaste regel en feiten behouden; systeemprompt
 en toollijst byte-gelijk en weinig geschiedeniswijzigingen; vaste regels en eigen afspraken na afsnijden (0.3.0 verloor
-de vaste regel) en na compaction; de vraag valt nooit weg; `tools_load` laadt, blijft en laadt nooit iets wat de bot
+de vaste regel) en na compaction; de vraag valt nooit weg; `tools_find` vindt en `tools_call` gebruikt nooit iets wat de bot
 niet heeft; gedelegeerde taak schoon en klein, `ask_bot` in een lange chat begrensd; denkstappen van Claude alleen waar
 alles ervoor gelijk is (de controle van de API nagebootst over een hele run); Anthropic-cachepunten; instellingen;
 meten; toolselectie; het blok vooraan; CLI-schatting.

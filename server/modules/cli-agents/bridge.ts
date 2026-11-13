@@ -12,9 +12,8 @@ import { nodeRuntime } from './proc.js';
  * a local named pipe / unix socket (never TCP) to this process, where the run's handlers live:
  *  - `permission_prompt` (Claude Code's `--permission-prompt-tool`): the TeamBot Broker decides.
  *  - TeamBot's own tools (memory, team/delegation, browser, desktop, skills, routines, connected apps, …)
- *    for this one run, with the bot's access mode, tool policy and approvals (see toolhost.ts). When a call changed
- *    the run's tool list (tools_load), the script sends `notifications/tools/list_changed` and holds the result until
- *    the CLI listed again (at most 1.5 s), so the CLI's next step already has the loaded tools.
+ *    for this one run, with the bot's access mode, tool policy and approvals (see toolhost.ts). The list is the same
+ *    for the whole run.
  * Each run gets a random token (read by the script from a per-run file, never from argv), so a request can
  * only reach the run that started it; the token stops working when the run ends. Anything unexpected → deny.
  */
@@ -33,12 +32,9 @@ export interface McpToolSpec {
 export interface McpCallResult {
   content: any[];
   isError?: boolean;
-  /** The run's tool list changed (tools_load): the script tells the CLI (`notifications/tools/list_changed`). */
-  listChanged?: boolean;
 }
 /** TeamBot tools for one run, served over MCP. */
 export interface ToolHandler {
-  instructions?(): string;
   list(): Promise<McpToolSpec[]>;
   call(name: string, args: any, signal: AbortSignal): Promise<McpCallResult>;
 }
@@ -107,20 +103,16 @@ const permissionTool = {
   description: 'TeamBot permission gate used by the host for approvals. Do not call this tool yourself.',
   inputSchema: { type: 'object', properties: { tool_name: { type: 'string' }, input: { type: 'object' }, tool_use_id: { type: 'string' } }, required: ['tool_name'] },
 };
-// After list_changed: the call's result waits until the CLI listed again (at most a moment), so its next step has the tools.
-let relisted = null;
 readline.createInterface({ input: process.stdin }).on('line', async (line) => {
   let m;
   try { m = JSON.parse(line); } catch { return; }
   if (!m || typeof m !== 'object') return;
   const id = m.id;
   if (m.method === 'initialize') {
-    const info = TOOLS ? await ask('info', {}) : {};
     // Answer the client's revision when it is one we speak, else our latest (the client decides whether to go on).
+    // No instructions here: what a bot must know about these tools is in the instructions TeamBot gives every engine.
     const asked = m.params && m.params.protocolVersion;
-    const result = { protocolVersion: VERSIONS.includes(asked) ? asked : LATEST, capabilities: { tools: { listChanged: true } }, serverInfo: { name: 'teambot', title: 'TeamBot', version: '1.1.0' } };
-    if (info && info.result && info.result.instructions) result.instructions = info.result.instructions;
-    send({ id, result });
+    send({ id, result: { protocolVersion: VERSIONS.includes(asked) ? asked : LATEST, capabilities: { tools: {} }, serverInfo: { name: 'teambot', title: 'TeamBot', version: '1.2.0' } } });
   } else if (m.method === 'tools/list') {
     const tools = PERMISSION ? [permissionTool] : [];
     if (TOOLS) {
@@ -129,7 +121,6 @@ readline.createInterface({ input: process.stdin }).on('line', async (line) => {
       else if (!PERMISSION) return send({ id, error: { code: -32603, message: 'TeamBot niet bereikbaar' + (r && r.error ? ': ' + r.error : '') } });
     }
     send({ id, result: { tools } });
-    if (relisted) relisted();
   } else if (m.method === 'tools/call') {
     const p = m.params || {};
     if (p.name === 'permission_prompt' && PERMISSION) {
@@ -138,12 +129,6 @@ readline.createInterface({ input: process.stdin }).on('line', async (line) => {
       send({ id, result: { content: [{ type: 'text', text: JSON.stringify(decision) }] } });
     } else if (TOOLS) {
       const r = await ask('tools/call', { name: String(p.name || ''), arguments: p.arguments || {} }, id);
-      if (r && r.listChanged) {
-        const again = new Promise((resolve) => { relisted = resolve; setTimeout(resolve, 1500); });
-        send({ method: 'notifications/tools/list_changed' });
-        await again;
-        relisted = null;
-      }
       if (r && r.result) send({ id, result: r.result });
       else send({ id, result: { content: [{ type: 'text', text: 'TeamBot-tool niet uitgevoerd' + (r && r.error ? ': ' + r.error : '') }], isError: true } });
     } else send({ id, error: { code: -32602, message: 'Onbekende tool' } });
@@ -296,12 +281,8 @@ export class PermissionBridge {
             return reply({ result: { behavior: 'deny', message: `Geweigerd door TeamBot: ${String(e?.message || e).slice(0, 200)}` } });
           }
         }
-        if (msg.method === 'info' && h.tools) return reply({ result: { instructions: h.tools.instructions?.() || undefined } });
         if (msg.method === 'tools/list' && h.tools) return reply({ result: { tools: await h.tools.list() } });
-        if (msg.method === 'tools/call' && h.tools) {
-          const { listChanged, ...result } = await h.tools.call(String(p.name || ''), p.arguments ?? {}, ac.signal);
-          return reply({ result, ...(listChanged ? { listChanged: true } : {}) });
-        }
+        if (msg.method === 'tools/call' && h.tools) return reply({ result: await h.tools.call(String(p.name || ''), p.arguments ?? {}, ac.signal) });
         return reply({ error: 'method not allowed' });
       } catch (e: any) {
         return reply({ error: String(e?.message || e).slice(0, 300) });

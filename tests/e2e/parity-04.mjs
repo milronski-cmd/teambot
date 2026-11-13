@@ -105,16 +105,18 @@ async function goTo(page, hash, wait = 900) {
     await go(page, hash, wait);
   }
 }
-/** The text of every tab of the bot page (ends on Overzicht). */
+/** Open the one fold "Meer mogelijkheden" of the bot page (since 12 Nov the page has no tabs). */
+async function openMore(page) {
+  await page.evaluate(() => document.querySelectorAll('#inhoud details').forEach((x) => (x.open = true)));
+  await page.waitForTimeout(300);
+}
+/** The text of the whole bot page: the first level and every row of "Meer mogelijkheden", each opened. */
 async function botPageText(page) {
-  let out = '';
-  for (const name of ['Instructies', 'Meer', 'Overzicht']) {
-    await page.getByRole('tab', { name, exact: true }).click();
-    await page.evaluate(() => document.querySelectorAll('details').forEach((x) => (x.open = true)));
-    await page.waitForTimeout(300);
-    out += '\n' + (await page.locator('#inhoud').innerText());
-  }
-  return out;
+  await openMore(page);
+  const shut = page.locator('#inhoud [data-section] > h3 > button[aria-expanded="false"]');
+  for (let i = 0; i < 40 && (await shut.count()); i++) await shut.first().click();
+  await openMore(page);
+  return page.locator('#inhoud').innerText();
 }
 /** Choose in TeamBot's own dropdown (components/Listbox.tsx): by the option's text, or by its value. */
 async function pick(page, box, o) {
@@ -156,16 +158,10 @@ async function ask(page, bot, text, ...steps) {
   await page.waitForTimeout(500);
 }
 const pendingApprovals = () => tb.app.ctx.store.all("SELECT * FROM approvals WHERE status = 'pending'");
-/** Open a collapsible section of the bot editor (Geavanceerd › …) when it is closed. */
-/** A section of the bot page: on whichever of its five tabs it lives. */
+/** A row of the bot page under "Meer mogelijkheden" (one fold since 12 Nov), opened when it is closed. */
 async function openSection(page, title) {
+  await openMore(page);
   const btn = page.locator('#inhoud').getByRole('button', { name: new RegExp(`^${title}`) }).first();
-  for (const tab of await page.getByRole('tab').all()) {
-    if (await btn.isVisible().catch(() => false)) break;
-    await tab.click();
-    await page.evaluate(() => document.querySelectorAll('details').forEach((x) => (x.open = true)));
-    await page.waitForTimeout(250);
-  }
   if ((await btn.getAttribute('aria-expanded').catch(() => 'true')) === 'false') await btn.click();
   await page.waitForTimeout(400);
 }
@@ -227,9 +223,12 @@ try {
     await page.getByText('Welkom bij TeamBot').waitFor({ timeout: 20_000 });
     await page.getByText('Of begin met een kant-en-klaar team').waitFor({ timeout: 15_000 }).catch(() => {});
     await page.locator('#inhoud').getByText('Testmodel').first().waitFor({ timeout: 15_000 }).catch(() => {});
+    // What bots may do is one click away ("Meer informatie" next to "Privacy en gegevens").
+    await page.locator('#inhoud').getByRole('button', { name: 'Meer informatie' }).last().click().catch(() => {});
     const welcome = await mainText(page);
     check('1.4', 'geen account nodig: de app opent meteen, zonder inloggen of e-mailadres', /Welkom bij TeamBot/.test(welcome) && !/E-mailadres|Wachtwoord/.test(welcome));
-    check('1.5', 'eerste start zegt eerlijk wat bots mogen (vragen eerst; verzenden, betalen, verwijderen altijd) en waar de data staat', /Bots vragen toestemming/.test(welcome) && /Waar staat mijn data\?/.test(welcome));
+    // The first bot starts on Volledige toegang: it does the work itself and asks only about money and important messages.
+    check('1.5', 'eerste start zegt eerlijk wat bots mogen (zelf doen; vragen bij geld en belangrijke berichten naar anderen) en waar de data staat', /Bots doen het werk zelf en vragen het je bij geld en belangrijke berichten naar anderen/.test(welcome) && /Privacy en gegevens/.test(welcome));
     // 0.4.2: three plain ways in; the AI found on this PC has the one main button ("Testmodel gebruiken").
     const use = page.locator('#inhoud').getByRole('button', { name: 'Testmodel gebruiken' });
     check('1.6', 'welkomst: wat er op deze pc gevonden is, één knop "Testmodel gebruiken" en kant-en-klare teams', /gratis, draait op deze pc/.test(welcome) && /Testmodel/.test(welcome) && (await use.count()) === 1 && /kant-en-klaar team/.test(welcome));
@@ -323,7 +322,7 @@ try {
     await goTo(page, `#/agents/${ids.ada}`, 1400);
     const ed = await botPageText(page);
     check('2.1', 'bot-editor: gezicht, naam, rol, instructies, taal, antwoordstijl, engine, model, toegang', ['Gezicht', 'Naam', 'Rol', 'Instructies', 'Taal van de antwoorden', 'Antwoordstijl', 'AI en model', 'Model', 'Wat mag de bot?'].every((x) => ed.includes(x)));
-    await page.getByLabel('Rol').fill('Winkelhulp');
+    await page.getByLabel('Rol', { exact: true }).fill('Winkelhulp');
     await page.getByRole('button', { name: 'Opslaan', exact: true }).first().click();
     check('2.1', 'bewerken en opslaan werkt (nieuwe rol bewaard)', await until(() => tb.bot('Ada').role === 'Winkelhulp', 5000));
     // The face: the face editor with parts and moods; the style Glad/Vilt in Algemeen.
@@ -332,17 +331,18 @@ try {
     const face = await mainText(page);
     check('2.2', 'gezicht-editor: figuurtje per stemming, vorm/kleur/ogen/mond, willekeurig, eigen foto', (await page.getByRole('tab', { name: 'Ogen' }).count()) > 0 && /Willekeurig/.test(face) && /Eigen foto/.test(face));
     check('2.3', 'engine en model per bot; wat van het model niet bekend is, staat er niet (geen regels met "onbekend")', ed.includes('AI en model') && !/:\s*onbekend/i.test(ed), (ed.match(/[^\n]*onbekend[^\n]*/i) || [''])[0]);
-    // Reserves: an ordered list in the editor, now really up to five.
+    // Reserves: an ordered list in the editor, now really up to five. Since 12 Nov on the first level of the bot page
+    // ("Als deze AI op is, ga verder op", then "En daarna op"); the next empty place appears once the one before is set.
     const res = await makeBot('Reservetest', { provider_id: tb.app.ctx.store.all("SELECT id FROM providers WHERE kind = 'claude-code'")[0].id, model: '' });
     ids.res = res.id;
     await goTo(page, `#/agents/${res.id}`, 1400);
-    await openSection(page, 'Denken, drukte en reserve-engines');
     const order = ['Testmodel', 'Codex', 'OpenCode', 'DeepSeek'];
+    const slot = (i) => (i === 0 ? page.getByLabel('Als deze AI op is, ga verder op', { exact: true }) : page.getByLabel('En daarna op', { exact: true }).nth(i - 1));
     for (let i = 0; i < order.length; i++) {
-      await pick(page, page.getByLabel(`Reserve ${i + 1}`, { exact: true }), { label: order[i] });
+      await pick(page, slot(i), { label: order[i] });
       await page.waitForTimeout(200);
     }
-    check('2.4', 'reserve-editor: vijf plekken (Reserve 1 … Reserve 5)', (await page.getByLabel('Reserve 5', { exact: true }).count()) === 1);
+    check('2.4', 'reserve-editor: vijf plekken (na vier gekozen reserves staat de vijfde klaar)', (await page.getByLabel('Als deze AI op is, ga verder op', { exact: true }).count()) === 1 && (await page.getByLabel('En daarna op', { exact: true }).count()) === 4);
     await page.getByRole('button', { name: 'Opslaan', exact: true }).first().click();
     await page.waitForTimeout(800);
     const fb = tb.bot('Reservetest').settings?.fallbacks || [];
@@ -362,7 +362,7 @@ try {
     await goTo(page, `#/agents/${ids.ada}`, 1400);
     await openSection(page, 'Werkmap en mappen');
     await page.getByLabel('Map toevoegen', { exact: true }).fill(extra);
-    await page.getByLabel('Rechten voor de nieuwe map').selectOption('ro');
+    await pick(page, page.getByLabel('Rechten voor de nieuwe map'), 'ro');
     await page.locator('#inhoud').getByRole('button', { name: 'Map toevoegen', exact: true }).click();
     await page.waitForTimeout(400);
     await page.getByRole('button', { name: 'Opslaan', exact: true }).first().click();
@@ -421,7 +421,8 @@ try {
     if (older) await tb.api('POST', `/agents/${ids.ada}/versions/${older.id}/restore`);
     check('2.9', 'een oude versie terugzetten werkt', tb.bot('Ada').role === 'Winkelhulp');
     await shows(page, '2.10', 'kosten per bot en per model, met het dagbudget', '#/settings/usage', ['Per bot', 'Per model', 'Ada']);
-    check('2.10', 'dagbudget per eigenaar en per team (stopt vóór een stap die niet meer past)', /Dagbudget/.test(await textOf(page, '#/settings/general?meer=1')));
+    // Since 12 Nov: Instellingen › Meer mogelijkheden › Standaarden voor nieuwe bots.
+    check('2.10', 'dagbudget per eigenaar en per team (stopt vóór een stap die niet meer past)', /Dagbudget/.test(await textOf(page, '#/settings/bot-defaults')));
   });
 
   // ============================================================================================ 3. Engines
@@ -429,7 +430,8 @@ try {
     ai.clear(); // nothing scripted for one part leaks into the next
     const cli = await textOf(page, '#/settings/cli-agents-cli');
     // 0.4.2: "x van n programma's gevonden"; the own ACP agent is for experts (Geavanceerd tonen), on the same page.
-    const n = Number((cli.match(/van (\d+) programma's gevonden/) || [])[1] || 0);
+    // The page shows what is on this pc and "Nog n programma's" for the rest; the count comes from the list of kinds.
+    const n = /Nog \d+ programma's/.test(cli) ? (await tb.api('GET', '/provider-kinds')).filter((k) => k.type === 'cli' && k.id !== 'acp-custom').length : 0;
     const ownAcp = /Eigen ACP-agent/.test(cli) || (await tb.api('GET', '/provider-kinds')).some((k) => k.id === 'acp-custom');
     check('3.1', 'CLI-engines: ≥ 13 ondersteunde agent-CLI\'s plus een eigen ACP-agent', n >= 13 && ownAcp, `${n} ondersteund`);
     const bth = threadOf(ids.baas);
@@ -447,9 +449,13 @@ try {
       await send(page, 'Hoi lokaal model');
       check('R.7', 'eigen provider LM Studio (lokaal) antwoordt in de chat', await seeMessage(page, 'Hallo uit LM Studio.'));
       await goTo(page, `#/agents/${lb.id}`, 1400);
-      check('3.4', 'contextvenster per lokaal model in te stellen (bot-editor)', (await page.getByTestId('context-window').count()) === 1);
+      // Since 12 Nov: the bot page › Meer mogelijkheden › Over het model.
+      await openSection(page, 'Over het model');
+      check('3.4', 'contextvenster per lokaal model in te stellen (bot-editor)', await page.getByTestId('context-window').waitFor({ timeout: 8000 }).then(() => true, () => false));
     }
-    check('3.4', 'Ollama, LM Studio en llama.cpp worden gevonden en rechtstreeks gebruikt (geen omweg via OpenCode)', ['ollama', 'lmstudio', 'llamacpp'].every((k) => kinds.some((x) => x.id === k)) && /Zoeken op deze pc/.test(await textOf(page, '#/settings/providers')));
+    // Since 12 Nov the local models are Instellingen › Meer mogelijkheden › Lokale modellen en andere diensten (and the
+    // row "Op deze computer" under AI-diensten › Toevoegen).
+    check('3.4', 'Ollama, LM Studio en llama.cpp worden gevonden en rechtstreeks gebruikt (geen omweg via OpenCode)', ['ollama', 'lmstudio', 'llamacpp'].every((k) => kinds.some((x) => x.id === k)) && /Lokale modellen op deze pc/.test(await textOf(page, '#/settings/ai-meer')));
     check('3.5', 'inloggen met je abonnement: TeamBot gebruikt de login van de CLI (Pro/Max, ChatGPT); inloggen vanuit de app', cli.includes('Je Claude-abonnement (Pro of Max)') && /Je ChatGPT-abonnement/.test(cli));
     // Usage after a Claude Code turn: limits with reset times in the sidebar bar; estimate under the answer.
     const bar = await until(async () => {
@@ -459,9 +465,14 @@ try {
     check('3.6', 'gebruiksbalk: Claude 5 uur met resettijd, na een beurt van Claude Code', !!bar?.engines?.find((e) => (e.windows || []).some((w) => w.resetsAt)), JSON.stringify(bar?.engines?.map((e) => e.label)));
     await goTo(page, `#/t/${bth}`, 1500);
     const side = page.getByRole('navigation', { name: 'Hoofdmenu' });
-    check('3.6', 'de balk staat onderin de zijbalk, met "schatting" en de gedeelde pot', /Gebruik/.test((await side.innerText().catch(() => '')) || ''));
-    const usage = await textOf(page, '#/m/usage/');
-    check('3.6', 'gebruik per bot, met de waarde via het abonnement (schatting tegen lijstprijs)', /abonnement/.test(usage) && /Baas/.test(usage), usage.slice(0, 200));
+    check('3.6', 'het gebruik staat onderin de zijbalk: een ring per abonnement en de link naar Gebruik en limieten', (await side.getByRole('group', { name: 'Gebruik' }).locator('button[data-usage-meter]').count()) > 0 && (await side.getByRole('link', { name: 'Gebruik en limieten' }).count()) === 1);
+    await textOf(page, '#/m/usage/');
+    // "Verbruik per bot" shows the five biggest users first; Baas (one Claude Code turn) can be behind "Alle N tonen".
+    const allRows = page.locator('#inhoud').getByRole('button', { name: /^Alle \d+ tonen$/ });
+    if (await allRows.count()) await allRows.first().click();
+    await page.waitForTimeout(300);
+    const usage = await mainText(page);
+    check('3.6', 'gebruik per bot, met de waarde via het abonnement (schatting tegen lijstprijs)', /abonnement/.test(usage) && /Baas/.test(usage), usage.slice(usage.indexOf('Verbruik per bot'), usage.indexOf('Verbruik per bot') + 400));
     // Context: the ring in the chat header and "Nu samenvatten".
     await goTo(page, `#/t/${ids.adaTh}`, 1200);
     const ring = page.getByRole('button', { name: /Context .*vol/ });
@@ -522,9 +533,9 @@ try {
     ai.to('Ada', async () => (await sleep(3000), { toolCalls: [{ name: 'list_files', args: { path: '.' } }] }), (req) => ({ text: `Bijgestuurd: ${JSON.stringify(req.messages).includes('kort') ? 'ja' : 'nee'}` }));
     await send(page, 'Maak een overzicht.');
     await page.waitForTimeout(800);
-    const steer = page.getByRole('radio', { name: 'Bijsturen' });
-    if (await steer.count()) await steer.click();
+    // The message waits in the queue; its arrow "Nu sturen" puts it into the running turn.
     await send(page, 'Houd het kort');
+    await qbar.getByRole('button', { name: 'Nu sturen' }).first().click({ timeout: 2000 }).catch(() => {});
     await tb.idle(30_000);
     check('4.4', 'bijsturen tijdens een beurt: het bericht gaat mee in de lopende beurt', /Bijgestuurd: ja/.test(lastOf(ids.adaTh)), lastOf(ids.adaTh));
     // A typed message while a question card is open is the answer.
@@ -547,15 +558,16 @@ try {
     fs.writeFileSync(png, Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==', 'base64'));
     const html = path.join(work, 'folder.html');
     fs.writeFileSync(html, '<h1>Folder</h1>');
-    const zip = path.join(work, 'archief.zip');
-    fs.writeFileSync(zip, Buffer.from('504b0506000000000000000000000000000000000000', 'hex'));
+    // A .zip is unpacked for the bot (no notice); another archive still gets an honest notice.
+    const zip = path.join(work, 'archief.7z');
+    fs.writeFileSync(zip, Buffer.from('377abcaf271c', 'hex'));
     await page.locator('input[type=file]').first().setInputFiles([pdf, png, html, zip]);
     await page.waitForTimeout(1500);
     const notice = (await page.locator('[role=status]').allInnerTexts()).join(' ');
     await ask(page, 'Ada', 'Kijk hier eens naar.', { text: 'Bijlagen ontvangen.' });
     const lastUser = [...messagesOf(ids.adaTh)].reverse().find((m) => m.role === 'user');
     const sent = (lastUser?.parts?.attachments || []).map((a) => a.name);
-    check('4.5', 'bijlagen: pdf, png, html en zip in één keer; de zip krijgt vooraf een eerlijke melding', sent.length === 4 && /archieven niet uit/.test(notice), `${sent.join(', ')} · ${notice.slice(0, 80)}`);
+    check('4.5', 'bijlagen: pdf, png, html en een archief in één keer; het archief (7z) krijgt vooraf een eerlijke melding', sent.length === 4 && /pakt alleen zip-bestanden uit/.test(notice), `${sent.join(', ')} · ${notice.slice(0, 80)}`);
     check('R.5', 'bijlagen zoals bij Sanne (pdf, png, html) komen aan bij het bericht en de bot', ['offerte.pdf', 'logo.png', 'folder.html'].every((n) => sent.includes(n)));
     // Previews: an HTML page from the bot in a sandbox, a Mermaid diagram, the pdf preview.
     await ask(page, 'Ada', 'Maak een pagina.', { toolCalls: [{ name: 'show_html', args: { title: 'Actie', html: '<h1>Actie: 10% korting</h1>' } }] }, { text: 'De pagina staat hiernaast.\n\n```mermaid\ngraph TD; A[Klant]-->B[Offerte]\n```' });
@@ -609,6 +621,8 @@ try {
   // ============================================================================================ 5. Toegang
   await part('5', 'goedkeuringen en toegangsniveaus: volledige toegang, op afstand goedkeuren (telefoon), vangnet', async () => {
     ai.clear(); // nothing scripted for one part leaks into the next
+    // New bots of the owner start on Volledige toegang; choosing it (with the explanation first) is shown from Automatisch.
+    await tb.api('PATCH', `/agents/${ids.ada}`, { access_mode: 'auto' });
     await goTo(page, `#/agents/${ids.ada}?tab=meer&meer=1`, 1400);
     // 0.4.5: the five levels are one dropdown (Wat mag de bot?), with one line for the chosen level.
     const access = page.getByTestId('access-choice').getByRole('combobox');
@@ -661,7 +675,7 @@ try {
     await openChat(page, 'Ada');
     check('6.3', 'zichtbaar in de chat: "Onthouden" onder je bericht, met ongedaan maken', await page.getByText(/Onthouden/).first().waitFor({ timeout: 8000 }).then(() => true).catch(() => false) && (await page.getByRole('button', { name: 'Ongedaan maken' }).count()) > 0);
     await shows(page, '6.1', 'leren is in te stellen (automatisch, op verzoek, uit)', '#/m/memory/opslag', ['Automatisch leren', 'Alleen op verzoek']);
-    await shows(page, '6.2', 'scopes en quota: over jou, per bot, gedeeld, dossiers; gebruik en quota', '#/m/memory/opslag', ['Gebruik en quota']);
+    await shows(page, '6.2', 'scopes en quota: over jou, per bot, gedeeld, dossiers; gebruik en quota', '#/m/memory/opslag?meer=1', ['Gebruik en quota']);
     if (learned) {
       await tb.api('PATCH', `/memory/items/${learned.id}`, { pinned: true });
       check('6.2', 'vastzetten: altijd laden (zoals "essential" in OpenBot)', !!tb.app.ctx.store.all('SELECT pinned FROM memory_items WHERE id = ?', learned.id)[0]?.pinned);
@@ -680,7 +694,8 @@ try {
     await imp.getByRole('button', { name: /^Importeren \(2\)/ }).click();
     await page.waitForTimeout(1500);
     check('6.4', 'dossiers: eigen markdown-dossiers importeren (voorbeeld eerst)', /Klant Jansen/.test(await textOf(page, '#/m/memory/dossiers')) && /Leverancier Velo/.test(await mainText(page)));
-    await goTo(page, '#/settings/advanced', 800);
+    // "Geavanceerd tonen": Instellingen › Meer mogelijkheden › Deze computer (since 12 Nov).
+    await goTo(page, '#/settings/systeem', 800);
     await page.getByRole('switch', { name: 'Geavanceerd tonen' }).click();
     await until(() => tb.app.ctx.store.settings(tb.owner.id).ui?.advanced === true, 5000);
     const tables = await textOf(page, '#/m/teamdata/tabellen', 1500);
@@ -694,7 +709,7 @@ try {
     const list = Array.isArray(curated) ? curated : curated.skills || curated.items || [];
     check('7.1', 'eigen veilige catalogus: ≥ 40 skills op vaste versies, met licentie', list.length >= 40, `${list.length} skills`);
     const market = await textOf(page, '#/m/skills/', 1500);
-    check('7.1', 'Marktplaats: Skills, Apps en Bots; bron, licentie en rechten vooraf zichtbaar', ['Skills', 'Apps', 'Bots', 'Gecontroleerd', 'Toevoegen'].every((x) => market.includes(x)));
+    check('7.1', 'Marktplaats: skills, apps en bots; bron, licentie en rechten vooraf zichtbaar', /Skills, apps en bots/.test(market) && ['Gecontroleerd', 'Toevoegen'].every((x) => market.includes(x)), market.slice(0, 200));
     // A skill of your own (paste), switched on for all bots in the same step ("Direct inschakelen voor": Alle bots; the
     // picker itself: tests/e2e/extensions-ui.mjs).
     const all = tb.app.ctx.store.agents(tb.owner.id).filter((a) => !a.archived).map((a) => a.id);
@@ -712,12 +727,12 @@ try {
     check('7.3', 'Mijn skills: controleren op updates, versies, vastzetten en verwijderen', canCheck);
     await shows(page, '7.4', 'veiligheid: uitgeversbeleid, vertrouwde uitgevers met handtekening', '#/settings/skills-uitgevers', ['Wat mag er geïnstalleerd worden?', 'Vertrouwde uitgevers']);
     await openChat(page, 'Ada');
-    await ask(page, 'Ada', 'Maak hier een skill van.', { toolCalls: [{ name: 'skill_draft', args: { name: 'fiets-afleveren', description: 'Zo leveren we een fiets af.', instructions: '1. Controleer de banden.\n2. Leg de sloten uit.' } }] }, { text: 'Concept staat klaar.' });
+    await ask(page, 'Ada', 'Maak hier een skill van.', { toolCalls: [{ name: 'skill_save', args: { name: 'fiets-afleveren', description: 'Zo leveren we een fiets af.', instructions: '1. Controleer de banden.\n2. Leg de sloten uit.' } }] }, { text: 'De skill staat klaar.' });
     if (pendingApprovals().length) {
       await page.getByRole('button', { name: /^Eén keer toestaan|^Toestaan/ }).first().click().catch(() => {});
       await tb.idle(15_000);
     }
-    check('7.5', 'skills maken vanuit een gesprek: een concept om te beoordelen', await page.getByText(/Skillconcept|wacht op jouw beoordeling/).first().waitFor({ timeout: 8000 }).then(() => true).catch(() => false));
+    check('7.5', 'skills maken vanuit een gesprek: de bot legt hem vast en hij is meteen actief voor het team', await page.getByText(/is vastgelegd en actief voor het team/).first().waitFor({ timeout: 8000 }).then(() => true).catch(() => false));
     const box = page.getByRole('textbox', { name: 'Bericht', exact: true });
     const menu = page.getByRole('listbox', { name: 'Skills en opdrachten' });
     let menuOk = false;
@@ -900,7 +915,10 @@ try {
     await page.getByRole('radio', { name: /Mijn bureaublad/ }).click().catch(() => {});
     await page.waitForTimeout(500);
     const host = await mainText(page);
-    check('11.2', 'bureaublad: vraag bij elke actie, één keer per taak, of volledige toegang (zelfstandig); hele scherm zien', /Vraag bij elke actie/.test(host) && /Vraag één keer per taak/.test(host) && /Volledige toegang/.test(host), host.slice(0, 160));
+    // The third desktop level is called "Niet vragen" since 10 Nov (ui/src/modules/browser/api.ts LEVELS): "Volledige
+    // toegang" is only the bot's own level, and a bot on it never asks per desktop action.
+    const at = Math.max(0, host.indexOf('Toegangsniveau'));
+    check('11.2', 'bureaublad: vraag bij elke actie, één keer per taak, of zelfstandig ("Niet vragen"); hele scherm zien', /Vraag bij elke actie/.test(host) && /Vraag één keer per taak/.test(host) && /Niet vragen/.test(host) && /hele scherm zien/.test(host), host.slice(at, at + 400));
     await page.getByRole('radio', { name: /Eigen server/ }).click().catch(() => {});
     await page.waitForTimeout(500);
     check('11.5', 'cloud-VM laten maken (Hetzner, DigitalOcean), met de kosten vooraf', /Cloud-VM laten maken/.test(await mainText(page)));
@@ -920,7 +938,7 @@ try {
     ai.clear(); // nothing scripted for one part leaks into the next
     const vs = await tb.api('GET', '/voice/settings');
     check('12.1', 'dicteren standaard lokaal en gratis (Parakeet/Whisper via sherpa-onnx), ook Nederlands', vs.settings?.stt?.engine === 'local');
-    await shows(page, '12.1', 'Instellingen › Spraak: herkenning op deze computer, sneltoets in elk programma', '#/settings/voice-spraak', ['Lokaal op deze computer', 'Dicteren in elk programma']);
+    await shows(page, '12.1', 'Instellingen › Spraak: herkenning op deze computer, sneltoets in elk programma', '#/settings/voice-spraak', ['op deze computer omgezet in tekst', 'Dicteren in elk programma']);
     const tr = await fetch(`${tb.url}/api/voice/transcribe`, { method: 'POST', headers: { authorization: `Bearer ${tb.token}`, 'content-type': 'audio/wav' }, body: wavSilence() });
     const trj = await tr.json().catch(() => ({}));
     check('12.1', 'zonder spraakmodel: een eerlijke melding (eerst downloaden), geen stille fout', tr.status === 409 && /download|model/i.test(trj.error || ''), `${tr.status} ${trj.error || ''}`);
@@ -949,7 +967,9 @@ try {
     const pth = await phone.device('POST', '/threads', { agentId: made.body.id });
     ai.to('Telefoonbot', { text: 'Hoi vanaf je telefoon.' });
     await go(phone.page, `#/t/${pth.body.id}`, 1500);
-    await send(phone.page, 'Hoi');
+    // On a phone Enter is a new line: the button sends.
+    await phone.page.getByRole('textbox', { name: 'Bericht' }).fill('Hoi');
+    await phone.page.getByRole('button', { name: 'Versturen' }).click();
     check('13.6', 'telefoon: chatten met een bot', await seeMessage(phone.page, 'Hoi vanaf je telefoon.'));
     check('13.6', 'telefoon: geen horizontaal scrollen in de chat (390 px)', (await overflow(phone.page)) <= 1);
     const secrets = await phone.device('GET', '/secrets');
@@ -1021,11 +1041,15 @@ try {
     check('16.1', 'back-ups in de app: elke dag automatisch, nu maken, terugzetten met één klik', listed && /Elke dag automatisch/.test(await mainText(page)));
     const upd = await tb.api('GET', '/backups/updates');
     check('16.2', 'updates: back-up vooraf, "Wat is er nieuw", terug naar de vorige versie; nog geen openbaar kanaal (achter)', !!upd.version && Array.isArray(upd.whatsNew || upd.history || []));
-    const gen = await textOf(page, '#/settings/general?meer=1');
+    // Since 12 Nov: Instellingen › Meer mogelijkheden › Deze computer.
+    const gen = await textOf(page, '#/settings/systeem');
     check('16.3', 'pc wakker houden terwijl routines of taken lopen (desktop-app; ook op batterij)', /Houd de pc wakker terwijl routines of taken lopen/.test(gen));
     await shows(page, '16.4', 'privacy: geen statistieken of foutrapporten; "Wat verlaat je pc?"', '#/settings/data', ['Wat verlaat je pc?', 'geen statistieken']);
-    const langs = await page.locator('select').first().locator('option').allInnerTexts().catch(() => []);
-    check('16.5', 'taal van de app: 11 talen', (await textOf(page, '#/settings/general')).includes('العربية') && (await textOf(page, '#/settings/general')).includes('Українська'));
+    await goTo(page, '#/settings/general', 900);
+    await page.getByLabel('Taal van de app').click();
+    const langs = (await page.getByRole('option').allInnerTexts().catch(() => [])).join(' | ');
+    await page.keyboard.press('Escape');
+    check('16.5', 'taal van de app: 11 talen', langs.includes('العربية') && langs.includes('Українська'), langs.slice(0, 200));
   });
 
   // ============================================================================================ 17. Stabiliteit

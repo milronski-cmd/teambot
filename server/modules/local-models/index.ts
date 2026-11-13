@@ -1,4 +1,5 @@
 import fs from 'node:fs';
+import { isLoopbackUrl } from '../../core/util.js';
 import os from 'node:os';
 import path from 'node:path';
 import type { Ctx, ModelInfo, Module, ProviderConfig, User } from '../../core/types.js';
@@ -6,12 +7,15 @@ import { ah, bad, str, user } from '../../core/http.js';
 import { now } from '../../core/db.js';
 import { isRestricted } from '../../api/member-policy.js';
 import { autoDefaultProvider } from '../../api/providers.js';
-import { chosenContext, ollamaModels } from '../../providers/localmodels.js';
+import { chosenContext, ollamaModels, originOf } from '../../providers/localmodels.js';
 import { detectHardware, type Hardware } from './hardware.js';
-import { GiB, PLAN_CONTEXT, budget, bestDownload, fitFor, fitLoaded, memoryNeed, recommend, type Candidate, type Fit, type FitWhy, type ToolsKnown } from './advice.js';
+import { GiB, PLAN_CONTEXT, budget, bestDownload, fitFor, fitLoaded, memoryNeed, pickInstalled, recommend, roomyFor, type Candidate } from './advice.js';
 import { CATALOG_CHECKED, CATALOG_SOURCE, OLLAMA_CATALOG } from './catalog.js';
-import { Pulls, cpuWarning, getJson, originOf, parsePs, placement, type CpuWarning, type Placement, type PsModel, type PullState } from './ollama.js';
-import { probeAdapter, probeOllama, probePlan, probeThink, type ProbeOutcome, type ProbeWhere } from './probe.js';
+import { Pulls, cpuWarning, getJson, parsePs, placement, type PsModel } from './ollama.js';
+import { probeAdapter, probeOllama, probePlan, probeThink } from './probe.js';
+import { installOllama, ollamaPlan, ollamaUp, type InstallPlan, type InstallState } from './install.js';
+import { localChatModel } from '../../agent/alternatives.js';
+import type { CatalogView, Fit, FitWhy, InstalledModel, LocalModelsView, OtherServer, ProbeOutcome, ProbeView, ProbeWhere, ToolsKnown } from '../../../shared/localModels.js';
 
 /**
  * "Lokale modellen op deze pc" (TeamBot 0.4, package Q): what this pc has, which local models fit ("past goed",
@@ -24,79 +28,20 @@ import { probeAdapter, probeOllama, probePlan, probeThink, type ProbeOutcome, ty
 
 const ID = 'local-models';
 
-export interface ProbeView extends ProbeOutcome {
-  at: string;
-  ms: number;
-  where?: ProbeWhere;
-}
-
-export interface InstalledModel {
-  id: string;
-  size: number;
-  params?: string;
-  quant?: string;
-  /** What Ollama says it can do (undefined = Ollama does not say). */
-  tools?: boolean;
-  vision?: boolean;
-  thinking?: boolean;
-  /** The window the advice is for: chosen, loaded now, or TeamBot's 16k. */
-  context: number;
-  need: number;
-  fit: Fit;
-  why: FitWhy;
-  loaded?: { placement: Placement; context: number; size: number; sizeVram: number };
-  probe: ProbeView | null;
-  toolsKnown: ToolsKnown;
-}
-
-export interface CatalogView {
-  id: string;
-  params: string;
-  size: number;
-  moe?: boolean;
-  vision?: boolean;
-  thinking?: boolean;
-  firstBot?: boolean;
-  need: number;
-  fit: Fit;
-  why: FitWhy;
-  installed: boolean;
-  best?: boolean;
-}
-
-export interface OtherServer {
-  providerId: string;
-  name: string;
-  kind: string;
-  models: { id: string; probe: ProbeView | null; tools?: boolean }[];
-  error?: string;
-}
-
-export interface LocalModelsView {
-  allowed: boolean;
-  hardware: Hardware | null;
-  budget: { vram: number; ram: number; gpu: string | null } | null;
-  ollama: { running: boolean; base: string; version?: string; providerId: string | null; local: boolean; defaultModel?: string };
-  installed: InstalledModel[];
-  catalog: CatalogView[];
-  catalogChecked: string;
-  catalogSource: string;
-  recommended: { id: string; installed: boolean } | null;
-  cpuWarning: CpuWarning | null;
-  pulls: PullState[];
-  others: OtherServer[];
-  /** Free disk space where Ollama keeps its models (only when Ollama runs on this pc). */
-  diskFree: number | null;
-}
-
 const MODEL_NAME = /^[A-Za-z0-9][A-Za-z0-9._\-/:]{0,199}$/;
-const isLocalHost = (base: string) => {
-  try {
-    return ['127.0.0.1', 'localhost', '[::1]', '::1'].includes(new URL(base).hostname);
-  } catch {
-    return false;
-  }
-};
+
+/** The installed models as the advice weighs them: tools known, loaded now, an all-rounder, room to spare. */
+function installedCandidates(installed: InstalledModel[], b: ReturnType<typeof budget> | null): Candidate[] {
+  return installed.map((m) => ({
+    id: m.id,
+    fit: m.fit,
+    size: m.size,
+    tools: m.toolsKnown,
+    loaded: !!m.loaded,
+    firstBot: OLLAMA_CATALOG.some((c) => c.firstBot && (c.id === m.id || full(c.id) === m.id)),
+    roomy: !!b && roomyFor(b, m.need),
+  }));
+}
 const withTimeout = <T>(p: Promise<T>, ms: number): Promise<T | null> => Promise.race([p.catch(() => null), new Promise<null>((r) => setTimeout(() => r(null), ms))]);
 const full = (m: string) => (m.includes(':') ? m : `${m}:latest`);
 
@@ -107,6 +52,10 @@ export interface LocalModelsOptions {
   hardwareTtlMs?: number;
   /** Where Ollama keeps its models, for the free disk space (default OLLAMA_MODELS or ~/.ollama/models). */
   modelsDir?: string;
+  /** How "Installeren" installs Ollama here (tests give a stand-in); default: the official installer (install.ts). */
+  installPlan?: () => InstallPlan | null;
+  /** How long to wait for Ollama to answer after the installer (default 30 s, then started, then twice that). */
+  installWaitMs?: number;
 }
 
 export function createLocalModelsModule(opts: LocalModelsOptions = {}): Module {
@@ -125,6 +74,9 @@ export function createLocalModelsModule(opts: LocalModelsOptions = {}): Module {
   const onCpuForTest = new Map<string, number>();
   const testedOnCpu = (id: string) => (onCpuForTest.get(id) || 0) > Date.now();
   let pulls: Pulls;
+  /** The one Ollama install that runs or ran last ("Installeren"). */
+  let installing: { userId: string; state: InstallState } | null = null;
+  let setInstall: (p: Partial<InstallState>) => void = () => {};
 
   const probeKey = (kind: string, base: string, model: string) => `${kind}|${originOf(base)}|${model}`;
   const cachedProbe = (ctx: Ctx, kind: string, base: string, model: string, digest = ''): ProbeView | null => {
@@ -146,7 +98,7 @@ export function createLocalModelsModule(opts: LocalModelsOptions = {}): Module {
   };
 
   const diskFree = (base: string): number | null => {
-    if (!isLocalHost(base)) return null;
+    if (!isLoopbackUrl(base)) return null;
     const dir = opts.modelsDir || process.env.OLLAMA_MODELS || path.join(os.homedir(), '.ollama', 'models');
     for (const d of [dir, os.homedir()]) {
       try {
@@ -211,7 +163,7 @@ export function createLocalModelsModule(opts: LocalModelsOptions = {}): Module {
     const catCands = catalog.map((c) => cand(c, { firstBot: c.firstBot, tools: 'unknown' }));
     const best = bestDownload(catCands);
     if (best) catalog.find((c) => c.id === best.id)!.best = true;
-    const recommended = running || !installed.length ? recommend(installed.map((m) => cand(m, { tools: m.toolsKnown, loaded: !!m.loaded })), catCands) : null;
+    const recommended = running || !installed.length ? recommend(installedCandidates(installed, b), catCands) : null;
     // Other local servers the user connected (LM Studio, llama.cpp, …): models and their tool test.
     const locals = o2.others === false ? [] : ctx.providers.list(u.id).filter((p) => p.user_id === u.id && p.enabled && p.kind !== 'ollama' && ctx.providers.kind(p.kind)?.billing === 'local');
     const others: OtherServer[] = await Promise.all(
@@ -230,7 +182,7 @@ export function createLocalModelsModule(opts: LocalModelsOptions = {}): Module {
       allowed: true,
       hardware: h,
       budget: b ? { vram: b.vram, ram: b.ram, gpu: b.gpu?.name || null } : null,
-      ollama: { running, base: o, version: version?.version, providerId: cfg?.id || null, local: isLocalHost(base), defaultModel: cfg?.config?.defaultModel || undefined },
+      ollama: { running, base: o, version: version?.version, providerId: cfg?.id || null, local: isLoopbackUrl(base), defaultModel: cfg?.config?.defaultModel || undefined },
       installed,
       catalog,
       catalogChecked: CATALOG_CHECKED,
@@ -319,7 +271,11 @@ export function createLocalModelsModule(opts: LocalModelsOptions = {}): Module {
     ],
     init(ctx) {
       pulls = new Pulls(
-        (userId, s) => ctx.events.emit(userId, 'localmodels.pull', s),
+        (userId, s) => {
+          ctx.events.emit(userId, 'localmodels.pull', s);
+          // The model an install fetches: its progress is the install's progress too.
+          if (installing?.userId === userId && installing.state.phase === 'model' && installing.state.model === s.model) setInstall({ received: s.completed, total: s.total });
+        },
         (userId, s) => {
           if (s.ok) ctx.events.emit(userId, 'notification', { title: 'Model gedownload', body: `${s.model} staat nu in Ollama op deze pc.`, link: '#/settings/providers', kind: 'local-models' });
           // Right after a download the owner started: check that the model really calls tools.
@@ -328,6 +284,63 @@ export function createLocalModelsModule(opts: LocalModelsOptions = {}): Module {
         },
       );
       const allowed = (u: User) => !isRestricted(ctx, u);
+      setInstall = (p) => {
+        if (!installing) return;
+        installing.state = { ...installing.state, ...p };
+        ctx.events.emit(installing.userId, 'localmodels.install', installing.state);
+      };
+
+      /**
+       * "Installeren" (Ollama not on this pc): install Ollama silently (install.ts), connect it, and give it a model
+       * that runs well here: an installed one, else the advised download. One job at a time; progress as events
+       * (localmodels.install) and from GET. After "done" a bot on Ollama answers without another step.
+       */
+      ctx.api.post(
+        '/local-models/install',
+        ah(async (req) => {
+          const u = user(req);
+          if (!allowed(u)) throw bad('Alleen de eigenaar kan Ollama installeren op deze computer.');
+          if (installing && !['done', 'error'].includes(installing.state.phase)) return installing.state;
+          const { base } = ollamaOf(ctx, u.id);
+          const up = await ollamaUp(base, 0);
+          if (!up && !isLoopbackUrl(base)) throw bad(`Ollama op ${originOf(base)} antwoordt niet. Start het op die computer.`);
+          const plan = up ? null : (opts.installPlan || ollamaPlan)();
+          if (!up && !plan) throw bad('Op deze computer installeert TeamBot Ollama niet zelf (daar is een beheerderswachtwoord voor nodig). Installeer het via ollama.com/download; TeamBot ziet het daarna vanzelf.');
+          installing = { userId: u.id, state: { phase: up ? 'start' : 'download', received: 0, total: 0, startedAt: now() } };
+          ctx.audit(u.id, 'localmodels.install', { base: originOf(base) });
+          void (async () => {
+            try {
+              if (plan) await installOllama({ plan, dir: path.join(ctx.config.dataDir, 'downloads'), base, set: setInstall, waitMs: opts.installWaitMs });
+              let cfg = ollamaOf(ctx, u.id).cfg || ctx.providers.create(u.id, { kind: 'ollama', base_url: base });
+              if (!ctx.store.getSetting<string | null>(u.id, 'defaultProvider', null)) {
+                ctx.store.setSetting(u.id, 'defaultProvider', cfg.id);
+                ctx.store.setSetting(u.id, 'defaultProviderAuto', true);
+              } else if (ctx.store.getSetting<boolean>(u.id, 'defaultProviderAuto', false) === true) await autoDefaultProvider(ctx, u.id);
+              let model = await localChatModel(ctx, cfg);
+              if (!model) {
+                // Nothing to chat with yet: the download the advice gives for this pc.
+                const rec = (await view(ctx, u, false, { others: false })).recommended;
+                if (rec && !rec.installed) {
+                  setInstall({ phase: 'model', model: rec.id, received: 0, total: 0 });
+                  const s = await pulls.start(base, rec.id, u.id);
+                  if (!s.ok) throw new Error(s.error || `${rec.id} downloaden lukte niet.`);
+                  model = rec.id;
+                }
+              }
+              if (model) cfg = ctx.providers.updateConfig(cfg.id, u.id, { config: { ...cfg.config, defaultModel: model } });
+              ctx.events.emit(u.id, 'provider.updated', ctx.providers.view(cfg, u.id));
+              setInstall({ phase: 'done', model: model || undefined });
+            } catch (e: any) {
+              setInstall({ phase: 'error', error: String(e?.message || e).slice(0, 300) });
+            }
+          })();
+          return installing.state;
+        }),
+      );
+      ctx.api.get(
+        '/local-models/install',
+        ah(async (req) => (installing?.userId === user(req).id ? installing.state : null)),
+      );
 
       ctx.api.get(
         '/local-models',
@@ -399,7 +412,8 @@ export function createLocalModelsModule(opts: LocalModelsOptions = {}): Module {
             ctx.store.setSetting(u.id, 'defaultProvider', p.id);
             ctx.store.setSetting(u.id, 'defaultProviderAuto', true);
           } else if (def !== p.id && ctx.store.getSetting<boolean>(u.id, 'defaultProviderAuto', false) === true) await autoDefaultProvider(ctx, u.id);
-          if (ctx.store.getSetting<string | null>(u.id, 'defaultProvider', null) === p.id) ctx.store.setSetting(u.id, 'defaultModel', tag.name);
+          // (One default model: the connection's own, set above. An older own choice of the user must not overrule it.)
+          if (ctx.store.getSetting<string | null>(u.id, 'defaultProvider', null) === p.id) ctx.store.setSetting(u.id, 'defaultModel', '');
           ctx.audit(u.id, 'localmodels.use', { provider: p.id, model: tag.name });
           ctx.events.emit(u.id, 'provider.updated', ctx.providers.view(p, u.id));
           ctx.events.emit(u.id, 'settings.updated', ctx.store.settings(u.id));
@@ -417,8 +431,8 @@ export function createLocalModelsModule(opts: LocalModelsOptions = {}): Module {
           const v = await view(ctx, owner, false, { others: false });
           // Only with real facts (the pc and every model's size); otherwise the caller's own rule decides.
           if (!v.hardware || !v.installed.length || v.installed.some((m) => !m.size)) return null;
-          const rec = v.recommended;
-          return rec?.installed && models.some((m) => m.id === rec.id) ? rec.id : null;
+          const pick = pickInstalled(installedCandidates(v.installed.filter((m) => models.some((x) => x.id === m.id)), v.hardware ? budget(v.hardware) : null));
+          return pick?.id ?? null;
         },
         probe: (u: User, model: string, providerId?: string) => probe(ctx, u, model, providerId),
       };

@@ -4,8 +4,9 @@
  *   - the owner corrects a bot in the chat (quality/lessons.ts, since 0.4);
  *   - the owner sends a task back that a bot reported as done (`task_reopened`), with his reason;
  *   - TeamBot itself sees a duplicate action: the same customer answered twice on two channels (crosschannel.ts).
- * Where they go: shared knowledge of the bot's home team (every bot of that team works the same way; a bot that does
- * not read shared knowledge keeps it for itself).
+ * Where they go: the dossier "Lessen" of the bot's home team, as a note of it (every bot of that team works the same
+ * way; a bot that does not read shared knowledge keeps it as a note of its own working notes). Written through the one
+ * way into memory (pipeline.ts); a bot that works a lesson into the text of "Lessen" sends the note to the archive.
  * How they are applied: not by search (a lesson about e-mail does not match a WhatsApp question) but always — the
  * lessons a bot may read are in every turn, also in a customer conversation, bounded to LESSON_LINES short lines (what
  * matches the message first, then the newest). The list itself stays bounded like every part of memory (target size,

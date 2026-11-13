@@ -1,46 +1,7 @@
 import { api } from '../../lib/api';
 import { previewKindOf, type PreviewSource } from '../../components/FilePreview';
 import { foldersApi } from '../folders/api';
-
-export type SeenOp = 'read' | 'write' | 'delete' | 'web' | 'search' | 'exec' | 'app';
-export interface SeenItem {
-  op: SeenOp;
-  target: string;
-  count: number;
-  last: string;
-  threadId: string;
-  messageId: string;
-}
-export interface SeenFile extends SeenItem {
-  name: string;
-  root: number | null;
-  rel: string | null;
-  exists: boolean;
-  size: number | null;
-  mtime: string | null;
-}
-export interface SeenApproval {
-  id: string;
-  summary: string;
-  status: string;
-  risk: string;
-  at: string;
-  threadId: string | null;
-}
-export interface SeenView {
-  agent: { id: string; name: string };
-  threadId: string | null;
-  days: number;
-  read: SeenFile[];
-  written: SeenFile[];
-  deleted: SeenFile[];
-  pages: SeenItem[];
-  searches: SeenItem[];
-  commands: SeenItem[];
-  apps: SeenItem[];
-  approvals: SeenApproval[];
-  steps: number;
-}
+import type { SeenFile, SeenView } from '../../../../shared/seen.js';
 
 export const seenApi = {
   get: (agentId: string, o: { threadId?: string; days?: number } = {}) => {

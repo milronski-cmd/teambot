@@ -4,6 +4,7 @@ import { MARKETING_CATALOG } from './catalog-marketing.js';
 import { CATALOG_SERVICE } from './catalog-service.js';
 
 import { CATALOG_WORK } from './catalog-work.js';
+import { PLACE } from '../../../shared/places.js';
 
 /**
  * Connector catalogue: templates for commonly used MCP servers. Every entry
@@ -195,6 +196,8 @@ function googleGuide(product: keyof typeof GOOGLE_API, scopes: string[]): OAuthA
  * own OAuth client, Python or gcloud. The built-in Google connection (google.ts) does the same with one login.
  */
 export const BEHIND_GOOGLE = new Set(['google-gmail', 'google-drive', 'google-calendar', 'google-sheets', 'google-workspace-mcp', 'google-analytics', 'google-ads', 'search-console']);
+/** Google's own MCP servers (Developer Preview, own Google Cloud client): the Google card gives Gmail, Agenda and Drive without them. */
+export const GOOGLE_PREVIEW = new Set(['google-gmail', 'google-drive', 'google-calendar', 'google-sheets']);
 
 export const CATALOG: CatalogEntry[] = [
   {
@@ -620,7 +623,7 @@ export const CATALOG: CatalogEntry[] = [
     verifiedAt: PINNED,
     testStatus: 'Live gecontroleerd op 2026-11-09 zonder sleutel: verbonden (initialize), 2 tools gevonden; een zoekopdracht via de API gaf Nederlandse resultaten.',
     availability: 'Zonder sleutel 1.000 verzoeken per uur en 10 per seconde per internetadres, gedeeld met ander verkeer van dat adres. Volgens de voorwaarden voor persoonlijk gebruik.',
-    alternatives: 'TeamBot zoekt ook zonder deze koppeling al via Keenable en Parallel (Instellingen › Geavanceerd › Zoeken).',
+    alternatives: `TeamBot zoekt ook zonder deze koppeling al via Keenable en Parallel (${PLACE.search}).`,
   },
   {
     // The Parallel MCP server (checked 2026-11-09 in docs.parallel.ai/integrations/mcp/quickstart.md and live: tools/list
@@ -652,7 +655,7 @@ export const CATALOG: CatalogEntry[] = [
     verifiedAt: PINNED,
     testStatus: 'Live gecontroleerd op 2026-11-09 zonder sleutel: verbonden (initialize), 2 tools gevonden; een zoekopdracht gaf Nederlandse resultaten.',
     availability: 'Gratis voor hobbygebruik en persoonlijke agents; Parallel noemt geen getallen voor de limieten. Voor veel gebruik raadt Parallel een betaald account aan.',
-    alternatives: 'TeamBot zoekt ook zonder deze koppeling al via Keenable en Parallel (Instellingen › Geavanceerd › Zoeken).',
+    alternatives: `TeamBot zoekt ook zonder deze koppeling al via Keenable en Parallel (${PLACE.search}).`,
   },
   {
     // nickclyde/duckduckgo-mcp-server (MIT, 1,573 stars, PyPI 0.7.0 of 2026-09-04; checked 2026-11-09).
@@ -735,7 +738,7 @@ export const CATALOG: CatalogEntry[] = [
     verifiedAt: PINNED,
     testStatus: 'Adres en sleutel-header gecontroleerd in de README op 2026-11-09; zonder sleutel antwoordt de server 401. Met een echte sleutel niet live getest.',
     availability: 'Gratis: 1.000 credits per maand (een gewone zoekopdracht kost 1 credit), zonder creditcard.',
-    alternatives: 'Lokaal: npx -y tavily-mcp@0.2.22 met TAVILY_API_KEY. Dezelfde sleutel kun je ook bij Instellingen › Geavanceerd › Zoeken invullen; dan gebruikt web_search hem als reserve.',
+    alternatives: `Lokaal: npx -y tavily-mcp@0.2.22 met TAVILY_API_KEY. Dezelfde sleutel kun je ook bij ${PLACE.search} invullen; dan gebruikt web_search hem als reserve.`,
   },
   {
     // exa-labs/exa-mcp-server (MIT, 5,219 stars, npm exa-mcp-server 3.4.3; checked 2026-11-09). Live: tools/list without
@@ -765,7 +768,7 @@ export const CATALOG: CatalogEntry[] = [
     verifiedAt: PINNED,
     testStatus: 'Live gecontroleerd op 2026-11-09 zonder sleutel: verbonden (initialize), 2 tools gevonden. Met een sleutel niet live getest.',
     availability: 'Gratis tegoed: $10 per maand (ongeveer 1.400 zoekopdrachten), zonder creditcard.',
-    alternatives: 'Lokaal: npx -y exa-mcp-server@3.4.3 met EXA_API_KEY. Dezelfde sleutel kun je ook bij Instellingen › Geavanceerd › Zoeken invullen; dan gebruikt web_search hem als reserve.',
+    alternatives: `Lokaal: npx -y exa-mcp-server@3.4.3 met EXA_API_KEY. Dezelfde sleutel kun je ook bij ${PLACE.search} invullen; dan gebruikt web_search hem als reserve.`,
   },
   {
     // taylorwilsdon/google_workspace_mcp (MIT, PyPI workspace-mcp 2.4.0 of 2026-11-08). Not by Google; an option next to

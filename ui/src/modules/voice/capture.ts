@@ -150,7 +150,7 @@ export class PcmCapture {
   }
 }
 
-export function concat(frames: Int16Array[]): Int16Array {
+export function concat(frames: Int16Array[]): Int16Array<ArrayBuffer> {
   const out = new Int16Array(frames.reduce((n, f) => n + f.length, 0));
   let o = 0;
   for (const f of frames) (out.set(f, o), (o += f.length));

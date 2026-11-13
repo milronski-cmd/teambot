@@ -1,3 +1,5 @@
+import fs from 'node:fs';
+import { createApp, type AppHandle } from '../server/app.js';
 import type { AgentRunRequest, ChatRequest, ChatResult, StreamEvent } from '../server/core/types.js';
 import type { TestApp } from './helpers.js';
 
@@ -14,6 +16,8 @@ export interface BotStep {
   errorStatus?: number;
   /** CLI engines: steps reported before answering or failing (what the CLI did). */
   activity?: { kind: string; title: string }[];
+  /** CLI engines: text and steps in the order a real CLI gives them (a string = text, an object = a step); the last text is the answer. */
+  parts?: (string | { kind: string; title: string })[];
   /** Inspect the request (API engines). */
   check?: (req: ChatRequest) => void;
 }
@@ -95,6 +99,20 @@ export async function team(t: TestApp) {
         onEvent({ type: 'session', sessionId: `sess-${bot}` });
         for (const a of step?.activity || []) onEvent({ type: 'activity', item: { ...a, ts: new Date().toISOString() } });
         if (step?.delayMs) await wait(step.delayMs, signal);
+        if (step?.parts) {
+          // Like Claude Code: one text for the whole turn, the parts joined by a blank line.
+          let all = '';
+          for (const p of step.parts) {
+            if (typeof p !== 'string') onEvent({ type: 'activity', item: { ...p, ts: new Date().toISOString() } });
+            else {
+              const delta = (all ? '\n\n' : '') + p;
+              all += delta;
+              onEvent({ type: 'text', delta });
+            }
+          }
+          if (step.error) return { text: all, usage: { input: 3, output: 1 }, error: step.error };
+          return { text: all, usage: { input: 20, output: 7, cost: 0 }, sessionId: `sess-${bot}` };
+        }
         if (step?.error) return { text: '', usage: { input: 3, output: 1 }, error: step.error };
         const text = step ? step.text ?? '' : `${bot}: ok`;
         if (text) onEvent({ type: 'text', delta: text });
@@ -122,8 +140,53 @@ export async function team(t: TestApp) {
   };
 }
 
+/**
+ * The same data folder started again (as after closing and opening TeamBot), with the fake API engine registered
+ * again: each bot answers with the next text of its script, else "<bot>: ok".
+ */
+export async function reopen(t: TestApp, scripts: Map<string, BotStep[]>) {
+  const app = await createApp({ dataDir: t.dir, port: 0, host: '127.0.0.1', mode: 'desktop', quiet: true });
+  const botOf = (system: string) => /^Je bent (.+?)(?: — |, een AI-agent)/.exec(system)?.[1] || '?';
+  app.ctx.providers.registerKind({
+    id: 'mockteam',
+    label: 'Mock team',
+    type: 'api',
+    needsKey: false,
+    description: 'test',
+    models: ['mock-1'],
+    defaultModel: 'mock-1',
+    create: () => ({
+      kind: 'mockteam',
+      async listModels() {
+        return [{ id: 'mock-1' }];
+      },
+      async test() {
+        return { ok: true, detail: 'mock' };
+      },
+      async chat(req: ChatRequest, _signal: AbortSignal, onEvent: (e: StreamEvent) => void): Promise<ChatResult> {
+        const bot = botOf(req.system);
+        const step = scripts.get(bot)?.shift();
+        const text = step ? step.text ?? '' : `${bot}: ok`;
+        if (text) onEvent({ type: 'text', delta: text });
+        return { text, toolCalls: [], usage: { input: 10, output: 5 }, stop: 'end', model: req.model };
+      },
+    }),
+  });
+  return {
+    app,
+    async close() {
+      await app.close();
+      try {
+        fs.rmSync(t.dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
+      } catch {
+        /* Windows may hold the folder a little longer */
+      }
+    },
+  };
+}
+
 /** Wait until no run is active anywhere for a few quiet ticks (follow-ups start right after a run ends). */
-export async function settle(t: TestApp, ms = 10_000) {
+export async function settle(t: { app: AppHandle }, ms = 10_000) {
   const start = Date.now();
   let quiet = 0;
   while (Date.now() - start < ms) {

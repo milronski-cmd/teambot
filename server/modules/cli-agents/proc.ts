@@ -5,6 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { safeEnv } from '../../tools/builtin/shell.js';
 import { redact } from '../../core/secrets.js';
+import { cliRunScope } from '../../agent/runs.js';
 import { jobs } from './jobs.js';
 
 const isWin = process.platform === 'win32';
@@ -194,6 +195,12 @@ export interface ProcOptions {
   timeoutMs: number;
   /** Kill when there is no output for this long (paused while waiting for a human). */
   idleMs: number;
+  /**
+   * True while a step of the CLI is still running (it started a tool and its result is not in yet): a long build or
+   * test gives no output, but the CLI is not dead. Then `busyIdleMs` counts instead of `idleMs` (default: 12 hours).
+   */
+  busy?(): boolean;
+  busyIdleMs?: number;
   onLine(line: string): void;
   onStderr?(text: string): void;
   /** On abort, give the CLI this long to stop gracefully (after the adapter sent its cancel message) before killing the tree. */
@@ -222,7 +229,7 @@ export interface Proc {
 }
 
 const MAX_LINE = 32 * 1024 * 1024;
-const dur = (ms: number) => (ms < 60_000 ? `${Math.round(ms / 1000)} s` : `${Math.round(ms / 60_000)} min`);
+const dur = (ms: number) => (ms < 60_000 ? `${Math.round(ms / 1000)} s` : ms < 180 * 60_000 ? `${Math.round(ms / 60_000)} min` : `${Math.round(ms / 3600_000)} uur`);
 
 /** Spawn a CLI with a cleaned environment, line-based stdout, stderr tail, timeouts and abort → kill tree. */
 export function startProc(o: ProcOptions): Proc {
@@ -235,6 +242,18 @@ export function startProc(o: ProcOptions): Proc {
     detached: !isWin,
     stdio: ['pipe', 'pipe', 'pipe'],
   });
+  // Started for a run (agent/cli-loop.ts): its output and its life are that run's sign of life (agent/runs.ts).
+  const beat = cliRunScope.getStore();
+  if (beat) {
+    beat.pulse.proc(beat.runId, true);
+    let over = false;
+    const gone = () => {
+      if (!over) beat.pulse.proc(beat.runId, false);
+      over = true;
+    };
+    child.once('error', gone);
+    child.once('close', gone);
+  }
   let buf = '';
   let errTail = '';
   let held = false;
@@ -275,6 +294,7 @@ export function startProc(o: ProcOptions): Proc {
   child.stdout!.setEncoding('utf8');
   child.stdout!.on('data', (s: string) => {
     lastOut = Date.now();
+    beat?.pulse.touch(beat.runId);
     buf += s;
     let i: number;
     while ((i = buf.indexOf('\n')) >= 0) {
@@ -293,6 +313,7 @@ export function startProc(o: ProcOptions): Proc {
   child.stderr!.setEncoding('utf8');
   child.stderr!.on('data', (s: string) => {
     lastOut = Date.now();
+    beat?.pulse.touch(beat.runId);
     errTail = (errTail + s).slice(-8000);
     o.onStderr?.(s);
   });
@@ -304,7 +325,15 @@ export function startProc(o: ProcOptions): Proc {
   else o.signal.addEventListener('abort', onAbort, { once: true });
   const hard = setTimeout(() => p.kill(`Time-out: de CLI liep langer dan ${dur(o.timeoutMs)} en is gestopt`), o.timeoutMs);
   const idle = setInterval(() => {
-    if (!held && Date.now() - lastOut > o.idleMs) p.kill(`Time-out: de CLI gaf ${dur(o.idleMs)} geen uitvoer en is gestopt`);
+    if (held) return;
+    let working = false;
+    try {
+      working = !!o.busy?.();
+    } catch {
+      working = false;
+    }
+    const limit = working ? Math.max(o.idleMs, o.busyIdleMs ?? 12 * 3600_000) : o.idleMs;
+    if (Date.now() - lastOut > limit) p.kill(working ? `Time-out: een stap van de CLI gaf ${dur(limit)} geen uitvoer en is gestopt` : `Time-out: de CLI gaf ${dur(limit)} geen uitvoer en is gestopt`);
   }, Math.min(5000, Math.max(200, Math.floor(o.idleMs / 4))));
   p.done = new Promise((resolve) => {
     let settled = false;

@@ -46,12 +46,11 @@ export const SHARED_BOT_TOOLS = new Set([
   'memory_remember',
   'memory_update',
   'memory_forget',
-  'dossier_search',
   'dossier_get',
-  'dossier_create',
   'dossier_add',
   'dossier_update',
   'dossier_note',
+  'dossier_write',
 ]);
 
 const ACCESS_RANK: Record<string, number> = { chat: 0, readonly: 1, ask: 2, auto: 3, full: 4 };
@@ -70,11 +69,6 @@ export function sharingAvailable(ctx: Ctx): boolean {
 
 export function isShared(ctx: Ctx, agent: Agent | null | undefined): boolean {
   return !!agent && sharingAvailable(ctx) && agent.settings?.shared === true && !agent.archived && !ctx.store.user(agent.user_id)?.disabled;
-}
-
-/** May this user mark this bot as shared? Its owner, when he is the server's owner or an admin. */
-export function canShare(ctx: Ctx, u: Pick<User, 'id' | 'role'>, agent: Agent): boolean {
-  return sharingAvailable(ctx) && agent.user_id === u.id && (u.role === 'owner' || u.role === 'admin');
 }
 
 /** May this user talk to this bot (his own, or one shared with the team)? */
@@ -121,7 +115,7 @@ export function forMember(ctx: Ctx, agent: Agent, member: Pick<User, 'id' | 'nam
   const tool_policy: Agent['tool_policy'] = {};
   for (const [k, v] of Object.entries(agent.tool_policy || {})) if (v === 'deny' || v === 'ask') tool_policy[k] = v;
   // The bot's own behaviour (memory, voice, thinking, limits …) stays; anything that widens access goes.
-  const { extraRoots: _e, folders: _f, allowPrivateUrls: _u, allowPrivateNetwork: _n, fullAccessExternal: _x, cli: rawCli, ...rest } = agent.settings || {};
+  const { extraRoots: _e, folders: _f, allowPrivateNetwork: _n, fullAccessExternal: _x, cli: rawCli, ...rest } = agent.settings || {};
   const cli = rawCli && typeof rawCli === 'object' ? { maxTurns: rawCli.maxTurns, timeoutMin: rawCli.timeoutMin, idleMin: rawCli.idleMin } : undefined;
   const settings: Record<string, any> = {
     ...rest,

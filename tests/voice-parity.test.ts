@@ -49,7 +49,8 @@ test('same brain in voice as in text: a spoken turn is the same run with the sam
     const msgs = await t.say(th.id, 'Wat is de hoofdstad van Frankrijk?');
     const typed = msgs.filter((m: any) => m.role === 'assistant').at(-1);
     assert.equal(typed.parts.model, 'mock-groot');
-    // Spoken, in a free call with the same bot.
+    // Spoken, in a free call with the same bot (it starts once the free speech recognition is there).
+    markInstalled(t.dir, 'parakeet-tdt-0.6b-v3');
     const call = await t.api('POST', '/voice/calls', { agentId: bot.id, threadId: th.id });
     const turn = await t.api('POST', `/voice/calls/${call.id}/turn`, { text: 'En die van Duitsland?' });
     assert.equal(turn.status, 'done');

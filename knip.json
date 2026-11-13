@@ -1,0 +1,7 @@
+{
+  "$schema": "https://unpkg.com/knip@5/schema.json",
+  "entry": ["server/main.ts!", "ui/src/main.tsx!", "desktop/main.ts!", "desktop/boot.ts!", "desktop/preload.ts!", "desktop/dictation-preload.ts!", "desktop/dictation-helper.ts!", "bin/teambot.mjs!"],
+  "project": ["server/**/*.ts!", "ui/src/**/*.{ts,tsx}!", "desktop/**/*.ts!", "shared/**/*.ts!"],
+  "ignore": ["ui/src/lib/elk-stub.ts"],
+  "ignoreExportsUsedInFile": true
+}

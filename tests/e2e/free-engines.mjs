@@ -2,13 +2,17 @@
 // computer and on a paired phone. The owner's report (0.4.3): "OpenCode enzo staan niet bij gratis modellen, kan ze
 // niet inschakelen" — OpenCode and Ollama only appeared as a passive line once connected, without any switch.
 // Steps (Edge headless, an empty TeamBot on port 4850 with its own data folder and APPDATA, nothing of this PC):
-//  1. nothing connected: OpenCode ("Installeren", one click) and Ollama ("Installeren" → the steps) are listed, next to
-//     the cloud sources (Groq, OpenRouter, Cloudflare, Z.ai, Kilo);
-//  2. OpenCode found on this computer (path set as in Instellingen › CLI-agents): "Aanzetten" connects it on a free
-//     model and puts it in the free chain; "Uitzetten" takes it out, "Aanzetten" brings it back;
-//  3. Ollama starts: "Opnieuw controleren" → "Aanzetten" connects it (a stand-in Ollama, no model runs);
+//  1. nothing connected: OpenCode ("Installeren", one click) and Ollama ("Installeren": TeamBot sets it up itself)
+//     are listed, next to the cloud sources (Groq, OpenRouter, Cloudflare, Z.ai, Kilo);
+//  2. OpenCode found on this computer (path set as in Instellingen › CLI-agents): "Koppelen" connects it on a free
+//     model and puts it in the free chain (the row then says "Testen"); "Uitzetten" (under the row's "Meer opties")
+//     takes it out, "Koppelen" brings it back;
+//  3. Ollama starts: "Opnieuw zoeken" (under the row's "Meer opties") → "Koppelen" connects it (a stand-in Ollama,
+//     no model runs);
 //  4. a paired phone (the real QR pairing): OpenCode added the way a user does at AI-diensten is on the page, on, and
-//     "Uitzetten" / "Aanzetten" work from the phone; no sideways scrolling at 402 px.
+//     "Uitzetten" / "Koppelen" work from the phone; no sideways scrolling at 402 px.
+// Every row has the same form as behind "AI toevoegen": one action (Installeren, Koppelen or Testen);
+// Uitzetten and Opnieuw zoeken are under that row's "Meer opties".
 // No failed requests and no console errors anywhere.
 // Usage: npm run build:ui && node --import tsx tests/e2e/free-engines.mjs
 //        (TEAMBOT_E2E_SHOTS=<dir> for screenshots, TEAMBOT_E2E_PORT=<port> (default 4850), TEAMBOT_E2E_BROWSER=chrome|msedge)
@@ -63,7 +67,7 @@ const ollama = http.createServer((req, res) => {
   res.writeHead(404).end();
 });
 
-const { createApp } = await import('../../server/app.ts');
+const { createApp } = await import('./server.mjs');
 const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'tb-free-engines-'));
 const app = await createApp({ dataDir: dir, port: Number(process.env.TEAMBOT_E2E_PORT) || 4850, host: '127.0.0.1', mode: 'desktop', quiet: true });
 const pcToken = app.ctx.auth.ensureLocalOwner();
@@ -104,6 +108,12 @@ const withToken = (t) => async (ctx) =>
 const shot = async (page, name) => SHOTS && (await page.waitForTimeout(250), await page.screenshot({ path: path.join(SHOTS, `${name}.png`), fullPage: true }));
 const row = (page, kind) => page.getByTestId(`free-engine-${kind}`);
 const button = (page, kind, name) => row(page, kind).getByRole('button', { name, exact: true });
+// The row's own "Meer opties" (a fold under the card): open it, then its button.
+const moreButton = async (page, kind, name, touch = false) => {
+  const fold = row(page, kind).locator('details').first();
+  if (!(await fold.evaluate((d) => d.open))) await (touch ? fold.locator('summary').tap() : fold.locator('summary').click());
+  return button(page, kind, name);
+};
 const open = async (page) => {
   const url = app.url + '/#/settings/free-models-gratis';
   // The same address again only changes the hash: load the page anew, as the owner does with F5.
@@ -123,37 +133,46 @@ try {
   check((await row(page, 'opencode').innerText()).includes('Staat op deze pc') === false, 'OpenCode staat niet op deze pc: geen label');
   check(await button(page, 'opencode', 'Installeren').isVisible(), 'OpenCode: knop Installeren (TeamBot zet zijn eigen kopie neer)');
   check(await row(page, 'ollama').isVisible(), 'Ollama staat op de pagina, ook zonder koppeling');
-  check((await row(page, 'ollama').getByRole('link', { name: /Ollama downloaden/ }).getAttribute('href')) === 'https://ollama.com/download', 'Ollama: één link naar de download, geen terminalopdrachten');
+  // (The install itself, with a fake installer: tests/e2e/local-install.mjs.)
+  check((await row(page, 'ollama').getByTestId('ollama-install').count()) === 1 && (await row(page, 'ollama').getByRole('link', { name: /^Downloaden/ }).count()) === 0, 'Ollama: één knop Installeren (TeamBot zet Ollama klaar), geen downloadlink of terminalopdrachten');
   for (const l of ['Groq', 'OpenRouter', 'Cloudflare Workers AI', 'Z.ai GLM', 'Kilo Gateway']) check(await page.locator('span.font-semibold', { hasText: new RegExp(`^${l.replace('.', '\\.')}$`) }).count(), `${l} staat er ook (gratis account online)`);
   await shot(page, 'gratis-1-niets-gekoppeld');
 
-  // ---------------------------------------------------------------- 2. OpenCode on this computer: Aanzetten
+  // ---------------------------------------------------------------- 2. OpenCode on this computer: Koppelen
   await pc('PUT', '/cli-agents/paths/opencode', { path: FAKE_ACP });
   await open(page);
   check((await row(page, 'opencode').innerText()).includes('Staat op deze pc'), 'OpenCode gevonden: de pagina zegt het');
-  await button(page, 'opencode', 'Aanzetten').click();
-  await button(page, 'opencode', 'Uitzetten').waitFor({ timeout: 20_000 });
-  check(/gratis model/.test(await row(page, 'opencode').innerText()), 'na Aanzetten: OpenCode staat aan met zijn gratis modellen');
+  await button(page, 'opencode', 'Koppelen').click();
+  await button(page, 'opencode', 'Testen').waitFor({ timeout: 20_000 });
+  check(/gratis model/.test(await row(page, 'opencode').innerText()), 'na Koppelen: OpenCode staat aan met zijn gratis modellen (de rij zegt Testen)');
   check(await inChain('opencode'), 'OpenCode zit nu in de gratis keten');
   const oc = (await pc('GET', '/providers')).find((p) => p.kind === 'opencode');
   check(oc?.config?.defaultModel === 'opencode/big-pickle', 'gekoppeld op een gratis model', oc?.config?.defaultModel);
   await shot(page, 'gratis-2-opencode-aan');
-  await button(page, 'opencode', 'Uitzetten').click();
-  await button(page, 'opencode', 'Aanzetten').waitFor({ timeout: 10_000 });
-  check(!(await inChain('opencode')), 'Uitzetten: uit de keten, en OpenCode blijft op de pagina met Aanzetten');
-  await button(page, 'opencode', 'Aanzetten').click();
-  await button(page, 'opencode', 'Uitzetten').waitFor({ timeout: 20_000 });
-  check(await inChain('opencode'), 'Aanzetten: weer in de keten');
+  await (await moreButton(page, 'opencode', 'Uitzetten')).click();
+  await button(page, 'opencode', 'Koppelen').waitFor({ timeout: 10_000 });
+  check(!(await inChain('opencode')), 'Meer opties › Uitzetten: uit de keten, en OpenCode blijft op de pagina met Koppelen');
+  await button(page, 'opencode', 'Koppelen').click();
+  await button(page, 'opencode', 'Testen').waitFor({ timeout: 20_000 });
+  check(await inChain('opencode'), 'Koppelen: weer in de keten');
 
   // ---------------------------------------------------------------- 3. Ollama starts
   await new Promise((r) => ollama.listen(0, '127.0.0.1', r));
   ollamaUrl = `http://127.0.0.1:${ollama.address().port}`;
+  // A fresh page (the free list may still update itself after OpenCode's last switch): Ollama is not here yet, and its
+  // row's "Meer opties" has "Opnieuw zoeken" for after you installed it yourself (Installeren itself fetches Ollama's
+  // installer: tests/e2e/local-install.mjs; this test stays off the internet).
+  await open(page);
+  await page.waitForTimeout(1000);
+  const lookAgain = await moreButton(page, 'ollama', 'Opnieuw zoeken');
+  check(await lookAgain.isVisible(), 'Ollama nog niet op deze pc: Meer opties › Opnieuw zoeken staat klaar');
   ollamaHere = true;
-  await row(page, 'ollama').getByRole('button', { name: 'Opnieuw controleren' }).click();
-  await button(page, 'ollama', 'Aanzetten').waitFor({ timeout: 10_000 });
-  await button(page, 'ollama', 'Aanzetten').click();
-  await button(page, 'ollama', 'Uitzetten').waitFor({ timeout: 20_000 });
-  check(await inChain('ollama'), 'Ollama: Opnieuw controleren → Aanzetten → lokaal in de keten');
+  // (Should the page have looked again by itself in the meantime, it already says Koppelen: the same outcome.)
+  if (await lookAgain.isVisible()) await lookAgain.click();
+  await button(page, 'ollama', 'Koppelen').waitFor({ timeout: 10_000 });
+  await button(page, 'ollama', 'Koppelen').click();
+  await button(page, 'ollama', 'Testen').waitFor({ timeout: 20_000 });
+  check(await inChain('ollama'), 'Ollama: Opnieuw zoeken → Koppelen → lokaal in de keten');
   await shot(page, 'gratis-3-ollama-aan');
   await desk.close();
 
@@ -172,15 +191,15 @@ try {
   const pp = await phone.newPage();
   watch(pp, 'telefoon');
   await open(pp);
-  await button(pp, 'opencode', 'Uitzetten').waitFor({ timeout: 20_000 });
+  await button(pp, 'opencode', 'Testen').waitFor({ timeout: 20_000 });
   check(true, 'telefoon: OpenCode (gekoppeld bij AI-diensten) staat bij de gratis modellen en staat aan');
-  check(await button(pp, 'ollama', 'Uitzetten').isVisible(), 'telefoon: Ollama staat er ook, aan');
-  await button(pp, 'opencode', 'Uitzetten').tap();
-  await button(pp, 'opencode', 'Aanzetten').waitFor({ timeout: 10_000 });
-  check(!(await inChain('opencode')), 'telefoon: Uitzetten werkt');
-  await button(pp, 'opencode', 'Aanzetten').tap();
-  await button(pp, 'opencode', 'Uitzetten').waitFor({ timeout: 20_000 });
-  check(await inChain('opencode'), 'telefoon: Aanzetten werkt');
+  check(await button(pp, 'ollama', 'Testen').isVisible(), 'telefoon: Ollama staat er ook, aan');
+  await (await moreButton(pp, 'opencode', 'Uitzetten', true)).tap();
+  await button(pp, 'opencode', 'Koppelen').waitFor({ timeout: 10_000 });
+  check(!(await inChain('opencode')), 'telefoon: Meer opties › Uitzetten werkt');
+  await button(pp, 'opencode', 'Koppelen').tap();
+  await button(pp, 'opencode', 'Testen').waitFor({ timeout: 20_000 });
+  check(await inChain('opencode'), 'telefoon: Koppelen werkt');
   const wide = await pp.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
   check(wide <= 1, 'telefoon: niet zijwaarts scrollen op 402 px', `${wide}px`);
   await shot(pp, 'gratis-4-telefoon');

@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import type { Agent, Ctx } from '../../core/types.js';
 import { agentRootList } from '../../tools/builtin/files.js';
+import { listText } from '../../core/i18n.js';
 
 /**
  * Proof for a routine run ("Bewijs bij elke klaar"): a run only counts as geslaagd with a result TeamBot can see —
@@ -85,6 +86,15 @@ const CLAIMS: { kind: ProofItem['kind']; words: string; re: RegExp }[] = [
   { kind: 'task', words: 'een taak op het takenbord', re: /\b(?:ik\s+heb|heb\s+ik|i\s+have|i've)\b[^.!?\n]{0,80}?\b(?:taak|taken|task|tasks)\b[^.!?\n]{0,40}?\b(?:aangemaakt|toegevoegd|gezet|created|added)\b/i },
 ];
 
+const DENIED = /\b(?:niets|niks|geen|niet|nooit|nergens|nothing|not|no|never|none)\b|n't\b/i;
+/** Does the answer say this was done? "Ik heb niets gewijzigd en geen testleads verstuurd" says it was not. */
+function claimed(text: string, re: RegExp): boolean {
+  return text.split(/(?<=[.!?])\s+|\n+/).some((sentence) => {
+    const m = re.exec(sentence);
+    return !!m && !DENIED.test(m[0]);
+  });
+}
+
 /** Files in the bot's writable folders that changed between `from` and `to` (bounded walk, no hidden or build folders). */
 export function changedFiles(agent: Agent, fromMs: number, toMs: number, max = 20): string[] {
   const out: string[] = [];
@@ -163,13 +173,13 @@ export function gatherProof(ctx: Ctx, agent: Agent, o: { fromMs: number; toMs: n
   const text = String(o.text || '');
   const answer = !isBareClaim(text);
   const has = (k: ProofItem['kind']) => items.some((i) => i.kind === k);
-  const claims = CLAIMS.filter((c) => c.re.test(text) && !has(c.kind)).map((c) => c.words);
+  const claims = CLAIMS.filter((c) => !has(c.kind) && claimed(text, c.re)).map((c) => c.words);
   const result: ProofResult = items.length ? 'proven' : answer && !claims.length ? 'answer' : 'none';
   const reason =
     result !== 'none'
       ? ''
       : claims.length
-        ? `De bot meldde ${claims.join(' en ')}, maar TeamBot zag dat niet gebeuren: geen bestand, bericht of taak.`
+        ? `De bot meldde ${listText(claims)}, maar TeamBot zag dat niet gebeuren: geen bestand, bericht of taak.`
         : text.trim()
           ? `De bot meldde “${text.replace(/\s+/g, ' ').trim().slice(0, 60)}”, maar er is geen resultaat: geen bestand, bericht of taak, en geen inhoudelijk antwoord.`
           : 'De bot gaf geen antwoord en leverde geen bestand, bericht of taak.';

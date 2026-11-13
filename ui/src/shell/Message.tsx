@@ -3,6 +3,7 @@ import {
   AlertTriangle, RotateCcw, AppWindow, Brain, Check, Circle, GitBranch, ChevronDown, ChevronRight, CircleSlash, Copy, CornerUpLeft, FileText, Gauge, Info, Link as LinkIcon, ListChecks, Loader2, MoreHorizontal, Pencil, Pin, Smile, Trash2, Wrench, X,
 } from 'lucide-react';
 import { api, fileUrl } from '../lib/api';
+import { navigate } from '../lib/router';
 import { agentById, useApp } from '../lib/store';
 import type { AttachmentRef, Message, PlanStep, ToolCall } from '../lib/types';
 import { planProgress } from '../lib/plan';
@@ -13,11 +14,14 @@ import { copyToClipboard } from '../lib/clipboard';
 import { BotAvatar } from '../components/BotFace';
 import { AttachmentLink } from '../components/FilePreview';
 import { Markdown } from './Markdown';
+import { SystemNote } from './SystemNote';
+import { Words } from '../components/Words';
+import type { Words as StepWords } from '../lib/i18n-core';
 import { argsPreview, plainStep, resultForDisplay, toolLabel } from './toolLabels';
 import { toolStepStatus } from './toolStatus';
 import { stepDetail, stripRefs } from '../lib/preview';
 import { routineInputView } from './routineInput';
-import { uiLocale } from '../lib/i18n';
+import { t, uiLocale } from '../lib/i18n';
 import { formatBytes } from '../lib/format';
 import { messageCostText } from '../lib/costLabel';
 import { prettyModel } from '../lib/modelLabel';
@@ -64,7 +68,6 @@ function fmtTime(iso: string) {
   return new Date(iso).toLocaleTimeString(uiLocale(), { hour: '2-digit', minute: '2-digit' });
 }
 
-const fmtSize = (n: number) => formatBytes(n);
 
 /**
  * Interactive HTML preview (show_html, an HTML file in the chat). Same sandbox as the page panel (SandboxedPage): a
@@ -200,7 +203,7 @@ export function Attachments({ list, voice, notices, threadId }: { list: Attachme
               </span>
               <span className="min-w-0">
                 <span className="block max-w-[200px] truncate font-semibold">{a.name}</span>
-                <span className="block text-xs text-muted">{fmtSize(a.size)}</span>
+                <span className="block text-xs text-muted">{formatBytes(a.size)}</span>
               </span>
             </AttachmentLink>
             {notices && <AttachmentWarning a={a} voice={voice} />}
@@ -311,7 +314,15 @@ export function ToolCard({ call, result, message }: { call: ToolCall; result?: M
         <span className="flex h-4 w-4 shrink-0 items-center justify-center">{statusIcon(status, isError)}</span>
         <span className="min-w-0 truncate">
           <span className="font-medium">{label}</span>
-          {detail && <span translate="no"> · {detail}</span>}
+          {/* TeamBot's words in the reader's language, the names and texts in them as written; an older step's line as it was. */}
+          {call.words ? (
+            <>
+              {' · '}
+              <Words text={call.words.text} values={call.words.values} />
+            </>
+          ) : (
+            detail && <span translate="no"> · {detail}</span>
+          )}
         </span>
         {open ? <ChevronDown className="h-3.5 w-3.5 shrink-0" /> : <ChevronRight className="h-3.5 w-3.5 shrink-0" />}
       </button>
@@ -351,7 +362,7 @@ export function ToolCard({ call, result, message }: { call: ToolCall; result?: M
 export function PlanCard({ steps, live }: { steps: PlanStep[]; live: boolean }) {
   const p = planProgress(steps);
   return (
-    <section className="w-full max-w-md rounded-2xl border border-line bg-surface px-3.5 py-2.5 text-[13.5px]" aria-label={`Plan: ${p.label}`} data-testid="plan-card">
+    <section className="w-full max-w-md rounded-2xl border border-line bg-surface px-3.5 py-2.5 text-[13.5px]" aria-label={t('Plan: {0}', t(p.label))} data-testid="plan-card">
       <div className="mb-1.5 flex items-center gap-2">
         <ListChecks className="h-4 w-4 text-muted" aria-hidden />
         <span className="font-semibold">Plan</span>
@@ -377,17 +388,125 @@ export function PlanCard({ steps, live }: { steps: PlanStep[]; live: boolean }) 
   );
 }
 
-function Collapsible({ icon, title, children, defaultOpen = false }: { icon: React.ReactNode; title: string; children: React.ReactNode; defaultOpen?: boolean }) {
-  const [open, setOpen] = useState(defaultOpen);
+/**
+ * A folded block of technical detail (the bot's steps, its thinking). Always closed until the owner opens it; `live`
+ * is one short line next to the title (the step the bot is on now), so the closed chip shows that the work moves.
+ */
+/** A CLI step's title: a TeamBot tool's line as TeamBot's words with values when it has them, else the title in words. */
+export function StepTitle({ a }: { a: { title: string; words?: StepWords } }) {
+  return a.words ? <Words text={a.words.text} values={a.words.values} /> : <>{plainStep(stripRefs(a.title))}</>;
+}
+
+function Collapsible({ icon, title, live, children, testId }: { icon: React.ReactNode; title: string; live?: React.ReactNode; children: React.ReactNode; testId?: string }) {
+  const [open, setOpen] = useState(false);
   return (
     // max-w-full: the long single-line details (truncate) must not widen the card past the chat column.
-    <div className="max-w-full text-[13px]">
-      <button className={cx('inline-flex items-center gap-1.5 rounded-control px-2.5 py-1.5 transition-colors', open ? 'bg-surface-3 text-fg' : 'bg-surface-2 text-muted hover:text-fg')} onClick={() => setOpen(!open)} aria-expanded={open}>
-        {icon}
-        <span className="font-medium">{title}</span>
-        {open ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
+    <div className="max-w-full text-[13px]" data-testid={testId}>
+      <button className={cx('inline-flex max-w-full items-center gap-1.5 rounded-control px-2.5 py-1.5 text-start transition-colors', open ? 'bg-surface-3 text-fg' : 'bg-surface-2 text-muted hover:text-fg')} onClick={() => setOpen(!open)} aria-expanded={open}>
+        <span className="flex shrink-0 items-center">{icon}</span>
+        <span className="shrink-0 font-medium">{title}</span>
+        {live && (
+          <span className="min-w-0 truncate" data-testid={testId ? `${testId}-live` : undefined}>
+            <span aria-hidden>· </span>
+            {live}
+          </span>
+        )}
+        {open ? <ChevronDown className="h-3.5 w-3.5 shrink-0" /> : <ChevronRight className="h-3.5 w-3.5 shrink-0" />}
       </button>
       {open && <div className="mt-1.5 rounded-xl border border-line bg-surface p-3 text-muted">{children}</div>}
+    </div>
+  );
+}
+
+/** Seconds of silence before the working line says how long ago the last sign of life was, and before it warns. */
+const QUIET_AFTER = 10;
+const STALLED_AFTER = 120;
+/**
+ * Last sign of life per streaming message, as this browser saw it: the moment its text, reasoning, steps, tool calls,
+ * tool results or status line last changed (`sig`). Kept outside the component so leaving and reopening the chat does
+ * not reset the clock. The server's own sign of life (`run.alive`, store.alive) is the real one; this is the fallback
+ * when there is none (yet), and it counts too: whatever arrived here is life.
+ */
+const lastSign = new Map<string, { sig: string; at: number }>();
+
+/**
+ * The one quiet line under a working bot: what it does right now, how long ago it last showed life (after 10 s), and
+ * after two minutes of silence in a turn that is really running (not waiting for the owner) a calm warning with Stop.
+ */
+function LiveLine({ m, sig, label, detail, dots, chip }: { m: Message; sig: string; label: string; detail: string; /** The "Denkt na…" look: nothing else is on screen yet, so the line always shows. */ dots: boolean; /** The closed steps chip above this line already shows the step the bot is on: do not say it twice. */ chip?: boolean }) {
+  const runStatus = useApp((s) => s.runs.find((r) => r.id === m.run_id)?.status);
+  const heard = useApp((s) => (m.run_id ? s.alive[m.run_id] : undefined));
+  const [now, setNow] = useState(Date.now());
+  const seen = lastSign.get(m.id);
+  if (!seen || seen.sig !== sig) {
+    if (!seen && lastSign.size >= 200) lastSign.delete(lastSign.keys().next().value!);
+    lastSign.set(m.id, { sig, at: Date.now() });
+  }
+  useEffect(() => {
+    const id = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(id);
+  }, []);
+  // Waiting for the owner (approval, question) is not silence: the card says so itself.
+  // The server says every 10 s when the run last really did something. That counts while it keeps coming (35 s: three
+  // missed); the silence is then the shortest of what the server says and what arrived here, so the warning needs both.
+  const alive = heard && now - heard.receivedAt < 35_000 ? heard : undefined;
+  const own = now - lastSign.get(m.id)!.at;
+  const silence = alive ? Math.min(own, alive.at - alive.lastActivityAt + (now - alive.receivedAt)) : own;
+  const quiet = runStatus === 'waiting' ? 0 : Math.max(0, Math.floor(silence / 1000));
+  // The engine's process is gone while the turn still counts as running: no answer will come. Stop, then "Hervatten".
+  if (runStatus === 'running' && alive?.process === 'gone')
+    return (
+      <div className="flex max-w-full flex-wrap items-center gap-x-2 gap-y-1 px-1 text-xs text-warn" role="status" data-testid="live-gone">
+        <AlertTriangle className="h-3.5 w-3.5 shrink-0" aria-hidden />
+        <span>De bot is gestopt zonder antwoord.</span>
+        <button type="button" className="font-semibold underline coarse:min-h-11" onClick={() => api.post(`/threads/${m.thread_id}/stop`).catch(toastError)}>
+          Stoppen
+        </button>
+      </div>
+    );
+  if (!detail && !chip && alive?.doing && alive.doing !== label) detail = alive.doing;
+  const stalled = runStatus === 'running' && quiet >= STALLED_AFTER;
+  if (stalled)
+    return (
+      <div className="flex max-w-full flex-wrap items-center gap-x-2 gap-y-1 px-1 text-xs text-warn" role="status" data-testid="live-stalled">
+        <AlertTriangle className="h-3.5 w-3.5 shrink-0" aria-hidden />
+        <span>
+          Al 2 minuten niets gehoord. Misschien hangt hij.
+          {quiet >= 180 && <span className="text-muted"> · {t('laatste teken {0} min geleden', Math.floor(quiet / 60))}</span>}
+        </span>
+        <button type="button" className="font-semibold underline coarse:min-h-11" onClick={() => api.post(`/threads/${m.thread_id}/stop`).catch(toastError)}>
+          Stoppen
+        </button>
+      </div>
+    );
+  // Waiting for the owner: say that, never "Denkt na…" (10 nov: a bot waited six minutes for an approval while the
+  // chat said it was thinking). The link goes to the list of everything that waits.
+  if (runStatus === 'waiting')
+    return (
+      <div className="flex max-w-full flex-wrap items-center gap-x-2 gap-y-1 px-1 text-sm font-medium text-warn" role="status" data-testid="live-waiting">
+        <span className="tb-pulse h-2 w-2 shrink-0 rounded-full bg-warn" aria-hidden />
+        <span>Wacht op jouw akkoord</span>
+        <a href="#/inbox" className="inline-flex items-center font-semibold underline coarse:min-h-11">
+          Wacht op jou
+        </a>
+      </div>
+    );
+  const ago = quiet < QUIET_AFTER ? '' : quiet < 60 ? t('laatste teken {0} s geleden', quiet) : t('laatste teken {0} min geleden', Math.floor(quiet / 60));
+  if (!dots && !label && !ago) return null;
+  return (
+    <div className={cx('flex max-w-full items-center gap-2 text-muted', dots ? 'text-sm' : 'px-1 text-xs')} role="status" data-testid="live-line">
+      {dots ? (
+        <span className="flex shrink-0 gap-1" aria-hidden>
+          <span className="tb-pulse h-1.5 w-1.5 rounded-full bg-muted" />
+          <span className="tb-pulse h-1.5 w-1.5 rounded-full bg-muted [animation-delay:.2s]" />
+          <span className="tb-pulse h-1.5 w-1.5 rounded-full bg-muted [animation-delay:.4s]" />
+        </span>
+      ) : (
+        <Loader2 className="h-3 w-3 shrink-0 animate-spin text-ok" />
+      )}
+      {(label || dots) && <span className="shrink-0">{label || 'Denkt na…'}</span>}
+      {detail && <span className="min-w-0 truncate text-xs">· {detail}</span>}
+      {ago && <span className="shrink-0 text-xs">· {ago}</span>}
     </div>
   );
 }
@@ -437,9 +556,21 @@ export const MessageItem = memo(function MessageItem({ m, results, compact, show
     const kind = m.role === 'event' && typeof m.parts?.kind === 'string' ? m.parts.kind : '';
     const Custom = kind ? uiModules.find((x) => x.eventRenderers?.[kind])?.eventRenderers?.[kind] : undefined;
     if (Custom) return <Custom message={m} />;
+    // A note with a view for the owner: one line in his words; a colleague's answer as that bot's message.
+    if (m.role === 'system' && typeof m.parts?.note?.text === 'string') return <SystemNote m={m} />;
+    // A result note from before it had that view: another bot's words are in it, so it is shown as written, rendered
+    // like a message (never half translated, no raw **markdown**).
+    if (m.role === 'system' && (m.parts?.kind === 'delegation_result' || m.parts?.kind === 'broadcast_result'))
+      return (
+        <div className="flex justify-center px-4 py-2">
+          <div className="min-w-0 max-w-xl rounded-control bg-surface-2 px-3 py-2 text-[13px] text-muted">
+            <Markdown text={stripRefs(m.content)} />
+          </div>
+        </div>
+      );
     return (
       <div className="flex justify-center px-4 py-2">
-        <div className="flex max-w-xl items-start gap-1.5 rounded-full bg-surface-2 px-3 py-1 text-xs text-muted">
+        <div className="flex max-w-xl items-start gap-1.5 rounded-control bg-surface-2 px-3 py-1 text-xs text-muted">
           <Info className="mt-0.5 h-3 w-3 shrink-0" />
           <span className="whitespace-pre-wrap">{stripRefs(m.content)}</span>
         </div>
@@ -503,8 +634,9 @@ export const MessageItem = memo(function MessageItem({ m, results, compact, show
             onClick={() =>
               (setMenu(false),
               act(async () => {
+                const from = location.hash;
                 const t = await api.post<{ id: string }>(`/threads/${m.thread_id}/fork`, { messageId: m.id });
-                location.hash = `#/t/${t.id}`;
+                navigate(`/t/${t.id}`, { from });
               }))
             }
           >
@@ -624,6 +756,14 @@ export const MessageItem = memo(function MessageItem({ m, results, compact, show
   const plan = m.parts.plan?.steps?.length ? m.parts.plan.steps : null;
   const costText = messageCostText(m.usage, uiLocale());
   const thinking = streaming && !m.content && !calls.length;
+  const steps = m.parts.activity || [];
+  // Changes with every sign of life the browser gets for this message (see lastSign).
+  const liveSig = streaming ? [(m.content || '').length, (m.parts.reasoning || '').length, steps.length, calls.length, calls.filter((c) => results.has(c.id)).length, status || ''].join(':') : '';
+  // A little of what it is doing while it "thinks": the end of its reasoning. The step it is on is already in the
+  // closed steps chip right above this line (saying it twice left no room for "laatste teken …" on a phone).
+  const liveDetail = thinking && m.parts.reasoning?.trim() ? m.parts.reasoning.trim().split('\n').pop()!.replace(/[*_`#>]+/g, '').trim().slice(-90) : '';
+  // With steps on screen the bot is doing things, not only thinking.
+  const liveLabel = status || (steps.length ? 'Aan het werk…' : '');
   return (
     <div id={`m-${m.id}`} className={cx('group relative flex gap-2.5 px-4 sm:px-6', compact ? 'pt-1.5' : 'pt-5')}>
       {actions}
@@ -648,11 +788,19 @@ export const MessageItem = memo(function MessageItem({ m, results, compact, show
           </Collapsible>
         )}
         {m.parts.activity?.length ? (
-          <Collapsible icon={<Wrench className="h-3.5 w-3.5" />} title={m.parts.activity.length === 1 ? '1 stap' : `${m.parts.activity.length} stappen`} defaultOpen={streaming}>
+          // Closed, also while the bot works: the chip itself shows the step it is on ("4 stappen · Opdracht uitvoeren").
+          <Collapsible
+            testId="steps"
+            icon={streaming ? <Loader2 className="h-3.5 w-3.5 animate-spin text-ok" /> : <Wrench className="h-3.5 w-3.5" />}
+            title={m.parts.activity.length === 1 ? '1 stap' : `${m.parts.activity.length} stappen`}
+            live={streaming ? <StepTitle a={m.parts.activity[m.parts.activity.length - 1]} /> : undefined}
+          >
             <ul className="space-y-1">
               {m.parts.activity.map((a, i) => (
                 <li key={i}>
-                  <span className="text-fg">{plainStep(stripRefs(a.title))}</span>
+                  <span className="text-fg">
+                    <StepTitle a={a} />
+                  </span>
                   {a.detail && <span className="block truncate">{stepDetail(a.detail)}</span>}
                 </li>
               ))}
@@ -663,16 +811,7 @@ export const MessageItem = memo(function MessageItem({ m, results, compact, show
         {(body || thinking) && (
           <div className={cx('w-full max-w-full py-1 text-[14.5px] leading-relaxed', m.pinned && 'rounded-bubble px-4 py-2.5 ring-2 ring-warn')}>
             {body}
-            {thinking && (
-              <div className="flex items-center gap-2 text-sm text-muted" role="status">
-                <span className="flex gap-1" aria-hidden>
-                  <span className="tb-pulse h-1.5 w-1.5 rounded-full bg-muted" />
-                  <span className="tb-pulse h-1.5 w-1.5 rounded-full bg-muted [animation-delay:.2s]" />
-                  <span className="tb-pulse h-1.5 w-1.5 rounded-full bg-muted [animation-delay:.4s]" />
-                </span>
-                {status || 'Denkt na…'}
-              </div>
-            )}
+            {thinking && <LiveLine m={m} sig={liveSig} label={liveLabel} detail={liveDetail} dots chip={steps.length > 0} />}
           </div>
         )}
         {calls.length > 0 && (
@@ -682,12 +821,7 @@ export const MessageItem = memo(function MessageItem({ m, results, compact, show
             ))}
           </div>
         )}
-        {streaming && (m.content || calls.length > 0) && status && (
-          <div className="flex items-center gap-2 px-1 text-xs text-muted" role="status">
-            <Loader2 className="h-3 w-3 animate-spin text-ok" />
-            {status}
-          </div>
-        )}
+        {streaming && !thinking && <LiveLine m={m} sig={liveSig} label={status || ''} detail="" dots={false} chip={steps.length > 0} />}
         {m.status === 'error' && m.parts.error && m.parts.budget && <BudgetStopNote m={m} />}
         {m.status === 'error' && m.parts.error && !m.parts.budget && (
           <div className="flex items-start gap-2 rounded-xl bg-danger-soft px-3 py-2 text-xs text-danger">
@@ -758,7 +892,7 @@ function BudgetStopNote({ m }: { m: Message }) {
             Gebruikslimiet aanpassen
           </a>
         ) : !b.byAdmin && (
-          <a href="#/settings/general" className="inline-block font-medium underline">
+          <a href="#/settings/bot-defaults" className="inline-block font-medium underline">
             Dagbudget aanpassen
           </a>
         )}

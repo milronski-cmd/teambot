@@ -162,7 +162,7 @@ function HandoffCard({ h }: { h: Handoff }) {
         <Badge tone="warn">Doorgezet naar jou</Badge>
       </div>
       <div className="text-xs text-muted">
-        {h.adapter_label} · {h.binding_name} · {timeAgo(h.at)} · {h.reason}
+        {h.adapter_label} · <bdi translate="no">{h.binding_name}</bdi> · {timeAgo(h.at)} · <span translate="no">{h.reason}</span>
       </div>
       {h.question && (
         <div translate="no" className="line-clamp-4 whitespace-pre-wrap break-words rounded-lg bg-surface-2 p-2 text-sm">

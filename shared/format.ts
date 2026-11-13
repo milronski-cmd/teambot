@@ -6,21 +6,29 @@
 import { fillSource } from './i18n-core.js';
 
 type Tpl = (tpl: string, ...values: (string | number)[]) => string;
-const hooks: { locale: () => string; t: Tpl; fragment: (s: string) => string } = {
+const hooks: { locale: () => string; t: Tpl; fragment: (s: string) => string; known: (s: string) => string } = {
   locale: () => 'nl-NL',
   t: (s, ...values) => (values.length || /\{\d+\s*,\s*plural\s*,/.test(s) ? fillSource(s, values) : s),
   fragment: (s) => s,
+  known: (s) => s,
 };
 /** lib/i18n.ts: the interface locale and the dictionary for the few words Intl does not have ("zojuist"). */
-export function bindLocale(locale: () => string, translate: Tpl, fragment?: (s: string) => string) {
+export function bindLocale(locale: () => string, translate: Tpl, fragment?: (s: string) => string, known?: (s: string) => string) {
   hooks.locale = locale;
   hooks.t = translate;
   if (fragment) hooks.fragment = fragment;
+  if (known) hooks.known = known;
 }
 /** The interface locale ("nl-NL", "en-GB" …) for modules without the DOM. */
 export const interfaceLocale = (): string => hooks.locale();
 /** A piece of a composed sentence (" voor 3 bots", ": een bestand schrijven") in the interface language. */
 export const tFragment = (s: string): string => hooks.fragment(s);
+/**
+ * A stored or catalogue text that may be one of TeamBot's own source texts (a team's starting rule, the description
+ * of a catalogue entry): its translation when the dictionary has exactly this text, else the text as it is. Never a
+ * pattern or a part of it, so the owner's own rule or a skill's own description stays exactly as written.
+ */
+export const tKnown = (s: string): string => hooks.known(s);
 const uiLocale = () => hooks.locale();
 const t = (s: string) => hooks.t(s);
 /**
@@ -135,6 +143,19 @@ export function plural(n: number, forms: Partial<Record<Intl.LDMLPluralRule, str
   return (forms[cat] ?? forms.other).replace(/#/g, formatNumber(n, {}, locale));
 }
 
+/**
+ * A list in words: "a, b en c" (nl), "a, b and c" (en), "a, b und c" (de); `or` for "a, b of c". The one place that
+ * joins a list for people: a hand-made " en " stayed Dutch in every other language. Translate the items first.
+ */
+export function formatList(items: string[], locale = uiLocale(), o: { or?: boolean } = {}): string {
+  const type = o.or ? 'disjunction' : 'conjunction';
+  try {
+    return cached(`l|${locale}|${type}`, () => new Intl.ListFormat(locale, { type })).format(items);
+  } catch {
+    return items.join(', ');
+  }
+}
+
 /** Seconds/minutes/hours/days ago or ahead, in words ("5 minuten geleden", "vor 5 Minuten", "gisteren"). */
 export function relativeTime(d: Date | string | number, o: { now?: number; style?: Intl.RelativeTimeFormatStyle } = {}, locale = uiLocale()): string {
   const date = toDate(d);
@@ -190,8 +211,3 @@ export const yesterdayWord = (locale = uiLocale()) => cached(`r|${locale}|long`,
  * november"). Never CSS `capitalize`: that makes every word upper case ("Zaterdag 7 November"), wrong in Dutch.
  */
 export const capFirst = (s: string, locale = uiLocale()): string => (s ? s.charAt(0).toLocaleUpperCase(locale) + s.slice(1) : s);
-
-/** Compare texts the way the interface language sorts them. */
-export function compareText(a: string, b: string, locale = uiLocale()): number {
-  return cached(`c|${locale}`, () => new Intl.Collator(locale, { sensitivity: 'base', numeric: true })).compare(a, b);
-}

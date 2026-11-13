@@ -1,6 +1,7 @@
 import type { ChatRequest, ChatResult, ProviderAdapter, ToolCall, ToolSpec } from '../../core/types.js';
 import { ollamaChat, ollamaThink, toolCallsFromText } from '../../providers/localmodels.js';
 import type { PsModel } from './ollama.js';
+import type { ProbeOutcome, ProbeWhere } from '../../../shared/localModels.js';
 
 /**
  * "Werken tools echt?" One small local request with three tools and one question that needs one of them. A model
@@ -22,23 +23,6 @@ export const probeRequest = (model: string): ChatRequest => ({
   tools: PROBE_TOOLS,
   maxTokens: 400,
 });
-
-/** tools = "tools werken"; text = "alleen tekst"; unreliable = calls a tool, but the wrong one; error = test failed. */
-export type ProbeVerdict = 'tools' | 'text' | 'unreliable' | 'error';
-export type ProbeDetail =
-  | 'ok' // a real tool call, the right one
-  | 'as_text' // the call came back as text; TeamBot turns it into a real call
-  | 'no_call' // answered in words, no tool
-  | 'wrong_call' // called another tool, or without the city
-  | 'no_tools' // the server says the model has no tools
-  | 'jinja' // llama-server without --jinja
-  | 'error';
-
-export interface ProbeOutcome {
-  verdict: ProbeVerdict;
-  detail: ProbeDetail;
-  message?: string;
-}
 
 const right = (c: ToolCall) => c.name === 'get_time' && /amsterdam/i.test(JSON.stringify(c.args ?? {}));
 
@@ -63,8 +47,6 @@ export function classifyProbe(r: ChatResult | null, err?: any): ProbeOutcome {
   if (calls.some(right)) return { verdict: 'tools', detail: asText ? 'as_text' : 'ok' };
   return { verdict: 'unreliable', detail: 'wrong_call', message: calls.map((c) => c.name).join(', ').slice(0, 120) };
 }
-
-export type ProbeWhere = 'loaded' | 'gpu' | 'cpu';
 
 /**
  * How to run the test on Ollama without disturbing what runs: a loaded model with the window it is loaded with (no

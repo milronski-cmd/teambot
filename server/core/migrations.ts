@@ -132,4 +132,16 @@ CREATE INDEX IF NOT EXISTS runs_created ON runs(created_at);
 CREATE INDEX IF NOT EXISTS threads_parent ON threads(parent_id);
 CREATE INDEX IF NOT EXISTS attachments_thread ON attachments(thread_id);`,
   },
+  {
+    // "Nieuwe bot" (0.4.4) also wrote the role into the description, and the chat greets with the description as a
+    // sentence ("Hoi, ik ben Pen. Schrijver"). A role is not a description: where it is exactly the role it goes, once.
+    id: 'core-role-not-description-001',
+    sql: `UPDATE agents SET description = '' WHERE role != '' AND description = role;`,
+  },
+  {
+    // A bot does not stand still for the owner: a request he has not answered after a short while is parked
+    // (parked_at). It stays open for him, the bot goes on with its other work, and his decision starts a turn for it.
+    id: 'core-approvals-parked-001',
+    sql: `ALTER TABLE approvals ADD COLUMN parked_at TEXT;`,
+  },
 ];

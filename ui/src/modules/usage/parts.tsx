@@ -1,6 +1,5 @@
-import { useState } from 'react';
 import { AlertTriangle, PauseCircle, RefreshCw } from 'lucide-react';
-import { Badge, Button, cx, toastError } from '../../components/ui';
+import { Badge, Button, cx, useAsync } from '../../components/ui';
 import { t, translate } from '../../lib/i18n';
 import { BILLING_TEXT, SOURCE_TEXT, fmtAgo, fmtLeft, fmtPct, fmtTokens, fmtUsd, fmtWhen, toneOf, useUsage, type EngineView, type LimitWindow } from './api';
 
@@ -101,20 +100,11 @@ function whyUnknown(e: EngineView): string {
 /** Limits of one account: windows, block/pause, spend and where the numbers come from. */
 export function EngineCard({ e, compact, showSpend = true }: { e: EngineView; compact?: boolean; showSpend?: boolean }) {
   const refreshOne = useUsage((s) => s.refreshOne);
-  const [busy, setBusy] = useState(false);
-  const refresh = async () => {
-    setBusy(true);
-    try {
-      await refreshOne(e.providerId);
-    } catch (err) {
-      toastError(err);
-    } finally {
-      setBusy(false);
-    }
-  };
+  const { busy, run } = useAsync();
+  const refresh = () => run(() => refreshOne(e.providerId));
   const blockedUntil = e.blocked?.until || e.pausedUntil;
   return (
-    <section aria-label={`Limieten van ${e.name}`} className="space-y-2.5">
+    <section aria-label={t('Limieten van {0}', e.name)} className="space-y-2.5">
       {!compact && (
         <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
           <h3 className="min-w-0 truncate text-[14.5px] font-bold tracking-tight">{e.name}</h3>

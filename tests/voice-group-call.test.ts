@@ -10,6 +10,8 @@ test('group voice call: recorded on the group thread, listed with the group name
     const b = await t.agent({ name: 'Onderzoeker' });
     const room = await t.api('POST', '/rooms', { name: 'Fietsteam', mode: 'lead', agentIds: [a.id, b.id] });
     const threadId = room.thread_id || room.threadId;
+    // A call starts only when it can hear you: here the browser's own speech recognition.
+    await t.api('PUT', '/voice/settings', { stt: { engine: 'browser' } });
     const call = await t.api('POST', '/voice/calls', { threadId, group: true });
     assert.equal(call.mode, 'group');
     assert.equal(call.thread_id, threadId);

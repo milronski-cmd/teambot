@@ -1,8 +1,8 @@
-// Accent colour (PARITEIT 18.2) in a real browser: on the computer Instellingen › Uiterlijk › Kleur → Lavendel applies
+// Accent colour (PARITEIT 18.2) in a real browser: on the computer Instellingen › Taal en uiterlijk › Kleur → Lavendel applies
 // at once in light and dark (tokens, focus ring, logo mark, both preview panels), is stored for the user and survives a
 // reload; the paired phone (a real QR pairing, its own device session, dark by default) shows the same colour, changes
-// it, and the computer follows live. axe-core (WCAG 2.x AA, contrast) on the Uiterlijk page for every colour in light
-// and dark. Standaard leaves <html> without data-accent (the look of styles.css).
+// it, and the computer follows live. axe-core (WCAG 2.x AA, contrast) on the Taal en uiterlijk page for every colour in
+// light and dark (the old link #/settings/appearance opens that page). Standaard leaves <html> without data-accent (the look of styles.css).
 // Usage: npm run build:ui && node --import tsx tests/e2e/accent.mjs   (TEAMBOT_E2E_BROWSER=chrome|msedge)
 import fs from 'node:fs';
 import os from 'node:os';
@@ -23,7 +23,7 @@ const browser = await chromium.launch({ channel: process.env.TEAMBOT_E2E_BROWSER
 const home = fs.mkdtempSync(path.join(os.tmpdir(), 'tb-accent-home-'));
 Object.assign(process.env, { APPDATA: path.join(home, 'AppData', 'Roaming'), LOCALAPPDATA: path.join(home, 'AppData', 'Local') });
 delete process.env.TEAMBOT_DATA;
-const { createApp } = await import('../../server/app.ts');
+const { createApp } = await import('./server.mjs');
 const { ACCENTS } = await import('../../shared/accent.ts');
 const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'tb-accent-'));
 const app = await createApp({ dataDir: dir, port: Number(process.env.TEAMBOT_E2E_PORT) || 0, host: '127.0.0.1', mode: 'desktop', quiet: true });
@@ -65,7 +65,8 @@ try {
   const l = await tokens();
   ok('lavendel (licht): accent, zachte achtergrond en focusring wisselen meteen', l.accent === lav.light.accent && l.soft === lav.light.accentSoft && l.ring === lav.light.ring, JSON.stringify(l));
   // A real control on the page uses it: the primary button and the focus ring.
-  const btn = page.locator('a[href="#/settings/general"]').first();
+  // The last row of the settings list, "Meer mogelijkheden" (was Geavanceerd).
+  const btn = page.locator('a[href="#/settings/meer"]').first();
   await btn.focus();
   await page.keyboard.press('Shift+Tab');
   await page.keyboard.press('Tab');
@@ -79,10 +80,10 @@ try {
     }
   });
   ok('de focusrand van een echt element is de accentkleur', outline === lav.light.ring, outline);
-  // The sample cards (light and dark side by side) are gone from Uiterlijk; the main button follows the choice: a
-  // chosen colour replaces the orange of Standaard (--color-btn).
+  // The sample cards (light and dark side by side) are gone from Uiterlijk; the main button has the accent colour
+  // (--color-btn), so it follows the choice.
   const btnColour = await page.evaluate(() => getComputedStyle(document.documentElement).getPropertyValue('--color-btn').trim());
-  ok('de hoofdknop krijgt de gekozen kleur (lavendel in plaats van oranje)', btnColour === lav.light.accent, btnColour);
+  ok('de hoofdknop krijgt de gekozen accentkleur (lavendel)', btnColour === lav.light.accent, btnColour);
   const markColour = await page.evaluate(() => document.querySelector('nav[aria-label="Hoofdmenu"] .tb-face svg')?.innerHTML || '');
   ok('het TeamBot-figuurtje in de zijbalk krijgt de kleur', markColour.toLowerCase().includes(lav.logo.toLowerCase()));
   await page.waitForTimeout(400);

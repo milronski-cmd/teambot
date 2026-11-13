@@ -41,7 +41,7 @@ test('common engine error texts map to plain Dutch with what to do', () => {
 
 test('unknown texts and TeamBot\'s own Dutch messages stay as they are', () => {
   for (const raw of [
-    'Claude Code is niet gevonden op deze computer. Installeer de CLI of stel het pad in via Instellingen › Abonnementen.',
+    'Claude Code is niet gevonden op deze computer. Installeer de CLI of stel het pad in via Instellingen › Meer mogelijkheden › AI-programma’s.',
     'De CLI is niet (meer) ingelogd. Log zelf in met: claude auth login',
     'Maximum van 500 berichten in dit gesprek',
     'Something unusual happened in step 4',
@@ -55,7 +55,7 @@ test('a CLI that stopped unexpectedly: a plain sentence with what to do, the exi
   const raw = 'Claude Code stopte onverwacht (exitcode 3). Laatste uitvoer: boom';
   assert.equal(plainErrorKind(raw), 'crash');
   const out = plainEngineError(raw, { engine: 'Claude Code' });
-  assert.equal(out, 'Claude Code stopte onverwacht. Probeer het opnieuw. Gebeurt het weer, kijk dan bij Instellingen › Abonnementen of Claude Code nog werkt, of kies een andere engine voor deze bot.');
+  assert.equal(out, 'Claude Code stopte onverwacht. Probeer het opnieuw. Gebeurt het weer, kijk dan bij Instellingen › Meer mogelijkheden › AI-programma’s of Claude Code nog werkt, of kies een andere engine voor deze bot.');
   assert.doesNotMatch(out, /exitcode|\d/);
   assert.equal(crashDetail(raw), raw);
   assert.equal(crashDetail(new Error('Codex stopte onverwacht.')), 'Codex stopte onverwacht.');

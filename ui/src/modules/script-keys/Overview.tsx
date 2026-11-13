@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { KeyRound, Trash2 } from 'lucide-react';
 import { api, on } from '../../lib/api';
 import { t } from '../../lib/i18n';
-import { Badge, Button, Card, EmptyState, Field, Input, Modal, Spinner, askConfirm, timeAgo, toast, toastError } from '../../components/ui';
+import { Badge, Button, Card, CardHead, EmptyState, Field, Input, Modal, Spinner, askConfirm, timeAgo, toast, toastError, useAsync } from '../../components/ui';
 
 /** GET /api/script-keys: never a value, only whether one is stored. */
 interface KeyView {
@@ -49,12 +49,7 @@ export function ScriptKeysOverview() {
 
   return (
     <section className="space-y-3" aria-labelledby="script-keys-overview" data-testid="script-keys-overview">
-      <div>
-        <h2 id="script-keys-overview" className="flex items-center gap-2 text-base font-semibold">
-          <KeyRound className="h-4 w-4" aria-hidden /> Sleutels voor scripts
-        </h2>
-        <p className="text-sm text-muted">Sleutels voor de scripts van je bots. Een bot ziet alleen de naam, nooit de waarde.</p>
-      </div>
+      <CardHead id="script-keys-overview" icon={KeyRound} tone="amber" title="Sleutels voor scripts" hint="Sleutels voor de scripts van je bots. Een bot ziet alleen de naam, nooit de waarde." />
       {err ? (
         <div className="space-y-2 text-sm">
           <p className="text-danger">{err}</p>
@@ -121,18 +116,13 @@ export function ScriptKeysOverview() {
 /** Replace a key's value (write-only: the old one is never shown). */
 function RenewModal({ k, onClose, onSaved }: { k: KeyView; onClose(): void; onSaved(): void }) {
   const [value, setValue] = useState('');
-  const [busy, setBusy] = useState(false);
+  const { busy, run } = useAsync();
   const save = async () => {
-    setBusy(true);
-    try {
+    await run(async () => {
       await api.patch(`/script-keys/${k.id}`, { value });
       toast('Nieuwe waarde opgeslagen', 'ok');
       onSaved();
-    } catch (e) {
-      toastError(e);
-    } finally {
-      setBusy(false);
-    }
+    });
   };
   return (
     <Modal

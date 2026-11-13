@@ -8,6 +8,7 @@ import { approvalAction, approvalToolName, approvalWhat } from '../shared/approv
 import { acpToolSummary, claudeToolSummary, plainCommand } from '../server/modules/cli-agents/permissions.js';
 import { failedDetail } from '../server/modules/cli-agents/acp.js';
 import { claudeErrorText, deniedWhat, failedStep } from '../server/modules/cli-agents/activity-labels.js';
+import { fillWords } from '../shared/i18n-core.js';
 
 /**
  * Fewer and clearer approvals in "Vraagt toestemming": team-internal tools (asking or giving work to your own bots,
@@ -136,7 +137,7 @@ test('a dossier card or notification never reads Dossier “” when the bot nam
     const a = await t.agent({ access_mode: 'ask', tool_groups: ['memory'] });
     const th = await t.api('POST', '/threads', { agentId: a.id });
     const tools = await t.app.ctx.tools.forAgent(t.app.ctx.store.agent(a.id)!, t.app.ctx.store.thread(th.id)!);
-    const s = (name: string, args: any) => tools.find((x: any) => x.name === name)!.summarize!(args);
+    const s = (name: string, args: any) => fillWords(tools.find((x: any) => x.name === name)!.summarize!(args));
     assert.equal(s('dossier_add', { dossier: 'd:ab12cd', kind: 'action', title: 'Offerte opvragen' }), 'Dossier: actie — Offerte opvragen');
     assert.equal(s('dossier_add', { dossier: 'Zolder', kind: 'action', title: 'Offerte opvragen' }), 'Dossier “Zolder”: actie — Offerte opvragen');
     assert.equal(s('dossier_get', { dossier: 'd:ab12cd' }), 'Dossier lezen');

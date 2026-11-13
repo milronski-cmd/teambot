@@ -1,29 +1,23 @@
 import { useEffect, useLayoutEffect, useMemo, useState } from 'react';
-import { ChevronDown, ChevronRight, Cpu, ExternalLink, KeyRound, Plug, Plus, RefreshCw, Search, Terminal, Trash2 } from 'lucide-react';
+import { ChevronDown, ChevronRight, Cpu, ExternalLink, KeyRound, Plug, Plus, RefreshCw, Search, Terminal, Trash2, Database } from 'lucide-react';
 import { MoreOptions } from '../components/MoreOptions';
 import { api } from '../lib/api';
 import { useApp } from '../lib/store';
 import { t, translate, uiLocale } from '../lib/i18n';
 import { prettyModel } from '../lib/modelLabel';
+import { firstSentence } from '../lib/sentence';
 import { query } from '../lib/router';
-import { formatTokens, formatUsd } from '../lib/format';
+import { formatTokens, formatUsd, tKnown } from '../lib/format';
 import { BILLING_LABEL, type ModelInfo, type ProviderKindView, type ProviderTestResult, type ProviderView } from '../lib/types';
-import { askConfirm, Badge, Button, Card, Field, Input, Modal, Select, Spinner, Toggle, cx, toast, toastError, useAsync } from '../components/ui';
+import { askConfirm, Badge, Button, Card, Field, Input, Modal, Select, Spinner, Toggle, cx, toast, toastError, useAsync, CardHead } from '../components/ui';
 import { ProviderMark } from '../components/ProviderMark';
 import { markOf } from '../modules/usage/meter';
 import { Fold } from '../components/overview';
 import { ConnectCard, ConnectResult } from '../components/ConnectCard';
 import { LocalModelsCard } from '../modules/local-models';
+import { OllamaInstallButton } from '../modules/local-models/install';
 import { useAdvanced } from '../shell/advanced';
 import { KeyPaste } from './welcome/StartOptions';
-
-/** The four sections of "Andere AI toevoegen". */
-export const SECTIONS: { id: NonNullable<ProviderKindView['section']>; label: string; hint: string }[] = [
-  { id: 'free', label: 'Gratis', hint: 'Gratis modellen of een gratis versie; meestal wel een account en sleutel nodig.' },
-  { id: 'subscription', label: 'Via je abonnement', hint: 'Het officiële programma van de maker, met je eigen login.' },
-  { id: 'local', label: 'Lokaal', hint: 'Draait op je eigen computer: gratis en je gegevens blijven hier.' },
-  { id: 'key', label: 'Met API-sleutel', hint: 'Je betaalt de dienst rechtstreeks per gebruik.' },
-];
 
 /** Section of a kind (CLI engines have none of their own: free when the CLI has free models, else subscription). */
 export function sectionOf(k: Pick<ProviderKindView, 'section' | 'type' | 'billing' | 'group'>): NonNullable<ProviderKindView['section']> {
@@ -110,7 +104,6 @@ export function TestResult({ r }: { r: ProviderTestResult }) {
   );
 }
 
-const firstSentence = (s: string) => (s.match(/^.*?[.!?](?=\s|$)/)?.[0] || s).trim();
 const failed = (e: any): ProviderTestResult => ({ ok: false, detail: e?.message || String(e) });
 
 /**
@@ -130,7 +123,9 @@ export async function connectKind(
   if (!check.ok) return { test: check, models: [] };
   const models = check.models || [];
   const has = (id?: string) => !!id && (!models.length || models.some((m) => m.id === id));
-  const model = o.config?.defaultModel || models.find((m) => m.recommended)?.id || (has(kind.defaultModel) ? kind.defaultModel : (models.find((m) => !/embed|rerank|bge-|minilm|whisper|tts/i.test(m.id)) || models[0])?.id);
+  // A model on this computer: the server picks one that runs well here (the first in the list can be the biggest).
+  const local = sectionOf(kind) === 'local' || kind.billing === 'local';
+  const model = o.config?.defaultModel || models.find((m) => m.recommended)?.id || (local ? undefined : has(kind.defaultModel) ? kind.defaultModel : (models.find((m) => !/embed|rerank|bge-|minilm|whisper|tts/i.test(m.id)) || models[0])?.id);
   const config = { ...(o.config || {}), ...(model ? { defaultModel: model } : {}) };
   const p = await api.post<ProviderView>('/providers', { kind: kind.id, name: o.name || kind.label, base_url: o.base_url, apiKey: o.apiKey || undefined, config: Object.keys(config).length ? config : undefined, shared: o.shared });
   await useApp.getState().refreshProviders();
@@ -232,7 +227,7 @@ export function ConnectProvider({ kind, open, onClose, onDone, onRecheck }: { ki
     <Modal
       open={open}
       onClose={onClose}
-      title={`${kind.label} koppelen`}
+      title={t('{0} koppelen', t(kind.label))}
       footer={
         result?.ok ? (
           <Button variant="primary" onClick={onClose}>
@@ -254,12 +249,9 @@ export function ConnectProvider({ kind, open, onClose, onDone, onRecheck }: { ki
         <p className="text-muted">{firstSentence(kind.description)}</p>
         {notFound && (
           <div className="flex flex-wrap items-center gap-2 rounded-lg bg-surface-2 px-3 py-2" data-testid={kind.id === 'ollama' ? 'ollama-setup' : undefined}>
-            <span className="min-w-0 flex-1 basis-48">{t('{0} draait nog niet op deze computer.', kind.label)}</span>
-            {kind.id === 'ollama' && (
-              <a className="inline-flex h-8 items-center gap-1 rounded-lg bg-accent px-3 text-[13px] font-semibold text-accent-fg hover:opacity-90 coarse:h-11" href="https://ollama.com/download" target="_blank" rel="noreferrer">
-                Ollama downloaden <ExternalLink className="h-3.5 w-3.5" aria-hidden />
-              </a>
-            )}
+            <span className="min-w-0 flex-1 basis-48">{t('{0} draait nog niet op deze computer.', tKnown(kind.label))}</span>
+            {/* One click: TeamBot installs Ollama, connects it with a model, and the dialog ends on the connected list. */}
+            {kind.id === 'ollama' && <OllamaInstallButton onDone={() => (onRecheck?.(), toast(t('{0} gekoppeld', tKnown(kind.label)), 'ok'), onClose())} />}
             {onRecheck && (
               <Button size="sm" icon={<RefreshCw className="h-3.5 w-3.5" />} onClick={onRecheck}>
                 Opnieuw zoeken
@@ -340,8 +332,7 @@ function ModelCatalogCard() {
   if (!s) return <Spinner />;
   return (
     <Card className="p-4" data-testid="model-catalog">
-      <h2 className="font-semibold">Modelgegevens</h2>
-      <p className="mt-0.5 text-sm text-muted">{t('Contextvenster, prijs en mogelijkheden komen van de provider, aangevuld uit models.dev.', fmtDate(s.fetched))}</p>
+      <CardHead icon={Database} tone="violet" title="Modelgegevens" hint={t('Contextvenster, prijs en mogelijkheden komen van de provider, aangevuld uit models.dev.', fmtDate(s.fetched))} />
       {s.canEdit && (
         <div className="mt-2">
           <Toggle
@@ -362,19 +353,17 @@ function ModelCatalogCard() {
 }
 
 /** Found on this pc and not connected yet: one click connects and tests it. */
-function FoundCard({ kind, onChanged }: { kind: ProviderKindView; onChanged(): void }) {
+function FoundCard({ kind, onChanged }: { kind: ProviderKindView; onChanged(p?: ProviderView): void }) {
   const [result, setResult] = useState<ProviderTestResult | null>(null);
   const a = useAsync();
   const loggedOut = kind.type === 'cli' && kind.status?.loggedIn === false;
   const connect = () =>
     a.run(async () => {
-      // Ollama: the installed model that fits this pc best (the same advice as under "Lokale modellen").
-      const advice = kind.id === 'ollama' ? await api.get<{ recommended?: { id: string; installed?: boolean } | null }>('/local-models').catch(() => null) : null;
-      const config = advice?.recommended?.installed ? { defaultModel: advice.recommended.id } : undefined;
-      const r = await connectKind(kind, { base_url: kind.status?.baseUrl && kind.status.baseUrl !== kind.baseUrl ? kind.status.baseUrl : undefined, config }).catch((e) => ({ test: failed(e) }) as Awaited<ReturnType<typeof connectKind>>);
+      // (A model on this pc: the server takes the one that runs well here, the same advice as under "Lokale modellen".)
+      const r = await connectKind(kind, { base_url: kind.status?.baseUrl && kind.status.baseUrl !== kind.baseUrl ? kind.status.baseUrl : undefined }).catch((e) => ({ test: failed(e) }) as Awaited<ReturnType<typeof connectKind>>);
       setResult(r.test);
       // Connected: the card moves to "Gekoppelde AI" (which shows the test itself).
-      if (r.provider) onChanged();
+      if (r.provider) onChanged(r.provider);
     });
   return (
     <ConnectCard
@@ -400,10 +389,55 @@ function FoundCard({ kind, onChanged }: { kind: ProviderKindView; onChanged(): v
   );
 }
 
-/** A connected AI: its state comes from a (free) test, run when the page opens and on "Test". */
+/**
+ * A service the search found, on the same row as every AI behind "AI toevoegen": connected → Testen, with the outcome
+ * under it; a program with your own login → Installeren or Koppelen on its own page (install, log in, connect in one
+ * go); any other service → Koppelen (the dialog with the key, which connects and tests).
+ */
+function SearchHit({ kind, provider, onChoose }: { kind: ProviderKindView; provider?: ProviderView; onChoose(): void }) {
+  const [r, setR] = useState<ProviderTestResult | null>(null);
+  const a = useAsync();
+  const here = !!kind.status?.installed;
+  const test = () =>
+    a.run(async () => {
+      setR(null);
+      setR(await api.post<ProviderTestResult>(`/providers/${provider!.id}/test`).catch(failed));
+    });
+  const mark = markOf(kind.id, kind.label);
+  let action: React.ReactNode = null;
+  if (provider)
+    action = provider.own && (
+      <Button size="sm" loading={a.busy} onClick={test}>
+        Testen
+      </Button>
+    );
+  else
+    action = (
+      <Button size="sm" variant="primary" icon={kind.type === 'cli' && !here ? undefined : <Plug className="h-4 w-4" />} onClick={onChoose}>
+        {kind.type === 'cli' && !here ? 'Installeren' : 'Koppelen'}
+      </Button>
+    );
+  return (
+    <ConnectCard
+      data-testid={`search-${kind.id}`}
+      icon={mark ? <ProviderMark id={mark} size={18} /> : kind.type === 'cli' ? <Terminal aria-hidden /> : sectionOf(kind) === 'local' ? <Cpu aria-hidden /> : <KeyRound aria-hidden />}
+      title={kind.label}
+      state={a.busy ? 'busy' : r && !r.ok ? 'error' : provider ? 'on' : 'off'}
+      stateLabel={a.busy ? 'testen' : !provider && here ? 'staat op deze pc' : undefined}
+      action={action}
+      result={r && <TestResult r={r} />}
+    />
+  );
+}
+
+/** A connected AI: its state comes from a (free) test, run when the page opens and on "Testen". */
 function ConnectedCard({ p, isDefault, justTested, onKey, onPrices, onPolicy }: { p: ProviderView; isDefault: boolean; justTested?: boolean; onKey(): void; onPrices(): void; onPolicy(): void }) {
   const [r, setR] = useState<ProviderTestResult | 'busy' | null>(null);
   const [shown, setShown] = useState(!!justTested);
+  // Just connected: the card can be in the list a moment before it is marked as new; show its test then too.
+  useEffect(() => {
+    if (justTested) setShown(true);
+  }, [justTested]);
   const test = async (show: boolean) => {
     setR('busy');
     const res = await api.post<ProviderTestResult>(`/providers/${p.id}/test`).catch(failed);
@@ -429,7 +463,7 @@ function ConnectedCard({ p, isDefault, justTested, onKey, onPrices, onPolicy }: 
       action={
         p.own && (
           <Button size="sm" loading={r === 'busy'} onClick={() => test(true)}>
-            Test
+            Testen
           </Button>
         )
       }
@@ -437,11 +471,6 @@ function ConnectedCard({ p, isDefault, justTested, onKey, onPrices, onPolicy }: 
       more={
         p.own && (
           <div className="flex flex-wrap gap-1.5">
-            {!isDefault && (
-              <Button size="sm" variant="ghost" onClick={() => api.put('/settings', { defaultProvider: p.id, defaultModel: p.config?.defaultModel || '' }).catch(toastError)}>
-                Als standaard
-              </Button>
-            )}
             {p.type === 'api' && (
               <Button size="sm" variant="ghost" icon={<KeyRound className="h-3.5 w-3.5" />} onClick={onKey}>
                 Sleutel
@@ -461,7 +490,7 @@ function ConnectedCard({ p, isDefault, justTested, onKey, onPrices, onPolicy }: 
               size="sm"
               variant="ghost"
               icon={<Trash2 className="h-3.5 w-3.5" />}
-              aria-label={`${p.name} ontkoppelen`}
+              aria-label={t('{0} ontkoppelen', p.name)}
               onClick={async () => {
                 if (!(await askConfirm(`${p.name} ontkoppelen? De sleutel wordt gewist.`, { danger: true }))) return;
                 try {
@@ -482,7 +511,12 @@ function ConnectedCard({ p, isDefault, justTested, onKey, onPrices, onPolicy }: 
   );
 }
 
-export function ProvidersSettings() {
+/**
+ * AI-diensten. `part="main"` (the page of the list): what is connected and ONE button to add. `part="more"`
+ * (Meer mogelijkheden › Lokale modellen en andere diensten): local models, the model data and the catalogue of other services.
+ * Without `part`: both, the second folded.
+ */
+export function ProvidersSettings({ part }: { part?: 'main' | 'more' } = {}) {
   const providers = useApp((s) => s.providers);
   const settings = useApp((s) => s.settings);
   const advanced = useAdvanced();
@@ -525,7 +559,10 @@ export function ProvidersSettings() {
       <ChevronRight className="h-4 w-4 shrink-0 text-muted rtl-flip" aria-hidden />
     </>
   );
-  /** "AI toevoegen": what stands ready on this pc first, then three plain ways in. */
+  /**
+   * "AI toevoegen": what stands ready on this pc first, then the ways in, one row for every kind of AI in the same
+   * shape: a program with your subscription, a key of a service, a free model, a model on this computer.
+   */
   const addContent = (
     <div className="space-y-4">
       {found.length > 0 && (
@@ -533,7 +570,8 @@ export function ProvidersSettings() {
           <h2 className="mb-2 text-[13px] font-semibold text-muted">Gevonden op deze pc</h2>
           <div className="space-y-2">
             {found.map((k) => (
-              <FoundCard key={k.id} kind={k} onChanged={reload} />
+              // Connected: "AI toevoegen" closes on the list, where the new AI stands with its test (as after a key).
+              <FoundCard key={k.id} kind={k} onChanged={(p) => (reload(), p && (setFresh((x) => [...x, p.id]), setAdding(false), toast(t('{0} gekoppeld', tKnown(p.name)), 'ok')))} />
             ))}
           </div>
         </div>
@@ -547,11 +585,14 @@ export function ProvidersSettings() {
         </button>
         {keyOpen && (
           <div className="p-4" data-testid="key-paste">
-            <KeyPaste kinds={kinds} onConnected={(p) => (setFresh((x) => [...x, p.id]), setAdding(false), setKeyOpen(false), toast(t('{0} gekoppeld', p.name), 'ok'))} />
+            <KeyPaste kinds={kinds} onConnected={(p) => (setFresh((x) => [...x, p.id]), setAdding(false), setKeyOpen(false), toast(t('{0} gekoppeld', tKnown(p.name)), 'ok'))} />
           </div>
         )}
         <a href="#/settings/free-models-gratis" className={wayClass} onClick={() => setAdding(false)}>
           {way('Gratis', 'Gratis modellen, zonder abonnement of sleutel.')}
+        </a>
+        <a href="#/settings/ai-meer" className={wayClass} onClick={() => setAdding(false)}>
+          {way('Op deze computer', 'Een model dat op je eigen pc draait, of een andere dienst.')}
         </a>
       </div>
       <button type="button" className="inline-flex items-center gap-1.5 text-xs font-medium text-muted hover:text-fg coarse:min-h-11" onClick={reload}>
@@ -566,6 +607,8 @@ export function ProvidersSettings() {
         One list: what is connected (name, state, Test), and ONE button "Toevoegen" that opens the three plain ways in
         (with what was found on this pc on top). An empty install shows those ways right here.
       */}
+      {part !== 'more' && (
+        <>
       {providers.length === 0 ? (
         <Card className="p-5">{addContent}</Card>
       ) : (
@@ -583,8 +626,12 @@ export function ProvidersSettings() {
           </Modal>
         </>
       )}
+        </>
+      )}
 
-      <MoreOptions label="Lokale modellen en andere diensten">
+      {part !== 'main' && (() => {
+        const more = (
+          <>
         {/* Closed by default: a list of local models with sizes is for whoever goes looking for it. */}
         <Fold title="Lokale modellen op deze pc">
           <LocalModelsCard />
@@ -604,22 +651,18 @@ export function ProvidersSettings() {
           {err && <p className="mt-2 text-sm text-danger">{err}</p>}
           {!kinds && !err && q && <Spinner />}
           {q.trim() && kinds && (
-            <div className="tb-in mt-2 divide-y divide-line overflow-hidden rounded-card border border-line">
-              {filtered.length === 0 && <p className="px-4 py-3 text-sm text-muted">Geen dienst gevonden met die naam.</p>}
-              {filtered.slice(0, 12).map((k) => {
-                const connected = providers.some((p) => p.kind === k.id);
-                return (
-                  <button key={k.id} type="button" onClick={() => choose(k)} className="flex min-h-11 w-full items-center gap-3 px-4 py-2 text-start text-sm transition-colors hover:bg-surface-2">
-                    <span className="min-w-0 flex-1 truncate font-medium">{k.label}</span>
-                    {connected ? <Badge tone="accent">gekoppeld</Badge> : k.status?.installed ? <Badge tone="ok">staat op deze pc</Badge> : null}
-                    <span className="shrink-0 text-xs text-muted">{connected ? "" : "Koppelen"}</span>
-                  </button>
-                );
-              })}
+            <div className="tb-in mt-2 space-y-2" data-testid="search-hits">
+              {filtered.length === 0 && <p className="px-1 py-2 text-sm text-muted">Geen dienst gevonden met die naam.</p>}
+              {filtered.slice(0, 12).map((k) => (
+                <SearchHit key={k.id} kind={k} provider={providers.find((p) => p.kind === k.id)} onChoose={() => choose(k)} />
+              ))}
             </div>
           )}
         </div>
-      </MoreOptions>
+          </>
+        );
+        return part === 'more' ? more : <MoreOptions label="Lokale modellen en andere diensten">{more}</MoreOptions>;
+      })()}
 
       <ConnectProvider kind={pick} open={!!pick} onClose={() => setPickId(null)} onRecheck={reload} />
       <PricesModal p={prices} onClose={() => setPrices(null)} />
@@ -627,7 +670,7 @@ export function ProvidersSettings() {
       <Modal
         open={!!editKey}
         onClose={() => setEditKey(null)}
-        title={`Sleutel voor ${editKey?.name}`}
+        title={t('Sleutel voor {0}', editKey?.name ?? '')}
         footer={
           <Button
             variant="primary"
@@ -674,7 +717,7 @@ function SharedPolicyModal({ p, onClose }: { p: ProviderView | null; onClose(): 
     }
   };
   return (
-    <Modal open={!!p} onClose={onClose} title={`Beleid voor leden: ${p?.name}`} footer={<Button variant="primary" onClick={save}>Opslaan</Button>}>
+    <Modal open={!!p} onClose={onClose} title={t('Beleid voor leden: {0}', p?.name ?? '')} footer={<Button variant="primary" onClick={save}>Opslaan</Button>}>
       <div className="space-y-4 text-sm">
         <p className="text-muted">Anderen op deze server gebruiken deze provider met jouw sleutel, zonder die te zien.</p>
         <Field label="Toegestane modellen" hint="Gescheiden door komma's. Leeg = alle modellen. Een bot zonder model krijgt het eerste model uit deze lijst.">
@@ -714,7 +757,7 @@ function PricesModal({ p, onClose }: { p: ProviderView | null; onClose(): void }
     }
   };
   return (
-    <Modal open={!!p} onClose={onClose} title={`Prijzen voor ${p?.name}`} footer={<Button variant="primary" onClick={save}>Opslaan</Button>}>
+    <Modal open={!!p} onClose={onClose} title={t('Prijzen voor {0}', p?.name ?? '')} footer={<Button variant="primary" onClick={save}>Opslaan</Button>}>
       <div className="space-y-3 text-sm">
         <p className="text-muted">
           Prijzen in USD per 1 miljoen tokens (invoer / uitvoer), zoals op de prijspagina van je provider. Eén regel per model; <code>*</code> geldt voor alle andere modellen. Hiermee kloppen de kostenschattingen en werkt het dagbudget ook voor deze provider.

@@ -15,7 +15,7 @@ import { createRequire } from 'node:module';
 
 const require = createRequire(import.meta.url);
 const { chromium } = require('playwright-core');
-const { createApp } = await import('../../server/app.ts');
+const { createApp } = await import('./server.mjs');
 const { createFixtureServer } = await import('../mcp-fixture-server.ts');
 const { NodeStreamableHTTPServerTransport } = await import('@modelcontextprotocol/node');
 
@@ -119,37 +119,47 @@ try {
   const bot = bots[0];
   const sectionBtn = (title) => page.getByRole('button', { name: new RegExp(`^${title.replace(/[()&]/g, '.')}`) });
   const scrollHeight = () => page.evaluate(() => Math.max(...[...document.querySelectorAll('main .scroll-thin')].map((e) => e.scrollHeight)));
-  // Open a tab; the old names (Kunnen …) are parts of Meer now, with their rare sections behind "Meer opties".
+  // The bot page is one page: the old tabs are gone. The old names (Kunnen …) are parts of "Geavanceerd" at the bottom.
   const tab = async (name) => {
-    await page.getByRole('tab', { name: new RegExp(`^${['Overzicht', 'Instructies'].includes(name) ? name : 'Meer'}( niet opgeslagen)?$`) }).click();
+    if (['Overzicht', 'Instructies'].includes(name)) return;
     await page.evaluate(() => document.querySelectorAll('details').forEach((x) => (x.open = true)));
     await page.waitForTimeout(400);
   };
   await page.goto(`${app.url}/#/agents/${bot.id}`);
-  await page.getByRole('tab', { name: 'Overzicht' }).waitFor({ timeout: 15000 });
+  await page.getByLabel('Naam', { exact: true }).waitFor({ timeout: 15000 });
   await page.waitForTimeout(1200);
-  // Simple at first glance: five tabs, the essentials in view, every other option in a closed section (a title and one
-  // line) on the tab it belongs to.
-  const tabs = (await page.getByRole('tab').allInnerTexts()).map((x) => x.trim());
-  if (tabs.join(' | ') !== 'Overzicht | Instructies | Meer') fail(`botpagina: tabbladen zijn ${JSON.stringify(tabs)}`);
-  for (const l of ['Naam', 'AI', 'Model']) if (!(await page.getByLabel(l, { exact: true }).count())) fail(`botpagina › Overzicht: "${l}" staat niet vooraan`);
-  const heights = {};
-  let sections = 0;
-  for (const t of tabs) {
-    await tab(t);
-    heights[t] = await scrollHeight();
-    const cards = await page.evaluate(() => [...document.querySelectorAll('main [data-tab]:not([hidden]) [data-section]')].map((e) => ({ id: e.getAttribute('data-section'), h: Math.round(e.getBoundingClientRect().height) })));
-    sections += cards.length;
-    const tall = cards.filter((c) => c.h > 140);
-    if (tall.length) fail(`botpagina › ${t}: niet elke sectie staat dicht (${JSON.stringify(tall)})`);
+  // Simple at first glance: ONE page without tabs. In view: name, role, AI, model, instructions and one choice ("Wat
+  // mag de bot?", five levels in one dropdown); every other option sits in the one closed fold "Meer mogelijkheden",
+  // each as a closed section (a title and one line).
+  if (await page.locator('main [role="tab"]').count()) fail('botpagina: er zijn nog tabbladen');
+  for (const l of ['Naam', 'Rol', 'AI', 'Model', 'Instructies']) if (!(await page.getByLabel(l, { exact: true }).count())) fail(`botpagina: "${l}" staat niet vooraan`);
+  {
+    const level = page.getByTestId('access-choice').getByRole('combobox', { name: 'Wat mag de bot?' });
+    if (!(await level.count())) fail('botpagina: de keuze "Wat mag de bot?" ontbreekt');
+    else {
+      await level.click();
+      const levels = await page.locator('[role="listbox"] [role="option"]').evaluateAll((os) => os.map((o) => o.textContent.trim()));
+      await page.keyboard.press('Escape');
+      for (const l of ['Alleen lezen', 'Vraagt toestemming', 'Automatisch', 'Volledige toegang']) if (!levels.includes(l)) fail(`botpagina: niveau "${l}" ontbreekt bij Wat mag de bot? (${levels.join(', ')})`);
+    }
   }
-  if (!sections) fail('botpagina: geen dichte secties gevonden');
-  if (Math.max(...Object.values(heights)) > 2600) fail(`botpagina: een tabblad is te lang (${JSON.stringify(heights)})`);
-  else step(`botpagina: vijf tabbladen, het langste ${Math.max(...Object.values(heights))}px hoog, ${sections} dichte secties`);
+  const folds = await page.locator('main details').count();
+  if (folds !== 1 || (await page.getByTestId('bot-advanced').locator('details[open]').count())) fail(`botpagina: niet precies één dichte uitklap Meer mogelijkheden (${folds})`);
+  const inView = await page.evaluate(() => [...document.querySelectorAll('main input, main textarea, main [role=radiogroup], main [role=switch], main [role=combobox]')].filter((e) => !e.closest('details') && !e.closest('[hidden]') && e.getBoundingClientRect().width > 0).length);
+  if (inView > 9) fail(`botpagina: ${inView} instellingen in beeld (hoogstens 9)`);
+  const shortHeight = await scrollHeight();
+  await tab('Meer');
+  const cards = await page.evaluate(() => [...document.querySelectorAll('main [data-tab]:not([hidden]) [data-section]')].map((e) => ({ id: e.getAttribute('data-section'), h: Math.round(e.getBoundingClientRect().height) })));
+  const tall = cards.filter((c) => c.h > 140);
+  if (tall.length) fail(`botpagina: niet elke sectie staat dicht (${JSON.stringify(tall)})`);
+  if (!cards.length) fail('botpagina: geen dichte secties gevonden');
+  if (shortHeight > 1700) fail(`botpagina: de pagina is te lang (${shortHeight}px)`);
+  else step(`botpagina: één pagina van ${shortHeight}px, ${inView} instellingen in beeld, ${cards.length} dichte secties onder Meer mogelijkheden`);
   await tab('Instructies');
   if (!(await page.getByLabel('Instructies', { exact: true }).count())) fail('botpagina › Instructies: het veld Instructies ontbreekt');
   await tab('Kunnen');
-  for (const t of ['Tools', 'Computer & bestanden', 'Werkmap en mappen']) if ((await sectionBtn(t).getAttribute('aria-expanded')) !== 'false') fail(`botpagina: "${t}" staat niet dicht`);
+  // Tools is a part inside the row "Onderdelen en skills" (shown with "Zelf kiezen"); that row starts closed too.
+  for (const t of ['Onderdelen en skills', 'Computer & bestanden', 'Werkmap en mappen']) if ((await sectionBtn(t).getAttribute('aria-expanded')) !== 'false') fail(`botpagina: "${t}" staat niet dicht`);
   if (await page.getByText('Per tool instellen').count()) fail('botpagina: beleid per tool is zichtbaar zonder Tools te openen');
   await page.screenshot({ path: path.join(shots, 'editor-eenvoudig.png'), fullPage: false });
   if (await page.getByText('Niet opgeslagen:').count()) fail('editor: "Niet opgeslagen" zonder dat er iets is gewijzigd');
@@ -199,7 +209,7 @@ try {
   if (await page.getByText('Niet opgeslagen:').count()) fail('editor: plakbalk blijft staan na opslaan');
   step('één Opslaan bewaart naam, computer (SSH) en de getypte map');
   await page.reload();
-  await page.getByRole('tab', { name: 'Overzicht' }).waitFor({ timeout: 15000 });
+  await page.getByLabel('Naam', { exact: true }).waitFor({ timeout: 15000 });
   await tab('Kunnen');
   // Which sections you opened is remembered (per browser): "Werkmap en mappen" open, "Computer" closed.
   if ((await sectionBtn('Werkmap en mappen').getAttribute('aria-expanded')) !== 'true' || (await sectionBtn('Computer & bestanden').getAttribute('aria-expanded')) !== 'false') fail('editor: open/dicht wordt niet onthouden na herladen');
@@ -221,11 +231,20 @@ try {
   const skillId = (await api('POST', '/skills/import/commit', { stagingId: pv.stagingId })).results[0].skillId;
   await page.goto(`${app.url}/#/m/skills/mine/${skillId}`);
   await page.getByRole('tab', { name: /^Bots/ }).click();
-  await page.getByRole('button', { name: /Alle bots/ }).click();
-  await page.getByText(/Ingeschakeld bij 3 bots/).waitFor({ timeout: 10000 }).catch(() => fail('skills: "Alle bots" meldt niets'));
+  // An installed skill works at once for the whole team: every bot already has it, so "Alle bots" is on. Clicking it
+  // takes the skill away from all of them; clicking again gives it back to all 3 ("Aan bij 3 bots").
+  const allBots = page.getByRole('button', { name: /Alle bots/ });
+  const hasSkill = () => bots.filter((b) => (app.ctx.store.agent(b.id).skills || []).includes(skillId)).length;
+  if ((await allBots.getAttribute('aria-pressed')) !== 'true' || hasSkill() !== 3) fail(`skills: een geïnstalleerde skill staat niet meteen bij alle bots (${hasSkill()} van 3, Alle bots ${await allBots.getAttribute('aria-pressed')})`);
+  await allBots.click();
+  for (let i = 0; i < 25 && hasSkill(); i++) await page.waitForTimeout(200);
+  if (hasSkill()) fail(`skills: "Alle bots" uitzetten haalt de skill niet bij alle bots weg (${hasSkill()} over)`);
+  await page.waitForFunction(() => document.querySelector('button[aria-pressed="false"]')?.textContent?.includes('Alle bots'), null, { timeout: 5000 }).catch(() => {});
+  await allBots.click();
+  await page.getByText(/Aan bij 3 bots/).waitFor({ timeout: 10000 }).catch(() => fail('skills: "Alle bots" meldt niets'));
   await page.waitForTimeout(400);
-  if (!bots.every((b) => (app.ctx.store.agent(b.id).skills || []).includes(skillId))) fail('skills: niet bij alle bots ingeschakeld');
-  else step('Mijn skills › Bots: "Alle bots" zet de skill bij alle 3 bots aan');
+  if (hasSkill() !== 3) fail('skills: niet weer bij alle bots aangezet');
+  else step('Mijn skills › Bots: "Alle bots" haalt de skill bij alle 3 bots weg en zet hem weer bij alle 3 aan');
   await page.screenshot({ path: path.join(shots, 'skill-alle-bots.png') });
 
   // ---------------------------------------------------------------- 3. OAuth in one click (+ the same picker for apps)
@@ -322,7 +341,7 @@ try {
     await page.setViewportSize({ width: 1360, height: 900 });
     await page.goto(`${app.url}/#/agents/${bots[1].id}`);
     await page.waitForTimeout(1200);
-    await tab('Instructies');
+    await tab('Meer'); // Stem sits inside Geavanceerd
     if (!(await page.getByLabel('Voorlezen met').count())) for (const b of await page.getByRole('button', { name: /^(Stem|Spraak)/ }).all()) await b.click().catch(() => {});
     // TeamBot's own dropdown (components/Listbox.tsx): open it, the options carry data-value.
     const optionsOf = async (box) => {
@@ -356,11 +375,48 @@ try {
 
   // ---------------------------------------------------------------- 7. "Daglimiet bereikt … Instellingen › Kosten" leads to the field
   await page.goto(`${app.url}/#/settings/usage`);
-  await page.getByRole('link', { name: 'Aanpassen' }).click({ timeout: 10000 }).catch(() => fail('kosten: geen link "Aanpassen" bij het dagbudget'));
+  await page.getByRole('link', { name: 'Aanpassen' }).click({ timeout: 10000 }).catch(async () => fail(`kosten: geen link "Aanpassen" bij het dagbudget (pagina: ${await page.evaluate(() => location.hash)})`));
   await page.getByLabel('Dagbudget in USD').waitFor({ timeout: 5000 }).then(
     () => step('Instellingen › Kosten: "Aanpassen" bij het dagbudget opent het veld'),
     () => fail('kosten: "Aanpassen" opent het dagbudget-veld niet'),
   );
+
+  // ---------------------------------------------------------------- 7b. a chat that opens later does not pull you back
+  // #/ opens the main bot's chat; without one it first makes it (POST /api/threads, slowed down here by 1.5 s). Whoever
+  // already went on to Kosten stays there (lib/router.ts: navigate only for whoever is still on the page it came from).
+  // Once by typing the address, once by clicking through Instellingen › Meer mogelijkheden › Kosten.
+  const mainId = app.ctx.services.teams?.mainOf?.(owner.id) || bots[0].id;
+  let posted = 0;
+  await page.route('**/api/threads', async (route) => {
+    if (route.request().method() !== 'POST') return route.continue();
+    posted++;
+    await new Promise((r) => setTimeout(r, 1500));
+    await route.continue();
+  });
+  for (const how of ['het adres', 'klikken']) {
+    // No chat of the main bot yet, and the page knows it.
+    app.ctx.store.exec("UPDATE threads SET archived = 1 WHERE agent_id = ? AND kind = 'chat'", mainId);
+    await page.goto(`${app.url}/#/settings/usage`);
+    await page.reload();
+    await page.getByRole('link', { name: 'Aanpassen' }).first().waitFor({ timeout: 10000 }).catch(() => {});
+    const before = posted;
+    await page.evaluate(() => (location.hash = '#/'));
+    for (let i = 0; i < 50 && posted === before; i++) await page.waitForTimeout(100);
+    if (how === 'het adres') await page.evaluate(() => (location.hash = '#/settings/usage'));
+    else {
+      await page.locator('aside a[href="#/settings"]').first().click();
+      await page.getByRole('navigation', { name: 'Instellingen' }).getByRole('link', { name: /^Meer mogelijkheden/ }).first().click();
+      await page.locator('#inhoud a[href="#/settings/usage"]').first().click();
+    }
+    // The chat is made meanwhile (1.5 s) and more than that later the page is still where the person went.
+    await page.waitForTimeout(2500);
+    const at = await page.evaluate(() => location.hash);
+    const made = app.ctx.store.all("SELECT id FROM threads WHERE agent_id = ? AND kind = 'chat' AND archived = 0", mainId).length;
+    if (posted === before) fail(`kosten (${how}): #/ maakte geen nieuw gesprek, dus er viel niets te controleren`);
+    else if (at !== '#/settings/usage') fail(`kosten (${how}): de pagina sprong terug naar ${at} toen het gesprek klaar was`);
+    else step(`#/ en meteen naar Kosten via ${how}: de pagina blijft op Kosten, ook als het gesprek 1,5 s later klaar is (gemaakt: ${made})`);
+  }
+  await page.unroute('**/api/threads');
 
   // ---------------------------------------------------------------- phone width
   await page.setViewportSize({ width: 390, height: 800 });

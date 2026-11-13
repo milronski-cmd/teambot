@@ -1,8 +1,9 @@
-// Own rules in plain words (package P6) in a real browser on the computer: the bot editor › Wat mag de bot? shows
-// "Eigen regels"; the owner types "Mail nooit naar klanten zonder mij te vragen", sees what TeamBot makes of it before
-// saving, adds it, adds "Mag altijd bestanden maken in de map Offertes" (a looser rule, computer only), sees the team's
-// rules under the bot, and removes a rule. The Broker then really asks/refuses (checked on the server). axe-core (WCAG
-// 2.x AA) in light and dark, no failed requests or page errors, no sideways scrolling at 360 px.
+// Own rules in plain words (package P6) in a real browser on the computer: the bot page › Meer mogelijkheden › "Eigen
+// regels en rechten, precies" shows "Eigen regels"; the owner types "Mail nooit naar klanten zonder mij te vragen", sees
+// what TeamBot makes of it before saving, adds it, adds "Mag altijd bestanden maken in de map Offertes" (a looser rule,
+// computer only), sees the team's rules under the bot, and removes a rule. The Broker then really asks/refuses (checked
+// on the server). The team page and Instellingen › Regels show the team's rules (and there the rule of one bot apart).
+// axe-core (WCAG 2.x AA) in light and dark, no failed requests or page errors, no sideways scrolling at 360 px.
 // The phone side (stricter rules yes, looser rules "op je computer") is a step of tests/e2e/phone-owner.mjs.
 // Usage: npm run build:ui && node --import tsx tests/e2e/own-rules.mjs   (TEAMBOT_E2E_BROWSER=chrome|msedge, TEAMBOT_E2E_PORT)
 import fs from 'node:fs';
@@ -24,7 +25,7 @@ const browser = await chromium.launch({ channel: process.env.TEAMBOT_E2E_BROWSER
 const home = fs.mkdtempSync(path.join(os.tmpdir(), 'tb-own-rules-home-'));
 Object.assign(process.env, { APPDATA: path.join(home, 'AppData', 'Roaming'), LOCALAPPDATA: path.join(home, 'AppData', 'Local') });
 delete process.env.TEAMBOT_DATA;
-const { createApp } = await import('../../server/app.ts');
+const { createApp } = await import('./server.mjs');
 const { mockAdapter } = await import('../helpers.ts');
 const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'tb-own-rules-'));
 const app = await createApp({ dataDir: dir, port: Number(process.env.TEAMBOT_E2E_PORT) || 0, host: '127.0.0.1', mode: 'desktop', quiet: true });
@@ -73,16 +74,19 @@ try {
       const u = new URL(r.url());
       if (u.pathname.startsWith('/api/') && r.status() >= 400) bad.push(`${r.status()} ${r.request().method()} ${u.pathname}`);
     });
-    // "Wat mag de bot?" is on the tab Meer of the bot page; Eigen regels sits behind its "Meer opties".
+    // Eigen regels is the row "Eigen regels en rechten, precies" of "Meer mogelijkheden" at the bottom of the bot page:
+    // open the fold, then the row.
     const openRules = async () => {
-      await page.getByRole('tab', { name: /^Meer/ }).click();
-      await page.locator('h2', { hasText: 'Wat mag de bot?' }).locator('xpath=..').locator('details > summary').first().click();
+      await page.getByTestId('bot-advanced').locator('details > summary').first().click();
+      const rowButton = page.locator('[data-section="core:rights"] h3 button');
+      await rowButton.waitFor({ timeout: 15000 });
+      if ((await rowButton.getAttribute('aria-expanded')) !== 'true') await rowButton.click();
     };
     await page.goto(`${app.url}/#/agents/${bot.id}`);
     await openRules();
     const rules = page.getByTestId('own-rules');
     await rules.waitFor({ timeout: 20000 });
-    ok(`${theme}: Eigen regels staat onder Wat mag de bot?`, (await page.locator('h2', { hasText: 'Wat mag de bot?' }).locator('xpath=..').getByTestId('own-rules').count()) === 1);
+    ok(`${theme}: Eigen regels staat onder Meer mogelijkheden › Eigen regels en rechten, precies`, (await page.getByTestId('bot-advanced').locator('[data-section="core:rights"]').filter({ hasText: 'Eigen regels en rechten, precies' }).getByTestId('own-rules').count()) === 1);
     ok(`${theme}: de teamregel staat er, alleen-lezen`, (await rules.getByTestId('own-rule').filter({ hasText: 'Verwijder nooit bestanden' }).count()) === 1 && (await rules.getByText('Ook deze regels gelden, van team', { exact: false }).count()) === 1);
 
     if (theme === 'light') {
@@ -125,6 +129,15 @@ try {
       await teamRules.waitFor({ timeout: 15000 });
       ok('teampagina: Regels voor alle bots van dit team', (await teamRules.getByText('Regels voor alle bots van dit team').count()) === 1 && (await teamRules.getByTestId('own-rule').filter({ hasText: 'Verwijder nooit bestanden' }).count()) === 1);
       await axe(page, 'teampagina met regels (licht)');
+
+      // Instellingen › Regels: the owner's own rules per team (the same card), and under it the rules of one bot.
+      await page.goto(`${app.url}/#/settings`);
+      await page.getByRole('navigation', { name: 'Instellingen' }).getByRole('link', { name: 'Regels', exact: true }).first().click();
+      await page.waitForURL(/#\/settings\/regels$/, { timeout: 10000 }).catch(() => {});
+      const ownRulesPage = page.getByTestId('own-rules');
+      await ownRulesPage.waitFor({ timeout: 15000 });
+      ok('Instellingen › Regels: de teamregel staat er, met de regel van Mila apart', (await ownRulesPage.getByTestId('own-rule').filter({ hasText: 'Verwijder nooit bestanden' }).count()) === 1 && (await page.getByTestId('bot-only-rules').getByRole('region', { name: 'Mila' }).getByTestId('own-rule').filter({ hasText: 'Mail nooit naar klanten' }).count()) === 1);
+      await axe(page, 'Instellingen › Regels (licht)');
 
       // a phone-wide window: no sideways scrolling
       await page.setViewportSize({ width: 360, height: 800 });

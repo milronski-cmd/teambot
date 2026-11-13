@@ -4,12 +4,14 @@ import path from 'node:path';
 import type { ActivityItem, Agent, AgentEvent, AgentRunRequest, Ctx, ProviderConfig, Run, StepFact, Thread } from '../../core/types.js';
 import { now } from '../../core/db.js';
 import { redact } from '../../core/secrets.js';
-import { agentRoots, resolveInWorkspace } from '../../tools/builtin/files.js';
+import { agentRoots, fullAccess, resolveInWorkspace } from '../../tools/builtin/files.js';
 import { applyRunOverride } from '../../agent/runner.js';
+import { stoppedByOwner } from '../../agent/runs.js';
 import { agentForThread } from '../../agent/shared.js';
 import { DEFAULT_LANGUAGE_NOTE, languageSection, withLanguage } from '../../agent/language.js';
 import { plainStepDetail } from '../../agent/fallback.js';
 import { withoutOwnFolder } from './activity-labels.js';
+import type { Words } from '../../../shared/i18n-core.js';
 
 export interface CliOptions {
   /** Claude Code: extra allowed tool rules (only in ask/auto). */
@@ -24,26 +26,41 @@ export interface CliOptions {
   maxTurns: number;
   timeoutMin: number;
   idleMin: number;
+  /** No output for this long while a step of the CLI is still running (a long build or test): only then is it dead. */
+  busyIdleMin: number;
+  /**
+   * Claude Code: the owner's own memory files (CLAUDE.md) and auto-memory too. Only with an explicit
+   * `cli.loadUserSettings: true`; the default of "Volledige toegang" brings his settings, skills and apps, not the
+   * notes he wrote for his own Claude Code sessions (a bot would take them for its own instructions).
+   */
+  ownerMemory: boolean;
 }
 
 /**
- * Cancel reasons that are not the owner stopping the task: a new message that interrupts or steers it (the owner wants
- * the work to go on, differently), a server shutdown ("Hervatten" exists for that), a deleted bot or chat. Everything
- * else (Stop, "Alles stoppen", emergency stop, stop via a channel) counts as stopped by the owner.
+ * Limits that never stop real work (the owner: no built-in brakes). A CLI that is silent while no step is running is
+ * hung: stopped after `IDLE_MIN`. Silent while a step runs (a build, a test run, a download): alive, until
+ * `BUSY_IDLE_MIN`. `TIMEOUT_MIN` is the ceiling for one turn. All three per bot adjustable (settings.cli).
  */
-const NOT_OWNER_STOP = /^(Onderbroken|Server gestopt|Bot verwijderd|Gesprek verwijderd|Nieuw gesprek gestart)/;
+export const CLI_LIMITS = { idleMin: 30, busyIdleMin: 12 * 60, timeoutMin: 72 * 60, maxTurns: 40, maxTurnsFull: 10_000 };
 
 /**
  * After the owner pressed Stop, the CLI session still holds the unfinished turn, and Claude Code picked the stopped task
  * up again on the next message (acceptance round 2, B-32). When this bot's previous run in this chat was stopped by the
  * owner, the next turn starts with this note, unless the owner asked to continue ("Hervatten").
+ *
+ * The session also never saw the outcome of a call that was cut off with the turn. Had the bot given work to a
+ * colleague in that turn, it concluded "not handed over" (live, 12 nov). So the note says that work did arrive and was
+ * stopped with the turn; what was given to whom is in TeamBot's notes in the conversation (modules/rooms).
  */
 export function stoppedTaskNote(ctx: Ctx, req: Pick<AgentRunRequest, 'threadId' | 'agentId' | 'runId'>): string {
   const run = ctx.store.run(req.runId);
   if (!run || run.trigger === 'resume') return '';
-  const prev = ctx.store.one<{ status: string; error: string | null }>('SELECT status, error FROM runs WHERE thread_id = ? AND agent_id = ? AND id != ? AND created_at <= ? ORDER BY created_at DESC LIMIT 1', req.threadId, req.agentId, req.runId, run.created_at);
-  if (prev?.status !== 'cancelled' || NOT_OWNER_STOP.test(prev.error || '')) return '';
-  return '[TeamBot] De eigenaar heeft je vorige taak gestopt. Ga daar niet mee verder en maak die niet af, tenzij de eigenaar daar hieronder zelf om vraagt. Reageer alleen op het nieuwe bericht hieronder.\n\n';
+  const prev = ctx.store.one<{ id: string; status: string; error: string | null }>('SELECT id, status, error FROM runs WHERE thread_id = ? AND agent_id = ? AND id != ? AND created_at <= ? ORDER BY created_at DESC LIMIT 1', req.threadId, req.agentId, req.runId, run.created_at);
+  // One definition of "stopped by the owner" (agent/runs.ts): his own stop reasons, not a steering message, a shutdown
+  // or a removed bot or chat.
+  if (!prev || !stoppedByOwner(prev)) return '';
+  const given = ctx.services.rooms?.stoppedGiven?.(prev.id) ? ' Wat je in die beurt al aan een collega had gegeven, is aangekomen en met jouw beurt gestopt: het is niet af en blijft van die collega (per stuk staat er een notitie van TeamBot in dit gesprek).' : '';
+  return `[TeamBot] De eigenaar heeft je vorige taak gestopt. Ga daar niet mee verder en maak die niet af, tenzij de eigenaar daar hieronder zelf om vraagt.${given} Reageer alleen op het nieuwe bericht hieronder.\n\n`;
 }
 
 /**
@@ -67,15 +84,22 @@ export function cliOptions(agent: Agent): CliOptions {
   const c = (agent.settings?.cli || {}) as Record<string, any>;
   const list = (v: any) => (Array.isArray(v) ? v.filter((x) => typeof x === 'string' && x.trim()).map((x) => x.trim()).slice(0, 50) : []);
   const num = (v: any, d: number, min: number, max: number) => (Number.isFinite(Number(v)) && Number(v) > 0 ? Math.min(max, Math.max(min, Number(v))) : d);
+  const full = fullAccess(agent);
   return {
     allowedTools: list(c.allowedTools),
     disallowedTools: list(c.disallowedTools),
     extraArgs: list(c.extraArgs),
-    loadUserSettings: !!c.loadUserSettings,
-    useUserMcp: !!c.useUserMcp,
-    maxTurns: num(c.maxTurns ?? agent.settings?.maxTurns, 40, 1, 500),
-    timeoutMin: num(c.timeoutMin, 60, 0.01, 24 * 60),
-    idleMin: num(c.idleMin, 10, 0.01, 240),
+    // "Volledige toegang": the owner's own Claude Code/Codex settings, skills and apps (MCP servers) are the bot's too,
+    // unless he switched that off for this bot (an explicit false).
+    loadUserSettings: typeof c.loadUserSettings === 'boolean' ? c.loadUserSettings : full,
+    useUserMcp: typeof c.useUserMcp === 'boolean' ? c.useUserMcp : full,
+    ownerMemory: c.loadUserSettings === true,
+    // One step limit: the bot's own (settings.maxTurns, which a routine lowers for its run: agent/runner.ts) and the
+    // one typed at this engine (cli.maxTurns). Where both are set the LOWER one counts, so a routine's limit holds.
+    maxTurns: num(Math.min(...[c.maxTurns, agent.settings?.maxTurns].map(Number).filter((n) => n > 0)), full ? CLI_LIMITS.maxTurnsFull : CLI_LIMITS.maxTurns, 1, 100_000),
+    timeoutMin: num(c.timeoutMin, CLI_LIMITS.timeoutMin, 0.01, 30 * 24 * 60),
+    idleMin: num(c.idleMin, CLI_LIMITS.idleMin, 0.01, 24 * 60),
+    busyIdleMin: num(c.busyIdleMin, CLI_LIMITS.busyIdleMin, 0.01, 7 * 24 * 60),
   };
 }
 
@@ -93,7 +117,7 @@ export interface RunScope {
    * `pending`: the step has not finished (the loop guard waits for what it turns out to be; `retitle` with
    * `done` ends that).
    */
-  activity(kind: string, title: string, detail?: string, facts?: StepFact[], o?: { pending?: boolean }): ActivityItem;
+  activity(kind: string, title: string, detail?: string, facts?: StepFact[], o?: { pending?: boolean; words?: Words }): ActivityItem;
   /** A new title for a step already in the list (its result came in: "Wil x schrijven" → "Schreef x"); shown at once. */
   retitle(item: ActivityItem, title: string, o?: { done?: boolean }): void;
   /**
@@ -106,12 +130,57 @@ export interface RunScope {
   /** The engine finished that step (its result is in): a later TeamBot result is never put on it. */
   teambotStepDone?(item: ActivityItem): void;
   /** The tool host's line for a TeamBot tool: on the engine's step for that call when there is one, else a new line. */
-  teambotResult?(tool: string, kind: string, title: string, detail?: string, facts?: StepFact[]): ActivityItem;
+  teambotResult?(tool: string, kind: string, title: string, detail?: string, facts?: StepFact[], words?: Words): ActivityItem;
   /** True for an engine step that now shows TeamBot's own result (see `teambotStep`). */
   isTeambotLine?(item: ActivityItem): boolean;
   opts: CliOptions;
   /** App names of the TeamBot tools offered in this run (filled by the tool host), for plain-language steps. */
   apps?: Map<string, string>;
+}
+
+/**
+ * The bot's skills as folders in its work folder (modules/skills/workspace.ts), right before a CLI engine starts
+ * there: `.claude/skills` and `.agents/skills`, where Claude Code, Codex and OpenCode look for skills themselves.
+ * For every engine, so no path is missed, and only in a work folder TeamBot made for the bot; never stops a run.
+ */
+function syncSkills(ctx: Ctx, agent: Agent) {
+  try {
+    workdir(agent);
+    ctx.services.skills?.sync?.(agent);
+  } catch (e) {
+    ctx.log.warn('[cli] skill folders not brought up to date', e);
+  }
+}
+
+/**
+ * For an engine that loads skill folders itself: the instructions without TeamBot's list of skills, and this run
+ * without `skill_load`, so the bot has one skill system instead of two. So far only Claude Code, where a real run
+ * showed it (claude.ts); every other engine keeps the list and `skill_load`, and so does this one when anything here
+ * fails. Where the engine cannot take the skills from the work folder (`o.skipsWorkFolder`: Claude Code's restricted
+ * mode; or a work folder that is not TeamBot's own, where TeamBot writes nothing) they go along as a plugin folder
+ * of TeamBot, made in `o.pluginInto`.
+ */
+export function ownSkillLoader(s: RunScope, system: string, o: { pluginInto: string; skipsWorkFolder: boolean }): { system: string; pluginDir?: string } {
+  const svc = s.ctx.services.skills;
+  try {
+    const next = svc?.nativeSystem?.(s.agent, system);
+    if (typeof next !== 'string') return { system };
+    const pluginDir = o.skipsWorkFolder || !svc.inWorkFolder(s.agent) ? svc.plugin(s.agent, o.pluginInto) || undefined : undefined;
+    s.agent.tool_policy = { ...s.agent.tool_policy, skill_load: 'deny' };
+    return { system: next, pluginDir };
+  } catch (e) {
+    s.ctx.log.warn('[cli] the engine\'s own skill loader is not used', e);
+    return { system };
+  }
+}
+
+/** An engine loaded a skill itself (its own skill tool in its stream): counted in the place `skill_load` counts. */
+export function skillUsed(s: RunScope, name: string) {
+  try {
+    s.ctx?.services?.skills?.used?.(s.agent, name);
+  } catch {
+    /* only a count */
+  }
 }
 
 export function makeScope(ctx: Ctx, cfg: ProviderConfig, req: AgentRunRequest, signal: AbortSignal, onEvent: (e: AgentEvent) => void): RunScope {
@@ -122,6 +191,7 @@ export function makeScope(ctx: Ctx, cfg: ProviderConfig, req: AgentRunRequest, s
   const thread = ctx.store.thread(req.threadId);
   // A shared bot in a member's conversation: its narrowed copy for that member (agent/shared.ts).
   const agent = agentForThread(ctx, applyRunOverride(base, run?.meta?.override), thread);
+  syncSkills(ctx, agent);
   const emit = (e: AgentEvent) => {
     try {
       onEvent(e);
@@ -141,10 +211,11 @@ export function makeScope(ctx: Ctx, cfg: ProviderConfig, req: AgentRunRequest, s
   const tbSteps = new Map<string, ActivityItem[]>();
   const tbLines = new WeakSet<ActivityItem>();
   const tbWaiting = new WeakSet<ActivityItem>();
-  const activity =(kind: string, title: string, detail?: string, facts?: StepFact[], o?: { pending?: boolean }): ActivityItem => {
+  const activity =(kind: string, title: string, detail?: string, facts?: StepFact[], o?: { pending?: boolean; words?: Words }): ActivityItem => {
     const item: ActivityItem = { kind, title: titleOf(title), detail: detailOf(kind, detail), ts: now() };
     if (facts?.length) item.facts = cleanFacts(facts);
     if (o?.pending) item.pending = true;
+    if (o?.words) item.words = o.words;
     emit({ type: 'activity', item });
     return item;
   };
@@ -190,16 +261,18 @@ export function makeScope(ctx: Ctx, cfg: ProviderConfig, req: AgentRunRequest, s
         if (i >= 0) list.splice(i, 1);
       }
     },
-    teambotResult(tool, kind, title, detail, facts) {
+    teambotResult(tool, kind, title, detail, facts, shown) {
       // A step for this tool, else one that waits for any TeamBot call ('*': its program is not known yet).
       const item = tbSteps.get(tool)?.shift() || tbSteps.get('*')?.shift();
-      if (!item) return activity(kind, title, detail, facts);
+      if (!item) return activity(kind, title, detail, facts, { words: shown });
       // A subtask's step keeps saying so.
       const sub = /^Deeltaak · /.test(item.title) && !/^Deeltaak · /.test(title) ? 'Deeltaak · ' : '';
       tbLines.add(item);
       delete item.pending;
       item.kind = kind;
       item.title = titleOf(sub + title);
+      if (shown) item.words = sub ? { text: 'Deeltaak · {0}', values: [shown] } : shown;
+      else delete item.words;
       item.detail = detailOf(kind, detail);
       if (facts?.length) item.facts = cleanFacts(facts);
       else delete item.facts;
@@ -257,10 +330,14 @@ export function safeAttachments(agent: Agent, list: AgentRunRequest['attachments
   return out;
 }
 
+/**
+ * The attachments of this turn for a CLI engine. A pdf or Word file names its reader here, at the moment it matters:
+ * one read step without approval (an engine otherwise writes a script or a terminal command for it: two cards, A-39).
+ */
 export function attachmentNote(atts: SafeAttachment[]): string {
   if (!atts.length) return '';
   const doc = (a: SafeAttachment) => /pdf|wordprocessingml/.test(a.mime) || /\.(pdf|docx)$/i.test(a.name);
-  return `\n\nBijlagen van de gebruiker (staan in je werkmap):\n${atts.map((a) => `- ${a.rel} (${a.mime}, ${Math.max(1, Math.round(a.size / 1024))} kB)${doc(a) ? ' — lees de tekst met de TeamBot-tool read_document' : ''}`).join('\n')}`;
+  return `\n\nBijlagen van de gebruiker (staan in je werkmap):\n${atts.map((a) => `- ${a.rel} (${a.mime}, ${Math.max(1, Math.round(a.size / 1024))} kB)${doc(a) ? ' — lees de tekst met de TeamBot-tool read_document: één leesstap zonder toestemming, geen script of terminalopdracht' : ''}`).join('\n')}`;
 }
 
 /**
@@ -327,12 +404,14 @@ export function sessionInstructions(system: string, note: string): string {
 }
 
 /**
- * Keeping the instructions of a running CLI session current (Codex and ACP agents; Claude Code gets the system prompt
- * on every turn via --append-system-prompt-file, so it needs none of this).
+ * Keeping the instructions of a running CLI session current: one way for every CLI engine (Claude Code, Codex, ACP).
  *
- * Codex and ACP agents only take instructions when a session starts (Codex: first prompt or app-server
- * `developerInstructions`; ACP has no system prompt at all). Resuming a session never replaces them, and restarting
- * the session would lose the CLI's own context (files it read, tool results). So TeamBot remembers per session a short
+ * An engine takes TeamBot's instructions when a session starts (Claude Code: `--append-system-prompt-file`; Codex: the
+ * first prompt or app-server `developerInstructions`; ACP: the first prompt). None of them is relied on to follow a
+ * change afterwards: Codex and ACP never replace them, and Claude Code records its system prompt per conversation and
+ * reuses that record when the conversation is resumed. Restarting the session would lose the CLI's own context (files
+ * it read, tool results). So every part of the instructions is a block (a "## " section: the bot's own instructions,
+ * its team and colleagues, memory, skills, rules …) and TeamBot remembers per session a short
  * hash of every "## " section it delivered (`cli_sessions.context_state`) and, when a section changed (instructions,
  * skills, memory brief, connected apps, the tool note, the access mode), starts the next turn of that same session
  * with a `<teambot_instructies_update>` block: only the changed sections plus the headings of removed ones, or the full

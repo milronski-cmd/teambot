@@ -10,7 +10,7 @@
  *
  * Own list (no copied thesaurus): common words a person uses about his own life and business.
  */
-import { detectSecret, isInjectionLike, normalize, stem } from './text.js';
+import { normalize, stem } from './text.js';
 
 const GROUPS: string[][] = [
   // vehicles and transport
@@ -304,23 +304,4 @@ export function builtinSynonyms(text: string, max = 24): string[] {
     if (head && !own.has(head)) out.add(head);
   }
   return [...out].slice(0, max);
-}
-
-/**
- * The learner's keywords/synonyms for one memory, made safe: short words or two-word phrases in letters, digits and
- * hyphens, no secrets, nothing that reads like an instruction, at most 10. They only go into the word index.
- */
-export function cleanTerms(input: unknown, content: string): string[] | null {
-  if (!Array.isArray(input)) return null;
-  const own = new Set(normalize(content).split(' '));
-  const out: string[] = [];
-  for (const x of input.slice(0, 20)) {
-    const t = normalize(String(x ?? ''));
-    if (t.length < 2 || t.length > 40 || t.split(' ').length > 3) continue;
-    if (own.has(t) || out.includes(t)) continue;
-    if (detectSecret(String(x)) || isInjectionLike(String(x))) continue;
-    out.push(t);
-    if (out.length >= 10) break;
-  }
-  return out.length ? out : null;
 }

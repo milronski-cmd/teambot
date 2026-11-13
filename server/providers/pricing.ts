@@ -75,10 +75,6 @@ export function rememberListPrices(kind: string, models: ModelInfo[]) {
   if (prices.size) LIVE.set(kind, { at: new Date().toISOString(), prices });
 }
 
-export function hasListPrices(kind: string): boolean {
-  return LIVE.has(kind);
-}
-
 /** Test hook. */
 export function clearListPrices() {
   LIVE.clear();

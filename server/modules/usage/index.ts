@@ -34,6 +34,12 @@ CREATE TABLE usage_context (thread_id TEXT NOT NULL, agent_id TEXT NOT NULL, dat
       id: 'usage-bot-cap',
       sql: `CREATE INDEX IF NOT EXISTS usage_agent ON usage_log(agent_id, created_at);`,
     },
+    {
+      // A call that stopped before the engine gave its numbers is counted as TeamBot's estimate (agent/budget.ts,
+      // recordUnfinished): 1 = these tokens are an estimate, not the engine's count.
+      id: 'usage-estimated',
+      sql: `ALTER TABLE usage_log ADD COLUMN estimated INTEGER NOT NULL DEFAULT 0;`,
+    },
   ],
   init(ctx) {
     const s = new UsageService(ctx);
@@ -51,7 +57,7 @@ CREATE TABLE usage_context (thread_id TEXT NOT NULL, agent_id TEXT NOT NULL, dat
       return t;
     };
 
-    /** All accounts with their limits; `?refresh=1` asks stale CLIs again in the background (results via usage.updated). */
+    /** All accounts with their limits; `?refresh=1` asks CLIs with numbers older than a minute again in the background (results via usage.updated). */
     ctx.api.get(
       '/usage/limits',
       ah(async (req) => {
@@ -106,7 +112,8 @@ CREATE TABLE usage_context (thread_id TEXT NOT NULL, agent_id TEXT NOT NULL, dat
 
     /**
      * The always-visible usage bar (sidebar, top of Meer on the phone). Cheap: stored numbers only. `?refresh=1` asks
-     * the CLIs whose numbers are older than two minutes, in the background (the new numbers follow via usage.updated).
+     * the CLIs whose numbers are older than a minute (20 seconds while a bot works on them), in the background (the new
+     * numbers follow via usage.updated).
      */
     ctx.api.get(
       '/usage/bar',
@@ -140,16 +147,20 @@ CREATE TABLE usage_context (thread_id TEXT NOT NULL, agent_id TEXT NOT NULL, dat
         const engine = ctx.services.routines?.engine;
         const r = routineId ? engine?.routine?.(routineId) : null;
         if (routineId && (!r || r.user_id !== u.id)) throw notFound('Routine niet gevonden');
-        const agentId = r ? r.agent_id : String(req.query.agentId || '');
-        const agent = agentId ? ctx.store.agent(agentId) : undefined;
+        const agentId = r ? r.agent_id : String(req.query.agentId || '').trim();
+        // Without a bot or routine there is nothing to estimate: say what to send (the main bot calls this too, and
+        // "Bot niet gevonden" told it nothing; live, 12 nov). A bot may be named by its name as well as its id.
+        if (!agentId) throw bad('Geef aan voor welke bot of routine je de kosten wilt zien: query agentId (het id of de naam van een bot, zie GET /agents) of routineId (zie GET /routines).');
+        const agent = ctx.store.agent(agentId) || ctx.store.agents(u.id).find((a) => !a.archived && a.name.toLowerCase() === agentId.toLowerCase());
         if (!agent || agent.user_id !== u.id) throw notFound('Bot niet gevonden');
         const routine = r ? { id: r.id, providerId: engine.providerOf?.(r, agent) ?? null, important: r.options?.important === true } : null;
         return estimateFor(ctx, s, { agent, routine, important: req.query.important === '1' });
       }),
     );
 
-    // A run ended: its engine's numbers changed (read once more if the run's own report did not cover every window).
-    ctx.events.on('run.updated', (e) => s.runEnded(e.data));
+    // A run is going: its engine is read once a minute. It ended: its engine's numbers changed (read once more, three
+    // seconds later, unless the run's own last report covered every window).
+    ctx.events.on('run.updated', (e) => s.runChanged(e.data));
 
     // Forget a deleted provider's limits; a deleted bot's context fill.
     ctx.events.on('provider.deleted', (e) => {

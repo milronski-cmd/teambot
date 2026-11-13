@@ -1,4 +1,5 @@
 import { TERMINAL } from '../../agent/runs.js';
+import { isLoopbackHost } from '../../core/util.js';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -33,11 +34,6 @@ interface Caller {
 }
 
 const fail = (status: number, message: string, code: string) => new HttpError(status, message, code);
-
-export function isLoopbackHost(host: string): boolean {
-  const h = host.replace(/^\[|\]$/g, '').toLowerCase();
-  return h === 'localhost' || h === '::1' || /^127\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(h) || /^::ffff:127\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(h);
-}
 
 function callerOf(ctx: Ctx, req: Request): Caller {
   const h = String(req.headers.authorization || '');

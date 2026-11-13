@@ -7,7 +7,7 @@
  */
 import { api, signedPath } from '../../lib/api';
 import { closeMic, echoCancellationActive, openMic } from './audio';
-import { PcmCapture, audioCtx, unlockAudio } from './capture';
+import { PcmCapture, audioCtx, concat, unlockAudio } from './capture';
 
 export type DuplexPhase = 'connecting' | 'listening' | 'thinking' | 'speaking' | 'ended';
 
@@ -90,9 +90,7 @@ export class DuplexCall {
       if (this.muted || ws.readyState !== WebSocket.OPEN) return;
       batch.push(f);
       if (batch.length < 2) return;
-      const out = new Int16Array(batch.reduce((n, b) => n + b.length, 0));
-      let k = 0;
-      for (const b of batch) out.set(b, k), (k += b.length);
+      const out = concat(batch);
       batch = [];
       ws.send(out.buffer);
     });

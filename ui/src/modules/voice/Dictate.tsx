@@ -99,9 +99,9 @@ export function DictateButton({ threadId, insertText, send }: Props) {
   const explainMissing = () => {
     const p = micProblem();
     if (p) return toast(p, 'danger');
-    if (browserMode) return toast('Deze browser heeft geen eigen spraakherkenning. Kies lokale spraakherkenning in Instellingen › Spraak.', 'danger');
+    if (browserMode) return toast('Deze browser heeft geen eigen spraakherkenning. Kies lokale spraakherkenning bij Instellingen › Meer mogelijkheden › Spraak.', 'danger');
     if (localMode && info?.local.canManage) return setSetup(true);
-    toast(info?.status.stt.missing ? `Spraakherkenning: ${info.status.stt.missing}` : 'Spraakherkenning is nog niet ingesteld (Instellingen › Spraak).', 'danger');
+    toast(info?.status.stt.missing ? `Spraakherkenning: ${info.status.stt.missing}` : 'Spraakherkenning is nog niet ingesteld (Instellingen › Meer mogelijkheden › Spraak).', 'danger');
   };
 
   const start = async () => {
@@ -401,7 +401,7 @@ export function DictateButton({ threadId, insertText, send }: Props) {
             <Field label="Transcript" hint={`Omgezet door ${memo.provider}. Pas het aan als er iets verkeerd verstaan is; de bot leest het transcript.`}>
               <Textarea rows={5} value={memo.text} onChange={(e) => setMemo({ ...memo, text: e.target.value })} />
             </Field>
-            <div className="text-xs text-muted">Audio en transcript worden in dit gesprek bewaard (Instellingen › Spraak).</div>
+            <div className="text-xs text-muted">Audio en transcript worden in dit gesprek bewaard (Instellingen › Meer mogelijkheden › Spraak).</div>
           </div>
         )}
       </Modal>

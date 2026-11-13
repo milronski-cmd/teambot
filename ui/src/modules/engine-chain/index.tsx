@@ -8,6 +8,7 @@ import { formatDateTime, formatTime } from '../../lib/format';
 import { prettyModel } from '../../lib/modelLabel';
 import { Badge, Button, Card, Field, Input, Spinner, Toggle, toastError, useAsync } from '../../components/ui';
 import { SelectBox as Select } from '../../components/Listbox';
+import { PLACE } from '../../../../shared/places.js';
 
 /**
  * Gratis doorschakelen (package D2): the owner's choices for the default chain (one small card in Instellingen), the
@@ -140,7 +141,7 @@ function AgentChainSection({ agent, onChange }: { agent: Agent; onChange(patch: 
       </div>
       <div className="space-y-1">
         <Toggle checked={s.freeChain !== false} onChange={(v) => onChange({ settings: { ...s, freeChain: v ? undefined : false } })} label="Automatisch doorschakelen als het model op is" />
-        <p className="text-xs text-muted">Na de eigen reserves van deze bot (Instellingen › Gratis doorschakelen).</p>
+        <p className="text-xs text-muted">{t('Na de eigen reserves van deze bot ({0}).', t(PLACE.engineChain))}</p>
       </div>
     </div>
   );

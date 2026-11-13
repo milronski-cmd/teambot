@@ -6,7 +6,7 @@
  * (tests/update-auto.test.ts). The facts come from the server (server/modules/backups/app-update.ts updateBlockers)
  * and Electron's powerMonitor (desktop/updater.ts); desktop/update-flow.ts asks every minute while an update is ready.
  */
-import type { AutoMode, WaitReason } from '../server/modules/backups/app-update.js';
+import type { AutoMode, WaitReason } from '../shared/appUpdate.js';
 
 export type { AutoMode, WaitReason };
 

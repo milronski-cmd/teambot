@@ -24,9 +24,3 @@ export function useFollowTeam() {
     and: id ? `&teamId=${encodeURIComponent(id)}` : '',
   };
 }
-
-/** The name of a team by id, or '' (for a badge next to a channel, skill or routine; only shown with two teams). */
-export function useTeamName(): (id: string | null | undefined) => string {
-  const teams = useTeamStore((s) => s.teams);
-  return (id) => (id && teams.find((t) => t.id === id)?.name) || '';
-}

@@ -48,7 +48,7 @@ export const PARTS: PartDef[] = [
   { id: 'cache', label: 'Cache', kind: 'excluded', reason: 'Tijdelijke kopieën van internet.' },
   { id: 'tmp', label: 'Tijdelijke bestanden', kind: 'excluded', reason: 'Tijdelijk.' },
   { id: 'logs', label: 'Logbestanden', kind: 'excluded', reason: 'Alleen voor foutzoeken.' },
-  { id: 'health', label: 'Metingen van Hoe gaat het met TeamBot?', kind: 'excluded', reason: 'Alleen voor foutzoeken; begint na het terugzetten opnieuw.' },
+  { id: 'health', label: 'Metingen van Status van TeamBot', kind: 'excluded', reason: 'Alleen voor foutzoeken; begint na het terugzetten opnieuw.' },
   { id: 'electron', label: 'Vensterinstellingen en cache van de app', kind: 'excluded', reason: 'Hoort bij deze installatie.' },
   { id: 'cli-agents', label: 'Werkbestanden van de CLI-engines', kind: 'excluded', reason: 'Tijdelijk; hoort bij deze computer.' },
   { id: 'memory', label: 'Werkbestanden van het geheugen', kind: 'excluded', reason: 'Wordt na het terugzetten opnieuw opgebouwd.' },
@@ -59,8 +59,6 @@ export const PARTS: PartDef[] = [
 /** Never copied and never restored: the database itself (separately), keys that belong to this installation, staging. */
 // local-url: the address this installation listens on (written at every start; the command line `teambot send` reads it).
 const NEVER = /^(teambot\.db(-wal|-shm|-journal)?|teamdata|master\.key|url-signing\.key|local-token|local-url|restore-.*|.*\.onleesbaar-.*|.*\.(tmp|part|partial))$/i;
-/** A part of an unknown module bigger than this is left out (and named in the manifest): never a surprise of many GB. */
-export const UNKNOWN_CAP = 2 * 1024 ** 3;
 const SAFE_NAME = /^[\w][\w.-]{0,80}$/;
 
 export interface PartPlan extends PartDef {

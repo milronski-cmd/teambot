@@ -5,6 +5,7 @@ import { privacyLabel, worse, type PrivacyLabel } from './privacy.js';
 import { currentProxy } from './proxy.js';
 import type { ExposureReport } from './exposure.js';
 import { searchSettings } from '../../tools/builtin/web.js';
+import { PLACE } from '../../../shared/places.js';
 
 /** "Wat verlaat je pc?": per bot which engine gets what, other outgoing traffic, and where the keys are. */
 
@@ -140,7 +141,7 @@ export function exposureOf(ctx: Ctx): (ExposureReport & { gateway: ReturnType<ty
       level: 'warn',
       code: 'gateway-lan',
       message: 'Telefoon-toegang staat open op al je netwerken via gewone http: op wifi kan iemand meekijken.',
-      fix: 'Kies in Instellingen › Telefoon voor Tailscale (versleuteld, ook onderweg) of zet de telefoon-toegang alleen op je Tailscale-adres.',
+      fix: `Kies in ${PLACE.phone} voor Tailscale (versleuteld, ook onderweg) of zet de telefoon-toegang alleen op je Tailscale-adres.`,
     });
   return { ...base, findings, gateway };
 }

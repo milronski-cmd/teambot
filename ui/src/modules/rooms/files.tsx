@@ -1,9 +1,11 @@
 import { useEffect, useRef, useState } from 'react';
+import { formatBytes } from '../../lib/format';
 import { Download, FileText, Trash2, Upload } from 'lucide-react';
 import { api, authUrl, getBytes, getToken, on } from '../../lib/api';
-import { askConfirm, Button, Card, EmptyState, Spinner, timeAgo, toast, toastError } from '../../components/ui';
-import { FilePreviewModal, formatBytes, previewKindOf, type PreviewSource } from '../../components/FilePreview';
+import { askConfirm, Button, Card, EmptyState, Spinner, timeAgo, toast, toastError, useAsync } from '../../components/ui';
+import { FilePreviewModal, previewKindOf, type PreviewSource } from '../../components/FilePreview';
 import { MoreInfo } from '../../components/MoreInfo';
+import { t } from '../../lib/i18n';
 
 /**
  * Group files (A-60): one shared folder per group. People in the group add, open and remove files here; bots read
@@ -48,22 +50,17 @@ function source(roomId: string, f: RoomFile): PreviewSource {
 export function RoomFiles({ roomId, manage }: { roomId: string; manage?: boolean }) {
   const { files, err, load } = useRoomFiles(roomId);
   const [open, setOpen] = useState<PreviewSource | null>(null);
-  const [busy, setBusy] = useState(false);
+  const { busy, run } = useAsync();
   const input = useRef<HTMLInputElement>(null);
   const upload = async (list: FileList) => {
-    setBusy(true);
-    try {
+    await run(async () => {
       for (const f of Array.from(list).slice(0, 20)) {
         const res = await fetch(`/api/rooms/${roomId}/files?path=${q(f.name)}`, { method: 'POST', headers: { authorization: `Bearer ${getToken()}`, 'content-type': 'application/octet-stream' }, body: f });
         if (!res.ok) throw new Error((await res.json().catch(() => ({})))?.error || `Uploaden mislukt (${res.status})`);
       }
       toast(list.length === 1 ? 'Bestand toegevoegd' : `${list.length} bestanden toegevoegd`, 'ok');
       load();
-    } catch (e) {
-      toastError(e);
-    } finally {
-      setBusy(false);
-    }
+    });
   };
   const remove = async (f: RoomFile) => {
     if (!(await askConfirm(`${f.path} verwijderen uit de groepsmap? Bots en mensen in de groep kunnen het dan niet meer openen.`, { ok: 'Verwijderen', danger: true }))) return;
@@ -107,11 +104,11 @@ export function RoomFiles({ roomId, manage }: { roomId: string; manage?: boolean
                 <span className="hidden shrink-0 text-xs text-muted sm:inline">{formatBytes(f.size)}</span>
                 <span className="shrink-0 text-xs text-muted">{timeAgo(f.modified)}</span>
               </button>
-              <a href={authUrl(`/rooms/${roomId}/files/raw?path=${q(f.path)}&download=1`)} className="rounded-lg p-2 text-muted hover:bg-surface-2 hover:text-fg" aria-label={`${f.path} downloaden`} title="Downloaden">
+              <a href={authUrl(`/rooms/${roomId}/files/raw?path=${q(f.path)}&download=1`)} className="rounded-lg p-2 text-muted hover:bg-surface-2 hover:text-fg" aria-label={t('{0} downloaden', f.path)} title="Downloaden">
                 <Download className="h-4 w-4" />
               </a>
               {manage && (
-                <Button size="iconSm" variant="ghost" className="coarse:h-11 coarse:w-11" aria-label={`${f.path} verwijderen`} onClick={() => remove(f)}>
+                <Button size="iconSm" variant="ghost" className="coarse:h-11 coarse:w-11" aria-label={t('{0} verwijderen', f.path)} onClick={() => remove(f)}>
                   <Trash2 className="h-3.5 w-3.5" />
                 </Button>
               )}

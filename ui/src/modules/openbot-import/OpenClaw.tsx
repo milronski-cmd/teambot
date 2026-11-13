@@ -2,8 +2,9 @@ import { useEffect, useState } from 'react';
 import { ArrowRight, Undo2, Upload } from 'lucide-react';
 import { api } from '../../lib/api';
 import { t } from '../../lib/i18n';
-import { formatDateTime } from '../../lib/format';
+import { formatDateTime, formatList } from '../../lib/format';
 import { Badge, Button, Card, Modal, Spinner, toast, useAsync } from '../../components/ui';
+import { toggleIn } from './parts';
 
 /**
  * "Overstappen uit OpenClaw" (0.4.4; server/modules/openbot-import/openclaw.ts): a card under Instellingen ›
@@ -101,12 +102,7 @@ function PreviewModal({ onClose, onDone }: { onClose(): void; onDone(r: Result):
       })
       .catch((e) => setError(e.message));
   }, []);
-  const toggle = (set: Set<string>, put: (s: Set<string>) => void, k: string, v: boolean) => {
-    const n = new Set(set);
-    if (v) n.add(k);
-    else n.delete(k);
-    put(n);
-  };
+  const toggle = (set: Set<string>, put: (s: Set<string>) => void, k: string, v: boolean) => put(toggleIn(set, k, v));
   const commit = () =>
     run(async () => {
       const r = await api.post<Result>('/openbot-import/openclaw/commit', {
@@ -163,7 +159,7 @@ function PreviewModal({ onClose, onDone }: { onClose(): void; onDone(r: Result):
                   {[
                     b.model || 'geen model',
                     b.engine.note,
-                    b.instructions.files.length ? t('instructies uit {0}', b.instructions.files.join(' en ')) : 'geen instructies',
+                    b.instructions.files.length ? t('instructies uit {0}', formatList(b.instructions.files)) : 'geen instructies',
                     t('{0, plural, one {# herinnering} other {# herinneringen}}', b.memories),
                     t('{0, plural, one {# routine} other {# routines}}', b.routines),
                   ].join(' · ')}

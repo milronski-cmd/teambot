@@ -12,7 +12,7 @@ function KennisbankButton({ agentId }: { threadId: string; agentId: string | nul
   const list = useSpecialists();
   const s = agentId ? list.find((x) => x.agentId === agentId && x.enabled) : null;
   if (!s) return null;
-  const waiting = s.counts.review + s.counts.reportsUnseen + s.counts.proposals;
+  const waiting = s.counts.review + s.counts.reportsUnseen;
   const label = waiting ? t('Kennisbank van {0} ({1} wacht op jou)', s.agentName, waiting) : t('Kennisbank van {0}', s.agentName);
   return (
     <Button variant="ghost" size="icon" aria-label={label} title={label} className="relative" onClick={() => navigate(`/m/specialists/${s.agentId}${s.counts.review ? '/controleren' : ''}`)}>
@@ -26,7 +26,7 @@ function KennisbankButton({ agentId }: { threadId: string; agentId: string | nul
  * Specialisten (0.4, package S):
  *  Bot › Specialisme          field, sources, learning round (off until you turn it on), budget, self-test
  *  #/m/specialists[/<bot>]    knowledge bases: facts with source and date, te controleren, learning goals,
- *                              learning reports with undo, skill proposals, sources
+ *                              learning reports with undo, sources
  */
 const mod: UIModule = {
   id: 'specialists',

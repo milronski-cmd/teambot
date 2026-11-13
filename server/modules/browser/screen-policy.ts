@@ -257,8 +257,14 @@ export function driverPolicy(allow: string[], o: Pick<HostOptions, 'screen' | 'b
 // ---------------- external side effects ----------------
 
 /** Words that indicate an irreversible / external side effect (NL + EN). Kept in line with policy.ts DANGER_WORDS. */
+/** The part of SIDE_EFFECT_RE that pays or sends something to someone else: what still asks on "Volledige toegang". */
+export const PAY_SEND_RE =
+  /(^|[^a-z])(koop|kopen|bestel|bestellen|betaal|betalen|afrekenen|checkout|pay|pay now|buy|buy now|purchase|order now|place order|verstuur|versturen|verzend|verzenden|send|transfer|overmaken|overboeken|doneer|donate|subscribe|abonneer)($|[^a-z])/i;
+
 export const SIDE_EFFECT_RE =
   /(^|[^a-z])(koop|kopen|bestel|bestellen|betaal|betalen|afrekenen|checkout|pay|pay now|buy|buy now|purchase|order now|place order|verstuur|versturen|verzend|verzenden|send|submit|post|plaats|plaatsen|publiceer|publiceren|publish|tweet|share|delen|delete|verwijder|verwijderen|remove|wissen|prullenbak|empty trash|bevestig|bevestigen|confirm|transfer|overmaken|overboeken|doneer|donate|subscribe|abonneer|sign up|registreer|onderteken|ondertekenen|merge|deploy|install|installeer|uninstall|formatteren|reset|opzeggen|cancel subscription)($|[^a-z])/i;
+
+const SIDE_EFFECT_ALL = SIDE_EFFECT_RE;
 
 /** Confirm-type buttons that inherit the risk of their dialog ("Ja" in "Bestand verwijderen?"). */
 const CONFIRM_RE = /^(ja|yes|ok|oké|doorgaan|continue|akkoord|agree|bevestig|confirm|allow|toestaan|uitvoeren|run|go)$/i;
@@ -292,8 +298,12 @@ export interface DesktopActionInput {
  * level. Deliberately on the cautious side: a false "yes" costs one click from the owner, a false "no" could send
  * an e-mail.
  */
-export function classifySideEffect(a: DesktopActionInput): { danger: boolean; reason?: string } {
-  if (a.external && String(a.external).trim()) return { danger: true, reason: `De bot meldt: ${String(a.external).trim().slice(0, 200)}` };
+export function classifySideEffect(a: DesktopActionInput, o: { full?: boolean } = {}): { danger: boolean; reason?: string } {
+  // "Volledige toegang": only paying and sending to someone else ask; deleting, installing, publishing and confirming
+  // a dialog are the bot's ordinary work there.
+  const SIDE_EFFECT_RE = o.full ? PAY_SEND_RE : SIDE_EFFECT_ALL;
+  if (a.external && String(a.external).trim() && (!o.full || PAY_SEND_RE.test(String(a.external)) || /bericht|mail|message|klant|customer|geld|money|€|\$/i.test(String(a.external))))
+    return { danger: true, reason: `De bot meldt: ${String(a.external).trim().slice(0, 200)}` };
   const t = a.target || {};
   const proc = normApp(t.process || '');
   const name = String(t.elementName || '').trim();
@@ -310,8 +320,8 @@ export function classifySideEffect(a: DesktopActionInput): { danger: boolean; re
       const mods = combo.slice(0, -1);
       if (main === 'enter' && (s.has('ctrl') || s.has('alt'))) return { danger: true, reason: `${combo.join('+')} verstuurt vaak een bericht of formulier` };
       if (main === 's' && mods.length === 1 && s.has('alt')) return { danger: true, reason: 'Alt+S verstuurt in veel mailprogramma’s het bericht' };
-      if (main === 'delete' && s.has('shift')) return { danger: true, reason: 'Shift+Delete verwijdert definitief' };
-      if (main === 'delete' && !mods.length && proc === 'explorer') return { danger: true, reason: 'Delete in Verkenner verwijdert bestanden' };
+      if (!o.full && main === 'delete' && s.has('shift')) return { danger: true, reason: 'Shift+Delete verwijdert definitief' };
+      if (!o.full && main === 'delete' && !mods.length && proc === 'explorer') return { danger: true, reason: 'Delete in Verkenner verwijdert bestanden' };
       if (main === 'enter' && !mods.length) {
         if (name && SIDE_EFFECT_RE.test(name)) return { danger: true, reason: `Enter op "${name.slice(0, 60)}"` };
         if (MESSAGING_APPS.includes(proc)) return { danger: true, reason: `Enter verstuurt in ${proc} het bericht` };

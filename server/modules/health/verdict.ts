@@ -1,7 +1,7 @@
 import type { HealthSample, MeterTotals, StallEvent } from './meter.js';
 
 /**
- * "Hoe gaat het met TeamBot?" in one colour, from the meter's numbers. Pure, so it is unit-tested.
+ * "Status van TeamBot" in one colour, from the meter's numbers. Pure, so it is unit-tested.
  *
  * Looks at the last hour of this process, after the first two minutes (starting up loads modules and the database
  * once; that is reported in the numbers but never colours the line):

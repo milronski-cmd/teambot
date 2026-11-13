@@ -11,7 +11,7 @@ import { createRequire } from 'node:module';
 
 const require = createRequire(import.meta.url);
 const { chromium } = require('playwright-core');
-const { createApp } = await import('../../server/app.ts');
+const { createApp } = await import('./server.mjs');
 
 const step = (s) => console.log(`• ${s}`);
 const fail = (s) => {
@@ -182,7 +182,7 @@ try {
 
   // A-76: "Houd de pc wakker …" — without a desktop shell honest and not switchable; with one (a stand-in blocker
   // here; the real Electron one: npm run power:check) the option works and the sidebar says why the pc stays awake.
-  await page.goto(`${app.url}/#/settings/general?meer=1`);
+  await page.goto(`${app.url}/#/settings/systeem`);
   const awake = page.getByRole('switch', { name: /Houd de pc wakker/ }).or(page.getByLabel(/Houd de pc wakker/)).first();
   await awake.waitFor({ timeout: 8000 });
   if (!(await page.getByText('Kan alleen in de desktop-app van TeamBot').count())) fail('zonder desktop-app geen eerlijke uitleg bij "pc wakker houden"');
@@ -192,7 +192,8 @@ try {
   await page.reload();
   await awake.waitFor({ timeout: 8000 });
   if (await awake.isDisabled()) fail('"pc wakker houden" blijft uit te schakelen met desktop-app');
-  await awake.click();
+  // On by default (a routine must not stall because the pc sleeps): nothing to switch on.
+  if ((await awake.getAttribute('aria-checked')) !== 'true') fail('"pc wakker houden" staat niet standaard aan');
   await page.getByText('Nu niet nodig').waitFor({ timeout: 5000 }).catch(() => fail('geen status na aanzetten'));
   const soon = new Date(Date.now() + 12 * 60_000).toISOString();
   app.ctx.store.insert('routines', { id: 'rt_c4wake', user_id: owner.id, agent_id: mila.id, name: 'Ochtendnieuws', prompt: 'x', status: 'active', schedule: { kind: 'none' }, timezone: 'Europe/Amsterdam', options: {}, next_run_at: soon, created_at: now(), updated_at: now() });
@@ -201,7 +202,7 @@ try {
   if (!held.some(([a]) => a)) fail('blocker niet aangezet');
   await page.getByText('Nu wakker: routine “Ochtendnieuws”', { exact: false }).scrollIntoViewIfNeeded();
   await shot(page, 'c4-a76-pc-wakker');
-  step('A-76: optie standaard uit, eerlijk zonder desktop-app, aan → zijbalk "Pc blijft wakker · routine …"');
+  step('A-76: optie standaard aan, eerlijk zonder desktop-app → zijbalk "Pc blijft wakker · routine …"');
 
   // A-78: a waitpoint (as wait_for sets it) on the routines page, and the calendar (month, a day, week).
   const engine = app.ctx.services.routines.engine;
@@ -304,7 +305,7 @@ try {
   await p2.getByText('Archief', { exact: true }).click();
   await p2.locator('div.group').filter({ hasText: 'Slaapkop' }).getByText('gepauzeerd').waitFor({ timeout: 5000 }).catch(() => fail('telefoon: archiefkaart zonder statustekst'));
   await shot(p2, 'c4-a08-telefoon-archief');
-  await p2.goto(`${app.url}/#/settings/general?meer=1`);
+  await p2.goto(`${app.url}/#/settings/systeem`);
   const pcCard = p2.getByRole('heading', { name: 'Pc en routines' });
   await pcCard.waitFor({ timeout: 8000 });
   await pcCard.scrollIntoViewIfNeeded();

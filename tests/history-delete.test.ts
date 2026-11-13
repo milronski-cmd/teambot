@@ -184,3 +184,17 @@ test('after restoring an older backup the deleted history is deleted again', asy
     fs.rmSync(dir, { recursive: true, force: true });
   }
 });
+
+test('files on disk: only what lies inside the data folder is deleted — a folder boundary, any letter case on Windows, never the folder itself', async () => {
+  const { insideDataDir } = await import('../server/modules/history/purge.js');
+  const data = path.resolve('tmp-data', 'TeamBot');
+  assert.equal(insideDataDir(data, path.join(data, 'attachments', 'a.png')), true);
+  assert.equal(insideDataDir(data + path.sep, path.join(data, 'voice', 'x.wav')), true);
+  assert.equal(insideDataDir(data, `${data}-oud${path.sep}a.png`), false, 'a folder whose name only starts the same');
+  assert.equal(insideDataDir(data, `${data}2${path.sep}a.png`), false);
+  assert.equal(insideDataDir(data, path.join(data, '..', 'elders', 'a.png')), false, 'climbs out with ..');
+  assert.equal(insideDataDir(data, data), false, 'never the data folder itself');
+  assert.equal(insideDataDir(data, ''), false);
+  assert.equal(insideDataDir(data, null), false);
+  assert.equal(insideDataDir(data, path.join(data.toUpperCase(), 'attachments', 'a.png')), process.platform === 'win32', 'Windows paths compare whatever the case');
+});

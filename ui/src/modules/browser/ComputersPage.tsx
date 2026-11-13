@@ -1,17 +1,19 @@
 import type React from 'react';
+import { formatBytes } from '../../lib/format';
 import { useState } from 'react';
 import { ChevronRight, CircleStop, Cloud, Cpu, Eraser, Globe, KeyRound, LogOut, MonitorPlay, Network, Plus, RefreshCw, Trash2, Users } from 'lucide-react';
+import type { LucideIcon } from 'lucide-react';
 import { api } from '../../lib/api';
 import { t } from '../../lib/i18n';
 import { useIsPhoneSession } from '../../shell/computerOnly';
 import { navigate } from '../../lib/router';
 import { useApp } from '../../lib/store';
-import { Badge, Button, Card, cx, EmptyState, Field, Input, Modal, Page, PageHeader, Spinner, useAsync } from '../../components/ui';
+import { Badge, Button, Card, CardHead, cx, EmptyState, Field, Input, Modal, Page, PageHeader, Spinner, useAsync, type Tone } from '../../components/ui';
 import { BotAvatar } from '../../components/BotFace';
 import { MoreInfo } from '../../components/MoreInfo';
 import { Fold, Menu, Skeleton, SkeletonRows } from '../../components/overview';
 import { Segmented } from '../../components/SettingControls';
-import { browserApi, CAP_STATUS, cloud, computers, fmtBytes, fmtTime, MODE_LABEL, useLive, type BrowserEngine, type ComputerStatus, type EngineView, type Profile } from './api';
+import { browserApi, CAP_STATUS, cloud, computers, fmtTime, MODE_LABEL, useLive, type BrowserEngine, type ComputerStatus, type EngineView, type Profile } from './api';
 import { LivePanel } from './LivePanel';
 import { ComputerLive, DesktopPanel } from './DesktopPanel';
 import { CloudVmList } from './CloudVmSection';
@@ -172,7 +174,7 @@ function Bots() {
           })}
         </ul>
       </Card>
-      <Modal open={!!live} onClose={() => setLive(null)} title={`Live scherm — ${list.data.find((x) => x.agent.id === live)?.agent.name || ''}`} wide>
+      <Modal open={!!live} onClose={() => setLive(null)} title={t('Live scherm — {0}', list.data.find((x) => x.agent.id === live)?.agent.name || '')} wide>
         {live && <ComputerLive agentId={live} compact />}
       </Modal>
     </>
@@ -206,7 +208,7 @@ function Profiles() {
               <div className="min-w-0 flex-1">
                 <div className="font-medium [overflow-wrap:anywhere]">{p.name}</div>
                 <div className="text-[13px] text-muted">
-                  {p.shared ? `Gedeeld${p.members.length ? ` met ${p.members.map(nameOf).join(', ')}` : ' (nog geen bots)'}` : `Eigen profiel van ${p.agent_id ? nameOf(p.agent_id) : '?'}`} · {fmtBytes(p.bytes)}
+                  {p.shared ? `Gedeeld${p.members.length ? ` met ${p.members.map(nameOf).join(', ')}` : ' (nog geen bots)'}` : `Eigen profiel van ${p.agent_id ? nameOf(p.agent_id) : '?'}`} · {formatBytes(p.bytes)}
                   {p.last_used_at ? ` · laatst gebruikt ${fmtTime(p.last_used_at)}` : ''}
                 </div>
                 {p.proxy && <div className="text-[13px] text-muted">{p.proxy.has_login ? t('Via proxy {0}, met inloggegevens', hostOf(p.proxy.url)) : t('Via proxy {0}', hostOf(p.proxy.url))}</div>}
@@ -250,7 +252,7 @@ function Profiles() {
       <Modal
         open={!!wipe}
         onClose={() => setWipe(null)}
-        title={`Profiel wissen: ${wipe?.name || ''}`}
+        title={t('Profiel wissen: {0}', wipe?.name || '')}
         footer={
           <>
             <Button onClick={() => setWipe(null)}>Annuleren</Button>
@@ -385,7 +387,7 @@ function ShareModal({ profile, onClose, onSaved }: { profile: Profile; onClose()
     <Modal
       open
       onClose={onClose}
-      title={`Profiel delen: ${profile.name}`}
+      title={t('Profiel delen: {0}', profile.name)}
       footer={
         <>
           <Button onClick={onClose}>Annuleren</Button>
@@ -424,7 +426,7 @@ function SitesModal({ profile, onClose }: { profile: Profile; onClose(): void })
   const list = useLive(() => browserApi.profileSites(profile.id), [], [profile.id]);
   const { busy, run } = useAsync();
   return (
-    <Modal open onClose={onClose} title={`Uitloggen bij een site — ${profile.name}`}>
+    <Modal open onClose={onClose} title={t('Uitloggen bij een site — {0}', profile.name)}>
       <div className="space-y-3 text-sm">
         <p className="text-muted">Websites waar dit profiel cookies van heeft. Uitloggen wist alleen die site.</p>
         {list.loading && !list.data ? (
@@ -457,17 +459,10 @@ function SitesModal({ profile, onClose }: { profile: Profile; onClose(): void })
 }
 
 /** A short section of the page: one line and one action. */
-function Shortcut({ icon, title, children, action }: { icon: React.ReactNode; title: string; children: React.ReactNode; action?: React.ReactNode }) {
+function Shortcut({ icon, tone, title, children, action }: { icon: LucideIcon; tone?: Tone; title: string; children: React.ReactNode; action?: React.ReactNode }) {
   return (
-    <Card className="flex flex-wrap items-start gap-x-3 gap-y-2 p-4 sm:items-center">
-      <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-control bg-surface-2 text-muted [&_svg]:h-4 [&_svg]:w-4" aria-hidden>
-        {icon}
-      </span>
-      <div className="min-w-0 flex-1 basis-56">
-        <h2 className="text-sm font-semibold">{title}</h2>
-        <p className="text-[13px] text-muted">{children}</p>
-      </div>
-      {action}
+    <Card className="p-4">
+      <CardHead icon={icon} tone={tone} title={title} hint={children} action={action} />
     </Card>
   );
 }
@@ -483,16 +478,17 @@ export function ComputersPage() {
         <Bots />
         {vms.data?.length ? (
           <section className="space-y-3 pt-2">
-            <h2 className="text-sm font-semibold">Cloud-VM’s</h2>
+            <CardHead icon={Cloud} tone="blue" title="Cloud-VM’s" />
             <CloudVmList />
           </section>
         ) : (
-          <Shortcut icon={<Cloud />} title="Cloud-VM’s">
+          <Shortcut icon={Cloud} tone="blue" title="Cloud-VM’s">
             Een eigen computer in de cloud voor een bot. <MoreInfo>Open een bot, kies bij Computer “Eigen server” en dan “Cloud-VM laten maken”.</MoreInfo>
           </Shortcut>
         )}
         <Shortcut
-          icon={<KeyRound />}
+          icon={KeyRound}
+          tone="amber"
           title="Kluis"
           action={
             <a href="#/m/browser/kluis" className={linkButton}>
@@ -505,7 +501,7 @@ export function ComputersPage() {
         <DeviceCard />
         {/* Not a fold: a fold clips the "⋯" menu of a row. */}
         <section className="space-y-3 pt-2" data-testid="browser-profiles">
-          <h2 className="text-sm font-semibold">Browserprofielen</h2>
+          <CardHead icon={Globe} tone="blue" title="Browserprofielen" />
           <Profiles />
         </section>
       </div>
@@ -523,7 +519,7 @@ export function LivePage({ params }: { params: string[] }) {
   if (!agentId) return <EmptyState title="Geen bot gekozen" action={<Button onClick={() => navigate('/m/browser')}>Naar Computers</Button>} />;
   return (
     <Page>
-      <PageHeader width="5xl" title={`Live scherm${agent ? ` — ${agent.name}` : ''}`} subtitle="Kijk mee, neem over of log zelf in. Wat je typt gaat niet naar de bot." actions={<Button size="sm" variant="ghost" onClick={() => navigate('/m/browser')}>Alle computers</Button>} />
+      <PageHeader width="5xl" title={agent ? t('Live scherm — {0}', agent.name) : 'Live scherm'} subtitle="Kijk mee, neem over of log zelf in. Wat je typt gaat niet naar de bot." actions={<Button size="sm" variant="ghost" onClick={() => navigate('/m/browser')}>Alle computers</Button>} />
       <div className="mx-auto max-w-5xl p-4 sm:p-6">
         <ComputerLive agentId={agentId} />
       </div>

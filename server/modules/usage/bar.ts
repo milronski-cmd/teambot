@@ -1,4 +1,5 @@
 import type { LimitWindow } from './parse.js';
+import { inputLine } from '../../core/util.js';
 
 /**
  * The always-visible usage bar: pure helpers (no ctx), tested on their own.
@@ -63,13 +64,12 @@ export function toMs(v: unknown): number | null {
   return n < 1e12 ? Math.round(n * 1000) : Math.round(n);
 }
 
-const oneLine = (v: unknown, max: number) => (typeof v === 'string' ? v.replace(/\s+/g, ' ').trim().slice(0, max) : '');
 
 /** A report from another module → a clean source, or null when it cannot be shown (no id or label). */
 export function cleanSource(r: any, now = Date.now()): StoredSource | null {
   if (!r || typeof r !== 'object') return null;
   const id = typeof r.id === 'string' ? r.id.trim() : '';
-  const label = oneLine(r.label, 40);
+  const label = inputLine(r.label, 40);
   if (!/^[\w.:-]{1,60}$/.test(id) || !label) return null;
   const pct = typeof r.usedPercent === 'number' && Number.isFinite(r.usedPercent) ? Math.max(0, Math.min(100, Math.round(r.usedPercent * 10) / 10)) : null;
   const providerId = typeof r.providerId === 'string' && /^[\w-]{1,80}$/.test(r.providerId) ? r.providerId : null;
@@ -81,7 +81,7 @@ export function cleanSource(r: any, now = Date.now()): StoredSource | null {
     resetsAt: toMs(r.resetsAt),
     usedPercent: pct,
     estimated: r.estimated === true,
-    note: oneLine(r.note, 200) || null,
+    note: inputLine(r.note, 200) || null,
     providerId,
     kind: r.kind === 'local' ? 'local' : 'free',
     origin: 'reported',

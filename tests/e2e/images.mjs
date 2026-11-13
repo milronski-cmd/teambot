@@ -89,7 +89,7 @@ await new Promise((r) => service.listen(0, '127.0.0.1', r));
 const serviceBase = `http://127.0.0.1:${service.address().port}/v1`;
 
 const browser = await chromium.launch({ channel: process.env.TEAMBOT_E2E_BROWSER || (process.platform === 'win32' ? 'msedge' : 'chrome'), headless: true, env: parentEnv });
-const { createApp } = await import('../../server/app.ts');
+const { createApp } = await import('./server.mjs');
 const app = await createApp({ dataDir: process.env.TEAMBOT_DATA, port, host: '127.0.0.1', mode: 'desktop', quiet: true });
 const token = app.ctx.auth.ensureLocalOwner();
 const owner = app.ctx.auth.owner();
@@ -149,11 +149,18 @@ try {
   // 2. Connect a service (as on the AI page), choose the model, make a proof image.
   await call('POST', '/providers', { kind: 'openai-compatible', name: 'Mijn beeldserver', base_url: serviceBase });
   await page.reload();
-  await page.getByLabel('Dienst').waitFor({ timeout: 8000 });
-  const models = await page.getByLabel('Model').locator('option').allTextContents();
+  // Dienst and Model are TeamBot's own dropdowns (a combobox button with a list of options), not a system <select>.
+  await page.getByRole('combobox', { name: 'Dienst', exact: true }).waitFor({ timeout: 8000 });
+  const modelBox = page.getByRole('combobox', { name: 'Model', exact: true });
+  await modelBox.click();
+  const options = page.locator('[role="listbox"] [role="option"]');
+  await options.first().waitFor({ timeout: 5000 });
+  const models = (await options.allTextContents()).map((x) => x.trim());
   if (models.join('|') !== 'Kies een model…|flux-schnell|sdxl-turbo') fail(`modellen: ${models.join('|')}`);
+  await page.keyboard.press('Escape');
   if (!(await page.getByRole('button', { name: 'Proefafbeelding maken' }).isDisabled())) fail('Proefafbeelding kan zonder model');
-  await page.getByLabel('Model').selectOption('flux-schnell');
+  await modelBox.click();
+  await page.locator('[role="listbox"] [role="option"][data-value="flux-schnell"]').click();
   await page.getByRole('button', { name: 'Proefafbeelding maken' }).click();
   const img = page.getByRole('img', { name: 'Proefafbeelding' });
   await img.waitFor({ timeout: 15_000 });

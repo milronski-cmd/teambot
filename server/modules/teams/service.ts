@@ -7,6 +7,9 @@ import { trUser } from '../../core/i18n.js';
 import { type AgentRoot, isInside as inside } from '../../tools/builtin/files.js';
 import { teamSpentToday } from './budget.js';
 import { cleanSiteUrl } from '../routines/duties/checks.js';
+import { sanitizeNewAgentFor } from '../../api/member-policy.js';
+import { encodeFace } from '../../../shared/botface.js';
+import { PLACE } from '../../../shared/places.js';
 
 /** What a bot may do in a team that is not its home team. */
 export type AccessLevel = 'read' | 'direct';
@@ -126,6 +129,20 @@ function cleanFolder(raw: any): TeamFolder | null {
 }
 
 /**
+ * The rules a new team starts with (see `starterRules`), in the owner's words: "alleen geld beslissingen en belangrijke
+ * mails". Both are checked by the reviewer (review), so ordinary work and an ordinary reply go through without a question.
+ * `match`/`review`: where the starting rule differs from what the sentence gives by itself.
+ */
+export const STARTER_RULES: { text: string; match?: Record<string, any>; review?: boolean }[] = [
+  { text: 'Vraag altijd eerst voordat je geld uitgeeft, een advertentiebudget verhoogt, een betaalde campagne start, iets terugbetaalt of korting geeft' },
+  {
+    text: 'Vraag eerst bij een belangrijk bericht aan anderen: een klacht, iets over geld of iets juridisch, een eerste bericht aan een nieuw contact, of een bericht aan veel mensen tegelijk',
+    match: { verb: 'send', others: true },
+    review: true,
+  },
+];
+
+/**
  * Teams as walled workspaces of one owner. Every bot has exactly one home team; per bot and per other team the owner
  * grants meekijken (read: the team folder read-only, wave 2 also its knowledge) or aansturen (direct: give tasks to
  * the team's lead and bots; includes meekijken). Keys are usable by every team unless set to "alleen dit team".
@@ -138,6 +155,8 @@ export class TeamsService {
   private intents = new Map<string, { userId: string; until: number }>();
   /** Used tokens → the bot they made the main bot (a stale copy of the flag on that bot is then dropped quietly). */
   private usedIntents = new Map<string, string>();
+  /** Bots that are being deleted (`agentDeleted` runs just before their row goes): they get no home team again. */
+  private leaving = new Set<string>();
 
   constructor(public ctx: Ctx) {}
 
@@ -240,11 +259,34 @@ export class TeamsService {
       if (this.hasColumn('room_tasks', 'workspace_id')) store.exec('UPDATE room_tasks SET workspace_id = ? WHERE user_id = ? AND workspace_id IS NULL', t.id, userId);
     });
     this.ctx.audit(userId, 'team.created', { teamId: t.id, name: t.name, implicit: true });
+    // The first team of a fresh installation ("Mijn team") starts with the same two rules as any new team: without
+    // them a bot on Volledige toegang would spend money or send an important message without asking. (The unit tests
+    // switch this off: every outward step would then wait for a reviewer the mock AI cannot be.)
+    if (process.env.TEAMBOT_TEST_NO_STARTER_RULES !== '1') this.starterRules(userId, t.id);
     this.touch(userId);
     return this.team(t.id)!;
   }
 
-  create(userId: string, data: any): TeamRow {
+  /**
+   * The starting rules of a new team: ordinary rules of the owner (module botrules), in the words and the form that
+   * service gives them, so he and his bots can change or remove them like any other rule. Added once, when the team is
+   * made and has no rules yet; never again, so a rule the owner removed stays away.
+   */
+  private starterRules(userId: string, teamId: string) {
+    try {
+      const rules = this.ctx.services.botRules?._service;
+      if (!rules || rules.list(userId, { teamId }).length) return;
+      for (const d of STARTER_RULES) {
+        const r = rules.parse(userId, d.text);
+        if (!r.error) rules.add(userId, { teamId }, d.text, { ...r, ...(d.match ? { match: d.match } : {}), ...(d.review !== undefined ? { review: d.review } : {}) });
+      }
+    } catch (e) {
+      this.ctx.log.error('[teams] starter rules failed', e);
+    }
+  }
+
+  /** `o.starterRules: false`: a copy of a team, which gets the rules of the original instead. */
+  create(userId: string, data: any, o: { starterRules?: boolean } = {}): TeamRow {
     const name = cleanText(data?.name, 60);
     if (!name) throw bad('Geef het team een naam.');
     const s = this.snap(userId);
@@ -266,6 +308,7 @@ export class TeamsService {
     this.ctx.store.insert('teams', t);
     this.ctx.audit(userId, 'team.created', { teamId: t.id, name });
     this.touch(userId);
+    if (o.starterRules !== false) this.starterRules(userId, t.id);
     return this.team(t.id)!;
   }
 
@@ -291,7 +334,10 @@ export class TeamsService {
         const a = this.local(String(data.leadAgentId));
         if (!a || a.user_id !== userId) throw bad('Onbekende bot.');
         if (this.homeOf(a) !== id) throw bad(`${a.name} hoort niet bij dit team. Kies een bot van dit team als teamleider.`);
-        if (this.snap(userId).main === a.id) throw bad(`${a.name} is je hoofdbot en staat boven de teams. Kies een andere bot als teamleider, of laat het team zonder teamleider.`);
+        // The main bot stands above the teams. Nobody has to undo that first: the role goes to another bot (the oldest
+        // that leads no team), and only an owner with this one bot is told to pick another lead.
+        if (this.snap(userId).main === a.id && this.autoMain(userId, { skip: a.id }) === null)
+          throw bad(`${a.name} is je hoofdbot en staat boven de teams. Kies een andere bot als teamleider, of laat het team zonder teamleider.`);
         p.lead_agent_id = a.id;
       } else p.lead_agent_id = null;
     }
@@ -321,12 +367,19 @@ export class TeamsService {
 
   // ------------------------------------------------------------------ bots: home team and access
 
-  /** Home team of a bot (assigned to the default team the first time, which creates "Mijn team" when needed). */
+  /**
+   * Home team of a bot. Assigned the first time anyone asks: the team the bot was made for (`settings.homeTeam`, when
+   * that is one of the owner's teams), otherwise the default team, which creates "Mijn team" when needed. So whichever
+   * module asks first (a listener that runs before `onAgent`), the bot lands in the team it was made for. A bot that is
+   * being deleted gets no home team again: a module that still asks during the deletion would otherwise leave a row
+   * behind that keeps its team from ever being empty.
+   */
   homeOf(agent: Agent): string {
     const s = this.snap(agent.user_id);
     const h = s.home.get(agent.id);
     if (h && s.byId.has(h)) return h;
-    return this.assign(agent).id;
+    if (this.leaving.has(agent.id)) return s.teams[0]?.id ?? '';
+    return this.assign(agent, typeof agent.settings?.homeTeam === 'string' ? agent.settings.homeTeam : null).id;
   }
 
   /** Home team id of a bot in this app, or null for an unknown bot. */
@@ -349,6 +402,8 @@ export class TeamsService {
       this.touch(local.user_id);
     }
     if (local.settings && 'mainBot' in local.settings) this.takeIntent(local);
+    // There is always a main bot: the first bot becomes it, and an archived main bot hands the role on.
+    this.autoMain(local.user_id);
   }
 
   /** A bot without a home team gets one: `preferred` when it is one of the owner's teams, otherwise the default. */
@@ -440,9 +495,9 @@ export class TeamsService {
   }
 
   /**
-   * Make a bot the owner's main bot. There is at most one: with another main bot this is refused (make that one a
-   * normal bot first). The main bot directs every team (access rows of the bot are dropped, so the default applies),
-   * and stops being a team lead (it stands above the teams); the returned notes say so.
+   * Make a bot the owner's main bot. There is exactly one: the main bot there was becomes a normal bot (said in the
+   * notes). The main bot directs every team (access rows of the bot are dropped, so the default applies), and stops
+   * being a team lead (it stands above the teams); the returned notes say so.
    */
   setMain(userId: string, agentId: string): { notes: string[] } {
     const a = this.local(agentId);
@@ -450,14 +505,16 @@ export class TeamsService {
     if (a.archived) throw bad(`${a.name} staat in het archief. Haal de bot eerst terug uit het archief.`);
     const cur = this.mainOf(userId);
     if (cur === a.id) return { notes: [] };
-    if (cur) {
-      const n = this.ctx.store.agent(cur)?.name || 'een andere bot';
-      throw bad(`Je hebt al een hoofdbot: ${n}. Er kan er maar één zijn; maak ${n} eerst een gewone bot.`);
-    }
     this.homeOf(a);
     const store = this.ctx.store;
     const notes: string[] = [];
+    if (cur) {
+      notes.push(`${store.agent(cur)?.name || 'De vorige hoofdbot'} is nu een gewone bot: er is één hoofdbot.`);
+      this.ctx.audit(userId, 'team.main_cleared', { name: store.agent(cur)?.name || '', by: 'new-main' }, cur);
+    }
     store.tx(() => {
+      // The old main bot keeps only what the owner set for it himself (its explicit 'none' rows mean nothing now).
+      if (cur) store.exec("DELETE FROM team_access WHERE agent_id = ? AND level = 'none'", cur);
       store.exec('DELETE FROM team_main WHERE user_id = ?', userId);
       store.exec('INSERT INTO team_main (user_id, agent_id, created_at) VALUES (?, ?, ?)', userId, a.id, now());
       store.exec('DELETE FROM team_access WHERE agent_id = ?', a.id);
@@ -493,15 +550,96 @@ export class TeamsService {
   }
 
   /**
+   * There is always a main bot, without anyone choosing: an owner with bots but no (active) main bot gets his oldest
+   * bot that is not archived (a team lead only when there is no other bot) as main bot, through `setMain` (the same checks, notes and log line). Runs at start for
+   * data that exists (an upgrade repairs itself), when a bot is made or changed, and when the main bot is archived or
+   * deleted. `skip`: a bot that is about to be deleted, or (`orSkip`) one the owner just made a normal bot, which keeps
+   * the role only when it is his only bot. Never throws.
+   */
+  autoMain(userId: string, o: { skip?: string; orSkip?: boolean } = {}): string | null {
+    // Unit tests about bots that are not the main bot (team walls, a first bot's own tool list) switch this off.
+    if (process.env.TEAMBOT_TEST_NO_AUTO_MAIN === '1') return this.mainOf(userId);
+    try {
+      const store = this.ctx.store;
+      const cur = this.mainOf(userId);
+      const curBot = cur && cur !== o.skip ? store.agent(cur) : null;
+      if (curBot && !curBot.archived) return curBot.id;
+      const rows = store.all<{ id: string }>('SELECT id FROM agents WHERE user_id = ? AND archived = 0 ORDER BY created_at, rowid', userId);
+      // A team lead keeps leading its team when there is another bot to pick (the main bot stands above the teams).
+      const leads = new Set(store.all<{ id: string | null }>('SELECT lead_agent_id AS id FROM teams WHERE user_id = ?', userId).map((r) => r.id));
+      const others = rows.filter((r) => r.id !== o.skip);
+      const next = others.find((r) => !leads.has(r.id)) || others[0] || (o.orSkip ? rows.find((r) => r.id === o.skip) : undefined);
+      if (!next) return curBot?.id ?? null;
+      if (next.id === cur) return cur;
+      // A row that points at a bot that is gone would block nothing, but it is cleared so the log stays true.
+      if (!cur && this.snap(userId).main) {
+        store.exec('DELETE FROM team_main WHERE user_id = ?', userId);
+        this.snaps.delete(userId);
+      }
+      const { notes } = this.setMain(userId, next.id);
+      this.ctx.audit(userId, 'team.main_auto', { name: store.agent(next.id)?.name || '', notes }, next.id);
+      return next.id;
+    } catch (e) {
+      this.ctx.log.error('[teams] automatic main bot failed', e);
+      return null;
+    }
+  }
+
+  /** A bot name that is still free for this owner ("Hoofdbot", "Hoofdbot 2", …); archived bots count too. */
+  freeBotName(userId: string, base: string): string {
+    const taken = new Set(this.ctx.store.agents(userId, { archived: true }).map((a) => a.name.trim().toLowerCase()));
+    const b = base.trim().slice(0, 70) || 'Bot';
+    if (!taken.has(b.toLowerCase())) return b;
+    for (let i = 2; i < 100; i++) if (!taken.has(`${b} ${i}`.toLowerCase())) return `${b} ${i}`;
+    return `${b} ${Date.now() % 1000}`;
+  }
+
+  /**
+   * A new bot made by TeamBot for the owner (the main bot of `ensureMain`, an extra bot the main bot adds to a team):
+   * the same rules, log line and event as a bot the owner makes himself. `homeTeam` puts it in that team.
+   */
+  newBot(userId: string, data: Partial<Agent>, from: string, homeTeam?: string | null): Agent {
+    const ctx = this.ctx;
+    const d = sanitizeNewAgentFor(ctx, userId, { ...data, settings: { ...(data.settings || {}), ...(homeTeam ? { homeTeam } : {}) } });
+    if (!d.workspace) d.workspace = ctx.services.folders?.werkplekFor?.(userId, d) || undefined;
+    const a = ctx.store.createAgent(userId, d);
+    ctx.audit(userId, 'agent.created', { name: a.name, from }, a.id);
+    this.onAgent(a);
+    ctx.events.emit(userId, 'agent.updated', a);
+    return ctx.store.agent(a.id) || a;
+  }
+
+  /**
+   * A main bot is always there once the owner has a team from a template: the owner's main bot, made now when there is
+   * none yet ("Hoofdbot", the owner can rename it; on the given AI, access "Automatisch", the tools of a normal new
+   * bot). It becomes the main bot through `setMain`, so the same checks, notes and log line apply. An owner who
+   * already has a main bot keeps it, unless that is one of `among`: the bots of the team that was just made, of which
+   * TeamBot picked one by itself (`autoMain`) because there was no bot before. Then the team gets its own main bot.
+   */
+  ensureMain(userId: string, o: { provider_id?: string | null; model?: string; among?: string[] } = {}): { id: string; created: boolean } {
+    const cur = this.mainOf(userId);
+    if (cur && !(o.among || []).includes(cur)) return { id: cur, created: false };
+    const a = this.newBot(
+      userId,
+      {
+        name: this.freeBotName(userId, 'Hoofdbot'),
+        role: 'Hoofdbot',
+        description: 'Je vaste voordeur: denkt met je mee, stelt vragen, doet voorstellen, zet teams en bots voor je op en geeft het werk door.',
+        avatar: encodeFace({ shape: 'squircle', color: 'violet', eyes: 'happy', mouth: 'smile', extra: 'crown', cheeks: true }),
+        provider_id: o.provider_id ?? null,
+        model: o.model || '',
+      },
+      'hoofdbot',
+    );
+    this.setMain(userId, a.id);
+    return { id: a.id, created: true };
+  }
+
+  /**
    * The new-bot flow chose "Hoofdbot": a single-use token that the flow puts in `settings.mainBot` of the bot it creates.
    * Only that makes a new bot the main bot, so a bot template or import that carries the flag never does.
    */
   intent(userId: string): string {
-    const cur = this.mainOf(userId);
-    if (cur) {
-      const n = this.ctx.store.agent(cur)?.name || 'een andere bot';
-      throw bad(`Je hebt al een hoofdbot: ${n}. Er kan er maar één zijn.`);
-    }
     const t = Date.now();
     for (const [k, v] of this.intents) if (v.until < t) this.intents.delete(k);
     const token = newId('mbi_');
@@ -574,8 +712,10 @@ export class TeamsService {
     const b = this.local(toId);
     if (!a || !b || a.user_id !== b.user_id || a.id === b.id) return null;
     const s = this.snap(a.user_id);
-    // Work flows down the organisation: the main bot only takes work from the owner. Results still come back up to it.
-    if (s.main === b.id) return `Geweigerd door TeamBot: ${b.name} is de hoofdbot en krijgt alleen opdrachten van de eigenaar. Zet wat je nog nodig hebt in je resultaat; dat gaat vanzelf terug naar wie jou het werk gaf.`;
+    // The main bot is above all teams: every bot of the owner can hand work back to it or ask it something, also with
+    // two or more teams (owner, 12 nov: a bot in a second team could not give work back). What happens with it is the
+    // main bot's call; it is told which bot and team it comes from and that the walls between teams stay (prompt.ts).
+    if (s.main === b.id) return null;
     if (!this.multi(a.user_id)) return null;
     const ta = this.homeOf(a);
     const tb = this.homeOf(b);
@@ -583,7 +723,7 @@ export class TeamsService {
       const r = this.access(a.id, tb);
       if (r !== 'direct') {
         const nb = s.byId.get(tb)?.name || 'een ander team';
-        return `Geweigerd door TeamBot: ${b.name} hoort bij team “${nb}”, en ${a.name} mag dat team niet aansturen${r === 'read' ? ' (alleen meekijken)' : ''}. Werk het zelf af of vraag de eigenaar om toegang (Instellingen › Teams).`;
+        return `Geweigerd door TeamBot: ${b.name} hoort bij team “${nb}”, en ${a.name} mag dat team niet aansturen${r === 'read' ? ' (alleen meekijken)' : ''}. Werk het zelf af of vraag de eigenaar om toegang (${PLACE.teams}).`;
       }
     }
     // No way around a team wall through another bot: the target may not direct or look into a team the sender cannot,
@@ -594,9 +734,9 @@ export class TeamsService {
       if (rb === 'none') continue;
       const ra = this.access(a.id, t.id);
       if (rb === 'direct' && ra !== 'direct' && ra !== 'home')
-        return `Geweigerd door TeamBot: ${b.name} mag team “${t.name}” aansturen en ${a.name} niet, dus zou ${a.name} via ${b.name} toch werk aan dat team geven. Werk gaat alleen omlaag in de organisatie: geef het aan een bot die niet meer teams aanstuurt dan jij, of vraag de eigenaar om toegang (Instellingen › Teams).`;
+        return `Geweigerd door TeamBot: ${b.name} mag team “${t.name}” aansturen en ${a.name} niet, dus zou ${a.name} via ${b.name} toch werk aan dat team geven. Werk gaat alleen omlaag in de organisatie: geef het aan een bot die niet meer teams aanstuurt dan jij, of vraag de eigenaar om toegang (${PLACE.teams}).`;
       if (ra === 'none')
-        return `Geweigerd door TeamBot: ${b.name} mag meekijken bij team “${t.name}” en ${a.name} niet, dus zou kennis van dat team via ${b.name} bij ${a.name} terechtkomen. Geef het aan een andere bot, of vraag de eigenaar om toegang (Instellingen › Teams).`;
+        return `Geweigerd door TeamBot: ${b.name} mag meekijken bij team “${t.name}” en ${a.name} niet, dus zou kennis van dat team via ${b.name} bij ${a.name} terechtkomen. Geef het aan een andere bot, of vraag de eigenaar om toegang (${PLACE.teams}).`;
     }
     return null;
   }
@@ -623,7 +763,7 @@ export class TeamsService {
     if (!a) return `"${cfg.name}" is alleen voor één team.`;
     if (this.homeOf(a) === scope) return null;
     const s = this.snap(a.user_id);
-    return `"${cfg.name}" is alleen voor team “${s.byId.get(scope)?.name || 'een ander team'}”, en ${a.name} hoort bij team “${s.byId.get(this.homeOf(a))?.name || ''}”. Kies voor deze bot een andere AI-provider, of zet de sleutel op alle teams (Instellingen › Teams).`;
+    return `"${cfg.name}" is alleen voor team “${s.byId.get(scope)?.name || 'een ander team'}”, en ${a.name} hoort bij team “${s.byId.get(this.homeOf(a))?.name || ''}”. Kies voor deze bot een andere AI-provider, of zet de sleutel op alle teams (${PLACE.teams}).`;
   }
 
   setKeyScope(userId: string, kind: string, refId: string, teamId: string | null) {
@@ -669,7 +809,7 @@ export class TeamsService {
     const k = `table:${name}`;
     let v = this.columns.get(k);
     if (v === undefined) {
-      v = !!this.ctx.store.one("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?", name);
+      v = this.ctx.store.hasTable(name);
       this.columns.set(k, v);
     }
     return v;
@@ -865,20 +1005,29 @@ export class TeamsService {
 
   // ------------------------------------------------------------------ lifecycle
 
-  /** On start: every owner who has bots but no team yet (an update from 0.3) gets "Mijn team" with everything in it. */
+  /**
+   * On start: every owner who has bots but no team yet (an update from 0.3) gets "Mijn team" with everything in it,
+   * and every owner with bots but no main bot gets one (his oldest bot; `autoMain`).
+   */
   upgrade() {
     for (const r of this.ctx.store.all<{ user_id: string }>('SELECT DISTINCT user_id FROM agents')) {
       if (!this.ctx.store.one('SELECT 1 FROM teams WHERE user_id = ? LIMIT 1', r.user_id)) this.ensureDefault(r.user_id);
+      this.autoMain(r.user_id);
     }
   }
 
   agentDeleted(agentId: string, userId: string) {
     const store = this.ctx.store;
+    // The bot's own row goes right after the hooks, in the same step: until then nobody gives it a home team again.
+    this.leaving.add(agentId);
+    setImmediate(() => this.leaving.delete(agentId));
     store.exec('DELETE FROM team_bots WHERE agent_id = ?', agentId);
     store.exec('DELETE FROM team_access WHERE agent_id = ?', agentId);
     store.exec('UPDATE teams SET lead_agent_id = NULL WHERE lead_agent_id = ?', agentId);
     store.exec('DELETE FROM team_main WHERE agent_id = ?', agentId);
     this.touch(userId);
+    // The bot itself is removed right after this hook: the role goes to the oldest bot that stays.
+    this.autoMain(userId, { skip: agentId });
   }
 
   exportUser(userId: string) {

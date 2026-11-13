@@ -207,8 +207,29 @@ export function vectorText(kind: string, row: any): string | null {
     const t = clean(String(row.text || ''), 4000);
     return t.length >= 2 ? t : null;
   }
+  // What went out of a dossier's text into its archive (a line that no longer fit, or that a rewrite took out): found
+  // by meaning too, like the note it once was.
+  if (kind === 'record') {
+    if (!isArchiveLine(row)) return null;
+    const t = clean(String(row.body || ''), 4000);
+    return t.length >= 2 ? t : null;
+  }
   return null;
 }
+
+/** A line (or lines) of a dossier's archive: an active timeline entry that living.ts archiveLines wrote. */
+export function isArchiveLine(row: any): boolean {
+  if (!row || row.kind !== 'event' || row.status !== 'active') return false;
+  try {
+    const d = typeof row.data === 'string' ? JSON.parse(row.data || '{}') : row.data;
+    return !!d?.archive;
+  } catch {
+    return false;
+  }
+}
+
+/** One live archive record (null when it is not one any more). */
+const ARCHIVE_ROW = "SELECT * FROM memory_records WHERE id = ? AND kind = 'event' AND status = 'active'";
 
 export interface PullState {
   model: string;
@@ -472,7 +493,7 @@ export class Semantic {
    * A record changed (from syncIndex): keep its vector only while it is live and its text is the same; anything
    * else drops it now (forgotten, trashed, sensitive) and lets the indexer embed the new text.
    */
-  sync(kind: 'item' | 'chunk', rid: string, row: any | null) {
+  sync(kind: 'item' | 'chunk' | 'record', rid: string, row: any | null) {
     const text = row ? vectorText(kind, row) : null;
     if (!text || !row?.user_id || !this.enabled(row.user_id)) {
       if (this.store.one('SELECT 1 FROM memory_vectors WHERE kind = ? AND rid = ?', kind, rid)) this.drop(kind, rid);
@@ -494,7 +515,7 @@ export class Semantic {
     const p = userId ? [userId] : [];
     let n = 0;
     for (const r of this.store.all<any>(`SELECT v.kind, v.rid, v.user_id, v.text_hash FROM memory_vectors v WHERE 1 = 1 ${w}`, ...p)) {
-      const row = r.kind === 'item' ? this.store.get<any>('memory_items', r.rid) : r.kind === 'chunk' ? this.store.one<any>("SELECT c.* FROM memory_chunks c JOIN memory_sources s ON s.id = c.source_id WHERE c.id = ? AND s.status = 'active'", r.rid) : null;
+      const row = r.kind === 'item' ? this.store.get<any>('memory_items', r.rid) : r.kind === 'chunk' ? this.store.one<any>("SELECT c.* FROM memory_chunks c JOIN memory_sources s ON s.id = c.source_id WHERE c.id = ? AND s.status = 'active'", r.rid) : r.kind === 'record' ? this.store.one<any>(ARCHIVE_ROW, r.rid) : null;
       const text = row ? vectorText(r.kind, row) : null;
       if (!text || row.user_id !== r.user_id || this.hash(r.user_id, text) !== r.text_hash || !this.enabled(r.user_id)) {
         this.drop(r.kind, r.rid);
@@ -547,14 +568,27 @@ export class Semantic {
     return scoreSims(qv.model, sims);
   }
 
+  /** Similarity per archive line of these owners, among the dossiers a reader may read (the walls on the record rows). */
+  recordScores(qv: QVec, userIds: string[], dossierIds: string[]): Map<string, number> {
+    if (!userIds.length || !dossierIds.length) return new Map();
+    const rows = this.store.all<any>(
+      `SELECT r.id FROM memory_vectors v JOIN memory_records r ON r.id = v.rid WHERE v.kind = 'record' AND v.model = ? AND r.status = 'active' AND r.user_id IN (${userIds.map(() => '?').join(',')}) AND r.dossier_id IN (${dossierIds.map(() => '?').join(',')})`,
+      qv.model,
+      ...userIds,
+      ...dossierIds,
+    );
+    const sims: [string, number][] = [];
+    for (const r of rows) {
+      const vec = this.vecOf('record', r.id, qv.model);
+      if (vec) sims.push([r.id, dot(qv.vec, vec)]);
+    }
+    return scoreSims(qv.model, sims);
+  }
+
   // ------------------------------------------------------------------ background indexer
 
   start() {
     this.stopped = false;
-    this.timer = setInterval(() => void this.run(), 60_000);
-    this.timer.unref?.();
-    const t = setTimeout(() => void this.run(), 5_000);
-    t.unref?.();
     try {
       this.upgradeBuiltin();
     } catch (e: any) {
@@ -611,7 +645,7 @@ export class Semantic {
 
   private async pass() {
     const users = this.store
-      .all<any>("SELECT DISTINCT user_id FROM memory_items WHERE status IN ('active','proposed') UNION SELECT DISTINCT user_id FROM memory_chunks")
+      .all<any>("SELECT DISTINCT user_id FROM memory_items WHERE status IN ('active','proposed') UNION SELECT DISTINCT user_id FROM memory_chunks UNION SELECT DISTINCT user_id FROM memory_records WHERE kind = 'event' AND status = 'active'")
       .map((r) => r.user_id as string);
     for (const userId of users) {
       if (!this.enabled(userId)) continue;
@@ -628,7 +662,10 @@ export class Semantic {
         const chunks = this.store
           .all<any>("SELECT c.* FROM memory_chunks c JOIN memory_sources s ON s.id = c.source_id WHERE c.user_id = ? AND s.status = 'active' AND NOT EXISTS (SELECT 1 FROM memory_vectors v WHERE v.kind = 'chunk' AND v.rid = c.id) LIMIT 16", userId)
           .map((r) => ({ kind: 'chunk' as const, row: r }));
-        const todo = [...items, ...chunks].map((x) => ({ ...x, text: vectorText(x.kind, x.row) })).filter((x) => x.text) as { kind: 'item' | 'chunk'; row: any; text: string }[];
+        const records = this.store
+          .all<any>("SELECT r.* FROM memory_records r WHERE r.user_id = ? AND r.kind = 'event' AND r.status = 'active' AND json_extract(r.data, '$.archive') AND NOT EXISTS (SELECT 1 FROM memory_vectors v WHERE v.kind = 'record' AND v.rid = r.id) LIMIT 16", userId)
+          .map((r) => ({ kind: 'record' as const, row: r }));
+        const todo = [...items, ...chunks, ...records].map((x) => ({ ...x, text: vectorText(x.kind, x.row) })).filter((x) => x.text) as { kind: 'item' | 'chunk' | 'record'; row: any; text: string }[];
         if (!todo.length) break;
         let vecs: Float32Array[];
         try {
@@ -645,7 +682,7 @@ export class Semantic {
         this.store.tx(() => {
           todo.forEach((x, i) => {
             // The record may have changed (or been forgotten) while Ollama was busy: only the text that was embedded.
-            const cur = x.kind === 'item' ? this.store.get<any>('memory_items', x.row.id) : this.store.one<any>("SELECT c.* FROM memory_chunks c JOIN memory_sources s ON s.id = c.source_id WHERE c.id = ? AND s.status = 'active'", x.row.id);
+            const cur = x.kind === 'item' ? this.store.get<any>('memory_items', x.row.id) : x.kind === 'record' ? this.store.one<any>(ARCHIVE_ROW, x.row.id) : this.store.one<any>("SELECT c.* FROM memory_chunks c JOIN memory_sources s ON s.id = c.source_id WHERE c.id = ? AND s.status = 'active'", x.row.id);
             if (!cur || vectorText(x.kind, cur) !== x.text) return;
             this.store.exec(
               'INSERT OR REPLACE INTO memory_vectors (kind, rid, user_id, model, dim, text_hash, vec, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',

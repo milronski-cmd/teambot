@@ -1,4 +1,5 @@
 import { webPageInWords } from './preview.js';
+import { tText as t } from './format.js';
 
 /** Plain-language labels for tool calls in the chat: [finished, running]. Unknown tools fall back to their name. */
 const LABELS: Record<string, [string, string]> = {
@@ -31,9 +32,8 @@ const LABELS: Record<string, [string, string]> = {
   memory_remember: ['Onthield iets', 'Onthoudt iets'],
   memory_update: ['Werkte het geheugen bij', 'Werkt het geheugen bij'],
   memory_forget: ['Vergat iets', 'Vergeet iets'],
-  dossier_search: ['Zocht in dossiers', 'Zoekt in dossiers'],
   dossier_get: ['Las een dossier', 'Leest een dossier'],
-  dossier_create: ['Maakte een dossier', 'Maakt een dossier'],
+  dossier_write: ['Werkte een dossier bij', 'Werkt een dossier bij'],
   dossier_add: ['Vulde een dossier aan', 'Vult een dossier aan'],
   dossier_update: ['Werkte een dossier bij', 'Werkt een dossier bij'],
   dossier_note: ['Zette iets in een dossier', 'Zet iets in een dossier'],
@@ -70,7 +70,7 @@ const LABELS: Record<string, [string, string]> = {
   channel_send: ['Stuurde een bericht via een kanaal', 'Stuurt een bericht via een kanaal'],
   channel_list: ['Bekeek de kanalen', 'Bekijkt de kanalen'],
   skill_load: ['Pakte een skill erbij', 'Pakt een skill erbij'],
-  tools_load: ['Pakte extra hulpmiddelen erbij', 'Pakt extra hulpmiddelen erbij'],
+  tools_find: ['Zocht een TeamBot-functie op', 'Zoekt een TeamBot-functie op'],
   skill_read_file: ['Las in een skill', 'Leest in een skill'],
   skill_draft: ['Schreef een skill', 'Schrijft een skill'],
   workspace_snapshot: ['Maakte een herstelpunt', 'Maakt een herstelpunt'],
@@ -116,6 +116,29 @@ export function argsPreview(args: any): string {
   // Never a page reference such as "e12" (only the bot knows what it means); the bot's own words for it if given.
   const v = args.element || args.query || args.q || args.path || args.url || args.command || args.title || args.name || Object.entries(args).find(([k, x]) => k !== 'ref' && typeof x === 'string' && !/^e\d{1,7}$/.test(x))?.[1];
   return typeof v === 'string' ? v.replace(/\s+/g, ' ').slice(0, 120) : '';
+}
+
+/**
+ * An element of a web page in words ("de knop “Bestellen”", "de link “Factuur”", "het veld “E-mail”"), never a page
+ * reference like e12. One part for the server (the step log of a bot's browser) and the page (the browser card). Every
+ * kind is a whole phrase, with its name and without, so every language can translate it, also inside a sentence the
+ * server stored ("Klik op de knop “Bestellen”"); never a Dutch "knop" or "veld" as a value. `fallback`: an element
+ * without a kind and without a name.
+ */
+export function describeElement(info: any, fallback = ''): string {
+  if (!info) return fallback;
+  const name = String(info.name || '').replace(/\s+/g, ' ').trim().slice(0, 60);
+  const tag = String(info.tag || '');
+  const type = String(info.type || '');
+  const role = String(info.role || '');
+  if (tag === 'a' || role === 'link') return name ? t('de link “{0}”', name) : t('een link');
+  if (tag === 'button' || role === 'button' || (tag === 'input' && /^(submit|button|image|reset)$/.test(type))) return name ? t('de knop “{0}”', name) : t('een knop');
+  if (tag === 'select' || role === 'combobox' || role === 'listbox') return name ? t('de keuzelijst “{0}”', name) : t('een keuzelijst');
+  if (tag === 'input' && type === 'file') return name ? t('het bestandsveld “{0}”', name) : t('een bestandsveld');
+  if (tag === 'input' && (type === 'checkbox' || type === 'radio')) return name ? t('het keuzevakje “{0}”', name) : t('een keuzevakje');
+  if (tag === 'input' || tag === 'textarea' || role === 'textbox') return name ? t('het veld “{0}”', name) : t('een veld');
+  if (tag === 'img') return name ? t('de afbeelding “{0}”', name) : t('een afbeelding');
+  return name ? t('het element “{0}”', name) : fallback;
 }
 
 /**

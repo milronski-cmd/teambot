@@ -23,8 +23,8 @@ const ACCENT: Record<FaceColor, string> = {
 
 export const accentOf = (c: FaceColor) => ACCENT[c];
 
-/** Team limits: the defaults, with one hop of delegation less (lead → helper; helpers do not pass work on). */
-export const TEAM_LIMITS = { maxTurnsPerMessage: 8, maxDelegationDepth: 2 };
+/** A ready-made team writes no limits of its own into its group: no built-in brake; the owner's own limits apply. */
+export const TEAM_LIMITS = {};
 
 /** Group permissions: the lead may write the team files; helpers read them and do not hand work to other bots. */
 export const LEAD_PERMS = { files: 'write' as const };
@@ -61,12 +61,13 @@ export function botTemplate(def: TemplateDef, bot: BotDef, values: Record<string
     settings: {},
     model_hint: '',
     skills: [],
-    // Routines always come in paused (routines.importForAgent); the timezone is the owner's own.
+    // Routines always come in paused (routines.importForAgent); the timezone is the owner's own. No limit of their own
+    // (runs per day, minutes per run): like every routine, none until the owner sets one.
     routines: (bot.routines || []).map((r) => ({
       name: r.name,
       prompt: fillPlaceholders(r.prompt, values),
       schedule: r.schedule,
-      options: { missedPolicy: 'skip', maxRunsPerDay: 1, notify: 'always', timeoutMinutes: 20, ...(r.options || {}) },
+      options: { missedPolicy: 'skip', notify: 'always', ...(r.options || {}) },
     })),
     // Optional specialist field and sources for package S; learning stays off until the owner turns it on.
     ...(bot.specialist ? { specialist: { field: bot.specialist.field, suggestedSources: [...bot.specialist.suggestedSources] } } : {}),

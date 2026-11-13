@@ -23,6 +23,8 @@ import { classifyEngineError, clockTime, DEFAULT_LIMIT_WAIT_MS, failureText, LEV
 import { systemPrompt, turnContext, userTz } from './prompt.js';
 import { Retries } from './retries.js';
 import { agentForThread } from './shared.js';
+import { maxSteps } from './loops.js';
+import { PLACE } from '../../shared/places.js';
 
 export { PLAIN_TOOLS_PROMPT } from './prompt.js';
 export { preparingText } from './chat-loop.js';
@@ -42,8 +44,12 @@ export function applyRunOverride(agent: Agent, o: any): Agent {
     a.model = typeof o.model === 'string' ? o.model : '';
   } else if (typeof o.model === 'string' && o.model) a.model = o.model;
   if (o.access_mode in ACCESS_RANK && ACCESS_RANK[o.access_mode] < ACCESS_RANK[a.access_mode]) a.access_mode = o.access_mode;
-  if (Array.isArray(o.tool_groups)) a.tool_groups = a.tool_groups.filter((g) => o.tool_groups.includes(g));
-  if (Number(o.max_turns) > 0) a.settings.maxTurns = Math.min(Number(o.max_turns), Number(agent.settings?.maxTurns) || 40);
+  if (Array.isArray(o.tool_groups)) {
+    // Narrowed on purpose for this run: "Volledige toegang" then does not bring every part back (tools/registry.ts).
+    a.tool_groups = a.tool_groups.filter((g) => o.tool_groups.includes(g));
+    a.settings.partsNarrowed = true;
+  }
+  if (Number(o.max_turns) > 0) a.settings.maxTurns = Math.min(Number(o.max_turns), Number(agent.settings?.maxTurns) || maxSteps(agent));
   if (Array.isArray(o.deny_tools)) for (const t of o.deny_tools) if (typeof t === 'string') a.tool_policy[t] = 'deny';
   return a;
 }
@@ -79,6 +85,10 @@ export class Runner {
   }
   stopRetries() {
     this.retries.stopRetries();
+  }
+  /** "Alles stoppen": planned retries and resumes of this owner are dropped (agent/retries.ts). */
+  stopPlanned(userId: string) {
+    return this.retries.stopPlanned(userId);
   }
 
   /** Entry point used by the RunManager. */
@@ -208,7 +218,7 @@ export class Runner {
       const safe = chain.slice(1).find((x) => !this.engines.isLimited(x) && privateSafe(x.privacy || 'stores'));
       if (!safe)
         throw new Error(
-          `Dit is privéwerk (${f.private.why}). Privéwerk gaat alleen naar een lokaal model of een bron die niets bewaart, en die is er nu niet: ${engineName(first)} ${PRIVACY_LABEL[first.privacy || 'stores']}. Koppel een lokaal model, bijvoorbeeld Ollama (Instellingen › AI-diensten)${f.private.mode === 'strict' ? `, of zet ${w.agent.name} niet meer op privé` : ''}.`,
+          `Dit is privéwerk (${f.private.why}). Privéwerk gaat alleen naar een lokaal model of een bron die niets bewaart, en die is er nu niet: ${engineName(first)} ${PRIVACY_LABEL[first.privacy || 'stores']}. Koppel een lokaal model, bijvoorbeeld Ollama (${PLACE.ai})${f.private.mode === 'strict' ? `, of zet ${w.agent.name} niet meer op privé` : ''}.`,
         );
       ctx.chat.addEvent(thread, `Overgeschakeld naar ${engineName(safe)}, omdat dit privéwerk is (${f.private.why}): ${engineName(first)} ${PRIVACY_LABEL[first.privacy || 'stores']}, en privéwerk gaat alleen naar een lokaal model of een bron die niets bewaart.`, { kind: 'fallback' });
       return safe;

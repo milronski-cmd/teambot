@@ -1,6 +1,7 @@
 import { Cron } from 'croner';
 import { tr } from '../../core/i18n.js';
 import { localeOf } from '../../../shared/languages.js';
+import { formatList } from '../../../shared/format.js';
 
 /**
  * Schedules are stored as small JSON objects. Wall-clock times are always
@@ -297,6 +298,51 @@ export function normalizeSchedule(input: any, tz: string, nowMs: number, opts: {
   }
 }
 
+/**
+ * The flat way a bot gives a schedule (routine_create, and a change through my_routines or the API): schedule_kind
+ * (once, interval, weekly, daily, monthly, cron) with at, every_minutes, days, times (or time), month_days, months, cron.
+ * As tool parameters (JSON schema), the same for making a routine and for changing one.
+ */
+export const FLAT_SCHEDULE_PROPS = {
+  schedule_kind: { type: 'string', enum: ['once', 'interval', 'weekly', 'daily', 'monthly', 'cron'] },
+  month_days: { type: 'array', items: { type: 'string' }, description: 'Voor monthly: 1–31, "L", "LW", "FW", "1MO", "-1FR" …' },
+  months: { type: 'array', items: { type: 'number' }, description: 'Voor monthly (optioneel): alleen deze maanden 1–12, bijv. [1,4,7,10] voor elk kwartaal' },
+  at: { type: 'string', description: "Voor once: lokale datum en tijd 'JJJJ-MM-DDTUU:MM'" },
+  every_minutes: { type: 'number', description: 'Voor interval: aantal minuten (minimaal 1)' },
+  days: { type: 'array', items: { type: 'string' }, description: 'Voor weekly: dagen als ma, di, wo, do, vr, za, zo' },
+  times: { type: 'array', items: { type: 'string' }, description: "Voor weekly/daily/monthly: tijden 'UU:MM'" },
+  cron: { type: 'string', description: 'Voor cron: 5-veld cron-expressie, bijv. "0 9 * * 1-5"' },
+};
+export const FLAT_SCHEDULE_FIELDS = [...Object.keys(FLAT_SCHEDULE_PROPS), 'time'];
+const EVERY_DAY = [0, 1, 2, 3, 4, 5, 6];
+/** A list from one value or many; nothing (also an empty list) is undefined. */
+const list = (v: any): any[] | undefined => {
+  const l = v === undefined || v === null || v === '' ? [] : Array.isArray(v) ? v : [v];
+  return l.length ? l : undefined;
+};
+
+/**
+ * The schedule those flat fields describe (still to be checked by normalizeSchedule), or null when none is given.
+ * `base` is the schedule a routine has now: without schedule_kind the fields change only what they name, so `times`
+ * alone moves the time and keeps the days (a one-time routine keeps its date), and `days` alone keeps the times.
+ */
+export function scheduleFromFlat(a: any, base?: Schedule | null): any | null {
+  if (!a || typeof a !== 'object' || !FLAT_SCHEDULE_FIELDS.some((k) => a[k] !== undefined)) return null;
+  const times = list(a.times) ?? list(a.time);
+  const days = list(a.days);
+  const kind = String(a.schedule_kind || '').toLowerCase() || (a.at !== undefined ? 'once' : a.every_minutes !== undefined ? 'interval' : a.cron !== undefined ? 'cron' : a.month_days !== undefined || a.months !== undefined ? 'monthly' : base?.kind === 'monthly' ? 'monthly' : base?.kind === 'once' && times && !days ? 'once' : 'weekly');
+  if (kind === 'once') return { kind, at: a.at ?? (base?.kind === 'once' && times ? `${base.at.slice(0, 10)}T${times[0]}` : undefined) };
+  if (kind === 'interval') return { kind, everyMinutes: Number(a.every_minutes) };
+  if (kind === 'cron') return { kind, expr: a.cron };
+  if (kind === 'weekly' || kind === 'daily')
+    return { kind: 'weekly', days: kind === 'daily' ? EVERY_DAY : (days ?? (base?.kind === 'weekly' ? base.days : EVERY_DAY)), times: times ?? (base?.kind === 'weekly' || base?.kind === 'monthly' ? base.times : []) };
+  if (kind === 'monthly') {
+    const was = base?.kind === 'monthly' ? base : null;
+    return { kind, days: list(a.month_days) ?? was?.days ?? [1], times: times ?? was?.times ?? (base?.kind === 'weekly' ? base.times : []), months: list(a.months) ?? was?.months };
+  }
+  return { kind };
+}
+
 function weeklyPatterns(s: { days: number[]; times: string[] }): string[] {
   return s.times.map((t) => {
     const [h, mi] = t.split(':').map(Number);
@@ -383,12 +429,8 @@ export function runsPerDay(s: Schedule, tz: string, nowMs: number): number {
 
 const DAY_LONG = ['zondag', 'maandag', 'dinsdag', 'woensdag', 'donderdag', 'vrijdag', 'zaterdag'];
 
-function joinNl(items: string[]): string {
-  if (items.length <= 1) return items.join('');
-  return items.slice(0, -1).join(', ') + ' en ' + items[items.length - 1];
-}
 /** "a, b en c" in the reader's language. */
-const joinIn = (items: string[], lang: string) => (lang === 'nl' ? joinNl(items) : new Intl.ListFormat(localeOf(lang), { type: 'conjunction' }).format(items));
+const joinIn = (items: string[], lang: string) => formatList(items, localeOf(lang));
 /** A weekday's name (0 = Sunday) in the reader's language. */
 const dayIn = (d: number, lang: string) => (lang === 'nl' ? DAY_LONG[d] : new Intl.DateTimeFormat(localeOf(lang), { weekday: 'long', timeZone: 'UTC' }).format(new Date(Date.UTC(2024, 0, 7 + d))));
 

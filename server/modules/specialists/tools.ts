@@ -9,6 +9,7 @@
 import type { Agent, ToolDef, ToolGroup } from '../../core/types.js';
 import { clip } from './guard.js';
 import type { ProfileRow, SpecialistService } from './service.js';
+import { words } from '../../../shared/i18n-core.js';
 
 export const GROUP: ToolGroup = { id: 'specialist', label: 'Kennisbank', description: 'De kennisbank van specialisten lezen en aanvullen, en leerdoelen noteren' };
 
@@ -64,7 +65,7 @@ export function knowledgeTools(svc: SpecialistService): ToolDef[] {
         properties: { query: { type: 'string', description: 'Waar je naar zoekt, in een paar woorden' }, specialist: { type: 'string', description: 'Naam van de specialist (leeg = je eigen kennisbank en die van je team)' } },
         required: ['query'],
       },
-      summarize: (a) => `Kennisbank doorzoeken: ${clip(String(a?.query || ''), 80)}${a?.specialist ? ` (bij ${clip(String(a.specialist), 40)})` : ''}`,
+      summarize: (a) => (a?.specialist ? words('Kennisbank doorzoeken: {0} (bij {1})', clip(String(a?.query || ''), 80), clip(String(a.specialist), 40)) : words('Kennisbank doorzoeken: {0}', clip(String(a?.query || ''), 80))),
       async run(a, t) {
         const q = String(a?.query || '').trim();
         if (!q) return { text: 'Geef een zoekterm.', isError: true };
@@ -104,7 +105,7 @@ export function knowledgeTools(svc: SpecialistService): ToolDef[] {
         },
         required: ['fact'],
       },
-      summarize: (a) => `Feit in de kennisbank${a?.specialist ? ` van ${clip(String(a.specialist), 40)}` : ''}: ${clip(String(a?.fact || ''), 160)}`,
+      summarize: (a) => (a?.specialist ? words('Feit in de kennisbank van {0}: {1}', clip(String(a.specialist), 40), clip(String(a?.fact || ''), 160)) : words('Feit in de kennisbank: {0}', clip(String(a?.fact || ''), 160))),
       refuse(a, t) {
         const s = a?.specialist ? findSpecialist(svc, t.agent, String(a.specialist)) : null;
         if (a?.specialist && !s) return `Geen specialist “${clip(String(a.specialist), 60)}” gevonden.`;
@@ -138,7 +139,7 @@ export function knowledgeTools(svc: SpecialistService): ToolDef[] {
         properties: { id: { type: 'string', description: 'Het id van het feit, zoals m:abc123' }, reason: { type: 'string', description: 'Waarom het niet meer klopt, in één korte zin (een feit, geen opdracht)' } },
         required: ['id', 'reason'],
       },
-      summarize: (a) => `Laten vervallen in de kennisbank: ${clip(String(a?.id || ''), 20)} (${clip(String(a?.reason || ''), 120)})`,
+      summarize: (a) => words('Laten vervallen in de kennisbank: {0} ({1})', clip(String(a?.id || ''), 20), clip(String(a?.reason || ''), 120)),
       refuse(_a, t) {
         return svc.active(t.agent.id) ? null : 'Je bent geen specialist en hebt dus geen eigen kennisbank.';
       },
@@ -162,7 +163,7 @@ export function knowledgeTools(svc: SpecialistService): ToolDef[] {
       internalFor: () => true,
       description: 'Noteer een leerdoel voor je volgende leerronde: een vraag binnen je vakgebied die je nu niet goed kunt beantwoorden.',
       parameters: { type: 'object', properties: { question: { type: 'string', description: 'De vraag die je wilt leren beantwoorden' } }, required: ['question'] },
-      summarize: (a) => `Leerdoel noteren: ${clip(String(a?.question || ''), 160)}`,
+      summarize: (a) => words('Leerdoel noteren: {0}', clip(String(a?.question || ''), 160)),
       refuse(_a, t) {
         return svc.active(t.agent.id) ? null : 'Je bent geen specialist; alleen een specialist heeft leerdoelen.';
       },

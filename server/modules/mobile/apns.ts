@@ -8,9 +8,10 @@ import type { PushMessage, SendResult } from './push.js';
 
 /**
  * Apple Push Notification service for the native iOS companion (token-based auth, HTTP/2).
- * Needs an Apple Developer account: a .p8 key + key id + team id + bundle id, given via env:
+ * Needs the app maker's Apple key (never the user's): a .p8 key + key id + team id + bundle id, given via env:
  *   TEAMBOT_APNS_KEY_FILE, TEAMBOT_APNS_KEY_ID, TEAMBOT_APNS_TEAM_ID, TEAMBOT_APNS_TOPIC
- * Without them this stays off and the UI says so. Not verified against Apple from this repo.
+ * Without them this stays off and the UI says so, without asking the user for anything. Not verified against Apple
+ * from this repo.
  */
 export class Apns {
   private key: crypto.KeyObject | null = null;
@@ -25,7 +26,8 @@ export class Apns {
   constructor(private ctx: Ctx) {
     const file = process.env.TEAMBOT_APNS_KEY_FILE;
     if (!file || !this.keyId || !this.teamId) {
-      this.reason = 'Niet ingesteld: een Apple Developer-account en APNs-sleutel (.p8) zijn nodig';
+      // The key belongs with the app (whoever ships it), never with the user: say what is true and ask nothing.
+      this.reason = 'nog niet actief. De sleutel van Apple hiervoor hoort bij de app, niet bij jou: je hoeft niets te doen.';
       return;
     }
     try {

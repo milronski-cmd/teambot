@@ -2,6 +2,7 @@ import React, { useEffect, useId, useRef, useState } from 'react';
 import { Check, ChevronDown, ChevronRight, Folder, FolderMinus, FolderOpen, FolderPlus, MoreHorizontal, Pencil, Trash2 } from 'lucide-react';
 import { Button, Input, Modal, Spinner, askConfirm, cx, toast } from '../../components/ui';
 import { t } from '../../lib/i18n';
+import { useDismiss } from '../../components/Menu';
 import { useTeamView } from '../teams/scope';
 import { DRAG_TYPE, createFolder, deleteFolder, dragState, fitsFolder, folderOf, foldersInView, itemKey, loadChatFolders, moveChat, renameFolder, setCollapsed, useChatFolders, type ChatFolder, type ChatItem, type ChatKind } from './api';
 
@@ -73,14 +74,7 @@ function FolderMenu({ folder }: { folder: ChatFolder }) {
   const [open, setOpen] = useState(false);
   const [name, setName] = useState<string | null>(null);
   const ref = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    if (!open) return;
-    const f = (e: MouseEvent) => ref.current && !ref.current.contains(e.target as Node) && setOpen(false);
-    const k = (e: KeyboardEvent) => e.key === 'Escape' && setOpen(false);
-    document.addEventListener('mousedown', f);
-    document.addEventListener('keydown', k);
-    return () => (document.removeEventListener('mousedown', f), document.removeEventListener('keydown', k));
-  }, [open]);
+  useDismiss(open, ref, () => setOpen(false));
   const save = async () => {
     if (name !== null && name.trim() && (await renameFolder(folder.id, name.trim()))) setName(null);
   };

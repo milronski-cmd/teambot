@@ -4,22 +4,13 @@ import { api } from '../lib/api';
 import { useApp } from '../lib/store';
 import { t, uiLocale } from '../lib/i18n';
 import { relativeTime } from '../lib/format';
-import { Avatar, Badge, Button, EmptyState, Select, Spinner, cx } from '../components/ui';
+import { Avatar, Badge, Button, EmptyState, Select, Spinner, cx, dayLabel } from '../components/ui';
 import { BotAvatar } from '../components/BotFace';
 import { Chips, SearchBox } from '../modules/teamdata/parts';
 import { AUDIT_CATEGORIES, categoryLabel, collapseDuplicates, describeAudit, type AuditCategory, type AuditEntry, type AuditRow } from './auditText';
 import { Mark } from './Sidebar';
 
 const PAGE = 200;
-
-function dayLabel(iso: string): string {
-  const d = new Date(iso);
-  const today = new Date();
-  const y = new Date(Date.now() - 864e5);
-  if (d.toDateString() === today.toDateString()) return 'Vandaag';
-  if (d.toDateString() === y.toDateString()) return 'Gisteren';
-  return d.toLocaleDateString(uiLocale(), { weekday: 'long', day: 'numeric', month: 'long', year: d.getFullYear() === today.getFullYear() ? undefined : 'numeric' });
-}
 
 /** "14:05", with "12 minuten geleden" in front for the last day (Intl, "1 minuut"); the full date and time as tooltip. */
 function When({ iso }: { iso: string }) {

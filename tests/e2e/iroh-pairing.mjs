@@ -5,6 +5,8 @@
 // lists it. Opened again, the card says it is connected and makes no new code by itself. Under Meer opties: another
 // address, Tailscale, Bereikbaarheid with the connection and the last phone, the switch turns it off, and under
 // Geavanceerd the own relay field. axe-core WCAG 2.2 A/AA light and dark, and the card at phone width.
+// Step 1 (get the app) is honest: without a public link (TEAMBOT_IOS_APP_URL) it sends nobody to TestFlight for an
+// invitation that does not exist; with a link it is one download button.
 // Offline: no relays (TEAMBOT_IROH_PRESET=offline), the phone dials the computer's direct addresses.
 // Usage: npm run build:ui && node --import tsx tests/e2e/iroh-pairing.mjs   (TEAMBOT_E2E_PORT=<port>, free port by default)
 import fs from 'node:fs';
@@ -24,7 +26,8 @@ const browser = await chromium.launch({ channel: process.env.TEAMBOT_E2E_BROWSER
 const home = fs.mkdtempSync(path.join(os.tmpdir(), 'tb-iroh-pair-home-'));
 Object.assign(process.env, { APPDATA: path.join(home, 'AppData', 'Roaming'), LOCALAPPDATA: path.join(home, 'AppData', 'Local'), TEAMBOT_IROH_PRESET: 'offline' });
 delete process.env.TEAMBOT_DATA;
-const { createApp } = await import('../../server/app.ts');
+delete process.env.TEAMBOT_IOS_APP_URL;
+const { createApp } = await import('./server.mjs');
 const { startIrohPhone } = await import('../iroh-phone.ts');
 const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'tb-iroh-pair-'));
 const app = await createApp({ dataDir: dir, port: Number(process.env.TEAMBOT_E2E_PORT) || 0, host: '127.0.0.1', mode: 'desktop', quiet: true });
@@ -78,11 +81,16 @@ try {
   if (ticket.auto?.kind !== 'iroh') fail(`TeamBot koos niet zelf de TeamBot-verbinding: ${JSON.stringify(ticket.auto)}`);
   if (!mobile.iroh.status().running) fail('de TeamBot-verbinding ging niet vanzelf aan bij het koppelen');
   await card.getByText('Open TeamBot op je iPhone en tik op Scan de QR-code', { exact: false }).waitFor({ timeout: 5000 }).catch(() => fail('kaart: geen uitleg voor de iPhone-app'));
-  const appLink = card.getByRole('link', { name: /TestFlight voor de iPhone-app/ });
-  if (!(await appLink.count())) fail('stap 1: geen link naar de iPhone-app (TestFlight)');
-  else if ((await appLink.getAttribute('href')) !== 'https://apps.apple.com/app/testflight/id899247664') fail(`stap 1: link ${await appLink.getAttribute('href')}`);
+  // Step 1 without a public app link: no button to TestFlight ("open je uitnodiging" when there is none), but the plain
+  // truth and where it works without the app.
+  const step1 = card.locator('[data-step="1"]');
+  if (await step1.getByRole('link').count()) fail(`stap 1: een link zonder openbare app-link (${await step1.getByRole('link').first().getAttribute('href')})`);
+  if (await card.getByText(/uitnodiging voor TeamBot|TestFlight voor de iPhone-app/).count()) fail('stap 1: stuurt nog naar een TestFlight-uitnodiging die er niet is');
+  await step1.getByText('De iPhone-app is nog niet openbaar', { exact: false }).waitFor({ timeout: 5000 }).catch(() => fail('stap 1: zegt niet eerlijk dat de iPhone-app nog niet openbaar is'));
+  await step1.getByText('Instellingen › Meer mogelijkheden › Telefoonverbinding', { exact: false }).waitFor({ timeout: 5000 }).catch(() => fail('stap 1: zegt niet waar het zonder app kan'));
+  if (/Installeer de app/.test(await card.innerText())) fail('kaart: zegt "Installeer de app" terwijl er geen openbare app is');
   await card.getByText('Wacht tot je telefoon de code scant', { exact: false }).waitFor({ timeout: 5000 }).catch(() => fail('stap 3: niet gezegd dat de kaart op de telefoon wacht'));
-  step('Telefoon koppelen: één kaart, QR-code meteen (zonder kiezen), TeamBot-verbinding vanzelf aan, stap 1 met TestFlight');
+  step('Telefoon koppelen: één kaart, QR-code meteen (zonder kiezen), TeamBot-verbinding vanzelf aan, stap 1 eerlijk zonder openbare app');
   await axe(page, 'telefoon-kaart (licht)');
 
   // ---- 2. the stand-in iPhone scans: dial the key in the code, claim over iroh
@@ -177,6 +185,9 @@ try {
 
   // ---- 5. the card at phone width (a small laptop window or 400% zoom): fits, QR code readable. The connection was
   // switched off on purpose above: the card says so plainly instead of switching it on again behind the owner's back.
+  // Whoever ships TeamBot set a public app link now: step 1 is one download button with that link.
+  const publicLink = 'https://testflight.apple.com/join/AbCd1234';
+  process.env.TEAMBOT_IOS_APP_URL = publicLink;
   const small = await browser.newContext({ viewport: { width: 360, height: 780 }, locale: 'nl-NL', colorScheme: 'dark', bypassCSP: true });
   const sp = await small.newPage();
   await sp.goto(`${app.url}/#token=${pcToken}`);
@@ -193,6 +204,10 @@ try {
   await qr.waitFor({ timeout: 10000 }).catch(() => fail('360 px: geen QR-code na Nog een telefoon koppelen'));
   const box = await qr.boundingBox();
   if (!box || box.width < 180) fail(`360 px: QR-code te klein (${box?.width} px)`);
+  const download = sc.locator('[data-step="1"]').getByRole('link', { name: /iPhone-app downloaden/ });
+  if ((await download.getAttribute('href', { timeout: 5000 }).catch(() => null)) !== publicLink) fail('met een openbare app-link: stap 1 heeft geen knop iPhone-app downloaden met die link');
+  if (await sc.getByText('De iPhone-app is nog niet openbaar', { exact: false }).count()) fail('met een openbare app-link: stap 1 zegt toch dat de app nog niet openbaar is');
+  else step('met een openbare app-link: stap 1 is één knop iPhone-app downloaden');
   const over = await sp.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
   if (over > 1) fail(`360 px: de pagina schuift ${over} px opzij`);
   await axe(sp, 'telefoon-kaart 360 px (donker)');

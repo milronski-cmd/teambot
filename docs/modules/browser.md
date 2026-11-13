@@ -48,9 +48,11 @@ Plan: §14 (bot-computers), §21.7, §26 (platform-truth-table), §5, §25 check
   (20 s verbinden, 30 s stilstand, 15 min totaal), voortgang in de stap ("Downloaden: 3,2 MB van 10 MB") en Stop; een
   halve download (`.deel`) blijft nooit staan. Een knop zonder adres (bestand in de pagina gemaakt) gebruikt de eigen
   download van de browser, met 30 s wachttijd en een duidelijke melding.
-- **In woorden**: kaarten en de stappen zeggen "Klik op knop “Bestellen”" of "Downloaden: link “Factuur”", nooit een
-  referentie als `e10`. Tools met een ref hebben een optioneel `element` (de omschrijving van de bot); de
-  goedkeuringskaart toont het element ook zelf ("Op de pagina: …", gemarkeerd op de schermafbeelding).
+- **In woorden**: kaarten en de stappen zeggen "Klik op de knop “Bestellen”" of "Downloaden: “link Factuur”", nooit
+  een referentie als `e10`. Tools met een ref hebben een optioneel `element` (de omschrijving van de bot); de
+  goedkeuringskaart toont het element ook zelf ("Op de pagina: …", gemarkeerd op de schermafbeelding). Elke vorm is
+  een hele zin, en het element een heel zinsdeel per soort (`describeElement` in `shared/toolLabels.ts`, één voor
+  server en scherm), zodat elke taal het kan vertalen.
 - **Inloggen** (`browser_request_login {url?, reason?, method: auto|kluis|zelf}`): eerst de **kluis**, anders logt de
   gebruiker zelf in.
   - *Kluis* (`vault.ts`, `vault-fill.ts`): logins van de eigenaar van de bot (exacte origins, max 5; gebruikersnaam,
@@ -345,8 +347,6 @@ inloggegevens zijn, of de serversleutel niet vertrouwd is.
   `host_options {screen, pauseOnInput, taskMinutes, blockWords, maxPerMinute, monitor, allApps}` (alleen de eigenaar;
   `allApps` vraagt `confirmAllApps: true`). Een gekoppelde telefoon mag alleen meekijken, stoppen, pauzeren/hervatten,
   een taakscope intrekken en de stappen zien (`MOBILE_SCREEN_ROUTES`), nooit het niveau wijzigen.
-- `toolOutputToMcpContent(ctx, out)` (`server/tools/images.ts`): tekst + schermafbeeldingen van een toolresultaat als
-  MCP-inhoud (`{type: 'image', data, mimeType}`) voor een MCP-brug naar CLI-engines.
 - `PUT /computers/:agentId/config` met `remote: {host, port, username, dir, docker: {enabled, image, memoryMb, cpus},
   limits: {timeoutSec, maxOutputKb, transferMb}}` (inloggegevens en vingerafdruk gaan hier nooit mee)
 - `PUT /computers/:agentId/remote/credential {kind: 'key'|'password', value}` → `{secret_name, has_secret, auth}` ·
@@ -553,7 +553,7 @@ altijd-bovenop venster; browser: pop-up) via `#/m/browser/live/<bot>/pip` of `/p
 - Iframes worden niet uitgelezen (wel gemeld). Sessie-opslag gaat verloren bij overschakelen headless ↔ venster
   (cookies blijven). Zichtbaar venster alleen in de desktop-app voor de eigenaar.
 - Schermafbeeldingen (browser, venster, bureaublad) gaan als afbeelding naar modellen met beeld (de nieuwste 3 in de
-  geschiedenis); CLI-engines krijgen ze pas via de MCP-brug (`toolOutputToMcpContent`).
+  geschiedenis); CLI-engines krijgen ze pas via de MCP-brug (`server/modules/cli-agents/toolhost.ts`).
 - Bij verwijderen van een bot met lopende repetitie blijft de oorspronkelijke werkmap staan (geen dataverlies).
 
 ## Handmatige voorwaarden

@@ -1,15 +1,15 @@
-import { useEffect, useMemo, useState } from 'react';
-import { AlarmClock, ArrowRight, Bot, Brain, CheckCircle2, ChevronDown, ClipboardList, FolderOpen, Info, MessageCircle, Puzzle, RefreshCw, ShieldCheck, SquareKanban, Upload, Users } from 'lucide-react';
-import { Badge, Button, Card, EmptyState, Page, PageHeader, Select, Spinner, Tabs, cx, toastError } from '../../components/ui';
+import { useMemo, useState } from 'react';
+import { AlarmClock, ArrowRight, Bot, Brain, CheckCircle2, ChevronDown, ClipboardList, FolderOpen, Info, MessageCircle, Puzzle, SquareKanban, Upload, Users } from 'lucide-react';
+import { Badge, Button, Card, EmptyState, Page, PageHeader, Select, Spinner, Tabs, cx } from '../../components/ui';
 import { BotAvatar } from '../../components/BotFace';
 import { useApp } from '../../lib/store';
 import { navigate, query } from '../../lib/router';
-import { type Detect, type EngineStatus, type ImportResult, type ImportSource, type Plan, type PlanBot, type UndoResult, type WorkspaceChoice, obApi } from './api';
+import { type Detect, type ImportResult, type ImportSource, type Plan, type PlanBot, type UndoResult, type WorkspaceChoice, obApi } from './api';
 import { HermesImport } from './HermesImport';
 import { t } from '../../lib/i18n';
-import { formatBytes, formatDateTime, formatNumber } from '../../lib/format';
+import { formatBytes, formatNumber, tText } from '../../lib/format';
 import { prettyModel } from '../../lib/modelLabel';
-import { AllNone, AttentionList, Check, Section } from './parts';
+import { AfterImport, AllNone, Check, EngineBadge, ErrorNote, ImportBar, PlanTop, Promises, ProviderNotes, ReadRow, ResultTiles, RoutineList, Section, SourceFound, toggleIn, useImportFlow } from './parts';
 import { type RolePick, type TeamPick, RolesSection, TeamSection, teamProblem } from './TeamRoles';
 import { UndoButton, UndoneCard } from './Undo';
 
@@ -24,8 +24,6 @@ function workspaceSize(w: PlanBot['workspace']): string {
 /** OpenBot's thinking level in words ("denkniveau Middel"), not its code ("medium"). */
 const LEVEL: Record<string, string> = { low: 'Laag', medium: 'Middel', high: 'Hoog' };
 
-const ENGINE_TONE: Record<EngineStatus, 'ok' | 'accent' | 'warn' | 'danger' | 'neutral'> = { ready: 'ok', connect: 'accent', reconnect: 'warn', missing: 'warn', unknown: 'danger' };
-const ENGINE_LABEL: Record<EngineStatus, string> = { ready: 'gekoppeld', connect: 'wordt gekoppeld', reconnect: 'opnieuw verbinden', missing: 'niet gevonden', unknown: 'geen equivalent' };
 const ACCESS_LABEL: Record<string, string> = { chat: 'Alleen chat', readonly: 'Alleen lezen', ask: 'Vraagt toestemming', auto: 'Automatisch', full: 'Volledige toegang' };
 const SKILL_LABEL: Record<string, string> = { own: 'eigen skill', permissive: '', openbot: 'van OpenBot', unknown: 'licentie onbekend' };
 const ROLE_LABEL: Record<string, string> = { main: 'hoofdbot', lead: 'teamleider', specialist: 'specialist' };
@@ -43,9 +41,7 @@ function BotRow({ b, role, selected, workspace, onSelect, onWorkspace }: { b: Pl
             {role && selected && <Badge tone="accent">{ROLE_LABEL[role]}</Badge>}
             {b.existing && <Badge tone="ok">al overgenomen</Badge>}
             {b.pinned && <Badge>vastgepind</Badge>}
-            <Badge tone={ENGINE_TONE[b.engine.status]}>
-              {b.engine.label} · {ENGINE_LABEL[b.engine.status]}
-            </Badge>
+            <EngineBadge engine={b.engine} />
           </div>
           {b.description && <p className="line-clamp-2 text-xs text-muted">{b.description}</p>}
           <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted">
@@ -65,7 +61,7 @@ function BotRow({ b, role, selected, workspace, onSelect, onWorkspace }: { b: Pl
           {!b.existing && (
             <div className="flex flex-col gap-1 pt-1 sm:flex-row sm:items-center sm:gap-2">
               <span className="text-xs font-medium">Werkmap</span>
-              <Select className="sm:max-w-xs" value={workspace} disabled={!selected} onChange={(e) => onWorkspace(e.target.value as WorkspaceChoice)} aria-label={`Werkmap voor ${b.name}`}>
+              <Select className="sm:max-w-xs" value={workspace} disabled={!selected} onChange={(e) => onWorkspace(e.target.value as WorkspaceChoice)} aria-label={tText('Werkmap voor {0}', b.name)}>
                 {b.workspace.exists && <option value="reference">Bestaande map gebruiken (aanbevolen)</option>}
                 {b.workspace.exists && (
                   <option value="copy" disabled={!b.workspace.canCopy}>
@@ -189,14 +185,7 @@ function Summary({ r, onAgain, onUndone }: { r: ImportResult; onAgain(): void; o
             </span>
           </p>
         )}
-        <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-          {tiles.map((x) => (
-            <a key={x.label} href={x.href} className="rounded-xl border border-line bg-surface-2 px-3 py-3 hover:border-accent">
-              <div className="text-2xl font-semibold tabular-nums">{x.n}</div>
-              <div className="text-xs text-muted">{x.label}</div>
-            </a>
-          ))}
-        </div>
+        <ResultTiles tiles={tiles} />
         {roles && (roles.main || roles.lead || roles.specialists.length > 0) && (
           <ul className="space-y-1 text-sm">
             {roles.main && <li>{roles.main.note}</li>}
@@ -229,16 +218,7 @@ function Summary({ r, onAgain, onUndone }: { r: ImportResult; onAgain(): void; o
             </span>
           </p>
         )}
-        {r.providers.length > 0 && (
-          <ul className="space-y-0.5 text-sm">
-            {r.providers.map((p, i) => (
-              <li key={i} className="flex items-start gap-2">
-                <Badge tone={p.status === 'linked' ? 'ok' : 'warn'}>{p.label}</Badge>
-                <span className="text-muted">{p.note}</span>
-              </li>
-            ))}
-          </ul>
-        )}
+        <ProviderNotes providers={r.providers} />
       </Card>
       {!!r.routinesOff?.length && (
         <Section icon={<AlarmClock className="h-4 w-4" />} title="Staan uit tot jij ze aanzet">
@@ -253,26 +233,17 @@ function Summary({ r, onAgain, onUndone }: { r: ImportResult; onAgain(): void; o
           </Card>
         </Section>
       )}
-      {(r.attention.length > 0 || errors.length > 0) && (
-        <Section icon={<ClipboardList className="h-4 w-4" />} title="Nog even regelen">
-          <AttentionList items={[...errors.map((text) => ({ level: 'warn' as const, text })), ...r.attention]} />
-        </Section>
-      )}
-      <div className="flex flex-wrap gap-2">
-        <Button variant="primary" icon={<Bot className="h-4 w-4" />} onClick={() => navigate('/agents')}>
-          Naar je bots
-        </Button>
-        <Button variant="primary" icon={<ArrowRight className="h-4 w-4" />} onClick={() => navigate('/settings/openbot-import-overstappen')}>
-          Verder met overstappen
-        </Button>
-        <Button icon={<AlarmClock className="h-4 w-4" />} onClick={() => navigate('/m/routines')}>
-          Routines aanzetten
-        </Button>
-        <Button variant="ghost" icon={<RefreshCw className="h-4 w-4" />} onClick={onAgain}>
-          Nogmaals inlezen
-        </Button>
-        {r.undo && <UndoButton onDone={onUndone} />}
-      </div>
+      <AfterImport
+        errors={errors}
+        attention={r.attention}
+        onAgain={onAgain}
+        next={
+          <Button variant="primary" icon={<ArrowRight className="h-4 w-4" />} onClick={() => navigate('/settings/openbot-import-overstappen')}>
+            Verder met overstappen
+          </Button>
+        }
+        undo={r.undo && <UndoButton onDone={onUndone} />}
+      />
     </div>
   );
 }
@@ -343,12 +314,6 @@ export function ImportPage() {
 }
 
 function OpenBotImport() {
-  const [det, setDet] = useState<Detect | null>(null);
-  const [plan, setPlan] = useState<Plan | null>(null);
-  const [result, setResult] = useState<ImportResult | null>(null);
-  const [undone, setUndone] = useState<UndoResult | null>(null);
-  const [busy, setBusy] = useState<'' | 'read' | 'import'>('');
-  const [error, setError] = useState('');
   const [bots, setBots] = useState<Record<string, { selected: boolean; workspace: WorkspaceChoice }>>({});
   const [routines, setRoutines] = useState<Set<string>>(new Set());
   const [channels, setChannels] = useState<Set<string>>(new Set());
@@ -360,19 +325,11 @@ function OpenBotImport() {
   const [team, setTeam] = useState<TeamPick>({ mode: 'new', id: '', name: '' });
   const [roles, setRoles] = useState<RolePick>({ main: '', lead: '', specialists: {} });
 
-  const loadDetect = () => obApi.detect().then(setDet).catch(() => setDet({ available: false, found: false }));
-  useEffect(() => {
-    loadDetect();
-  }, []);
-
-  const read = async () => {
-    setBusy('read');
-    setError('');
-    setResult(null);
-    setUndone(null);
-    try {
-      const p = await obApi.preview();
-      setPlan(p);
+  const flow = useImportFlow<Detect, Plan, ImportResult>({
+    detect: obApi.detect,
+    notFound: { available: false, found: false },
+    preview: () => obApi.preview(),
+    onPlan: (p) => {
       setBots(Object.fromEntries(p.bots.map((b) => [b.key, { selected: b.selected, workspace: b.workspace.default }])));
       setRoutines(new Set(p.routines.filter((r) => r.selected).map((r) => r.key)));
       setChannels(new Set((p.channels || []).filter((c) => c.selected).map((c) => c.key)));
@@ -384,12 +341,9 @@ function OpenBotImport() {
       const c = p.team.choice;
       setTeam(c?.mode === 'existing' ? { mode: 'existing', id: c.id, name: p.team.name } : { mode: 'new', id: '', name: c?.mode === 'new' ? c.name : p.team.name });
       setRoles({ main: p.roles.main || '', lead: p.roles.lead || '', specialists: Object.fromEntries(p.roles.specialists.map((s) => [s.key, { selected: s.selected, field: s.field }])) });
-    } catch (e: any) {
-      setError(e?.message || String(e));
-    } finally {
-      setBusy('');
-    }
-  };
+    },
+  });
+  const { det, setDet, plan, result, undone, busy, error, loadDetect, read, afterUndo } = flow;
 
   const selectedBots = useMemo(() => new Set(Object.entries(bots).filter(([, v]) => v.selected).map(([k]) => k)), [bots]);
   const botKnown = (key: string) => selectedBots.has(key) || !!plan?.bots.find((b) => b.key === key)?.existing;
@@ -399,15 +353,13 @@ function OpenBotImport() {
   const problem = plan ? teamProblem(plan, team) : '';
   const roleOf = (key: string) => (roles.main === key ? 'main' : roles.lead === key ? 'lead' : plan?.roles.specialistsAvailable && roles.specialists[key]?.selected ? 'specialist' : '');
 
-  const doImport = async () => {
-    if (!plan) return;
-    setBusy('import');
-    try {
-      const keepRoutines = plan.routines.filter((r) => routines.has(r.key) && botKnown(r.botKey)).map((r) => r.key);
-      const r = await obApi.commit({
+  const doImport = () =>
+    plan &&
+    flow.doImport(() =>
+      obApi.commit({
         stagingId: plan.stagingId,
         bots,
-        routines: keepRoutines,
+        routines: plan.routines.filter((r) => routines.has(r.key) && botKnown(r.botKey)).map((r) => r.key),
         channels: keepChannels,
         skills: [...skills],
         memories,
@@ -418,25 +370,8 @@ function OpenBotImport() {
         mainBot: roles.main && selectedBots.has(roles.main) ? roles.main : null,
         lead: roles.lead && selectedBots.has(roles.lead) && roles.lead !== roles.main ? roles.lead : null,
         specialists: Object.fromEntries(plan.roles.specialists.map((s) => [s.key, { selected: !!roles.specialists[s.key]?.selected, field: roles.specialists[s.key]?.field ?? s.field, sources: s.sources }])),
-      });
-      setResult(r);
-      setPlan(null);
-      await useApp.getState().load();
-      window.scrollTo?.(0, 0);
-    } catch (e) {
-      toastError(e);
-    } finally {
-      setBusy('');
-    }
-  };
-
-  const afterUndo = (r: UndoResult) => {
-    setUndone(r);
-    setResult(null);
-    setPlan(null);
-    loadDetect();
-    window.scrollTo?.(0, 0);
-  };
+      }),
+    );
 
   return (
     <>
@@ -450,42 +385,23 @@ function OpenBotImport() {
               <Spinner />
             ) : det.found ? (
               <>
-                <div className="flex items-start gap-3">
-                  <Upload className="mt-0.5 h-5 w-5 shrink-0 text-accent" />
-                  <div className="space-y-1">
-                    <div className="font-medium">OpenBot gevonden op deze computer</div>
-                    <p className="break-all text-sm text-muted">
-                      {det.dataDir}
-                      {det.workspaces ? ` · ${t('{0, plural, one {# werkmap} other {# werkmappen}}', det.workspaces)}` : ''}
-                    </p>
-                    {det.imported && !det.imported.undone && <p className="text-sm text-muted">{t('Eerder overgenomen op {0} ({1, plural, one {# bot} other {# bots}}). Opnieuw inlezen maakt geen dubbele bots.', formatDateTime(det.imported.at), det.imported.counts.bots)}</p>}
-                  </div>
-                </div>
-                <ul className="space-y-1.5 text-sm text-muted">
-                  <li className="flex gap-2">
-                    <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0 text-ok" /> Alleen lezen: OpenBot en zijn bestanden blijven precies zoals ze zijn.
-                  </li>
-                  <li className="flex gap-2">
-                    <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0 text-ok" /> Geen sleutels of tokens: koppelingen die een sleutel nodig hebben, verbind je straks opnieuw.
-                  </li>
-                  <li className="flex gap-2">
-                    <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0 text-ok" /> Routines komen uit te staan, zodat niets dubbel draait naast OpenBot.
-                  </li>
-                  <li className="flex gap-2">
-                    <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0 text-ok" /> Spijt? Met één knop maak je de import weer ongedaan.
-                  </li>
-                </ul>
-                <div className="flex flex-wrap items-center gap-2">
-                  <Button variant="primary" loading={busy === 'read'} icon={<ArrowRight className="h-4 w-4" />} onClick={read}>
-                    OpenBot inlezen
-                  </Button>
-                  <span className="text-xs text-muted">Je ziet eerst wat er overkomt; er wordt nog niets geïmporteerd.</span>
-                  {det.undoable && (
-                    <span className="sm:ms-auto">
-                      <UndoButton onDone={afterUndo} label="Eerdere import ongedaan maken" />
-                    </span>
-                  )}
-                </div>
+                <SourceFound title="OpenBot gevonden op deze computer" imported={det.imported}>
+                  <p className="break-all text-sm text-muted">
+                    {det.dataDir}
+                    {det.workspaces ? ` · ${t('{0, plural, one {# werkmap} other {# werkmappen}}', det.workspaces)}` : ''}
+                  </p>
+                </SourceFound>
+                <Promises
+                  items={[
+                    'Alleen lezen: OpenBot en zijn bestanden blijven precies zoals ze zijn.',
+                    'Geen sleutels of tokens: koppelingen die een sleutel nodig hebben, verbind je straks opnieuw.',
+                    'Routines komen uit te staan, zodat niets dubbel draait naast OpenBot.',
+                    'Spijt? Met één knop maak je de import weer ongedaan.',
+                  ]}
+                />
+                <ReadRow reading={busy === 'read'} onRead={read} undo={det.undoable && <UndoButton onDone={afterUndo} label="Eerdere import ongedaan maken" />}>
+                  OpenBot inlezen
+                </ReadRow>
               </>
             ) : (
               <EmptyState
@@ -500,25 +416,13 @@ function OpenBotImport() {
                 Op deze computer staat geen OpenBot-installatie{det.dataDir ? ` (gezocht in ${det.dataDir})` : ''}.
               </EmptyState>
             )}
-            {error && (
-              <p role="alert" className="rounded-lg bg-danger-soft px-3 py-2 text-sm text-danger">
-                {error}
-              </p>
-            )}
+            <ErrorNote text={error} />
           </Card>
         )}
 
         {plan && (
           <>
-            <div className="flex flex-wrap items-center gap-2 text-sm text-muted">
-              <span>
-                Ingelezen uit <code className="break-all">{plan.source.dataDir}</code>. Dit is een voorvertoning: er is nog niets veranderd.
-              </span>
-              <Button size="sm" variant="ghost" icon={<RefreshCw className="h-3.5 w-3.5" />} loading={busy === 'read'} onClick={read}>
-                Opnieuw inlezen
-              </Button>
-            </div>
-            <AttentionList items={plan.attention} />
+            <PlanTop path={plan.source.dataDir} attention={plan.attention} reading={busy === 'read'} onRead={read} />
 
             <TeamSection plan={plan} team={team} onTeam={setTeam} shared={shared} onShared={setShared} teamData={teamData} onTeamData={setTeamData} />
 
@@ -549,7 +453,7 @@ function OpenBotImport() {
                     .filter((s) => s.importable)
                     .map((s) => (
                       <div key={s.key} className="flex items-start gap-3 px-4 py-2.5">
-                        <Check checked={skills.has(s.key)} disabled={!s.importable} onChange={(v) => setSkills((x) => (v ? new Set([...x, s.key]) : new Set([...x].filter((k) => k !== s.key))))} label={`Skill ${s.name}`} />
+                        <Check checked={skills.has(s.key)} disabled={!s.importable} onChange={(v) => setSkills((x) => toggleIn(x, s.key, v))} label={`Skill ${s.name}`} />
                         <div className="min-w-0 flex-1 space-y-0.5">
                           <div className="flex flex-wrap items-center gap-1.5">
                             <span className="text-sm font-medium">{s.name}</span>
@@ -599,34 +503,7 @@ function OpenBotImport() {
               <p className="text-xs text-muted">
                 Alle routines komen binnen en <strong className="text-fg">staan uit tot jij ze aanzet</strong>. Zet ze aan wanneer je OpenBot stopt, anders draaien ze twee keer (bijvoorbeeld klantmails).
               </p>
-              {plan.routines.length === 0 ? (
-                <p className="text-sm text-muted">Geen routines gevonden.</p>
-              ) : (
-                <Card className="divide-y divide-line">
-                  {plan.routines.map((r) => {
-                    const botOff = !botKnown(r.botKey);
-                    return (
-                      <div key={r.key} className={cx('flex items-start gap-3 px-4 py-2.5', (!r.ok || botOff || r.existing) && 'opacity-60')}>
-                        <Check checked={routines.has(r.key) && !botOff} disabled={!r.ok || botOff || r.existing} onChange={(v) => setRoutines((x) => (v ? new Set([...x, r.key]) : new Set([...x].filter((k) => k !== r.key))))} label={`Routine ${r.name}`} />
-                        <div className="min-w-0 flex-1 space-y-0.5">
-                          <div className="flex flex-wrap items-center gap-1.5">
-                            <span className="text-sm font-medium">{r.name}</span>
-                            <span className="text-xs text-muted">· {r.botName}</span>
-                            <Badge tone="neutral">{r.wasActive ? 'stond aan · komt uit' : 'stond uit · blijft uit'}</Badge>
-                            {r.customer && <Badge tone="warn">klantberichten</Badge>}
-                            {r.existing && <Badge tone="ok">al overgenomen</Badge>}
-                          </div>
-                          <p className={cx('text-xs', r.ok ? 'text-muted' : 'text-danger')}>
-                            {r.schedule}
-                            {botOff && r.ok ? ' · de bot wordt niet overgenomen' : ''}
-                          </p>
-                          {r.notes.length > 0 && <p className={cx('text-xs', r.customer ? 'text-warn' : 'text-muted')}>{r.notes.join(' ')}</p>}
-                        </div>
-                      </div>
-                    );
-                  })}
-                </Card>
-              )}
+              <RoutineList routines={plan.routines} chosen={routines} setChosen={setRoutines} known={botKnown} empty="Geen routines gevonden." />
             </Section>
 
             <Section icon={<MessageCircle className="h-4 w-4" />} title="Kanalen" count={plan.channels?.length ? `${keepChannels.length} van ${plan.channels.length}` : undefined}>
@@ -641,7 +518,7 @@ function OpenBotImport() {
                     const can = !!c.adapter && !!c.botKey && botKnown(c.botKey) && !c.existing;
                     return (
                       <div key={c.key} className="flex items-start gap-3 px-4 py-3">
-                        <Check checked={can && channels.has(c.key)} disabled={!can} onChange={(v) => setChannels((x) => (v ? new Set([...x, c.key]) : new Set([...x].filter((k) => k !== c.key))))} label={t('Kanaal {0}', c.label)} />
+                        <Check checked={can && channels.has(c.key)} disabled={!can} onChange={(v) => setChannels((x) => toggleIn(x, c.key, v))} label={t('Kanaal {0}', c.label)} />
                         <div className="min-w-0 flex-1">
                           <div className="flex flex-wrap items-center gap-2">
                             <span className="font-medium">{c.label}</span>
@@ -681,19 +558,12 @@ function OpenBotImport() {
 
             <WhatHappens plan={plan} team={team} roles={roles} selected={selectedBots} routineCount={routineCount} channelCount={keepChannels.length} skills={skills.size} shared={shared} teamData={teamData} memories={memories} />
 
-            <div className="fixed inset-x-0 bottom-0 z-10 border-t border-line bg-surface/95 px-4 py-3 backdrop-blur sm:static sm:rounded-xl sm:border">
-              <div className="mx-auto flex max-w-4xl flex-wrap items-center gap-3">
-                <span className="text-sm text-muted">
-                  {t('{0, plural, one {# bot} other {# bots}}', selectedBots.size)} · {t('{0, plural, one {# skill} other {# skills}}', skills.size)} · {t('{0, plural, one {# routine (uit)} other {# routines (uit)}}', routineCount)}
-                  {shared ? ' · teammap' : ''}
-                  {teamData ? ' · teamtabellen' : ''}
-                  {memories !== 'off' && plan.memories.total ? ' · herinneringen' : ''}
-                </span>
-                <Button className="ms-auto" variant="primary" loading={busy === 'import'} disabled={!!problem || (!selectedBots.size && !skills.size && !routineCount && !shared && !teamData)} onClick={doImport} icon={<CheckCircle2 className="h-4 w-4" />}>
-                  Importeren
-                </Button>
-              </div>
-            </div>
+            <ImportBar importing={busy === 'import'} disabled={!!problem || (!selectedBots.size && !skills.size && !routineCount && !shared && !teamData)} onImport={doImport}>
+              {t('{0, plural, one {# bot} other {# bots}}', selectedBots.size)} · {t('{0, plural, one {# skill} other {# skills}}', skills.size)} · {t('{0, plural, one {# routine (uit)} other {# routines (uit)}}', routineCount)}
+              {shared ? ' · teammap' : ''}
+              {teamData ? ' · teamtabellen' : ''}
+              {memories !== 'off' && plan.memories.total ? ' · herinneringen' : ''}
+            </ImportBar>
           </>
         )}
       </div>

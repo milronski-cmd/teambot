@@ -1,10 +1,12 @@
 import { useEffect, useState } from 'react';
+import { newer } from '../../../../shared/version.js';
 import { CheckCircle2, Gift, PackageCheck, RefreshCw, ShieldCheck, Trash2 } from 'lucide-react';
 import { api, on } from '../../lib/api';
 import { formatNumber, formatPercent } from '../../lib/format';
 import { useApp } from '../../lib/store';
 import type { ProviderView } from '../../lib/types';
 import { askConfirm, Badge, Button, cx, toast, toastError, useAsync } from '../../components/ui';
+import { t } from '../../lib/i18n';
 
 /** Mirror of the server's runtimes.ts status (TeamBot's own copy of Claude Code, Codex or OpenCode). */
 export interface RuntimeView {
@@ -44,12 +46,6 @@ export interface DeviceLoginView {
 /** Decimal megabytes as the package registry gives them ("125 MB"), in the interface locale. */
 const mb = (n?: number) => formatNumber(Math.round((n || 0) / 1e6), { style: 'unit', unit: 'megabyte', unitDisplay: 'short' });
 /** a > b for plain x.y.z versions. */
-const newerThan = (a: string, b: string) => {
-  const pa = a.split('.').map(Number);
-  const pb = b.split('.').map(Number);
-  for (let i = 0; i < 3; i++) if ((pa[i] || 0) !== (pb[i] || 0)) return (pa[i] || 0) > (pb[i] || 0);
-  return false;
-};
 const busyPhase = (j?: RuntimeJob | null) => !!j && !['done', 'error'].includes(j.phase);
 
 /** Live progress of installing a CLI copy (server events "cli.runtime"). */
@@ -76,7 +72,7 @@ export function JobProgress({ job, label }: { job: RuntimeJob; label: string }) 
             : '';
   return (
     <div className="space-y-1" aria-live="polite">
-      <div className="h-1.5 overflow-hidden rounded-full bg-surface-2" role="progressbar" aria-valuemin={0} aria-valuemax={100} aria-valuenow={job.phase === 'download' ? pct : job.phase === 'metadata' ? 0 : 100} aria-label={`${label} installeren`}>
+      <div className="h-1.5 overflow-hidden rounded-full bg-surface-2" role="progressbar" aria-valuemin={0} aria-valuemax={100} aria-valuenow={job.phase === 'download' ? pct : job.phase === 'metadata' ? 0 : 100} aria-label={t('{0} installeren', t(label))}>
         <div className="h-full rounded-full bg-accent transition-[width] duration-300" style={{ width: `${job.phase === 'download' ? pct : job.phase === 'metadata' ? 3 : 100}%` }} />
       </div>
       <div className="text-[11px] text-muted">{text}</div>
@@ -151,7 +147,7 @@ export function OwnCopy({ rt, inUse, onChanged }: { rt: RuntimeView; inUse: bool
         </div>
       )}
       {rt.installed && !rt.installed.pinned && (
-        <p className="text-xs text-muted">{newerThan(rt.installed.version, rt.pinned) ? `Bijgewerkt na de versie waarmee TeamBot getest is (${rt.pinned}).` : `Ouder dan de versie waarmee TeamBot getest is (${rt.pinned}).`}</p>
+        <p className="text-xs text-muted">{newer(rt.installed.version, rt.pinned) ? `Bijgewerkt na de versie waarmee TeamBot getest is (${rt.pinned}).` : `Ouder dan de versie waarmee TeamBot getest is (${rt.pinned}).`}</p>
       )}
     </div>
   );

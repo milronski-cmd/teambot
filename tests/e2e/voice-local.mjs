@@ -390,6 +390,8 @@ try {
     await page.getByRole('button', { name: 'Live praten' }).click({ timeout: 15000 });
     await page.getByRole('radio', { name: /Gratis gesprek/ }).click();
     await page.getByRole('button', { name: 'Start gesprek' }).click();
+    // The call is a compact bar above the message field; the subtitles open on request.
+    await page.getByRole('button', { name: 'Ondertiteling tonen' }).click({ timeout: 15000 });
     const caps = page.getByLabel('Live ondertiteling');
     const tCall = Date.now();
     let captions = '';
@@ -428,6 +430,7 @@ try {
     await page.getByRole('radio', { name: /Gratis gesprek/ }).click();
     await page.getByRole('button', { name: 'Start gesprek' }).click();
     const call = page.getByRole('dialog', { name: /Gesprek met/ });
+    await call.getByRole('button', { name: 'Ondertiteling tonen' }).click({ timeout: 15000 });
     const ready = await call.getByText('Houd de spatiebalk of de knop ingedrukt om te praten').waitFor({ timeout: 15000 }).then(() => true, () => false);
     check('ingedrukt houden: standaard op de pc ("Houd de spatiebalk … ingedrukt")', ready);
     const tReady = Date.now();
@@ -651,6 +654,8 @@ try {
     const { page, errors } = await launch(dictFile);
     await page.goto(`${t.app.url}/#token=${t.token}`);
     await page.goto(`${t.app.url}/#/settings/voice-spraak`);
+    // Which model, the model list and the voices with their licences are behind "Meer opties" (the first view is simple).
+    await page.getByTestId('more-options').locator('summary').first().click({ timeout: 15000 });
     const trLine = page.getByRole('status').filter({ hasText: 'Voor het Turks gebruikt TeamBot Whisper large-v3 turbo.' });
     const sawTr = await trLine.waitFor({ timeout: 15000 }).then(() => true, () => false);
     check('instellingen: Turks dicteren → Whisper (staat erbij)', sawTr);
@@ -660,7 +665,9 @@ try {
     const shots = process.env.VOICE_LIVE_SHOTS;
     if (shots) await page.locator('div.rounded-xl, div.rounded-2xl').filter({ hasText: 'Spraak naar tekst' }).first().screenshot({ path: path.join(shots, 'dicteren-turks.png') }).catch(() => {});
     // Change the language without saving: the line follows at once.
-    await page.locator('select').filter({ has: page.locator('option[value="pl"]') }).first().selectOption('pl');
+    // The language (card Dicteren) is TeamBot's own dropdown, not a <select>: open it and pick Polish.
+    await page.locator('[role="combobox"][data-value="tr"]').first().click();
+    await page.locator('[role="option"][data-value="pl"]').click();
     const sawPl = await page.getByRole('status').filter({ hasText: 'Voor het Pools gebruikt TeamBot Parakeet v3.' }).waitFor({ timeout: 5000 }).then(() => true, () => false);
     check('instellingen: andere dicteertaal → meteen het passende model', sawPl);
     await page.getByText('Lokale stemmen downloaden of verwijderen').click();
@@ -678,10 +685,17 @@ try {
     await page.goto(`${t.app.url}/#/agents/${polBot.id}/edit`);
     await page.waitForTimeout(1500);
     let offered = await page.locator('option', { hasText: 'M-AILABS (Pools, vrouw)' }).count();
-    if (!offered) {
-      await page.getByText('Spraak', { exact: true }).first().click().catch(() => {});
+    // The bot page has three tabs; Spraak is a section behind "Meer opties" on one of them.
+    for (const tab of offered ? [] : await page.getByRole('tab').all()) {
+      await tab.click();
+      await page.evaluate(() => document.querySelectorAll('details').forEach((x) => (x.open = true)));
+      await page.waitForTimeout(300);
+      const sec = page.locator('#inhoud').getByRole('button', { name: /^Spraak/ }).first();
+      if (!(await sec.isVisible().catch(() => false))) continue;
+      if ((await sec.getAttribute('aria-expanded').catch(() => 'true')) === 'false') await sec.click();
       await page.waitForTimeout(800);
       offered = await page.locator('option', { hasText: 'M-AILABS (Pools, vrouw)' }).count();
+      if (offered) break;
     }
     check('bot-instellingen: de nieuwe stemmen staan in de keuzelijst', offered > 0);
     check('geen fouten in de console (instellingen)', !errors.length, errors.join(' | ').slice(0, 300));

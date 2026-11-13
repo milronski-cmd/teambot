@@ -1,13 +1,15 @@
+import { builtinDuty } from './catalog.js';
 import type { Ctx, ToolDef, ToolGroup } from '../../../core/types.js';
 import { ah, bad, HttpError, notFound, str, user } from '../../../core/http.js';
 import { HttpishError, type RoutineEngine } from '../engine.js';
 import { formatLocal, ScheduleError, wallTime } from '../schedule.js';
 import { cleanMeasure, type DutyService } from './service.js';
 import { SOURCE_LABEL } from './types.js';
+import { PLACE } from '../../../../shared/places.js';
+import { words } from '../../../../shared/i18n-core.js';
 
 /** Always on: a reminder only ever tells the owner something, so every bot may set one (also bots without Routines). */
 export const REMINDER_GROUP: ToolGroup = { id: 'routines:reminders', label: 'Herinneringen en vaste taken', description: 'Herinneringen voor de eigenaar en vaste taken voor de bot zelf instellen en weghalen', always: true };
-const MAX_REMINDERS = 100;
 const pad = (n: number) => String(n).padStart(2, '0');
 
 /** Tools for vaste taken and reminders. `report` is only offered during a duty's run. */
@@ -44,7 +46,7 @@ export function dutyTools(engine: RoutineEngine, duties: DutyService): { static:
       },
       required: ['status'],
     },
-    summarize: (a) => `Vaste taak afronden: ${a?.status === 'in_orde' ? 'in orde' : a?.status === 'probleem' ? 'probleem gevonden' : a?.status === 'opgelost' ? 'opgelost' : 'kon niet'}`,
+    summarize: (a) => words(a?.status === 'in_orde' ? 'Vaste taak afronden: in orde' : a?.status === 'probleem' ? 'Vaste taak afronden: probleem gevonden' : a?.status === 'opgelost' ? 'Vaste taak afronden: opgelost' : 'Vaste taak afronden: kon niet'),
     async run(a, t) {
       return duties.report(t.run.id, t.agent, a);
     },
@@ -70,11 +72,24 @@ export function dutyTools(engine: RoutineEngine, duties: DutyService): { static:
       },
       required: ['text'],
     },
-    summarize: (a) => `Herinnering zetten: “${String(a?.text || '').slice(0, 80)}”${a?.at ? ` op ${String(a.at).replace('T', ' ')}` : a?.in_minutes ? ` over ${a.in_minutes} min` : ''}`,
+    summarize: (a) => {
+      const text = String(a?.text || '').slice(0, 80);
+      if (a?.at) return words('Herinnering zetten: “{0}” op {1}', text, String(a.at).replace('T', ' '));
+      return a?.in_minutes ? words('Herinnering zetten: “{0}” over {1} min', text, Number(a.in_minutes) || String(a.in_minutes)) : words('Herinnering zetten: “{0}”', text);
+    },
     async run(a, t) {
       const text = String(a?.text || '').trim();
       if (!text) return { text: 'Geef de tekst van de herinnering.', isError: true };
-      if (engine.routinesOf(t.userId, t.agent.id).filter((r) => r.options.reminder && r.status === 'active').length >= MAX_REMINDERS) return { text: `Er staan al ${MAX_REMINDERS} herinneringen klaar bij deze bot.`, isError: true };
+      // No built-in maximum: only the one the owner may set under Standaarden voor routines (0 = none, the default).
+      const max = engine.globalSettings(t.userId).maxRemindersPerBot;
+      if (max > 0 && engine.routinesOf(t.userId, t.agent.id).filter((r) => r.options.reminder && r.status === 'active').length >= max)
+        return {
+          text:
+            max === 1
+              ? `Er staat al 1 herinnering klaar bij deze bot: meer staat de eigenaar niet toe (${PLACE.routineDefaults}).`
+              : `Er staan al ${max} herinneringen klaar bij deze bot: meer staat de eigenaar niet toe (${PLACE.routineDefaults}).`,
+          isError: true,
+        };
       const tz = engine.userTz(t.userId);
       let schedule: any;
       if (Array.isArray(a?.times) && a.times.length) schedule = { kind: 'weekly', days: Array.isArray(a.days) && a.days.length ? a.days : [0, 1, 2, 3, 4, 5, 6], times: a.times };
@@ -84,7 +99,7 @@ export function dutyTools(engine: RoutineEngine, duties: DutyService): { static:
       } else if (a?.at) schedule = { kind: 'once', at: String(a.at) };
       else return { text: 'Wanneer? Geef at (JJJJ-MM-DDTUU:MM), in_minutes, of days met times.', isError: true };
       try {
-        const r = engine.create(t.userId, { name: `Herinnering: ${text}`.slice(0, 80), prompt: text, agent_id: t.agent.id, timezone: tz, schedule, options: { reminder: { text }, notify: 'always', missedPolicy: 'catchup', retries: 0, maxRunsPerDay: 50 } }, { createdBy: 'agent' });
+        const r = engine.create(t.userId, { name: `Herinnering: ${text}`.slice(0, 80), prompt: text, agent_id: t.agent.id, timezone: tz, schedule, options: { reminder: { text }, notify: 'always', missedPolicy: 'catchup', retries: 0 } }, { createdBy: 'agent' });
         const next = r.next_run_at ? formatLocal(Date.parse(r.next_run_at), r.timezone, true) : '';
         return { text: `Herinnering gezet${next ? ` voor ${next}` : ''}: “${text}”. De eigenaar krijgt hem dan als melding (pc en telefoon), in de chat en via zijn chat-app als die gekoppeld is.`, data: { routineId: r.id, at: r.next_run_at } };
       } catch (e: any) {
@@ -101,7 +116,7 @@ export function dutyTools(engine: RoutineEngine, duties: DutyService): { static:
     internal: true,
     description: 'Haal een herinnering weg die je eerder zette (een deel van de tekst is genoeg). Zonder text: toon de herinneringen die klaarstaan.',
     parameters: { type: 'object', properties: { text: { type: 'string', description: 'Een deel van de tekst van de herinnering' } } },
-    summarize: (a) => (a?.text ? `Herinnering weghalen: “${String(a.text).slice(0, 60)}”` : 'Herinneringen bekijken'),
+    summarize: (a) => (a?.text ? words('Herinnering weghalen: “{0}”', String(a.text).slice(0, 60)) : words('Herinneringen bekijken')),
     async run(a, t) {
       const mine = engine.routinesOf(t.userId, t.agent.id).filter((r) => r.options.reminder && r.status === 'active');
       const q = String(a?.text || '').trim().toLowerCase();
@@ -121,6 +136,7 @@ export function dutyTools(engine: RoutineEngine, duties: DutyService): { static:
     risk: 'write',
     description:
       'Stel een vaste taak voor jezelf in: iets dat je uit jezelf in de gaten houdt of bijhoudt ("houd elke ochtend de voorraad in de gaten", "kijk elk uur of de site nog werkt"). Werkt voor elke rol. ' +
+      'Alleen als de eigenaar erom vraagt, of als het hoort bij een project of taak waar je nu aan werkt: verzin geen vaste taken om iets te doen te hebben, en meet niets waar nog geen gegevens van zijn (een lege tabel, een app die niet gekoppeld is). ' +
       'Geef title, check (wat je controleert), ok_when (wanneer het in orde is) en on_problem: fix (zelf oplossen), task (een taak maken) of ask (de eigenaar vragen). Hoe vaak: every_minutes (vanaf 1), of days (ma, di, …; leeg = elke dag) met times. ' +
       'Kan TeamBot het zelf meten, geef dan measure mee; dan wordt er zonder AI gemeten en word je alleen gewekt als het niet in orde is. measure.kind: url (url, optioneel contains, status, maxMs), ' +
       'tool (tool = de naam van een van je lees-tools, args, path naar het getal zoals "rows.length", op en value: in orde als getal op value) of query (sql = één SELECT op de teamdatabase die één getal geeft, op, value). ' +
@@ -142,7 +158,11 @@ export function dutyTools(engine: RoutineEngine, duties: DutyService): { static:
       },
       required: ['title', 'check'],
     },
-    summarize: (a) => `Vaste taak instellen: “${String(a?.title || '').slice(0, 80)}”${a?.every_minutes ? ` (elke ${a.every_minutes} min)` : Array.isArray(a?.times) ? ` (${a.times.join(', ')})` : ''}`,
+    summarize: (a) => {
+      const title = String(a?.title || '').slice(0, 80);
+      if (a?.every_minutes) return words('Vaste taak instellen: “{0}” (elke {1} min)', title, Number(a.every_minutes) || String(a.every_minutes));
+      return Array.isArray(a?.times) ? words('Vaste taak instellen: “{0}” ({1})', title, a.times.join(', ')) : words('Vaste taak instellen: “{0}”', title);
+    },
     async run(a, t) {
       const title = String(a?.title || '').trim().slice(0, 80);
       const check = String(a?.check || '').trim();
@@ -153,6 +173,12 @@ export function dutyTools(engine: RoutineEngine, duties: DutyService): { static:
         const body = { key: existing?.options.duty?.key || 'eigen', title, check, source: a?.measure?.kind === 'url' ? 'web' : 'team', okWhen: String(a?.ok_when || ''), onProblem: a?.on_problem, days: a?.days, times: a?.times, everyMinutes: a?.every_minutes, measure: a?.measure } as any;
         if (existing) engine.remove(existing, { deleteThread: true });
         const r = duties.create(t.userId, t.agent.id, body);
+        // Nothing to look at yet (the tool or app is not there): no routine that runs for nothing.
+        const need = duties.needs(r, t.agent);
+        if (need) {
+          engine.remove(r, { deleteThread: true });
+          return { text: `Deze vaste taak kan nog niets meten: ${need} Stel hem in zodra dat er is, of kies een meting die nu al werkt.`, isError: true };
+        }
         const { describeSchedule } = await import('../schedule.js');
         t.ctx.events.emit(t.userId, 'notification', { title: `${t.agent.name} heeft een vaste taak ${existing ? 'bijgewerkt' : 'ingesteld'}`, body: `${r.name} · ${describeSchedule(r.schedule, r.timezone)}`, link: '#/m/routines/werk', kind: 'routine', routineId: r.id, agentId: t.agent.id });
         return { text: `Vaste taak “${r.name}” staat aan: ${describeSchedule(r.schedule, r.timezone)}.${r.options.duty?.measure ? ' TeamBot meet zelf; je wordt alleen gewekt als het niet in orde is.' : ''} De eigenaar ziet hem bij Werk en kan hem aanpassen.`, data: { routineId: r.id } };
@@ -170,7 +196,7 @@ export function dutyTools(engine: RoutineEngine, duties: DutyService): { static:
     internal: true,
     description: 'Haal een vaste taak van jezelf weg (een deel van de naam is genoeg). Zonder title: toon je vaste taken.',
     parameters: { type: 'object', properties: { title: { type: 'string' } } },
-    summarize: (a) => (a?.title ? `Vaste taak weghalen: “${String(a.title).slice(0, 60)}”` : 'Vaste taken bekijken'),
+    summarize: (a) => (a?.title ? words('Vaste taak weghalen: “{0}”', String(a.title).slice(0, 60)) : words('Vaste taken bekijken')),
     async run(a, t) {
       const mine = duties.duties(t.userId, t.agent.id);
       const q = String(a?.title || '').trim().toLowerCase();
@@ -195,8 +221,37 @@ export function dutyRoutes(ctx: Ctx, engine: RoutineEngine, duties: DutyService)
     '/proactive/duties',
     ah(async (req) => {
       const u = user(req);
-      duties.seed(u.id);
-      return { duties: await duties.views(u.id, teamOf(req.query.teamId)), budget: duties.budget(u.id), settings: duties.settings(u.id), sources: SOURCE_LABEL, presets: duties.presets(u.id).map((r) => ({ id: r.id, label: r.label })) };
+      return { duties: await duties.views(u.id, teamOf(req.query.teamId)), budget: duties.budget(u.id), settings: duties.settings(u.id), sources: SOURCE_LABEL, presets: duties.presets(u.id).map((r) => ({ id: r.id, label: r.label })), archived: duties.archived(u.id).map(({ routine: _r, ...a }) => a) };
+    }),
+  );
+  // What the clean-up archived (routines TeamBot once made by itself and that never produced anything), and putting one back.
+  ctx.api.get('/proactive/archived', ah(async (req) => ({ archived: duties.archived(user(req).id) })));
+  ctx.api.post(
+    '/proactive/archived/:id/restore',
+    ah(async (req) => {
+      const u = user(req);
+      try {
+        const r = duties.restore(u.id, str(req.params.id, 80));
+        if (!r) throw notFound('Niet gevonden in Opgeruimd');
+        return engine.view(r);
+      } catch (e: any) {
+        if (e instanceof HttpishError) throw new HttpError(e.status, e.message);
+        throw e;
+      }
+    }),
+  );
+  // The work loop: per bot the work that lies there now and how its last turn went.
+  ctx.api.get('/proactive/work', ah(async (req) => ({ work: duties.work ? await duties.work.views(user(req).id) : [] })));
+  // "Nu niet" on the work that lies ready for a bot (body { parked: true }), and taking it up again ({ parked: false }).
+  ctx.api.post(
+    '/proactive/work/:agentId/park',
+    ah(async (req) => {
+      const u = user(req);
+      const agent = ctx.store.agent(str(req.params.agentId, 80));
+      if (!agent || agent.user_id !== u.id) throw notFound('Bot niet gevonden');
+      const parked = req.body?.parked !== false;
+      if (!duties.work || !(await duties.work.park(u.id, agent.id, parked))) throw bad(`Er ligt nu geen werk klaar voor ${agent.name}.`);
+      return { parked, work: await duties.work.views(u.id) };
     }),
   );
   // Presets: which duties a kind of bot gets. The built-in ones and the owner's own are the same thing.
@@ -217,10 +272,12 @@ export function dutyRoutes(ctx: Ctx, engine: RoutineEngine, duties: DutyService)
       const b = req.body || {};
       const agent = ctx.store.agent(str(b.agentId, 80));
       if (!agent || agent.user_id !== u.id) throw notFound('Bot niet gevonden');
-      const title = str(b.title, 80).trim();
+      const title = str(b.title, 80).trim() || builtinDuty(str(b.key, 60))?.title || '';
       if (!title) throw bad('Geef de vaste taak een naam');
       try {
-        const r = duties.create(u.id, agent.id, { key: 'eigen', title, check: str(b.check, 1000), source: b.source, okWhen: str(b.okWhen, 500), onProblem: b.onProblem, days: b.days, times: b.times, everyMinutes: b.everyMinutes, measure: b.measure } as any);
+        // `key`: one of the built-in examples (catalog.ts), picked deliberately; what the body gives wins over the example.
+        const lib = builtinDuty(str(b.key, 60));
+        const r = duties.create(u.id, agent.id, { key: lib?.key || 'eigen', title, check: str(b.check, 1000) || lib?.check, source: b.source ?? lib?.source, okWhen: str(b.okWhen, 500) || lib?.okWhen, onProblem: b.onProblem ?? lib?.onProblem, days: b.days ?? lib?.days, times: b.times ?? lib?.times, everyMinutes: b.everyMinutes ?? lib?.everyMinutes, measure: b.measure ?? lib?.measure } as any);
         return engine.view(r);
       } catch (e: any) {
         if (e instanceof HttpishError) throw new HttpError(e.status, e.message);

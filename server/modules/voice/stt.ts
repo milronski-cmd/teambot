@@ -8,6 +8,7 @@ import { NO_OPENAI, authHeaders, endpointUrl, providerError, resolveEndpoint } f
 import { checkBudget, logUsage } from './usage.js';
 import { localVoice } from './local/service.js';
 import { OpusFormatError } from './local/opus.js';
+import { PLACE } from '../../../shared/places.js';
 
 export interface SttResult {
   text: string;
@@ -32,7 +33,7 @@ export async function transcribeLocal(ctx: Ctx, modelId: string, language: strin
   if (audio.container !== 'wav' && audio.container !== 'ogg')
     throw new HttpError(
       415,
-      'Lokale spraakherkenning verwacht WAV- of Ogg/Opus-audio (TeamBot neemt zelf in WAV op; spraakberichten van WhatsApp en Telegram zijn Ogg/Opus). Kies bij Instellingen › Spraak een spraakprovider voor andere bestandstypen.',
+      `Lokale spraakherkenning verwacht WAV- of Ogg/Opus-audio (TeamBot neemt zelf in WAV op; spraakberichten van WhatsApp en Telegram zijn Ogg/Opus). Kies bij ${PLACE.voice} een spraakprovider voor andere bestandstypen.`,
       'voice_local_format',
     );
   let r;
@@ -97,7 +98,7 @@ export async function transcribe(
   if (!ep)
     throw new HttpError(
       400,
-      settings.stt.providerId ? 'De gekozen spraakprovider is niet (meer) beschikbaar. Kies een andere bij Instellingen › Spraak.' : NO_OPENAI,
+      settings.stt.providerId ? `De gekozen spraakprovider is niet (meer) beschikbaar. Kies een andere bij ${PLACE.voice}.` : NO_OPENAI,
       'voice_no_stt',
     );
   if (!LOCAL_KINDS.has(ep.kind)) checkBudget(ctx, user.id);

@@ -1,19 +1,21 @@
 import { cliActivity, cliFacts, cliPending, cliStatus, type AppNames } from './activity-labels.js';
 import type { ActivityItem, AgentRunResult, StepFact, Usage } from '../../core/types.js';
 import { redact } from '../../core/secrets.js';
-import { agentRootList, extraRootsOf } from '../../tools/builtin/files.js';
+import { agentRootList, extraRootsOf, shutFolders, wholeComputer } from '../../tools/builtin/files.js';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { runQuick, runTempDir, startProc, type Proc } from './proc.js';
 import { authHint, lastOutput, composePrompt, contextState, earlierTranscript, errorText, safeAttachments, sessionInstructions, sessionUpdate, workdir, type RunScope, type SafeAttachment, type SessionContext } from './context.js';
-import { cardPath, codexCommand, commandRisk, commandWriteTargets, gate, plainCommand, unwrapShell, type GateScope } from './permissions.js';
+import { cardPath, codexCommand, commandRisk, commandWriteTargets, gate, hardBlocks, hardBlocksNote, plainCommand, unwrapShell, type GateScope } from './permissions.js';
 import { RpcError, RpcPeer } from './rpc.js';
 import { checkExtraArgs, type CliDef } from './catalog.js';
 import { APP_VERSION } from '../../core/config.js';
 import { MCP_SERVER_NAME, type BridgeRegistration, type PermissionBridge, type StdioServer } from './bridge.js';
 import { teambotTools, toolsNote } from './toolhost.js';
+import { appsOff } from './engine-apps.js';
 import { codexContext, parseCodexRateLimits } from '../usage/parse.js';
+import { withUsage } from '../../agent/budget.js';
 import { CODEX_OPEN, codexKeyPaths, codexProfileArgs, type CodexReadGuard } from './codex-sandbox.js';
 import { normalizePlan } from '../../tools/builtin/plan.js';
 
@@ -54,12 +56,19 @@ export interface CodexDeps {
   readGuard?(): Promise<CodexReadGuard>;
 }
 
-/** TeamBot's permission profile for this run (`-c` overrides), or null when only the legacy `--sandbox` flags work here. */
-export async function codexPermissions(s: RunScope, d: CodexDeps, o: { write: boolean; network: boolean }): Promise<{ args: string[] | null; guard: CodexReadGuard }> {
+/**
+ * TeamBot's permission profile for this run (`-c` overrides), or null when only the legacy `--sandbox` flags (or, for
+ * the whole computer, no sandbox) work here. `root`: "Volledige toegang" on the whole computer. What the profile
+ * denies is what the gate refuses (codexKeyPaths); `note`: the hard blocks for the bot's instructions when the
+ * sandbox cannot hold them here (permissions.ts hardBlocks).
+ */
+export async function codexPermissions(s: RunScope, d: CodexDeps, o: { write: boolean; network: boolean; root?: boolean }): Promise<{ args: string[] | null; guard: CodexReadGuard; note: string }> {
   const guard = (await d.readGuard?.().catch(() => CODEX_OPEN)) || CODEX_OPEN;
   const roots = agentRootList(s.agent);
-  const deny = guard.level === 'keyfolders' ? codexKeyPaths({ home: os.homedir(), dataDir: s.ctx.config.dataDir, keep: roots.map((r) => r.path) }) : [];
-  return { guard, args: codexProfileArgs({ guard, write: o.write, network: o.network, roots: roots.slice(1).map((r) => ({ path: r.path, mode: r.mode })), deny }) };
+  const deny = guard.level === 'open' ? [] : codexKeyPaths({ home: os.homedir(), shut: shutFolders(s.agent, s.ctx.config.dataDir), keep: roots.map((r) => r.path) });
+  const args = codexProfileArgs({ guard, write: o.write, network: o.network, root: o.root, workspace: roots[0]?.path, roots: roots.slice(1).map((r) => ({ path: r.path, mode: r.mode })), deny });
+  const blocks = hardBlocks({ engine: 'codex', level: s.agent.access_mode, whole: !!o.root, codex: guard });
+  return { guard, args, note: blocks.guarded ? '' : hardBlocksNote(s.agent, s.ctx.config.dataDir) };
 }
 
 /** Codex features that act outside the sandbox without a per-action approval (from `codex features list`). */
@@ -70,8 +79,9 @@ const featureCache = new Map<string, string[]>();
  * Unless the bot opts in, switch off the user's own Codex MCP servers and computer/browser
  * features for TeamBot runs: their tool calls would bypass the bot's access mode.
  */
-export async function codexIsolation(bin: string, useUserMcp: boolean): Promise<string[]> {
-  if (useUserMcp) return [];
+export async function codexIsolation(bin: string, useUserMcp: boolean, appsOff: string[] = []): Promise<string[]> {
+  // The owner's own Codex apps are the bot's too, except the ones he switched off for this bot (engine-apps.ts).
+  if (useUserMcp) return appsOff.filter((id) => /^[A-Za-z0-9_-]{1,64}$/.test(id)).flatMap((id) => ['-c', `mcp_servers.${id}.enabled=false`]);
   let enabled = featureCache.get(bin);
   if (!enabled) {
     const r = await runQuick(bin, ['features', 'list'], { timeoutMs: 15_000 });
@@ -137,7 +147,7 @@ async function withTeambotTools(s: RunScope, d: CodexDeps, hold: (on: boolean) =
   const reg: BridgeRegistration = d.bridge.register({ tools }, tmp.dir);
   return {
     args: codexMcpArgs(d.bridge.stdioServer(reg, { tools: true })),
-    note: toolsNote(names, 'codex'),
+    note: toolsNote(names, 'codex', { full: s.agent.access_mode === 'full' && !s.agent.settings?.sharedRun }),
     dispose() {
       reg.dispose();
       tmp.cleanup();
@@ -145,12 +155,15 @@ async function withTeambotTools(s: RunScope, d: CodexDeps, hold: (on: boolean) =
   };
 }
 
+/** `danger-full-access`: "Volledige toegang" on the whole computer — Codex runs commands without its sandbox. */
+export type CodexSandbox = 'read-only' | 'workspace-write' | 'danger-full-access';
+
 /**
  * Arguments for `codex exec`. With `profile` (TeamBot's permission profile, see codex-sandbox.ts) the folders,
  * writing and network come from the profile and `--sandbox` is left out: it would switch Codex back to the legacy
  * settings, which only limit writes.
  */
-export function codexExecArgs(o: { sandbox: 'read-only' | 'workspace-write'; cwd: string; model?: string; reasoning?: string; addDirs: string[]; images: string[]; sessionId?: string; extra: string[]; isolation?: string[]; mcp?: string[]; network?: boolean; profile?: string[] | null }): string[] {
+export function codexExecArgs(o: { sandbox: CodexSandbox; cwd: string; model?: string; reasoning?: string; addDirs: string[]; images: string[]; sessionId?: string; extra: string[]; isolation?: string[]; mcp?: string[]; network?: boolean; profile?: string[] | null }): string[] {
   const a = ['exec', '--json', '--skip-git-repo-check', '--color', 'never', '-C', o.cwd, ...(o.profile ? o.profile : ['-s', o.sandbox]), '-c', 'approval_policy="never"', ...(o.isolation || []), ...(o.mcp || [])];
   if (!o.profile && o.network && o.sandbox === 'workspace-write') a.push('-c', 'sandbox_workspace_write.network_access=true');
   if (o.model && o.model !== 'default') a.push('-m', o.model);
@@ -210,8 +223,13 @@ export async function runCodex(s: RunScope, d: CodexDeps): Promise<AgentRunResul
       return runExec(s, d, 'read-only');
     }
   }
-  // "Volledige toegang": write in the workspace with network, no per-action approvals (the sandbox still keeps the
-  // rest of the computer out); TeamBot tools keep their Broker rules.
+  // "Volledige toegang" on the whole computer (files.ts wholeComputer): the whole disk writable, or Codex fails silently
+  // on everything outside the bot's folders (approvals are "never"). In the sandbox, with key files, TeamBot's data and
+  // the closed folders denied, where TeamBot's check showed that holds here (codex-sandbox.ts `root`); else without a
+  // sandbox, and then only the instructions keep them shut (the bot's page says so, permissions.ts hardBlocks).
+  // TeamBot's own tools keep their checks. Without the whole computer (a member's bot, "alleen eigen mappen"): write in
+  // the bot's folders.
+  if (wholeComputer(s.agent)) return runExec(s, d, 'danger-full-access');
   return runExec(s, d, s.agent.access_mode === 'auto' || s.agent.access_mode === 'full' ? 'workspace-write' : 'read-only');
 }
 
@@ -224,6 +242,8 @@ interface ExecState {
   sawThread: boolean;
   /** Steps of TeamBot tool calls by item id (TeamBot reports their result on them). */
   mcpSteps?: Map<string, ActivityItem>;
+  /** Commands and tool calls that are still running. */
+  open?: Set<string>;
 }
 
 export function handleCodexExecLine(s: RunScope, st: ExecState, line: string) {
@@ -269,6 +289,11 @@ export function handleCodexExecLine(s: RunScope, st: ExecState, line: string) {
     case 'item.completed': {
       const it = m.item || {};
       const done = m.type === 'item.completed';
+      // A command or tool call that has started and not finished: Codex is working, however silent (proc.ts busy).
+      if (it.id && (it.type === 'command_execution' || it.type === 'mcp_tool_call')) {
+        if (done) st.open?.delete(String(it.id));
+        else (st.open ||= new Set()).add(String(it.id));
+      }
       if (it.type === 'agent_message' && done) addText(String(it.text || ''));
       else if (it.type === 'reasoning' && done && it.text) {
         st.reasoning += (st.reasoning ? '\n\n' : '') + it.text;
@@ -322,17 +347,18 @@ function promptFor(s: RunScope, atts: SafeAttachment[], fresh: boolean, o: { sys
   return composePrompt({ system: fresh ? o.system : undefined, update: fresh ? undefined : o.update, transcript, prompt: s.req.prompt, attachments: atts });
 }
 
-async function runExec(s: RunScope, d: CodexDeps, sandbox: 'read-only' | 'workspace-write'): Promise<AgentRunResult> {
+async function runExec(s: RunScope, d: CodexDeps, sandbox: CodexSandbox): Promise<AgentRunResult> {
   const cwd = workdir(s.agent);
   const { atts, images } = await prepare(s);
   const extra = checkExtraArgs(d.def, s.opts.extraArgs);
-  const isolation = await codexIsolation(d.bin, s.opts.useUserMcp);
-  const network = sandbox === 'workspace-write' && s.agent.access_mode === 'full';
-  const perm = await codexPermissions(s, d, { write: sandbox === 'workspace-write', network });
+  const isolation = await codexIsolation(d.bin, s.opts.useUserMcp, appsOff(s.agent));
+  const network = sandbox !== 'read-only' && s.agent.access_mode === 'full';
+  // The whole computer: a profile with the whole disk writable, or none (danger-full-access) where that does not hold.
+  const perm = await codexPermissions(s, d, { write: sandbox !== 'read-only', network, root: sandbox === 'danger-full-access' });
   let current: Proc | null = null;
   const tb = await withTeambotTools(s, d, (on) => current?.hold(on));
   try {
-    return await execWith(s, d, sandbox, { cwd, atts, images, extra, isolation, tb, profile: perm.args, network, setProc: (p) => (current = p) });
+    return await execWith(s, d, sandbox, { cwd, atts, images, extra, isolation, tb, profile: perm.args, network, note: perm.note, setProc: (p) => (current = p) });
   } finally {
     tb.dispose();
   }
@@ -341,11 +367,11 @@ async function runExec(s: RunScope, d: CodexDeps, sandbox: 'read-only' | 'worksp
 async function execWith(
   s: RunScope,
   d: CodexDeps,
-  sandbox: 'read-only' | 'workspace-write',
-  o: { cwd: string; atts: SafeAttachment[]; images: string[]; extra: string[]; isolation: string[]; tb: CodexTools; profile: string[] | null; network: boolean; setProc(p: Proc): void },
+  sandbox: CodexSandbox,
+  o: { cwd: string; atts: SafeAttachment[]; images: string[]; extra: string[]; isolation: string[]; tb: CodexTools; profile: string[] | null; network: boolean; note: string; setProc(p: Proc): void },
 ): Promise<AgentRunResult> {
   const { cwd, atts, images, extra, isolation, tb } = o;
-  const full = sessionInstructions(s.req.system, tb.note);
+  const full = sessionInstructions(s.req.system, [tb.note, o.note].filter(Boolean).join('\n\n'));
   const attempt = async (sessionId: string | undefined) => {
     const st: ExecState = { text: '', reasoning: '', sessionId, usage: { input: 0, output: 0 }, failed: null, sawThread: false };
     const proc = startProc({
@@ -356,6 +382,8 @@ async function execWith(
       signal: s.signal,
       timeoutMs: s.opts.timeoutMin * 60_000,
       idleMs: s.opts.idleMin * 60_000,
+      busy: () => !!st.open?.size,
+      busyIdleMs: s.opts.busyIdleMin * 60_000,
       onLine: (l) => handleCodexExecLine(s, st, l),
     });
     o.setProc(proc);
@@ -371,9 +399,10 @@ async function execWith(
     s.activity('session', 'Vorige Codex-sessie niet gevonden — nieuwe sessie gestart');
     r = await attempt(undefined);
   }
-  if (s.signal.aborted) throw new Error('Gestopt');
   const billing = await d.billing();
   r.st.usage.cost = billing === 'api' ? undefined : 0;
+  // Stopped: what its finished turns reported goes along and is counted (agent/budget.ts).
+  if (s.signal.aborted) throw withUsage(new Error('Gestopt'), r.st.usage);
   const base = { text: r.st.text, usage: r.st.usage, sessionId: r.st.sessionId };
   if (r.killed) return { ...base, error: r.killed };
   if (r.st.failed) return { ...base, error: authHint(r.st.failed + ' ' + r.stderr, d.def.login) || redact(r.st.failed).slice(0, 1500) };
@@ -429,12 +458,12 @@ async function runAppServer(s: RunScope, d: CodexDeps): Promise<AgentRunResult> 
     onActivity: (title, detail) => s.activity('permission', title, detail),
   };
   let peer!: RpcPeer;
-  const isolation = await codexIsolation(d.bin, s.opts.useUserMcp);
+  const isolation = await codexIsolation(d.bin, s.opts.useUserMcp, appsOff(s.agent));
   // Read-only profile (reads limited where Codex can enforce it); every escalation asks TeamBot.
   const perm = await codexPermissions(s, d, { write: false, network: false });
   let started: Proc | null = null;
   const tb = await withTeambotTools(s, d, (on) => started?.hold(on));
-  const full = sessionInstructions(s.req.system, [tb.note, CODEX_ASK_NOTE].filter(Boolean).join('\n\n'));
+  const full = sessionInstructions(s.req.system, [tb.note, CODEX_ASK_NOTE, perm.note].filter(Boolean).join('\n\n'));
   let proc: Proc;
   try {
     proc = startProc({
@@ -677,7 +706,9 @@ async function runAppServer(s: RunScope, d: CodexDeps): Promise<AgentRunResult> 
     };
     s.signal.addEventListener('abort', onAbort, { once: true });
     try {
-      const tr: any = await peer.request('turn/start', { threadId, input, ...(s.req.reasoning && REASONING.has(s.req.reasoning) ? { effort: s.req.reasoning } : {}) }, 60_000);
+      // The model goes with every turn: a resumed thread keeps the model it started with, also after the owner picked
+      // another one (the chat's model switcher, the bot page). Codex takes it for this turn and the ones after.
+      const tr: any = await peer.request('turn/start', { threadId, input, ...(s.req.model && s.req.model !== 'default' ? { model: s.req.model } : {}), ...(s.req.reasoning && REASONING.has(s.req.reasoning) ? { effort: s.req.reasoning } : {}) }, 60_000);
       turnId = tr?.turn?.id || turnId;
       await turnDone;
       // The sandbox refused a write and the turn ended before TeamBot could tell it (turn/steer came too late): one
@@ -697,9 +728,10 @@ async function runAppServer(s: RunScope, d: CodexDeps): Promise<AgentRunResult> 
     } finally {
       s.signal.removeEventListener('abort', onAbort);
     }
-    if (s.signal.aborted) throw new Error('Gestopt');
     const billing = await d.billing();
     usage.cost = billing === 'api' ? undefined : 0;
+    // Stopped: what Codex reported so far (it counts live) goes along and is counted (agent/budget.ts).
+    if (s.signal.aborted) throw withUsage(new Error('Gestopt'), usage, usedModel);
     const base = { text, usage, sessionId: threadId, model: usedModel };
     if (context) s.ctx.services?.usage?.setContext?.(s.req.threadId, s.agent.id, { ...(context as { used: number; window: number | null }), engine: d.def.label, providerId: s.cfg.id });
     const f = finished as { status: string; error?: string } | null;

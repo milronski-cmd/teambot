@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react';
 import { AlertTriangle, CheckCircle2, ChevronDown } from 'lucide-react';
-import { Badge, Card, Spinner, cx } from './ui';
+import { Badge, Card, Spinner, TONE_TILE, cx, type Tone } from './ui';
 
 /**
  * One connect pattern for everything that gets connected (AI services, channels, apps, the phone): the same card with
@@ -50,6 +50,7 @@ export function ConnectResult({ ok, children, next }: { ok: boolean; children?: 
 
 export function ConnectCard({
   icon,
+  tone,
   title,
   line,
   state,
@@ -64,6 +65,8 @@ export function ConnectCard({
   ...rest
 }: {
   icon?: ReactNode;
+  /** The colour of the icon tile (components/ui.tsx Tone); a brand logo keeps the neutral tile. */
+  tone?: Tone;
   title: ReactNode;
   /** One short line: what this is, or what state it is in. */
   line?: ReactNode;
@@ -87,7 +90,7 @@ export function ConnectCard({
   return (
     <Card className={cx('p-4', className)} data-connect-state={state} {...rest}>
       <div className="flex flex-wrap items-center gap-3">
-        {icon && <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-surface-2 text-muted [&>svg]:h-[18px] [&>svg]:w-[18px]">{icon}</span>}
+        {icon && <span className={cx('flex size-8 shrink-0 items-center justify-center rounded-lg [&>svg]:h-[18px] [&>svg]:w-[18px]', TONE_TILE[tone || 'neutral'])} aria-hidden>{icon}</span>}
         <div className="min-w-0 flex-1 basis-48">
           <div className="flex flex-wrap items-center gap-2">
             <h3 className="font-semibold">{title}</h3>

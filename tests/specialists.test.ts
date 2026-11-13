@@ -20,7 +20,6 @@ import { mockAdapter, startTestApp, type MockStep, type TestApp } from './helper
 import { anchored, grounded, looksLikeInstruction, newParagraphs, sanitizeSource, saysUnknown } from '../server/modules/specialists/guard.js';
 import { parseFeed, parseRobots, robotsAllows } from '../server/modules/specialists/fetch.js';
 import { BUDGETS } from '../server/modules/specialists/service.js';
-import { skillDraft } from '../server/modules/specialists/skills.js';
 import { callEngine, engineFor } from '../server/modules/specialists/engine.js';
 
 // ------------------------------------------------------------------ fixture server
@@ -474,16 +473,16 @@ test('budget, own files, documentation pages and feeds: bounded calls per round,
   }
 });
 
-test('templates: a bot from a template becomes a specialist with suggested sources and learns by itself; export has no knowledge', async () => {
+test('templates: a bot from a template becomes a specialist with suggested sources, the learning round off; export has no knowledge', async () => {
   const { t, fx, bot } = await setup();
   try {
     const svc = t.app.ctx.services.specialists;
     assert.equal(svc.importForAgent(bot.user_id, bot.id, { field: 'Belastingen voor zzp’ers', suggestedSources: ['https://belasting.example/nieuws/feed', { url: 'https://belasting.example/gids', label: 'Gids' }, 'ftp://fout.example/x'] }), true);
     const v = await t.api('GET', `/specialists/${bot.id}`);
     assert.equal(v.enabled, true);
-    assert.equal(v.learnOn, true);
+    assert.equal(v.learnOn, false, 'the learning round stays off until it is switched on');
     assert.equal(v.cadence, 'daily');
-    assert.ok(v.nextRoundAt);
+    assert.ok(!v.nextRoundAt);
     assert.deepEqual(
       v.sources.map((s: any) => [s.kind, s.target, s.suggested]),
       [
@@ -497,7 +496,7 @@ test('templates: a bot from a template becomes a specialist with suggested sourc
     const b2 = await t.agent({ name: 'Fiscus', settings: { specialist: { field: 'Btw-regels', suggestedSources: [] } } });
     const v2 = await t.api('GET', `/specialists/${b2.id}`);
     assert.equal(v2.field, 'Btw-regels');
-    assert.equal(v2.learnOn, true);
+    assert.equal(v2.learnOn, false);
 
     // The round is planned by the module itself: weekly by default, daily on request, nothing when learning is off.
     const on = await t.api('PUT', `/specialists/${bot.id}`, { learnOn: true });
@@ -547,38 +546,6 @@ test('the self-test turns unknown questions into goals, once a week', async () =
   }
 });
 
-test('skill proposal: the same successful way of working three times becomes a SKILL.md draft; nothing is installed', async () => {
-  const { t, fx, bot } = await setup();
-  try {
-    const ws = t.app.ctx.store.agent(bot.id)!.workspace;
-    fs.writeFileSync(path.join(ws, 'notities.md'), 'Zoekwoorden: fietsen, e-bikes.');
-    await t.api('PUT', `/specialists/${bot.id}`, { enabled: true, field: 'SEO voor webshops' });
-    await t.api('POST', `/specialists/${bot.id}/knowledge`, { content: 'Lange zoekwoorden hebben minder concurrentie.', source: 'https://seo.example/zoekwoorden' });
-    const skillsBefore = t.app.ctx.services.skills.list(bot.user_id).length;
-    const threads = [await t.api('POST', '/threads', { agentId: bot.id }), await t.api('POST', '/threads', { agentId: bot.id })];
-    for (const [i, th] of [threads[0], threads[1], threads[0]].entries()) {
-      t.script.push({ toolCalls: [{ name: 'knowledge_search', args: { query: 'zoekwoorden' } }] }, { toolCalls: [{ name: 'read_file', args: { path: 'notities.md' } }] }, { text: `Zoekwoordenplan ${i} klaar.` });
-      await t.say(th.id, `Maak een zoekwoordenplan voor categorie ${i}`);
-    }
-    const props = await t.api('GET', `/specialists/${bot.id}/proposals`);
-    assert.equal(props.length, 1);
-    assert.equal(props[0].status, 'open');
-    assert.match(props[0].skill_md, /^---\nname: werkwijze-sem-1\ndescription: /);
-    assert.match(props[0].skill_md, /## Stappen\n\n1\. Zoek eerst in je kennisbank wat je al weet\.\n2\. Lees de bestanden die erbij horen\./);
-    assert.match(props[0].skill_md, /Maak een zoekwoordenplan voor categorie/);
-    assert.equal(t.app.ctx.services.skills.list(bot.user_id).length, skillsBefore, 'nothing installed without approval');
-    const dismissed = await t.api('POST', `/specialists/proposals/${props[0].id}`, { status: 'dismissed' });
-    assert.equal(dismissed.status, 'dismissed');
-    // The knowledge tool found the fact the owner added himself.
-    const tool = t.app.ctx.store.messages(threads[1].id).find((m) => m.role === 'tool' && m.parts?.toolResult?.name === 'knowledge_search');
-    assert.match(tool!.content, /Lange zoekwoorden hebben minder concurrentie\. \(bron: https:\/\/seo\.example\/zoekwoorden/);
-    const d = skillDraft({ name: 'Ada' } as any, '', ['web_search', 'web_fetch'], [], 2);
-    assert.equal(d.name, 'werkwijze-ada-2');
-  } finally {
-    await done(t, fx);
-  }
-});
-
 test('learning engine: the bot\'s own model by default; with "goedkoper model" a free model of the catalogue (D1), private bots only one that keeps nothing, else the round waits', async () => {
   const t = await startTestApp();
   try {
@@ -617,5 +584,105 @@ test('learning engine: the bot\'s own model by default; with "goedkoper model" a
     assert.equal((await t.api('GET', '/specialists/meta')).freeModels, true);
   } finally {
     await t.close();
+  }
+});
+
+test('a source that is not about the field: nothing is learned from it, and one TeamBot proposed itself is switched off', async () => {
+  const { t, fx, bot } = await setup();
+  try {
+    fx.pages.set('/verordening.html', { type: 'text/html', body: html('Omgevingsvisie van de gemeente', 'Het wijkwinkelcentrum ligt in het midden van de wijk en heeft gesloten gevels.', 'Het oude fabrieksterrein is de laatste grote bouwlocatie binnen de stad.') });
+    fx.pages.set('/seo.html', { type: 'text/html', body: html('SEO-basis', P1) });
+    await t.api('PUT', `/specialists/${bot.id}`, { enabled: true, field: 'SEO', sources: [{ kind: 'web', target: `${fx.base}/verordening.html` }, { kind: 'web', target: `${fx.base}/seo.html` }] });
+    const store = t.app.ctx.store;
+    // The first one as TeamBot found it itself ("voorgesteld").
+    store.exec("UPDATE specialist_sources SET suggested = 1 WHERE agent_id = ? AND target LIKE '%verordening%'", bot.id);
+    const answer = (prompt: string) => (/wijkwinkelcentrum/.test(prompt) ? { relevant: false, facts: [{ text: 'Het wijkwinkelcentrum ligt in het midden van de wijk.', quote: 'Het wijkwinkelcentrum ligt in het midden van de wijk' }] } : { relevant: true, facts: [{ text: F_TITLE, quote: 'title tag van een pagina mag hoogstens 60 tekens' }] });
+    t.script.push(extract(answer), extract(answer));
+    await t.app.ctx.services.specialists.learn(bot.user_id, bot.id);
+    const k = await knowledge(t, bot.id);
+    assert.deepEqual(k.facts.map((f: any) => f.content), [F_TITLE], 'only what is about the field');
+    const r = lastRound(t, bot.id);
+    assert.ok(r.lines.some((l: any) => l.kind === 'ignored' && /gaat niet over het vakgebied/.test(l.text)));
+    const src = store.one<any>("SELECT enabled, last_error FROM specialist_sources WHERE agent_id = ? AND target LIKE '%verordening%'", bot.id);
+    assert.equal(src.enabled, 0);
+    assert.match(src.last_error, /Gaat niet over het vakgebied/);
+    // The prompt asks for the judgement and for few facts.
+    const sys = t.requests.find((q) => /Je haalt feiten uit een bron/.test(q.system))!.system;
+    assert.match(sys, /Beoordeel eerst of deze bron over het vakgebied gaat/);
+    assert.match(sys, /Hoogstens 5 feiten/);
+  } finally {
+    await done(t, fx);
+  }
+});
+
+test('a search hit is a source only when it is about the bot’s work: a municipal by-law proposed to an SEO bot is refused, also from an official site', async () => {
+  const { t, fx, bot } = await setup();
+  try {
+    const sp = t.app.ctx.services.specialists;
+    const store = t.app.ctx.store;
+    const long = (x: string) => `${x} `.repeat(12);
+    fx.pages.set('/verordening.html', { type: 'text/html', body: html('Omgevingsvisie van de gemeente: lokale wet- en regelgeving', long('Het wijkwinkelcentrum ligt in het midden van de wijk en heeft gesloten gevels.')) });
+    fx.pages.set('/zoekmachines.html', { type: 'text/html', body: html('SEO: richtlijnen voor zoekmachines', long(P1)) });
+    const hits = [
+      { title: 'Omgevingsvisie van de gemeente: officiële lokale wet- en regelgeving', url: `${fx.base}/verordening.html` },
+      { title: 'SEO: richtlijnen voor zoekmachines', url: `${fx.base}/zoekmachines.html` },
+    ];
+    sp.setOptions({ search: async () => hits });
+    assert.equal(sp.svc.aboutWork(store.agent(bot.id)!, 'SEO', hits[0].title, hits[0].url), false);
+    assert.equal(sp.svc.aboutWork(store.agent(bot.id)!, 'SEO', hits[1].title, hits[1].url), true);
+    // A specialism without sources of its own: TeamBot looks for them — and takes only the one about the work.
+    await t.api('PUT', `/specialists/${bot.id}`, { enabled: true, field: 'SEO', sources: [] });
+    store.exec('DELETE FROM specialist_sources WHERE agent_id = ?', bot.id);
+    assert.equal(await sp.svc.discoverSources(store.agent(bot.id)!), 1);
+    assert.deepEqual(store.all<any>('SELECT target FROM specialist_sources WHERE agent_id = ?', bot.id).map((x) => x.target), [`${fx.base}/zoekmachines.html`]);
+    // The same for an administration bot: the by-law names nothing of its work either.
+    const admin = await t.agent({ name: 'Kantoor', role: 'Administratie en facturen', settings: { allowPrivateNetwork: true } });
+    assert.equal(sp.svc.aboutWork(store.agent(admin.id)!, 'Administratie en facturen', hits[0].title, hits[0].url), false);
+  } finally {
+    await done(t, fx);
+  }
+});
+
+test('upgrade, once: a source a search once brought in that is not about the work is switched off and its facts archived; everything else stays; one undo restores', async () => {
+  const { t, fx, bot } = await setup();
+  try {
+    const sp = t.app.ctx.services.specialists;
+    const store = t.app.ctx.store;
+    const owner = bot.user_id;
+    fx.pages.set('/verordening.html', { type: 'text/html', body: html('Omgevingsvisie van de gemeente', 'Het wijkwinkelcentrum ligt in het midden van de wijk en heeft gesloten gevels.') });
+    fx.pages.set('/seo.html', { type: 'text/html', body: html('SEO-basis', P1) });
+    fx.pages.set('/eigen.html', { type: 'text/html', body: html('Jaarverslag', P2) });
+    await t.api('PUT', `/specialists/${bot.id}`, { enabled: true, field: 'SEO', sources: [{ kind: 'web', target: `${fx.base}/verordening.html` }, { kind: 'web', target: `${fx.base}/seo.html` }, { kind: 'web', target: `${fx.base}/eigen.html` }] });
+    // As an older version left it: the first two were found by a search (after `discoveredAt`), the third the owner added.
+    const prof = store.decode<any>('specialist_profiles', store.one('SELECT * FROM specialist_profiles WHERE agent_id = ?', bot.id));
+    store.update('specialist_profiles', bot.id, { settings: { ...prof.settings, discoveredAt: '2020-01-01T00:00:00.000Z' } }, 'agent_id');
+    store.exec("UPDATE specialist_sources SET suggested = 1 WHERE agent_id = ? AND target NOT LIKE '%eigen%'", bot.id);
+    const fact = (text: string, page: string) =>
+      t.app.ctx.services.memory.remember(owner, { content: text, scope: 'dossier', dossierId: prof.dossier_id, type: 'fact', source: { kind: 'url', ref: `${fx.base}${page}`, trust: 'system' }, createdBy: 'agent', createdByAgent: bot.id });
+    await fact('Het wijkwinkelcentrum ligt in het midden van de wijk.', '/verordening.html');
+    await fact('Het oude fabrieksterrein is de laatste grote bouwlocatie binnen de stad.', '/verordening.html');
+    await fact(F_TITLE, '/seo.html');
+    await fact(F_CANON, '/eigen.html');
+    const active = () => store.all<any>("SELECT content FROM memory_items WHERE dossier_id = ? AND status = 'active' ORDER BY content", prof.dossier_id).map((x) => x.content);
+    assert.equal(active().length, 4);
+
+    store.exec("DELETE FROM settings WHERE key = 'specialists.fitChecked'");
+    assert.deepEqual(sp.svc.pruneUnfitSources(), { sources: 1, facts: 2 });
+    assert.deepEqual(active(), [F_TITLE, F_CANON].sort());
+    const src = (like: string) => store.one<any>('SELECT enabled, last_error FROM specialist_sources WHERE agent_id = ? AND target LIKE ?', bot.id, like);
+    assert.equal(src('%verordening%').enabled, 0);
+    assert.match(src('%verordening%').last_error, /weer aanzetten/);
+    assert.equal(src('%seo%').enabled, 1, 'about the work');
+    assert.equal(src('%eigen%').enabled, 1, 'the owner added it: never judged');
+    assert.equal(store.one<any>("SELECT COUNT(*) AS n FROM memory_items WHERE dossier_id = ? AND status = 'archived'", prof.dossier_id).n, 2, 'archived, not deleted');
+    // Once: a second start does nothing, also not for a source that would not pass.
+    store.exec("UPDATE specialist_sources SET suggested = 1 WHERE agent_id = ?", bot.id);
+    assert.deepEqual(sp.svc.pruneUnfitSources(), { sources: 0, facts: 0 });
+    // One undo brings the facts back.
+    const ch = store.one<any>("SELECT id FROM memory_changes WHERE actor_id = 'specialists-fit' LIMIT 1");
+    t.app.ctx.services.memory.undo(owner, ch.id);
+    assert.equal(active().length, 4);
+  } finally {
+    await done(t, fx);
   }
 });

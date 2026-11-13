@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import type { Agent, Ctx, ToolContext, User } from '../../core/types.js';
 import { newId, now } from '../../core/db.js';
+import { siteOf, type RemoteTestResult } from '../../../shared/computers.js';
 import { checkUrl, cleanRules, type UrlPolicy } from './policy.js';
 import { LeaseManager, type Holder } from './lease.js';
 import { detectCapabilities, isolatedRuntime, modeTable, realProbes, type Capabilities, type ModeId, type Probes } from './capabilities.js';
@@ -44,6 +45,7 @@ import type { VaultService } from './vault.js';
 import * as ws from './workspace.js';
 import { makeUpstream, parseProxyUrl, testProxy, type UpstreamProxy } from '../network/proxy.js';
 import { assertPublicUrl } from '../../tools/builtin/web.js';
+import { wholeComputer } from '../../tools/builtin/files.js';
 
 /** A profile's proxy as the owner's UI sees it: the address and whether a login is stored. */
 export interface ProfileProxyView {
@@ -103,22 +105,6 @@ export interface RemoteSession {
   target: RemoteTarget;
   label: string;
   dir: string;
-}
-
-export interface RemoteTestResult {
-  ok: boolean;
-  host: string;
-  port: number;
-  username: string;
-  fingerprint: string | null;
-  trusted: boolean;
-  mismatch?: boolean;
-  expected?: string | null;
-  windows?: boolean;
-  os?: string;
-  docker?: { installed: boolean; usable: boolean; version: string | null };
-  message?: string;
-  error?: string;
 }
 
 export interface BrowserProfile {
@@ -247,7 +233,29 @@ export class ComputerService {
 
   // ---------------- config ----------------
 
+  /**
+   * The bot's computer as it works. "Volledige toegang" on the owner's own computer (files.ts wholeComputer) is one
+   * switch, not five: the bot's own browser, this computer and the home network in it (http://127.0.0.1 of the app it
+   * is building), and the owner's desktop in every app without a question per action, whatever was ticked on the
+   * Computer page. What stays: the windows that are always blocked (TeamBot itself, Windows security, password
+   * managers, bank pages) and the question for a payment or a message to someone else (screen-policy.ts). A bot that
+   * works in a container or on its own server keeps that mode. What the owner stored is `storedConfig`.
+   */
   config(agent: Agent): ComputerConfig {
+    return this.widen(agent, this.storedConfig(agent));
+  }
+
+  private widen(agent: Agent, cfg: ComputerConfig): ComputerConfig {
+    if (!wholeComputer(agent)) return cfg;
+    const next: ComputerConfig = { ...cfg, allow_private: true };
+    if (cfg.mode === 'container' || cfg.mode === 'remote') return next;
+    const desktop = process.platform === 'win32' && this.ctx.store.user(agent.user_id)?.role === 'owner';
+    if (!desktop) return { ...next, mode: cfg.mode === 'host' ? 'host' : 'browser' };
+    return { ...next, mode: 'host', host_control: true, host_level: 'auto', host_options: { ...cfg.host_options, allApps: true } };
+  }
+
+  /** What is stored for this bot (or derived from its parts), before "Volledige toegang" widens it: for saving. */
+  storedConfig(agent: Agent): ComputerConfig {
     const row = this.ctx.store.get<any>('computer_configs', agent.id, 'agent_id');
     if (row) {
       const rest: any = {};
@@ -300,7 +308,9 @@ export class ComputerService {
   }
 
   async saveConfig(u: User, agent: Agent, body: any): Promise<{ config: ComputerConfig; agent: Agent }> {
-    const cur = this.config(agent);
+    const cur = this.storedConfig(agent);
+    // What "Volledige toegang" already gives needs no second confirmation when the page saves it back.
+    const eff = this.config(agent);
     const caps = await this.caps();
     const next: ComputerConfig = { ...cur, derived: undefined };
     if (body.mode !== undefined) {
@@ -323,7 +333,7 @@ export class ComputerService {
       if (body.host_level !== undefined) next.host_level = cleanLevel(body.host_level);
       if (body.host_options !== undefined) {
         next.host_options = cleanHostOptions(body.host_options, cur.host_options);
-        if (next.host_options.allApps && !cur.host_options.allApps && body.confirmAllApps !== true)
+        if (next.host_options.allApps && !cur.host_options.allApps && !eff.host_options.allApps && body.confirmAllApps !== true)
           throw new HttpLike(400, 'Bevestig eerst dat de bot alle apps op je bureaublad mag bedienen (behalve de altijd geblokkeerde).');
       }
     }
@@ -331,7 +341,7 @@ export class ComputerService {
       const want = !!body.host_control;
       if (want && !cur.host_control) {
         if (u.role !== 'owner') throw new HttpLike(403, 'Alleen de eigenaar van deze computer mag bureaubladbediening aanzetten.');
-        if (body.confirmHost !== true) throw new HttpLike(400, 'Bevestig eerst dat je begrijpt wat bureaubladbediening betekent.');
+        if (body.confirmHost !== true && !eff.host_control) throw new HttpLike(400, 'Bevestig eerst dat je begrijpt wat bureaubladbediening betekent.');
         if (caps.caps.host.status !== 'available') throw new HttpLike(400, `Bureaubladbediening kan hier niet: ${caps.caps.host.detail}`);
       }
       next.host_control = want;
@@ -442,7 +452,7 @@ export class ComputerService {
   attachCloudVm(agent: Agent, o: { ip: string; port: number; fingerprint: string; privateKey: string; docker: boolean }) {
     const name = secretNameFor(agent.id);
     this.ctx.secrets.set(agent.user_id, name, o.privateKey);
-    const cur = this.config(agent);
+    const cur = this.storedConfig(agent);
     const next: ComputerConfig = {
       ...cur,
       mode: 'remote',
@@ -458,7 +468,7 @@ export class ComputerService {
 
   /** The VM is going away: the bot stops pointing at its address (an IP can be given to someone else later). */
   detachCloudVm(agent: Agent, fingerprint: string) {
-    const cur = this.config(agent);
+    const cur = this.storedConfig(agent);
     if (cur.remote.fingerprint !== fingerprint) return; // the bot was moved to another server meanwhile
     this.remote.close(agent.id);
     for (const s of this.ctx.secrets.list(agent.user_id)) if (s.name === secretNameFor(agent.id)) this.ctx.secrets.delete(s.id);
@@ -510,7 +520,7 @@ export class ComputerService {
   }
 
   private saveRemote(agent: Agent, patch: Partial<RemoteSettings>) {
-    const cur = this.config(agent);
+    const cur = this.storedConfig(agent);
     const next: ComputerConfig = { ...cur, remote: { ...cur.remote, ...patch }, updated_at: now() };
     delete next.derived;
     this.upsertConfig(agent, next);
@@ -962,7 +972,7 @@ export class ComputerService {
     }
     const changed: string[] = [];
     for (const a of mine) {
-      const cfg = this.config(a);
+      const cfg = this.storedConfig(a);
       const has = cfg.profile_id === profile.id;
       if (want.has(a.id) === has) continue;
       // the bot's running browser belongs to its previous profile: close it, the next action opens the new one
@@ -1024,7 +1034,17 @@ export class ComputerService {
     if (this.hostStopped.has(t.agent.id)) throw new Error('De gebruiker heeft de noodstop gebruikt. Bureaubladbediening is gepauzeerd tot de gebruiker hervat.');
     if (!cfg.host_apps.length && !cfg.host_options.allApps) throw new Error('Er staan nog geen toegestane apps op de lijst. De gebruiker kiest die bij Bot › Computer & bestanden.');
     await this.control(t, 'desktop:host');
-    return cfg;
+    return this.withBotAccess(t.agent, cfg);
+  }
+
+  /**
+   * One "Volledige toegang", not two: a bot whose own access level is Volledige toegang does not ask per desktop
+   * action either, whatever the desktop level says (the owner switched the desktop on for this bot and chose its apps;
+   * asking for every click contradicts what the level promises). Actions with an effect outside (send, pay, delete)
+   * still ask: that is `danger` in screen-policy.ts approvalNeed, not the level.
+   */
+  withBotAccess(agent: Agent, cfg: ComputerConfig): ComputerConfig {
+    return agent.access_mode === 'full' && cfg.host_level !== 'auto' ? { ...cfg, host_level: 'auto' } : cfg;
   }
 
   async allowedWindows(cfg: ComputerConfig): Promise<{ allowed: HostWindow[]; hidden: number }> {
@@ -1470,26 +1490,8 @@ export class ComputerService {
   }
 }
 
-/** "accounts.google.com" / ".google.com" / a URL → "google.com" (rough registrable domain; IPs and localhost as is). */
-export function siteOf(input: string): string | null {
-  let d = String(input || '').trim().toLowerCase();
-  if (d.includes('://')) {
-    try {
-      d = new URL(d).hostname;
-    } catch {
-      return null;
-    }
-  }
-  d = d.replace(/^\.+/, '').replace(/\.$/, '');
-  if (!d || /[^a-z0-9.\-:[\]]/.test(d)) return null;
-  if (/^\d+\.\d+\.\d+\.\d+$/.test(d) || d.includes(':') || !d.includes('.')) return d;
-  const parts = d.split('.');
-  if (parts.length <= 2) return d;
-  const sld = parts[parts.length - 2];
-  const tld = parts[parts.length - 1];
-  const n = tld.length === 2 && ['co', 'com', 'net', 'org', 'gov', 'ac', 'edu', 'or', 'ne', 'go'].includes(sld) ? 3 : 2;
-  return parts.slice(-n).join('.');
-}
+/** The site of a cookie domain or URL: shared/computers.ts (the browser panel uses it too). */
+export { siteOf };
 
 export class HttpLike extends Error {
   constructor(public status: number, message: string) {

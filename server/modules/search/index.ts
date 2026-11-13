@@ -1,4 +1,5 @@
 import fs from 'node:fs';
+import { oneLine } from '../../core/util.js';
 import path from 'node:path';
 import type { Request } from 'express';
 import type { Agent, Ctx, Module, User } from '../../core/types.js';
@@ -62,16 +63,12 @@ const SOURCE_ROUTE: Record<HitKind, string> = {
 const ADAPTER_LABEL: Record<string, string> = { telegram: 'Telegram', whatsapp: 'WhatsApp (Business)', 'whatsapp-web': 'WhatsApp', discord: 'Discord', slack: 'Slack', email: 'E-mail' };
 
 const likeArg = (q: string) => `%${q.replace(/[\\%_]/g, (c) => '\\' + c)}%`;
-const clip = (s: unknown, n: number) => {
-  const t = String(s ?? '').replace(/\s+/g, ' ').trim();
-  return t.length > n ? t.slice(0, n - 1) + '…' : t;
-};
 
 /** Mark the first case-insensitive occurrence of `q` in `text` with [ ], with a little context around it. */
 export function markSnippet(text: string, q: string, around = 60): string {
   const t = String(text || '').replace(/\s+/g, ' ').trim();
   const i = t.toLowerCase().indexOf(q.toLowerCase());
-  if (i < 0) return clip(t, around * 2);
+  if (i < 0) return oneLine(t, around * 2);
   const start = Math.max(0, i - around);
   const end = Math.min(t.length, i + q.length + around);
   return `${start ? '…' : ''}${t.slice(start, i)}[${t.slice(i, i + q.length)}]${t.slice(i + q.length, end)}${end < t.length ? '…' : ''}`;
@@ -340,7 +337,7 @@ function searchSkills(ctx: Ctx, u: User, q: string, lens: Lens): SearchHit[] {
     PER_KIND,
   );
   // Skills are shared by every team until the skills module gets its own walls.
-  return rows.map((s) => ({ id: s.id, kind: 'skill' as const, title: s.name, subtitle: clip(s.description, 90) || (s.status === 'active' ? 'Skill' : 'Skill · uit'), href: `#/m/skills/mine/${s.id}`, ...(lens.on ? { teamId: null } : {}) }));
+  return rows.map((s) => ({ id: s.id, kind: 'skill' as const, title: s.name, subtitle: oneLine(s.description, 90) || (s.status === 'active' ? 'Skill' : 'Skill · uit'), href: `#/m/skills/mine/${s.id}`, ...(lens.on ? { teamId: null } : {}) }));
 }
 
 function searchApps(ctx: Ctx, u: User, q: string, lens: Lens): SearchHit[] {
@@ -478,7 +475,7 @@ function searchMemory(ctx: Ctx, u: User, q: string, lens: Lens): SearchHit[] {
         return {
           id: m.id,
           kind: 'memory' as const,
-          title: secret ? 'Gevoelige herinnering' : clip(m.content, 90),
+          title: secret ? 'Gevoelige herinnering' : oneLine(m.content, 90),
           subtitle: [scope[m.scope] || 'Herinnering', m.agent_name || '', m.dossier_title || ''].filter(Boolean).join(' · '),
           snippet: secret ? undefined : markSnippet(m.content, q),
           href: `#/m/memory/item/${m.id}`,

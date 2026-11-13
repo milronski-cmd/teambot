@@ -180,19 +180,6 @@ export interface BotEngine {
   levels: Access[];
 }
 
-/**
- * Same rule as the server: a CLI brings its own tools, which TeamBot cannot cap per sender. Claude Code can run
- * without any tools ("Alleen praten" works); "Alleen lezen" works on no CLI; Codex, OpenCode and other CLIs only
- * "Zoals de bot zelf".
- */
-export function engineFor(agent: { provider_id: string | null } | undefined, providers: { id: string; kind: string; kindLabel: string; type: 'api' | 'cli' }[], defaultProvider?: string | null): BotEngine | null {
-  if (!agent) return null;
-  const p = providers.find((x) => x.id === (agent.provider_id || defaultProvider));
-  if (!p) return null;
-  if (p.type !== 'cli') return { type: 'api', kind: p.kind, label: p.kindLabel, levels: ['none', 'readonly', 'agent'] };
-  return { type: 'cli', kind: p.kind, label: p.kindLabel, levels: p.kind === 'claude-code' ? ['none', 'agent'] : ['agent'] };
-}
-
 /** The access options for a bot's engine: what cannot work is labelled (and, when not chosen, disabled). */
 export function accessChoices(engine: BotEngine | null | undefined, current: Access): { value: Access; label: string; hint: string; disabled: boolean }[] {
   return ACCESS_OPTIONS.map((o) => {

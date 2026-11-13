@@ -1,4 +1,5 @@
 import type { TeamsService } from './service.js';
+import { oneLine } from '../../core/util.js';
 
 /**
  * "Alle teams": one overview for the owner and the main bot. Per team: the lead (optional), the bots, open tasks, what
@@ -27,10 +28,6 @@ interface Spend {
   value: number | null;
 }
 
-const line = (s: any, n = 120) => {
-  const v = String(s ?? '').replace(/\s+/g, ' ').trim();
-  return v.length > n ? v.slice(0, n - 1) + '…' : v;
-};
 const byAt = (a: OverviewItem, b: OverviewItem) => b.at.localeCompare(a.at);
 const zero = (): Spend => ({ calls: 0, tokens: 0, cost: 0, value: null });
 function addSpend(into: Spend, s: any) {
@@ -58,7 +55,7 @@ export function overview(svc: TeamsService, userId: string) {
     if (!ids.length) return [];
     const out: OverviewItem[] = store
       .all<any>(`SELECT id, agent_id, thread_id, kind, summary, created_at FROM approvals WHERE user_id = ? AND status = 'pending' AND agent_id IN (${q(ids)}) ORDER BY created_at DESC LIMIT 50`, userId, ...ids)
-      .map((r) => ({ kind: r.kind === 'question' ? 'question' : 'approval', id: r.id, title: line(r.summary) || (r.kind === 'question' ? 'Vraag' : 'Toestemming gevraagd'), detail: '', who: name(r.agent_id), at: r.created_at, link: r.thread_id ? `#/t/${r.thread_id}` : '#/inbox' }));
+      .map((r) => ({ kind: r.kind === 'question' ? 'question' : 'approval', id: r.id, title: oneLine(r.summary, 120) || (r.kind === 'question' ? 'Vraag' : 'Toestemming gevraagd'), detail: '', who: name(r.agent_id), at: r.created_at, link: r.thread_id ? `#/t/${r.thread_id}` : '#/inbox' }));
     if (proposals)
       for (const r of store.all<any>(`SELECT id, proposer_agent_id, profile, reason, created_at FROM room_proposals WHERE user_id = ? AND status = 'pending' AND proposer_agent_id IN (${q(ids)}) ORDER BY created_at DESC LIMIT 20`, userId, ...ids)) {
         let p: any = {};
@@ -67,7 +64,7 @@ export function overview(svc: TeamsService, userId: string) {
         } catch {
           /* keep empty */
         }
-        out.push({ kind: 'proposal', id: r.id, title: p?.name ? `Voorstel: ${line(p.name, 60)} erbij` : 'Voorstel voor een nieuw lid', detail: line(r.reason, 160), who: name(r.proposer_agent_id), at: r.created_at, link: '#/inbox' });
+        out.push({ kind: 'proposal', id: r.id, title: p?.name ? `Voorstel: ${oneLine(p.name, 60)} erbij` : 'Voorstel voor een nieuw lid', detail: oneLine(r.reason, 160), who: name(r.proposer_agent_id), at: r.created_at, link: '#/inbox' });
       }
     return out;
   };
@@ -77,13 +74,13 @@ export function overview(svc: TeamsService, userId: string) {
     if (!ids.length) return [];
     const out: OverviewItem[] = store
       .all<any>(`SELECT id, agent_id, thread_id, error, COALESCE(finished_at, created_at) AS at FROM runs WHERE user_id = ? AND status = 'error' AND agent_id IN (${q(ids)}) AND created_at >= ? ORDER BY created_at DESC LIMIT 20`, userId, ...ids, since)
-      .map((r) => ({ kind: 'run', id: r.id, title: line(r.error) || 'Fout', detail: '', who: name(r.agent_id), at: r.at, link: `#/t/${r.thread_id}` }));
+      .map((r) => ({ kind: 'run', id: r.id, title: oneLine(r.error, 120) || 'Fout', detail: '', who: name(r.agent_id), at: r.at, link: `#/t/${r.thread_id}` }));
     if (delegations)
       for (const r of store.all<any>(`SELECT id, to_agent_id, thread_id, task, error, status, COALESCE(finished_at, updated_at) AS at FROM room_delegations WHERE user_id = ? AND status IN ('error','timeout') AND to_agent_id IN (${q(ids)}) AND created_at >= ? ORDER BY created_at DESC LIMIT 20`, userId, ...ids, since))
-        out.push({ kind: 'delegation', id: r.id, title: line(r.task, 80), detail: line(r.error, 160), who: name(r.to_agent_id), at: r.at, link: `#/t/${r.thread_id}` });
+        out.push({ kind: 'delegation', id: r.id, title: oneLine(r.task, 80), detail: oneLine(r.error, 160), who: name(r.to_agent_id), at: r.at, link: `#/t/${r.thread_id}` });
     if (routines)
       for (const r of store.all<any>(`SELECT rr.id, rr.error, rr.summary, rr.thread_id, COALESCE(rr.finished_at, rr.created_at) AS at, ro.name, ro.agent_id FROM routine_runs rr JOIN routines ro ON ro.id = rr.routine_id WHERE rr.user_id = ? AND rr.status = 'error' AND ro.agent_id IN (${q(ids)}) AND rr.created_at >= ? ORDER BY rr.created_at DESC LIMIT 20`, userId, ...ids, since))
-        out.push({ kind: 'routine', id: r.id, title: `Routine “${line(r.name, 60)}”`, detail: line(r.error || r.summary, 160), who: name(r.agent_id), at: r.at, link: r.thread_id ? `#/t/${r.thread_id}` : '#/m/routines' });
+        out.push({ kind: 'routine', id: r.id, title: `Routine “${oneLine(r.name, 60)}”`, detail: oneLine(r.error || r.summary, 160), who: name(r.agent_id), at: r.at, link: r.thread_id ? `#/t/${r.thread_id}` : '#/m/routines' });
     return out.sort(byAt);
   };
 
@@ -91,7 +88,7 @@ export function overview(svc: TeamsService, userId: string) {
     if (!ids.length || !routines) return [];
     return store
       .all<any>(`SELECT rr.id, rr.summary, rr.error, rr.created_at AS at, ro.name, ro.agent_id FROM routine_runs rr JOIN routines ro ON ro.id = rr.routine_id WHERE rr.user_id = ? AND rr.status = 'missed' AND ro.agent_id IN (${q(ids)}) AND rr.created_at >= ? ORDER BY rr.created_at DESC LIMIT 20`, userId, ...ids, since)
-      .map((r) => ({ kind: 'missed', id: r.id, title: `Routine “${line(r.name, 60)}”`, detail: line(r.summary || r.error, 160), who: name(r.agent_id), at: r.at, link: '#/m/routines' }));
+      .map((r) => ({ kind: 'missed', id: r.id, title: `Routine “${oneLine(r.name, 60)}”`, detail: oneLine(r.summary || r.error, 160), who: name(r.agent_id), at: r.at, link: '#/m/routines' }));
   };
 
   const usage = usageByTeam(svc, userId);
@@ -112,14 +109,14 @@ export function overview(svc: TeamsService, userId: string) {
     if (tasks) {
       const rows = store.all<any>(`SELECT id, title, status, owner_type, owner_id, updated_at FROM room_tasks WHERE user_id = ? AND workspace_id = ? AND status != 'done' ORDER BY updated_at DESC`, userId, t.id);
       openCount = rows.length;
-      open = rows.slice(0, MAX).map((r) => ({ kind: 'task', id: r.id, title: line(r.title), detail: r.status, who: owner(r.owner_type, r.owner_id), at: r.updated_at, link: '#/m/rooms/taken' }));
-      for (const r of rows.filter((x) => x.status === 'review')) waiting.push({ kind: 'review', id: r.id, title: line(r.title), detail: '', who: owner(r.owner_type, r.owner_id), at: r.updated_at, link: '#/m/rooms/taken' });
+      open = rows.slice(0, MAX).map((r) => ({ kind: 'task', id: r.id, title: oneLine(r.title, 120), detail: r.status, who: owner(r.owner_type, r.owner_id), at: r.updated_at, link: '#/m/rooms/taken' }));
+      for (const r of rows.filter((x) => x.status === 'review')) waiting.push({ kind: 'review', id: r.id, title: oneLine(r.title, 120), detail: '', who: owner(r.owner_type, r.owner_id), at: r.updated_at, link: '#/m/rooms/taken' });
       for (const r of store.all<any>(`SELECT id, title, result, owner_type, owner_id, updated_at FROM room_tasks WHERE user_id = ? AND workspace_id = ? AND status = 'done' AND updated_at >= ? ORDER BY updated_at DESC LIMIT ${MAX}`, userId, t.id, since))
-        results.push({ kind: 'task', id: r.id, title: line(r.title), detail: line(r.result, 160), who: owner(r.owner_type, r.owner_id), at: r.updated_at, link: '#/m/rooms/taken' });
+        results.push({ kind: 'task', id: r.id, title: oneLine(r.title, 120), detail: oneLine(r.result, 160), who: owner(r.owner_type, r.owner_id), at: r.updated_at, link: '#/m/rooms/taken' });
     }
     if (delegations && ids.length)
       for (const r of store.all<any>(`SELECT id, from_agent_id, to_agent_id, task, result, thread_id, finished_at FROM room_delegations WHERE user_id = ? AND status = 'done' AND kind != 'ask' AND to_agent_id IN (${q(ids)}) AND finished_at >= ? ORDER BY finished_at DESC LIMIT ${MAX}`, userId, ...ids, since))
-        results.push({ kind: 'delegation', id: r.id, title: line(r.task, 80), detail: line(r.result, 160), who: name(r.to_agent_id), at: r.finished_at, link: `#/t/${r.thread_id}` });
+        results.push({ kind: 'delegation', id: r.id, title: oneLine(r.task, 80), detail: oneLine(r.result, 160), who: name(r.to_agent_id), at: r.finished_at, link: `#/t/${r.thread_id}` });
     const errors = errorsOf(ids);
     const missed = missedOf(ids);
     waiting.sort(byAt);

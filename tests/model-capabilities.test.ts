@@ -11,6 +11,7 @@ import { estimateCost } from '../server/providers/pricing.js';
 import { openaiResponses } from '../server/providers/openai-responses.js';
 import { chosenContext, ensureLmstudioContext, kvBytesPerToken, ollamaThink } from '../server/providers/localmodels.js';
 import { codexEfforts } from '../server/modules/cli-agents/codex.js';
+import { registerAttachment } from '../server/tools/builtin/files.js';
 import { startTestApp } from './helpers.js';
 
 const FAKE_CLAUDE = path.join(path.dirname(fileURLToPath(import.meta.url)), 'fixtures', 'cli-agents-fake-claude.mjs');
@@ -175,21 +176,25 @@ test('Ollama (C-01, C-11, C-13): abilities from Ollama, num_ctx and think per ch
     await t.say(th.id, 'onthoud: mijn kleur is blauw');
     assert.equal(chats[0].options.num_ctx, 32768);
     assert.equal(chats[0].think, false);
-    assert.ok(chats[0].tools.some((x: any) => x.function.name === 'memory_remember'), 'tools go to Ollama natively');
+    assert.ok(chats[0].tools.some((x: any) => x.function.name === 'memory_search') && chats[0].tools.some((x: any) => x.function.name === 'tools_call'), 'tools go to Ollama natively');
     const msgs = t.app.ctx.store.messages(th.id);
     assert.ok(msgs.some((m) => m.role === 'tool' && m.parts.toolResult?.name === 'memory_remember'), 'the tool call ran');
     assert.equal(msgs.filter((m) => m.role === 'assistant').at(-1)!.content, 'Klaar.');
     assert.equal(msgs.filter((m) => m.role === 'assistant')[0].usage?.input, 120);
-    // A model without thinking never gets "think" (Ollama would refuse it); with "Instelling van Ollama" and nothing to
-    // switch, the chat stays on Ollama's OpenAI layer (the recorded, verified path).
+    // A model without thinking never gets "think" (Ollama would refuse it). With "Vanzelf" (no window chosen) the chat
+    // still goes natively, with a window that fits the bot: Ollama's own default (4K) would cut TeamBot's
+    // instructions (acceptance 12 Nov: "Het model gaf geen antwoord").
     await t.api('PUT', `/providers/${p.id}/context-window`, { model: 'denker:latest', tokens: null });
     await t.api('PATCH', `/agents/${a.id}`, { model: 'kijker:latest', reasoning: 'high' });
     const nativeBefore = chats.length;
+    const compatBefore = compat.length;
     await t.say(th.id, 'hoi');
-    assert.equal(chats.length, nativeBefore, 'no native chat needed');
-    assert.equal(compat.at(-1).model, 'kijker:latest');
-    assert.equal(compat.at(-1).reasoning_effort, undefined);
-    assert.equal(t.app.ctx.store.messages(th.id).filter((m) => m.role === 'assistant').at(-1)!.content, 'Via de OpenAI-laag.');
+    assert.equal(chats.length, nativeBefore + 1, 'the native chat, with a window');
+    assert.equal(compat.length, compatBefore, "not Ollama's OpenAI layer, which cannot carry a window");
+    assert.equal(chats.at(-1).model, 'kijker:latest');
+    assert.equal(chats.at(-1).options.num_ctx, 16384);
+    assert.equal(chats.at(-1).think, undefined);
+    assert.equal(t.app.ctx.store.messages(th.id).filter((m) => m.role === 'assistant').at(-1)!.content, 'Klaar.');
     assert.equal(ollamaThink('high', ['low', 'medium', 'high']), 'high');
     assert.equal(ollamaThink('max', ['low', 'medium', 'high']), 'high');
     assert.equal(ollamaThink('medium', ['none', 'on']), true);
@@ -211,6 +216,96 @@ test('Ollama (C-01, C-11, C-13): abilities from Ollama, num_ctx and think per ch
     assert.equal(chats.length, before + 1, 'the slow answer came from the native chat');
     assert.equal(last.status, 'cancelled');
     assert.match(last.content, /Ik begin/, 'what was streamed before the stop stays');
+  } finally {
+    await t.close();
+    await srv.close();
+  }
+});
+
+// 12 nov: an image sent to a local model that cannot look at images was refused as a whole ("Multimodal data
+// provided…"), and the turn died. Such a model gets the text on the image (OCR) or a note that there is an image.
+test('an image for a model that cannot look at images: its text instead, and the turn works; a model that can gets the image', async () => {
+  const chats: any[] = [];
+  const caps: Record<string, string[]> = { 'tekst:latest': ['completion', 'tools'], 'kijker:latest': ['completion', 'tools', 'vision'] };
+  const srv = await server((req, body, res) => {
+    const send = (o: any, status = 200) => (res.writeHead(status, { 'content-type': 'application/json' }), res.end(JSON.stringify(o)));
+    if (req.url === '/api/version') return send({ version: '0.40.15' });
+    if (req.url === '/api/tags') return send({ models: Object.entries(caps).map(([name, c], i) => ({ name, digest: String(i), details: { context_length: 32768 }, capabilities: c })) });
+    if (req.url === '/api/ps') return send({ models: [] });
+    if (req.url === '/api/show') return send({ model_info: {}, capabilities: caps[body?.model] || [] });
+    if (req.url === '/api/chat') {
+      chats.push(body);
+      // As Ollama does: a model without vision refuses any image in the request.
+      if (!caps[body.model]?.includes('vision') && body.messages.some((m: any) => m.images?.length)) return send({ error: 'Multimodal data provided, but model does not support multimodal requests' }, 500);
+      res.writeHead(200, { 'content-type': 'application/x-ndjson' });
+      res.write(JSON.stringify({ message: { content: 'Klaar.' }, done: false }) + '\n');
+      return res.end(JSON.stringify({ done: true, done_reason: 'stop', prompt_eval_count: 50, eval_count: 2 }) + '\n');
+    }
+    res.writeHead(404);
+    res.end('{}');
+  });
+  const t = await startTestApp();
+  const dir = fs.mkdtempSync(path.join(t.dir, 'beeld-'));
+  try {
+    const ctx = t.app.ctx;
+    const owner = ctx.auth.owner()!;
+    // The text recognition on this computer (modules/folders/ocr.ts), without its language data from the internet.
+    const read: number[] = [];
+    let ocrReady = true;
+    ctx.services.ocr = {
+      ensure: async () => ocrReady,
+      problem: () => 'De taaldata kon nu niet worden opgehaald.',
+      recognize: async (b: Buffer) => (read.push(b.length), 'Factuur 2026-118\nTotaal: 249,95 euro'),
+    };
+    const p = await t.api('POST', '/providers', { kind: 'ollama', base_url: srv.url + '/v1' });
+    const a = await t.api('POST', '/agents', { name: 'Lezer', provider_id: p.id, model: 'tekst:latest', access_mode: 'auto', tool_groups: ['memory'] });
+    const th = await t.api('POST', '/threads', { agentId: a.id });
+    const image = (name: string, head: string) => {
+      const f = path.join(dir, name);
+      fs.writeFileSync(f, Buffer.concat([Buffer.from(head, 'hex'), Buffer.alloc(300)]));
+      return registerAttachment(ctx, owner.id, th.id, f, name).id;
+    };
+    const turn = async (content: string, attachments: string[] = []) => {
+      const from = chats.length;
+      await t.api('POST', `/threads/${th.id}/messages`, { content, attachments });
+      await t.waitIdle(th.id, 15_000);
+      const answer = ctx.store.messages(th.id).filter((m) => m.role === 'assistant').at(-1)!;
+      const sent = chats.slice(from);
+      const asked = sent.at(-1)?.messages.filter((m: any) => m.role === 'user').at(-1);
+      return { answer, sent, asked };
+    };
+
+    // A text-only model: no image in any call, the text on it in the message, and the turn finishes.
+    const one = await turn('Wat is het totaal op deze factuur?', [image('factuur.png', '89504e470d0a1a0a')]);
+    assert.equal(one.answer.status, 'done', String(one.answer.parts?.error || ''));
+    assert.equal(one.answer.content, 'Klaar.');
+    assert.deepEqual(one.sent.map((c) => c.model), ['tekst:latest'], 'one call, not a refused one first');
+    assert.ok(!one.sent.some((c) => c.messages.some((m: any) => m.images?.length)), 'no image sent to a model without vision');
+    assert.match(one.asked.content, /<bijlage naam="factuur\.png" pad="[^"]+" soort="afbeelding; dit is de tekst erop, gelezen met tekstherkenning[^"]*">\nFactuur 2026-118\nTotaal: 249,95 euro\n<\/bijlage>/);
+    assert.equal(read.length, 1);
+
+    // Read once: the next turn has the text in its history without reading the image again.
+    const two = await turn('En het factuurnummer?');
+    assert.equal(two.answer.status, 'done');
+    assert.match(JSON.stringify(two.sent.at(-1).messages), /Totaal: 249,95 euro/);
+    assert.equal(read.length, 1, 'not read again');
+
+    // Text recognition not available now (no internet for its language data): a note, never a dead end.
+    ocrReady = false;
+    const three = await turn('Wat zie je hierop?', [image('foto.jpg', 'ffd8ffe0')]);
+    assert.equal(three.answer.status, 'done', String(three.answer.parts?.error || ''));
+    assert.ok(!three.sent.some((c) => c.messages.some((m: any) => m.images?.length)));
+    assert.match(three.asked.content, /\[bijlage: foto\.jpg \(image\/jpeg, 0 kB\) — een afbeelding, staat in je werkmap als [^\]]+\. Je kunt het beeld niet bekijken; staat er tekst op, lees die met read_document\./);
+    assert.equal(read.length, 1);
+
+    // A model that can look at images gets the image itself (and nothing is read for it).
+    ocrReady = true;
+    await t.api('PATCH', `/agents/${a.id}`, { model: 'kijker:latest' });
+    const four = await turn('En deze?', [image('kaart.png', '89504e470d0a1a0a')]);
+    assert.equal(four.answer.status, 'done', String(four.answer.parts?.error || ''));
+    assert.equal(four.asked.images?.length, 1, 'the image goes along');
+    assert.match(four.asked.content, /\[afbeelding bijgevoegd: kaart\.png/);
+    assert.equal(read.length, 1);
   } finally {
     await t.close();
     await srv.close();

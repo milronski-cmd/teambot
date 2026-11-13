@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { Shuffle } from 'lucide-react';
 import { api, on } from '../../lib/api';
 import { t } from '../../lib/i18n';
-import { Button, Card, Field, Spinner, useAsync } from '../../components/ui';
+import { Button, Card, Field, Spinner, useAsync, CardHead } from '../../components/ui';
 import { SelectBox as Select } from '../../components/Listbox';
 
 /** What GET /api/engine-chain/settings gives (module engine-chain, package D2; `teams` since B4). */
@@ -55,9 +55,7 @@ export function TeamChainCard({ teamId }: { teamId: string }) {
     }, 'Opgeslagen');
   return (
     <Card className="space-y-3 p-5">
-      <div className="flex items-center gap-2 font-semibold">
-        <Shuffle className="h-4 w-4 text-accent" /> Gratis doorschakelen voor dit team
-      </div>
+      <CardHead icon={Shuffle} tone="violet" title="Gratis doorschakelen voor dit team" />
       <p className="text-sm text-muted">Wat de bots van dit team doen als hun model op is.</p>
       <div className="grid gap-3 sm:grid-cols-3">
         <Field label="Doorschakelen">

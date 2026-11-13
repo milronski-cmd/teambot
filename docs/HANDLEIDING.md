@@ -923,7 +923,9 @@ beloftes**), en elk antwoord staat bij **Verstuurd aan klanten**.
 
 **Koppelen met de iPhone-app.** Je hebt geen Tailscale, account of instellingen in je router nodig.
 
-1. Zet de app **TeamBot** op je iPhone (nu nog via TestFlight; de link staat bij stap 1 van **Telefoon koppelen**).
+1. Zet de app **TeamBot** op je iPhone. Staat bij stap 1 van **Telefoon koppelen** de knop **iPhone-app downloaden**,
+   gebruik die. Staat er dat de app nog niet openbaar is, dan krijg je hem alleen met een uitnodiging voor TestFlight;
+   zonder app gebruik je de browser (zie **Andere manieren** hieronder).
 2. Ga op je computer naar **Instellingen › Telefoon**. Bij **Telefoon koppelen** staat de QR-code er meteen.
 3. Open de app op je iPhone, tik op **Scan de QR-code op je computer** en richt de camera op de code. Bij stap 3 staat
    meteen **Verbonden**. Klaar.
@@ -934,18 +936,19 @@ chats.
 
 Je iPhone verbindt nu thuis en onderweg. Alles is versleuteld van je iPhone tot je computer. Lukt een directe
 verbinding niet, dan loopt het verkeer via een relay-server, die alleen versleutelde gegevens ziet. De app zegt hoe hij
-verbonden is (tandwiel › **Verbinding**). Uitzetten doe je op je computer: **Instellingen › Telefoon › Meer opties ›
-Bereikbaarheid › TeamBot-verbinding**. Standaard gebruikt TeamBot de gratis relay-servers van n0, bedoeld om te testen; een **Eigen
+verbonden is (tandwiel › **Verbinding**). Uitzetten doe je op je computer: **Instellingen › Meer mogelijkheden ›
+Telefoonverbinding › Meer opties › Bereikbaarheid › TeamBot-verbinding**. Standaard gebruikt TeamBot de gratis relay-servers van n0, bedoeld om te testen; een **Eigen
 relay-server** stel je daar in met **Geavanceerd tonen** (uitleg in `docs/modules/mobile.md`).
 
-**Andere manieren** (voor de browser en Android) staan onder **Meer opties**. Met **Tailscale** werkt het ook
+**Andere manieren** (voor de browser en Android; er is nog geen Android-app) staan onder **Instellingen › Meer
+mogelijkheden › Telefoonverbinding › Meer opties**. Met **Tailscale** werkt het ook
 onderweg: zet Tailscale (gratis) op je computer en je telefoon met hetzelfde account en klik op **Telefoon via
 Tailscale instellen**; de QR-code bevat je Tailscale-adres dan vanzelf (klik op **Nieuwe QR-code** als hij er al
 stond). **Zelfde wifi** werkt alleen thuis, is
 niet versleuteld en geeft geen pushmeldingen in de browser. Scan de code met de camera, open TeamBot, kies **Koppelen**
 en zet hem op je beginscherm (iPhone: Safari *Deel* › *Zet op beginscherm*; Android: Chrome *⋮* › *App installeren*).
 
-**Bureaublad op afstand.** Bovenaan **Instellingen › Telefoon** staat **Bureaublad op afstand** (alleen Windows): je
+**Bureaublad op afstand.** Op **Instellingen › Meer mogelijkheden › Telefoonverbinding** staat **Bureaublad op afstand** (alleen Windows): je
 kijkt vanaf je telefoon mee op je computer, en als je dat toestaat bedien je hem ook. Aanzetten kan alleen op de computer
 zelf: **Bureaublad op afstand toestaan** (bevestigen met **Aanzetten**), eventueel **Ook bedienen met muis en
 toetsenbord (anders alleen meekijken)**, en **Stopt vanzelf** na een tijd die je kiest. Op je telefoon tik je op

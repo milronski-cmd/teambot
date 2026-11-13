@@ -1,37 +1,39 @@
 import type { Agent, Ctx, Run, Thread, ToolDef, ToolOutput } from '../core/types.js';
 import { redact } from '../core/secrets.js';
-import { autoReview } from '../agent/autoreview.js';
 import { callRisk } from './broker.js';
+import { passGate } from './gate.js';
 import { ownerOnlyText, sharedRunOf } from '../agent/shared.js';
 import { checkArgs } from './schema.js';
+import { fillWords, isWords, mapOwnWords, type Words } from '../../shared/i18n-core.js';
 
 /**
- * One tool call through TeamBot's permission gate. Shared by the API-agent loop (runner) and the TeamBot MCP
- * server for CLI agents, so both get exactly the same checks: argument validation, the Broker decision for the
- * bot's access mode and tool policy, Auto Review in auto mode, and a human approval when needed. Deny = the
- * tool never runs.
+ * One call of a TeamBot tool, for a model over an API key, a local model and a CLI engine that uses TeamBot's tools
+ * (the TeamBot MCP server) alike: the arguments are checked against the tool's schema, the call is written down as a
+ * step for the permission gate (tools/gate.ts decides, asks and reviews), and when the gate lets it through the tool
+ * runs. Refused = the tool never runs.
  */
 
 /** Full JSON-schema check of tool arguments, after lenient coercion ("5" → 5): tools/schema.ts. */
 export { checkArgs, validateArgs } from './schema.js';
 
-/** The text of the owner's own rule (module botrules) behind a refusal or a question, or null. */
-export function ownRule(ctx: Ctx, agent: Agent, call: Pick<ToolDef, 'name' | 'risk'> & { impact?: ToolDef['impact']; internal?: boolean }, args: any, decision: 'ask' | 'deny'): string | null {
+/**
+ * A call's line, from the tool's `summarize`: `summary` in Dutch (what the bot, the log and the approval card read) and,
+ * when the tool gives TeamBot's words with values (`words(…)`, shared/i18n-core.ts), those as `words`: the chat shows
+ * them in the owner's language and the values (a name, a path, what the bot wrote) as written. Secrets are out of both.
+ */
+export function stepSummary(t: ToolDef, args: any, agent?: Agent): { summary: string; words?: Words } {
   try {
-    const r = ctx.services?.botRules?.reason?.(agent, call, args, decision);
-    return r?.text ? String(r.text).replace(/\s+/g, ' ').slice(0, 300) : null;
+    const s = t.summarize ? t.summarize(args ?? {}, agent ? { agent } : undefined) : `${t.name}(${JSON.stringify(args ?? {}).slice(0, 300)})`;
+    if (!isWords(s)) return { summary: redact(String(s ?? '')) };
+    const w = mapOwnWords(s, redact);
+    return { summary: redact(fillWords(w)), words: w };
   } catch {
-    return null;
+    return { summary: t.name };
   }
 }
 
-export function safeSummary(t: ToolDef, args: any, agent?: Agent): string {
-  try {
-    return redact(t.summarize ? t.summarize(args ?? {}, agent ? { agent } : undefined) : `${t.name}(${JSON.stringify(args ?? {}).slice(0, 300)})`);
-  } catch {
-    return t.name;
-  }
-}
+/** The Dutch line of a call (stepSummary). */
+export const safeSummary = (t: ToolDef, args: any, agent?: Agent): string => stepSummary(t, args, agent).summary;
 
 export interface ExecuteToolInput {
   ctx: Ctx;
@@ -87,60 +89,43 @@ export async function executeTool(i: ExecuteToolInput): Promise<ExecuteToolResul
     if (v.error) out = { text: `${v.error} Roep ${tool.name} opnieuw aan met argumenten die bij het schema passen.`, isError: true };
     else args = v.args;
   }
-  if (!out && tool?.refuse) {
-    // A call that can never succeed is refused before any approval card (asking would only waste the owner's time).
-    let why: string | null = null;
-    try {
-      why = tool.refuse(args ?? {}, { agent, thread, userId: thread.user_id });
-    } catch {
-      why = null;
-    }
-    if (why) out = { text: why, isError: true };
-  }
   if (!out && tool) {
-    // Per-call risk (e.g. channel_send to the owner himself vs. to a customer); the broker still decides.
-    const risk = callRisk(tool, args, { agent, thread, userId: thread.user_id });
+    const who = { agent, thread, userId: thread.user_id };
+    const hook = <T>(fn: () => T, otherwise: T): T => {
+      try {
+        return fn();
+      } catch {
+        return otherwise;
+      }
+    };
+    // Per-call risk (e.g. channel_send to the owner himself vs. to a customer); the gate still decides.
+    const risk = callRisk(tool, args, who);
     auditRisk = risk;
-    let internal = !!tool.internal;
-    if (!internal && tool.internalFor) {
-      try {
-        internal = tool.internalFor(args ?? {}) === true;
-      } catch {
-        internal = false;
-      }
-    }
-    const call = { name: tool.name, risk, impact: tool.impact, internal };
-    let decision = ctx.broker.decide(agent, call, args);
-    // The owner's own rule that made this ask or be refused (module botrules), for the card and the bot.
-    const rule = decision !== 'allow' ? ownRule(ctx, agent, call, args, decision) : null;
-    let reviewNote = rule && decision === 'ask' ? `Jouw regel: “${rule}”\n` : '';
-    // Rules TeamBot cannot pin down in code: Auto Review checks every change against them, also outside auto mode.
-    const reviewRules: string[] = risk !== 'read' && typeof ctx.services?.botRules?.reviewTexts === 'function' ? ctx.services.botRules.reviewTexts(agent) : [];
-    if (decision === 'allow' && (risk === 'write' || risk === 'exec' || risk === 'danger') && (agent.settings?.autoReview || reviewRules.length)) {
-      const v = await autoReview(ctx, agent, thread, run, tool, args, reviewRules);
-      if (v.verdict === 'ask') {
-        decision = 'ask';
-        reviewNote = `Automatische controle: ${v.reason}\n`;
-      }
-    }
-    if (decision === 'deny') {
-      out = { text: rule ? `Geweigerd door een regel van je eigenaar: “${rule}”. Doe dit niet; vraag je eigenaar als het echt nodig is.` : `Geweigerd: ${agent.name} heeft in modus "${agent.access_mode}" geen toestemming voor ${tool.name}.`, isError: true };
-      denied = true;
-    } else if (decision === 'ask') {
-      i.onState?.('waiting');
-      asked = true;
-      try {
-        const r = await ctx.broker.request({ userId: thread.user_id, agent, thread, run, kind: 'tool', tool: tool.name, input: args, summary: reviewNote + safeSummary(tool, args, agent), risk, signal });
-        decidedBy = r.by;
-        if (!r.approved) {
-          out = { text: 'De gebruiker heeft deze actie geweigerd. Vraag eventueel wat je anders moet doen.', isError: true };
-          denied = true;
-        } else approved = true;
-      } catch {
-        out = { text: 'Gestopt voordat er toestemming was.', isError: true };
-        denied = true;
-      }
-      i.onState?.('running');
+    const g = await passGate(
+      { ctx, agent, thread, run, userId: thread.user_id, signal },
+      {
+        name: tool.name,
+        risk,
+        impact: tool.impact,
+        internal: !!tool.internal || hook(() => tool.internalFor?.(args ?? {}) === true, false),
+        group: tool.group,
+        args,
+        input: args,
+        summary: safeSummary(tool, args, agent),
+        // A call that can never succeed is refused before any approval card (asking would only waste the owner's time).
+        refusal: hook(() => tool.refuse?.(args ?? {}, who) ?? null, null),
+        // The terminal part runs its `command` on this computer: the gate reads it like a command of a CLI engine.
+        ...(tool.group === 'shell' && typeof args?.command === 'string' ? { command: args.command, cwd: typeof args.cwd === 'string' && args.cwd ? args.cwd : undefined } : {}),
+      },
+      { onWait: (waiting) => i.onState?.(waiting ? 'waiting' : 'running') },
+    );
+    asked = g.asked;
+    decidedBy = g.by;
+    approved = g.allow && g.asked;
+    if (!g.allow) {
+      out = { text: g.reason, isError: true };
+      // The tool's own "this can never succeed" is an error of the call, not a refusal of permission.
+      denied = !g.blocked;
     }
     if (!out) {
       try {
@@ -156,6 +141,8 @@ export async function executeTool(i: ExecuteToolInput): Promise<ExecuteToolResul
           progress: (text) => i.progress?.(redact(scrub(text))),
         });
         out = typeof r === 'string' ? { text: r } : r;
+        // Progress of the chain of work between bots this run belongs to (modules/rooms/progress.ts; never throws).
+        if (out && !out.isError) ctx.services.rooms?.toolDone?.(run, tool, risk);
       } catch (e: any) {
         out = { text: `Fout: ${e?.message || e}`, isError: true };
       }

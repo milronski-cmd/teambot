@@ -305,7 +305,7 @@ try {
       await save(page, name, clip);
     });
   /** The page next to the sidebar and the settings list (pages under Instellingen). */
-  const MAIN = (height) => ({ x: 548, y: 0, width: 732, height });
+  const MAIN = (height) => ({ x: 532, y: 0, width: 748, height });
   fs.mkdirSync(out, { recursive: true });
 
   const desk = await context({ viewport: { width: 1280, height: 800 }, deviceScaleFactor: 1.5 });
@@ -332,10 +332,10 @@ try {
       await add.click();
       await p.waitForTimeout(800);
     }
-  }, { x: 256, y: 32, width: 768, height: 600 });
+  });
   await d.keyboard.press('Escape');
-  await shoot(d, 'market-desktop', '#/m/skills/', 'Catalogus', null, MAIN(640));
-  await shoot(d, 'calendar-desktop', '#/m/routines/kalender', 'Ochtendoverzicht', null, { x: 330, y: 20, width: 920, height: 620 });
+  await shoot(d, 'market-desktop', '#/m/skills/', null, (p) => p.waitForTimeout(2000));
+  await shoot(d, 'calendar-desktop', '#/m/routines/kalender', 'Ochtendoverzicht', null, { x: 308, y: 20, width: 962, height: 620 });
   await soft('kleur', () => api('PUT', '/settings', { ui: { accent: 'lavender' } }));
   await shoot(d, 'colours-desktop', '#/settings/appearance', 'Lavendel', null, MAIN(575));
   await desk.close();

@@ -114,6 +114,9 @@ export function routineRoutes(ctx: Ctx, engine: RoutineEngine) {
       return engine.calendar(user(req).id, from, to, teamOf(req));
     }),
   );
+  // The one list of what starts by itself, and when: routines, reminders, wait points, vaste taken, workflows, work
+  // that lies ready, the main bot's own messages and learning rounds (planner.ts).
+  api.get('/routines/planned', ah(async (req) => ({ planned: await engine.planned(user(req).id) })));
   api.put('/routines/settings', ah(async (req) => engine.setGlobalSettings(user(req).id, req.body || {})));
 
   api.post(
@@ -174,18 +177,6 @@ export function routineRoutes(ctx: Ctx, engine: RoutineEngine) {
       };
     }),
   );
-
-  // "Alles stoppen" (core route POST /stop-all, registered after the modules): also the routine runs that wait in the
-  // queue or for a retry, so nothing starts again a few minutes later. The schedules themselves keep going (the
-  // noodrem "Alle routines pauzeren" is for that). Then the core route stops the running tasks as before.
-  api.post('/stop-all', (req, _res, next) => {
-    try {
-      engine.stopQueued(user(req).id);
-    } catch (e) {
-      ctx.log.warn('[routines] stop-all', String(e));
-    }
-    next();
-  });
 
   // ---- what did not happen (before /routines/:id) ----
   /** "Gemist terwijl je pc uit stond": per period without TeamBot (or asleep) the routines that missed runs. */
@@ -416,7 +407,10 @@ export function routineRoutes(ctx: Ctx, engine: RoutineEngine) {
     '/routines/:id/pause',
     ah(async (req) => {
       const r = ownRoutine(req, req.params.id as string);
-      return engine.view(wrap(() => engine.setStatus(r, 'paused', 'Gepauzeerd door gebruiker')));
+      // Who paused it, as the page shows it: the person himself, or a bot that did it in the chat (its tools call this
+      // route inside the app, teams/inner.ts; my_routines names the bot).
+      const bot = (req as any).session?.id === 'bot';
+      return engine.view(wrap(() => engine.setStatus(r, 'paused', bot ? `Gepauzeerd door ${str(req.body?.by, 80) || 'een bot'}` : 'Gepauzeerd door gebruiker')));
     }),
   );
   api.post(

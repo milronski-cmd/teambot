@@ -1,7 +1,7 @@
 import type React from 'react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Bot, CheckCircle2, ExternalLink, Eye, EyeOff, Flag, FileJson, Globe, Link2, Plug, Puzzle, RefreshCw, ShieldAlert, ShieldCheck, Trash2 } from 'lucide-react';
-import { Badge, Button, Card, EmptyState, Field, Input, Modal, Page, PageHeader, Select, Spinner, Tabs, cx, timeAgo, toast, useAsync } from '../../components/ui';
+import { Bot, CheckCircle2, ExternalLink, Eye, EyeOff, Flag, FileJson, Globe, Link2, Plug, Puzzle, RefreshCw, ShieldAlert, ShieldCheck, Trash2, Share2, Ban, ClipboardCheck } from 'lucide-react';
+import { Badge, Button, Card, EmptyState, Field, Input, Modal, Page, PageHeader, Select, Spinner, cx, timeAgo, toast, useAsync, CardHead } from '../../components/ui';
 import { MoreInfo } from '../../components/MoreInfo';
 import { Segmented } from '../../components/SettingControls';
 import { Fold, Menu, Skeleton, SkeletonRows, type MenuEntry } from '../../components/overview';
@@ -10,23 +10,34 @@ import { encodeFace, isImageAvatar, parseFace, traitsFor } from '../../lib/botfa
 import { api, request } from '../../lib/api';
 import { navigate, query } from '../../lib/router';
 import { t } from '../../lib/i18n';
+import { Words } from '../../components/Words';
 import { useApp } from '../../lib/store';
 import type { ModelInfo } from '../../lib/types';
-import type { AppItem, MarketBotDetail, MarketBotItem, MarketSkillDetail, MarketSkillItem, ReportRow, SignatureView, SourceView, StagingView, TemplatePreview } from './api';
+import type { AppItem, MarketBotDetail, MarketBotItem, MarketSkillDetail, MarketSkillItem, ReportRow, SourceView, StagingView, TemplatePreview } from './api';
+import type { SignatureView } from '../../../../shared/skills.js';
 import { REPORT_REASONS, fmtDate, formatBytes } from './api';
 import { CARD, ErrorCard, Changelog, ListTools, LoadingCards, MarketMenuProvider, Meta, ReportButton, Signal, SkillsLinks, qs, useList, useMarketMenu } from './marketParts';
-import { InternetSkills, InternetSourcesCard, targetFromRef } from './WebSkills';
+import { GithubTokenCard, OpenMarket } from './OpenMarket';
 import { RegistryApps } from './RegistryApps';
-import { CatalogSkills } from './Catalog';
+import { CatalogSkills, CuratedDetailPage } from './Catalog';
+import { skillHref } from './ClearMarket';
 import { RecommendedTab } from './Recommended';
 import { useAdvanced } from '../../shell/advanced';
 import { AgentPicker, CandidatesReview, Collapse, Confirm, FileList, FindingsList, LabelBadges, Md, PermissionsView, PolicyOverride, ScanBadge, SignatureBadge, SignaturePanel, ThinSkillWarning, VerifiedBadge, bodyOf } from './common';
 import { firstSentence } from '../../lib/sentence';
+import { QuickConnect } from '../mcp/quick';
+import { PLACE } from '../../../../shared/places.js';
 
 type MTab = 'aanbevolen' | 'skills' | 'apps' | 'bots' | 'bronnen' | 'meldingen';
 const TABS: MTab[] = ['aanbevolen', 'skills', 'apps', 'bots', 'bronnen', 'meldingen'];
 
 export function MarketPage({ params }: { params: string[] }) {
+  // One catalogue skill: a page of its own, with the way back.
+  if (params[0] === 'skill' && params.length > 1) return <CuratedDetailPage id={params.slice(1).map(decodeURIComponent).join('/')} />;
+  return <MarketTabs params={params} />;
+}
+
+function MarketTabs({ params }: { params: string[] }) {
   // 0.4.5: the page opens on what fits your bots; a link to an item (`?item=`) still opens on its own tab.
   const tab: MTab = TABS.includes(params[0] as MTab) ? (params[0] as MTab) : query().get('item') || query().get('bron') ? 'skills' : 'aanbevolen';
   const advanced = useAdvanced();
@@ -145,44 +156,47 @@ function ItemSignal({ sig, verified, added, update }: { sig?: SignatureView | nu
 
 type CatalogPick = { catalogId: string; id: string };
 
-type SkillSrc = 'curated' | 'catalog' | 'internet';
+type SkillSrc = 'curated' | 'open' | 'catalog';
 
 /**
- * Skills: TeamBot's own catalogue on pinned versions first (0.4). "Zelf geschreven en eigen catalogi" holds TeamBot's
- * self-written skills and catalogues the owner added. Open internet collections only appear when they were configured
- * on purpose (TEAMBOT_SKILL_COLLECTIONS); they are not a default source anymore.
+ * Skills, in one screen: "Gecontroleerd" is TeamBot's own catalogue on pinned versions (the first view), "Openbaar" is
+ * everything public next to it (GitHub and the open skill libraries, with sorting; its search also covers the checked
+ * catalogue and the catalogues below). "Eigen catalogi" holds TeamBot's self-written skills and the catalogues the
+ * owner added: rarely needed, so one line in "Meer opties" until it is chosen. ("Openbaar", not "Open": "Open" is the
+ * status of a task or a report, and one dictionary entry cannot be a view and a status at once.)
  */
 function SkillsTab() {
   const item = query().get('item');
   const bron = query().get('bron');
-  const [openSources, setOpenSources] = useState(false);
-  useEffect(() => {
-    api
-      .get<{ collections: unknown[] }>('/skills/web/sources')
-      .then((s) => setOpenSources((s.collections || []).length > 0))
-      .catch(() => setOpenSources(false));
-  }, []);
-  const [src, setSrc] = useState<SkillSrc>(() => (item?.startsWith('curated/') ? 'curated' : item?.startsWith('github/') || bron === 'internet' ? 'internet' : item || bron === 'eigen' ? 'catalog' : 'curated'));
+  const [src, setSrc] = useState<SkillSrc>(() => (item?.startsWith('curated/') ? 'curated' : item?.startsWith('github/') || bron === 'internet' || bron === 'alles' || bron === 'open' ? 'open' : item || bron === 'eigen' ? 'catalog' : 'curated'));
   const [pick, setPick] = useState<CatalogPick | null>(null);
+  // "Alle … bekijken" under the checked matches of a search in "Open": the checked view with the same words.
+  const [words, setWords] = useState('');
   const advanced = useAdvanced();
-  const choose = (v: SkillSrc) => (setPick(null), setSrc(v));
-  // The other catalogues are rarely needed: one line in "Meer opties"; once chosen, the switch shows the way back.
-  const switcher = advanced || src !== 'curated';
-  useMarketMenu('skills', switcher ? [] : [{ label: 'Zelf geschreven en eigen catalogi', icon: <Puzzle aria-hidden />, onSelect: () => choose('catalog') }], [switcher]);
+  const choose = (v: SkillSrc) => (setPick(null), setWords(''), setSrc(v));
+  // A link to one skill on GitHub (the update notice of a skill installed from the internet before 0.4): its own page.
+  useEffect(() => {
+    if (item?.startsWith('github/')) navigate(skillHref(item));
+  }, [item]);
+  const own = advanced || src === 'catalog';
+  useMarketMenu('skills', own ? [] : [{ label: 'Zelf geschreven en eigen catalogi', icon: <Puzzle aria-hidden />, onSelect: () => choose('catalog') }], [own]);
   return (
     <div className="space-y-4">
-      {switcher && (
-        <Segmented<SkillSrc>
-          label="Bron"
-          value={src}
-          onChange={choose}
-          options={[{ value: 'curated', label: 'Catalogus' }, { value: 'catalog', label: 'Eigen catalogi' }, ...(openSources || src === 'internet' ? [{ value: 'internet' as const, label: 'Open bronnen' }] : [])]}
-        />
+      <Segmented<SkillSrc>
+        label="Weergave"
+        value={src}
+        onChange={choose}
+        options={[{ value: 'curated', label: 'Gecontroleerd' }, { value: 'open', label: 'Openbaar' }, ...(own ? [{ value: 'catalog' as const, label: 'Eigen catalogi' }] : [])]}
+      />
+      {src === 'open' && (
+        <p className="text-sm text-muted" data-testid="open-means">
+          Open: alles wat openbaar is op GitHub en in de open skill-bibliotheken. Niet door TeamBot gecontroleerd; de controle gebeurt op het moment dat je iets toevoegt.
+        </p>
       )}
       {src === 'curated' ? (
-        <CatalogSkills initialItem={item?.startsWith('curated/') ? item.slice('curated/'.length) : null} />
-      ) : src === 'internet' ? (
-        <InternetSkills initialTarget={item?.startsWith('github/') ? targetFromRef(item) : null} onOpenCatalog={(catalogId, id) => (setPick({ catalogId, id }), setSrc('catalog'))} onShowCatalog={() => (setPick(null), setSrc('catalog'))} />
+        <CatalogSkills initialItem={item?.startsWith('curated/') ? item.slice('curated/'.length) : null} initialQuery={words} />
+      ) : src === 'open' ? (
+        <OpenMarket onOpenOwn={(catalogId, id) => (setPick({ catalogId, id }), setSrc('catalog'))} onShowOwn={() => choose('catalog')} onShowChecked={(q) => (setWords(q), setSrc('curated'))} />
       ) : (
         <CatalogSkillsTab initialOpen={pick} />
       )}
@@ -222,7 +236,7 @@ function CatalogSkillsTab({ initialOpen }: { initialOpen?: CatalogPick | null })
           {data.items.map((i) => (
             <li key={i.catalogId + i.id} className="min-w-0">
               <button type="button" className={cx(CARD, 'w-full text-start')} onClick={() => setOpen({ catalogId: i.catalogId, id: i.id })}>
-                <span className="break-words font-semibold">{i.title}</span>
+                <span className="break-words font-semibold" translate="no">{i.title}</span>
                 <span className="mt-1 line-clamp-1 flex-1 break-words text-sm text-muted">{firstSentence(i.description)}</span>
                 <span className="mt-3 flex min-h-8 items-center">
                   <ItemSignal sig={i.signature} verified={i.verified} added={!!i.installed} update={i.installed?.updateAvailable} />
@@ -262,7 +276,7 @@ function SkillDetailModal({ catalogId, id, onClose }: { catalogId: string; id: s
         <Spinner />
       ) : staging ? (
         <div className="space-y-3">
-          <p className="text-sm text-muted">Stap 2 van 2: kies voor welke bots je de skill meteen inschakelt en installeer.</p>
+          <p className="text-sm text-muted">Stap 2 van 2: bekijk de controle en installeer. De skill werkt daarna meteen voor het hele team.</p>
           <CandidatesReview staging={staging} doneLabel="Geïnstalleerd. Je vindt de skill onder Mijn skills." />
         </div>
       ) : (
@@ -274,7 +288,7 @@ function SkillDetailModal({ catalogId, id, onClose }: { catalogId: string; id: s
             {a?.scan && <LabelBadges labels={a.scan.labels} />}
             {d.installed && <Badge tone="ok">Geïnstalleerd (v{d.installed.version || '?'})</Badge>}
           </div>
-          <p className="text-sm">{d.description}</p>
+          <p className="text-sm" translate="no">{d.description}</p>
           <Meta
             items={[
               ['Uitgever', d.publisher],
@@ -295,7 +309,7 @@ function SkillDetailModal({ catalogId, id, onClose }: { catalogId: string; id: s
             {a?.permissions ? <PermissionsView p={a.permissions} /> : d.download ? <p className="text-sm text-muted">Wordt bij installatie gedownload van {d.download.host}{d.download.size ? ` (${formatBytes(d.download.size)})` : ''} en gecontroleerd met de checksum; daarna zie je de rechten en de scan.</p> : null}
           </section>
           {a?.scan && (
-            <Collapse title={`Veiligheidsscan (${a.scan.findings.length})`} defaultOpen={a.scan.level === 'warn' || a.scan.level === 'danger'}>
+            <Collapse title={t('Veiligheidsscan ({0})', a.scan.findings.length)} defaultOpen={a.scan.level === 'warn' || a.scan.level === 'danger'}>
               <FindingsList findings={a.scan.findings} />
             </Collapse>
           )}
@@ -398,8 +412,8 @@ function BotGrid({ items, onOpen }: { items: MarketBotItem[]; onOpen(i: MarketBo
             <span className="flex items-center gap-3">
               <BotAvatar bot={{ name: i.title, avatar: i.avatar }} size={44} />
               <span className="min-w-0">
-                <span className="block break-words font-semibold">{i.title}</span>
-                <span className="block break-words text-xs text-muted">{i.role}</span>
+                <span className="block break-words font-semibold" translate="no">{i.title}</span>
+                <span className="block break-words text-xs text-muted" translate="no">{i.role}</span>
               </span>
             </span>
             <span className="mt-2 line-clamp-1 flex-1 break-words text-sm text-muted">{firstSentence(i.description)}</span>
@@ -427,7 +441,7 @@ function BotDetailModal({ item, onClose }: { item: MarketBotItem; onClose(): voi
       .catch((e) => setError(e.message));
   }, [base, tick]);
   return (
-    <Modal open onClose={onClose} wide title={item.title}>
+    <Modal open onClose={onClose} wide title={<span translate="no">{item.title}</span>}>
       {error ? (
         <p className="text-sm text-danger">{error}</p>
       ) : !d ? (
@@ -439,8 +453,8 @@ function BotDetailModal({ item, onClose }: { item: MarketBotItem; onClose(): voi
           <div className="flex items-center gap-3">
             <BotAvatar bot={{ name: d.title, avatar: d.avatar }} size={56} />
             <div>
-              <div className="font-semibold">{d.title}</div>
-              <div className="text-sm text-muted">{d.role}</div>
+              <div className="font-semibold" translate="no">{d.title}</div>
+              <div className="text-sm text-muted" translate="no">{d.role}</div>
             </div>
           </div>
           <div className="flex flex-wrap gap-2">
@@ -449,7 +463,7 @@ function BotDetailModal({ item, onClose }: { item: MarketBotItem; onClose(): voi
             <Badge>{d.category}</Badge>
             {d.installedCount > 0 && <Badge tone="ok">{d.installedCount}× geïnstalleerd</Badge>}
           </div>
-          <p className="text-sm">{d.description}</p>
+          <p className="text-sm" translate="no">{d.description}</p>
           <SignaturePanel sig={d.signature} policy={d.policy} onTrusted={() => setTick((x) => x + 1)} />
           <Meta
             items={[
@@ -481,7 +495,7 @@ function BotDetailModal({ item, onClose }: { item: MarketBotItem; onClose(): voi
   );
 }
 
-const ACCESS_LABEL: Record<string, string> = { chat: 'Alleen chatten (geen tools)', readonly: 'Alleen lezen', ask: 'Vragen bij elke actie met impact', auto: 'Automatisch' };
+const ACCESS_LABEL: Record<string, string> = { chat: 'Alleen chatten (geen tools)', readonly: 'Alleen lezen', ask: 'Vragen bij elke actie met impact', auto: 'Automatisch', full: 'Volledige toegang' };
 
 /** Install preview for a bot template: what gets created, which rights, which external calls; pick engine. */
 /**
@@ -547,8 +561,8 @@ function TemplateInstall({ preview, install }: { preview: TemplatePreview; insta
         <div className="flex items-center gap-3">
           <BotAvatar bot={{ name: b.name, avatar: b.avatar }} size={48} />
           <div className="min-w-0">
-            <div className="font-semibold">{b.name}</div>
-            <div className="text-sm text-muted">{b.role}</div>
+            <div className="font-semibold" translate="no">{b.name}</div>
+            <div className="text-sm text-muted" translate="no">{b.role}</div>
           </div>
         </div>
         <Meta
@@ -567,18 +581,18 @@ function TemplateInstall({ preview, install }: { preview: TemplatePreview; insta
       </Card>
       {preview.skills.length > 0 && (
         <Card className="space-y-2 p-4">
-          <div className="text-sm font-semibold">Skills</div>
+          <CardHead icon={Puzzle} tone="teal" title="Skills" />
           <ul className="space-y-2">
             {preview.skills.map((s) => (
               <li key={s.name} className="rounded-lg border border-line p-3 text-sm">
                 <div className="flex flex-wrap items-center gap-2">
-                  <span className="font-medium">{s.name}</span>
+                  <span className="font-medium" translate="no">{s.name}</span>
                   {s.version && <Badge>v{s.version}</Badge>}
                   <Badge tone={s.action === 'create' ? 'accent' : s.action === 'error' ? 'danger' : 'neutral'}>{s.action === 'create' ? 'Wordt geïnstalleerd' : s.action === 'error' ? 'Overgeslagen' : 'Je eigen versie wordt gebruikt'}</Badge>
                   {s.scan && <ScanBadge level={s.scan.level} />}
                   {s.scan && <LabelBadges labels={s.scan.labels} />}
                 </div>
-                {s.description && <p className="mt-1 text-muted">{s.description}</p>}
+                {s.description && <p className="mt-1 text-muted" translate="no">{s.description}</p>}
                 {s.error && <p className="mt-1 text-danger">{s.error}</p>}
                 {s.scan && s.scan.findings.some((f) => f.severity !== 'info') && (
                   <div className="mt-2">
@@ -614,7 +628,7 @@ function TemplateInstall({ preview, install }: { preview: TemplatePreview; insta
             <Field label="Provider">
               <Select value={providerId} onChange={(e) => setProviderId(e.target.value)}>
                 {usable.map((p) => (
-                  <option key={p.id} value={p.id}>
+                  <option key={p.id} value={p.id} translate="no">
                     {p.name}
                   </option>
                 ))}
@@ -788,7 +802,7 @@ function CatalogAppsTab({ initialOpen, tools }: { initialOpen?: string | null; t
           {data.items.map((i) => (
             <li key={`${i.catalogId}/${i.id}`} className="min-w-0">
               <button type="button" className={cx(CARD, 'w-full text-start')} onClick={() => setOpen(i)}>
-                <span className="break-words font-semibold">{i.title}</span>
+                <span className="break-words font-semibold" translate="no">{i.title}</span>
                 <span className="mt-1 line-clamp-1 flex-1 break-words text-sm text-muted">{firstSentence(i.description)}</span>
                 <span className="mt-3 flex min-h-8 items-center">
                   {/* TeamBot's own connectors ('mcp') were looked at by TeamBot; a package from elsewhere shows its signature. */}
@@ -809,7 +823,7 @@ function AppDetail({ app, canInstall, onClose }: { app: AppItem; canInstall: boo
   const [done, setDone] = useState(false);
   const { busy, run } = useAsync();
   return (
-    <Modal open onClose={onClose} wide title={app.title}>
+    <Modal open onClose={onClose} wide title={<span translate="no">{app.title}</span>}>
       <div className="space-y-4">
         <div className="flex flex-wrap gap-2">
           <SignatureBadge sig={app.signature} />
@@ -817,7 +831,7 @@ function AppDetail({ app, canInstall, onClose }: { app: AppItem; canInstall: boo
           <Badge>{app.category}</Badge>
           {app.needsAuth && <Badge tone="warn">Vraagt om inloggen</Badge>}
         </div>
-        <p className="text-sm">{app.description}</p>
+        <p className="text-sm" translate="no">{app.description}</p>
         {app.packaged && <SignaturePanel sig={app.signature} />}
         <Meta
           items={[
@@ -846,7 +860,7 @@ function AppDetail({ app, canInstall, onClose }: { app: AppItem; canInstall: boo
         )}
         {done ? (
           <p className="flex items-center gap-2 text-sm text-ok">
-            <CheckCircle2 className="h-4 w-4" /> Geïnstalleerd. Rond eventueel het inloggen af in Connectors.
+            <CheckCircle2 className="h-4 w-4" /> Geïnstalleerd. Rond eventueel het inloggen af in Apps.
           </p>
         ) : canInstall ? (
           <div className="space-y-3 border-t border-line pt-3">
@@ -863,10 +877,10 @@ function AppDetail({ app, canInstall, onClose }: { app: AppItem; canInstall: boo
             <ReportButton type="app" catalogId={app.catalogId || 'mcp'} itemId={app.id} itemName={app.title} />
             {app.packaged ? (
               <Button variant="primary" disabled={app.signature.blocked} onClick={() => navigate(`/m/mcp?package=${encodeURIComponent(`${app.catalogId}/${app.id}`)}`)}>
-                Installeren via Connectors…
+                Installeren via Apps…
               </Button>
             ) : (
-              <Button onClick={() => navigate('/m/mcp')}>Openen in Connectors</Button>
+              <QuickConnect catalogId={app.id} name={app.title} />
             )}
           </div>
         )}
@@ -881,7 +895,7 @@ function SourcesTab() {
   return (
     <div className="space-y-4">
       <CatalogSources />
-      <InternetSourcesCard />
+      <GithubTokenCard />
     </div>
   );
 }
@@ -982,7 +996,7 @@ function CatalogSources() {
         </div>
         <div className="flex flex-wrap items-center justify-between gap-2">
           <MoreInfo>
-            Een externe catalogus is een JSON-bestand in het formaat <code>teambot.catalog/v1</code>. Items daaruit zijn altijd “niet gecontroleerd” en worden bij installatie gecontroleerd met hun sha256-checksum. Ondertekende items tonen wie ze ondertekende; het beleid daarvoor staat bij Instellingen › Uitgevers en beleid.
+            Een externe catalogus is een JSON-bestand in het formaat <code>teambot.catalog/v1</code>. Items daaruit zijn altijd “niet gecontroleerd” en worden bij installatie gecontroleerd met hun sha256-checksum. {t('Ondertekende items tonen wie ze ondertekende; het beleid daarvoor staat bij {0}.', t(PLACE.trustedMakers))}
           </MoreInfo>
           <Button variant="primary" className="ms-auto" icon={<Link2 className="h-4 w-4" />} loading={busy} disabled={!/^https?:\/\//i.test(url.trim())} onClick={add}>
             Toevoegen
@@ -990,7 +1004,7 @@ function CatalogSources() {
         </div>
       </Fold>
       <Card className="space-y-2 p-4">
-        <div className="font-semibold">Wat ik deel</div>
+        <CardHead icon={Share2} tone="blue" title="Wat ik deel" />
         {!shares.data ? (
           <Skeleton className="h-4 w-1/2" />
         ) : !shares.data.length ? (
@@ -1001,11 +1015,11 @@ function CatalogSources() {
               <li key={s.id} className="flex flex-wrap items-center justify-between gap-2 py-2 text-sm">
                 <span className="min-w-0 flex-1">
                   <span className="block truncate">
-                    {s.item_type === 'bot' ? 'Bot' : 'Skill'}: <span className="font-medium">{s.title}</span> <span className="text-muted">({timeAgo(s.updated_at)})</span>
+                    {s.item_type === 'bot' ? 'Bot' : 'Skill'}: <span className="font-medium" translate="no">{s.title}</span> <span className="text-muted">({timeAgo(s.updated_at)})</span>
                   </span>
                   <span className="mt-0.5 flex flex-wrap items-center gap-1.5">
                     {s.status === 'pending' ? <Badge tone="warn">Wacht op beoordeling</Badge> : s.status === 'rejected' ? <Badge tone="danger">Afgekeurd</Badge> : <Badge tone="ok">Zichtbaar voor iedereen</Badge>}
-                    {s.status === 'rejected' && s.review?.reason && <span className="text-xs text-muted">Reden: {s.review.reason}</span>}
+                    {s.status === 'rejected' && s.review?.reason && <Words className="text-xs text-muted" text="Reden: {0}" values={[s.review.reason]} />}
                   </span>
                 </span>
                 <Button size="sm" variant="ghost" onClick={() => run(() => api.del(`/skills/shares/${s.id}`).then(() => (shares.reload(), reload())), 'Niet meer gedeeld')}>
@@ -1054,9 +1068,7 @@ function ShareReviews({ onDecided }: { onDecided(): void }) {
   if (!data) return <SkeletonRows n={1} avatar={false} />;
   return (
     <section className="space-y-2" aria-labelledby="share-review-title" data-testid="share-reviews">
-      <h2 id="share-review-title" className="text-[15px] font-bold tracking-tight">
-        Ter beoordeling{data.length ? ` (${data.length})` : ''}
-      </h2>
+      <CardHead id="share-review-title" icon={ClipboardCheck} tone="orange" title={<>Ter beoordeling{data.length ? ` (${data.length})` : ''}</>} />
       {!data.length ? (
         <p className="text-sm text-muted">Niets te beoordelen. Wat iemand deelt, zie jij hier eerst.</p>
       ) : (
@@ -1065,7 +1077,7 @@ function ShareReviews({ onDecided }: { onDecided(): void }) {
             <li key={p.id}>
               <Card className="space-y-2 p-4 text-sm">
                 <div className="flex flex-wrap items-center gap-2">
-                  <span className="font-semibold">{p.title}</span>
+                  <span className="font-semibold" translate="no">{p.title}</span>
                   <Badge>{p.item_type === 'bot' ? 'Bot-sjabloon' : 'Skill'}</Badge>
                   {p.version && <span className="text-xs text-muted">versie {p.version}</span>}
                   {p.scan && <ScanBadge level={p.scan.level} />}
@@ -1074,7 +1086,7 @@ function ShareReviews({ onDecided }: { onDecided(): void }) {
                   Ingediend door {p.by} · {fmtDate(p.submitted_at)}
                   {p.license ? ` · licentie ${p.license}` : ''}
                 </div>
-                {p.description && <p>{p.description}</p>}
+                {p.description && <p translate="no">{p.description}</p>}
                 {p.scan ? (
                   <div className="space-y-1.5 rounded-lg bg-surface-2 p-2.5">
                     <div className="text-xs font-semibold text-muted">Scan</div>
@@ -1088,7 +1100,11 @@ function ShareReviews({ onDecided }: { onDecided(): void }) {
                 <Collapse title={p.item_type === 'bot' ? 'Instructies en rechten bekijken' : `Inhoud bekijken (${p.files.length} ${p.files.length === 1 ? 'bestand' : 'bestanden'})`}>
                   {p.bot ? (
                     <div className="space-y-1.5 text-[13px]">
-                      {p.bot.role && <div>Rol: {p.bot.role}</div>}
+                      {p.bot.role && (
+                        <div>
+                          <Words text="Rol: {0}" values={[p.bot.role]} />
+                        </div>
+                      )}
                       <div>
                         Mag: {p.bot.access_mode || 'standaard'} · tools: {p.bot.tool_groups.join(', ') || 'geen'}
                         {p.bot.skills.length ? ` · skills: ${p.bot.skills.join(', ')}` : ''}
@@ -1109,7 +1125,7 @@ function ShareReviews({ onDecided }: { onDecided(): void }) {
                   )}
                 </Collapse>
                 <div className="flex flex-wrap items-end gap-2 pt-1">
-                  <Input className="h-8 min-w-0 flex-1 basis-56" value={reasons[p.id] || ''} onChange={(e) => setReasons({ ...reasons, [p.id]: e.target.value })} placeholder="Reden bij afkeuren (de indiener ziet die)" aria-label={`Reden voor ${p.title}`} />
+                  <Input className="h-8 min-w-0 flex-1 basis-56" value={reasons[p.id] || ''} onChange={(e) => setReasons({ ...reasons, [p.id]: e.target.value })} placeholder="Reden bij afkeuren (de indiener ziet die)" aria-label={t('Reden voor {0}', p.title)} />
                   <Button size="sm" variant="primary" loading={busy} onClick={() => decide(p, 'approve')}>
                     Goedkeuren
                   </Button>
@@ -1140,7 +1156,7 @@ function ReportsTab() {
   return (
     <div className="space-y-4">
       {isAdmin && <ShareReviews onDecided={reload} />}
-      {isAdmin && <h2 className="pt-2 text-[15px] font-bold tracking-tight">Gemeld</h2>}
+      {isAdmin && <CardHead className="pt-2" icon={Flag} tone="rose" title="Gemeld" />}
       {error ? (
         <ErrorCard error={error} retry={reload} />
       ) : !data ? (
@@ -1186,12 +1202,16 @@ function ReportsTab() {
       )}
       {isAdmin && blocks.data && blocks.data.length > 0 && (
         <Card className="space-y-2 p-4">
-          <div className="font-semibold">Geblokkeerde items</div>
+          <CardHead icon={Ban} tone="rose" title="Geblokkeerde items" />
           <ul className="divide-y divide-line">
             {blocks.data.map((b) => (
               <li key={`${b.item_type}|${b.catalog_id}|${b.item_id}`} className={cx('flex flex-wrap items-center justify-between gap-2 py-2 text-sm')}>
                 <span className="min-w-0 break-all">
-                  {b.item_type}: {b.catalog_id}/{b.item_id} {b.reason && <span className="text-muted">— {b.reason}</span>}
+                  {b.item_type}: {b.catalog_id}/{b.item_id} {b.reason && (
+                    <span className="text-muted" translate="no">
+                      — {b.reason}
+                    </span>
+                  )}
                 </span>
                 <Button size="sm" variant="ghost" loading={busy} onClick={() => run(() => api.del(`/skills/market/blocks/${b.item_type}/${encodeURIComponent(b.catalog_id)}/${encodeURIComponent(b.item_id)}`).then(() => (blocks.reload(), reload())), 'Blokkade opgeheven')}>
                   Deblokkeren

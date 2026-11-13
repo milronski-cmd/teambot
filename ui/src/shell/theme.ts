@@ -1,5 +1,6 @@
 /**
- * Theme handling: 'system' follows the OS, 'light'/'dark' are explicit. Stored per device.
+ * Theme handling: 'system' follows the OS, 'light'/'dark' are explicit. Stored per device; a theme a bot sets for the
+ * user (`settings.ui.theme`) every device takes over once (adoptSharedTheme).
  * Without a choice on this device a phone starts dark (the owner, 9 November 2026: "de layout mag wel wat donker op de
  * telefoon, dat is veel mooier"); the computer keeps following the OS. A choice in Instellingen always wins, also
  * "Systeem".
@@ -42,6 +43,31 @@ export function setThemePref(p: ThemePref) {
     /* ignore */
   }
   applyTheme();
+  for (const fn of themeListeners) fn();
+}
+
+const themeListeners = new Set<() => void>();
+/** The theme chosen on this device, live (the row in Instellingen follows a theme a bot set). */
+export const useThemePref = (): ThemePref =>
+  useSyncExternalStore(
+    (fn) => (themeListeners.add(fn), () => void themeListeners.delete(fn)),
+    getThemePref,
+  );
+
+const SHARED_AT = 'tb_theme_at';
+/**
+ * A theme set for all devices at once (`settings.ui.theme`, stamped `ui.themeAt` by the server: a bot asked, or the
+ * API): this device takes it over once; after that a choice made here counts again.
+ */
+export function adoptSharedTheme(theme: unknown, at: unknown) {
+  if ((theme !== 'system' && theme !== 'light' && theme !== 'dark') || typeof at !== 'string' || !at) return;
+  try {
+    if (localStorage.getItem(SHARED_AT) === at) return;
+    localStorage.setItem(SHARED_AT, at);
+  } catch {
+    /* private mode: take it over on this page only */
+  }
+  setThemePref(theme);
 }
 
 const mq = typeof window !== 'undefined' ? window.matchMedia('(prefers-color-scheme: dark)') : null;

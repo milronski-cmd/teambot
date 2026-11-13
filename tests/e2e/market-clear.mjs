@@ -1,6 +1,6 @@
 // End-to-end (0.4.5): "De marktplaats voor skills moet duidelijk zijn." The Marktplaats opens on what fits your bots
 // (a SEO bot gets the SEO skill), Skills shows subjects as tiles plus one search box, a card has one sentence,
-// "Gratis", the licence and one button "Toevoegen", then one choice: for which bot or the whole team. The checks stay;
+// "Gratis", the licence and one button "Toevoegen": one click, and every bot of the team can use it. The checks stay;
 // on the card they are one "Gecontroleerd" with the details behind (i). Also as the paired phone (402 px, touch).
 // Real server (desktop mode, temp data) and UI build in Edge headless; GitHub is a fake served from the catalogue test
 // fixtures (tests/fixtures/curated/acme-skills v1), the MCP register is not reachable (no network in tests).
@@ -29,7 +29,7 @@ Object.assign(process.env, { HOME: home, USERPROFILE: home, APPDATA: path.join(h
 delete process.env.TEAMBOT_DATA;
 delete process.env.TEAMBOT_OFFLINE;
 
-const { createApp } = await import('../../server/app.ts');
+const { createApp } = await import('./server.mjs');
 const { gitBlobSha } = await import('../../server/modules/skills/curated-source.ts');
 const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'tb-market-'));
 const app = await createApp({ dataDir: dir, port: Number(process.env.TEAMBOT_E2E_PORT) || 0, host: '127.0.0.1', mode: 'desktop', quiet: true });
@@ -63,7 +63,7 @@ app.ctx.services.mcp?.setRegistryFetcher?.(async (url) => {
   throw new Error(`geen netwerk in deze test: ${url}`);
 });
 // Packs and categories as other catalogue files may name them: fixed groups and one category of its own.
-const source = (id, skills) => ({ id, repo: REPO, commit: C1, commitDate: '2026-11-01', owner: 'acme', publisher: 'Acme Test', license: 'MIT', verifiedAt: '2026-11-09', note: 'Testbron.', skills });
+const source = (id, skills) => ({ id, repo: REPO, stars: 1234, commit: C1, commitDate: '2026-11-01', owner: 'acme', publisher: 'Acme Test', license: 'MIT', verifiedAt: '2026-11-09', note: 'Testbron.', skills });
 app.ctx.services.skills.setCuratedSources([
   source('acme', [
     { path: 'skills/good', pack: 'SEO', category: 'SEO', note: 'Controleert hoe goed je site gevonden wordt.' },
@@ -74,7 +74,7 @@ app.ctx.services.skills.setCuratedSources([
 
 const errors = [];
 const axe = async (page, where) => {
-  // Buttons change colour with a short transition ("Toevoegen" becomes the quiet "Bots kiezen"): measure once it stands still.
+  // Buttons change colour with a short transition: measure once it stands still.
   await page.waitForTimeout(300);
   await page.addScriptTag({ content: axeSource });
   const r = await page.evaluate(async () => (await window.axe.run(document, { runOnly: ['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa', 'wcag22aa'] })).violations.map((v) => `${v.id}: ${v.nodes.length} (${v.nodes.slice(0, 3).map((n) => n.target.join(" ")).join(", ")})`));
@@ -87,10 +87,30 @@ try {
     const r = await fetch(app.url + '/api' + p, { method, headers: { authorization: `Bearer ${token}`, ...(body ? { 'content-type': 'application/json' } : {}) }, body: body ? JSON.stringify(body) : undefined });
     return { status: r.status, body: await r.json().catch(() => ({})) };
   };
+  // Like after the first screen (welcome/FirstBot.tsx): a Teammap, and every bot made after it gets its own werkplek
+  // there (Teammap\<bot>), not a folder in TeamBot's data. With this test's own data folder, that Teammap lies in it.
+  const tf = (await call(pcToken, 'GET', '/folders/team')).body;
+  if (!path.resolve(tf.suggestion || '').startsWith(path.resolve(dir) + path.sep)) fail(`Teammap: voorstel buiten de eigen gegevensmap van deze test (${tf.suggestion})`);
+  await call(pcToken, 'PUT', '/folders/team', { path: tf.suggestion, create: true, label: 'Teammap' });
   const seo = (await call(pcToken, 'POST', '/agents', { name: 'Vindbot', role: 'SEO-specialist', description: 'Zorgt dat de website goed gevonden wordt.' })).body;
   const help = (await call(pcToken, 'POST', '/agents', { name: 'Hulpbot', role: 'Klantenservice', description: 'Beantwoordt vragen van klanten.' })).body;
   if (!seo.id || !help.id) throw new Error(`bots maken mislukt: ${JSON.stringify(seo)}`);
+  for (const b of [seo, help]) if (path.resolve(path.dirname(b.workspace)) !== path.resolve(tf.suggestion)) fail(`${b.name}: geen eigen werkplek in de Teammap (${b.workspace})`);
+  // What a bot has right now (no per-bot switch: an installed skill is there for the whole team). The field is
+  // `enabled` since the one rule for what a bot has (library enabledFor; it was `usable`).
   const skillsOf = async (id) => (await call(pcToken, 'GET', `/skills/agents/${id}`)).body.enabled || [];
+  // And where the engine itself looks: a skill folder in the bot's work folder (.claude/skills and .agents/skills),
+  // listed in TeamBot's own list file there.
+  const inWorkFolder = (bot, skillId) =>
+    ['.claude/skills', '.agents/skills'].every((place) => {
+      try {
+        const list = JSON.parse(fs.readFileSync(path.join(bot.workspace, ...place.split('/'), '.teambot-skills.json'), 'utf8'));
+        const name = Object.keys(list.skills || {}).find((n) => list.skills[n].id === skillId);
+        return !!name && fs.existsSync(path.join(bot.workspace, ...place.split('/'), name, 'SKILL.md'));
+      } catch {
+        return false;
+      }
+    });
 
   // ================================================================ the computer
   const pcCtx = await browser.newContext({ viewport: { width: 1280, height: 900 }, locale: 'nl-NL', bypassCSP: true });
@@ -139,24 +159,36 @@ try {
   await info.waitFor({ state: 'detached', timeout: 5000 });
   step('Skills: tegels per onderwerp (ook een eigen categorie), zoekvak, kaart met Gratis, licentie, Windows, Gecontroleerd (i) en één knop Toevoegen');
 
+  const cardSource = await card.innerText();
+  if (!cardSource.includes('acme/skills') || !/1,2k/.test(cardSource)) fail(`kaart: bron of sterren ontbreken (${cardSource.replace(/\s+/g, ' ')})`);
   await card.getByRole('button', { name: 'Toevoegen' }).click();
-  const add = pc.getByRole('dialog', { name: /toevoegen/ });
-  await add.waitFor({ timeout: 5000 });
-  await add.getByRole('radio', { name: /Vindbot/ }).check();
-  await shot(pc, 'toevoegen-voor-wie');
-  await axe(pc, 'computer, Voor wie?');
-  await add.getByRole('button', { name: 'Toevoegen' }).click();
-  await add.waitFor({ state: 'detached', timeout: 15000 }).catch(() => fail('Toevoegen: het venster sluit niet'));
+  // One click: no dialog, no choice per bot.
+  await card.getByText('Toegevoegd').waitFor({ timeout: 15000 }).catch(() => fail('kaart: "Toegevoegd" na één klik ontbreekt'));
+  if (await pc.getByRole('dialog').count()) fail('Toevoegen: er opent nog een venster (moet één klik zijn)');
   const good = (await call(pcToken, 'GET', '/skills/curated')).body.items.find((i) => i.id === 'acme/skills/good');
   if (!good?.installed) fail('Toevoegen: de skill is niet toegevoegd');
-  else {
-    if (!(await skillsOf(seo.id)).includes(good.installed.skillId)) fail('Toevoegen: Vindbot heeft de skill niet');
-    if ((await skillsOf(help.id)).includes(good.installed.skillId)) fail('Toevoegen: Hulpbot kreeg de skill ook (alleen Vindbot gekozen)');
-  }
-  await card.getByText('Toegevoegd').waitFor({ timeout: 10000 }).catch(() => fail('kaart: "Toegevoegd" na toevoegen ontbreekt'));
+  else
+    for (const b of [seo, help]) {
+      if (!(await skillsOf(b.id)).includes(good.installed.skillId)) fail(`Toevoegen: ${b.name} kan de skill niet laden`);
+      if (!inWorkFolder(b, good.installed.skillId)) fail(`Toevoegen: de skill staat niet als map in de werkmap van ${b.name} (${b.workspace})`);
+    }
   await shot(pc, 'skills-computer');
   await axe(pc, 'computer, Skills');
-  step('Toevoegen → "Voor wie?" → Vindbot: alleen Vindbot heeft de skill, de kaart zegt "Toegevoegd"');
+  step('Toevoegen is één klik: de kaart zegt "Toegevoegd" en beide bots kunnen de skill laden (ook als map in hun werkmap), zonder iets per bot te kiezen');
+
+  // The page of one skill: the way back, where it comes from, what the bot reads.
+  await card.getByRole('button', { name: /Good/i }).first().click();
+  const skillPage = pc.locator('[data-skill-page="acme/skills/good"]');
+  await skillPage.waitFor({ timeout: 15000 }).catch(() => fail('skillpagina opent niet'));
+  if (!(await main.getByRole('link', { name: 'Marktplaats' }).count())) fail('skillpagina: geen pijl terug naar de Marktplaats');
+  const pageText = await skillPage.innerText();
+  for (const t of ['acme/skills', 'Wat de bot leest', 'Herkomst en controle', 'MIT']) if (!pageText.includes(t)) fail(`skillpagina: "${t}" ontbreekt`);
+  await shot(pc, 'skill-pagina-computer');
+  await axe(pc, 'computer, skillpagina');
+  await main.getByRole('link', { name: 'Marktplaats' }).click();
+  await tiles.waitFor({ timeout: 10000 }).catch(() => fail('pijl terug: de lijst komt niet terug'));
+  if (!(await main.getByRole('button', { name: 'Toevoegen via link' }).count())) fail('Marktplaats: knop "Toevoegen via link" ontbreekt');
+  step('Skillpagina met pijl terug, bron, licentie en de instructies; "Toevoegen via link" staat op de marktplaats');
 
   // ================================================================ the paired phone
   const ticket = await call(pcToken, 'POST', '/mobile/pair', { baseUrl: app.url });
@@ -176,15 +208,17 @@ try {
   await pTiles.getByRole('button', { name: /Klantenservice en verkoop/ }).tap();
   const pCard = pm.locator('[data-skill="acme/skills/scripted"]');
   await pCard.getByRole('button', { name: 'Toevoegen' }).tap();
-  const pAdd = phone.getByRole('dialog', { name: /toevoegen/ });
-  await pAdd.waitFor({ timeout: 5000 });
-  await pAdd.getByRole('radio', { name: /Het hele team/ }).check();
-  await pAdd.getByRole('button', { name: 'Toevoegen' }).tap();
-  await pAdd.waitFor({ state: 'detached', timeout: 15000 }).catch(() => fail('telefoon: Toevoegen sluit niet'));
+  await pCard.getByText('Toegevoegd').waitFor({ timeout: 15000 }).catch(() => fail('telefoon: "Toegevoegd" ontbreekt'));
   const scripted = (await call(pcToken, 'GET', '/skills/curated')).body.items.find((i) => i.id === 'acme/skills/scripted');
   if (!scripted?.installed) fail('telefoon: de skill is niet toegevoegd');
-  else for (const b of [seo, help]) if (!(await skillsOf(b.id)).includes(scripted.installed.skillId)) fail(`telefoon: "Het hele team" gaf ${b.name} de skill niet`);
-  await pCard.getByText('Toegevoegd').waitFor({ timeout: 10000 }).catch(() => fail('telefoon: "Toegevoegd" ontbreekt'));
+  else {
+    for (const b of [seo, help]) {
+      if (!(await skillsOf(b.id)).includes(scripted.installed.skillId)) fail(`telefoon: ${b.name} kan de skill niet laden`);
+      if (!inWorkFolder(b, scripted.installed.skillId)) fail(`telefoon: de skill staat niet als map in de werkmap van ${b.name}`);
+    }
+    // One click and it works, scripts included (7913f96d): a script runs at the bot's own level, like any command.
+    if (!scripted.installed.trusted) fail('telefoon: de scripts van een skill staan uit na toevoegen');
+  }
   if (await phone.evaluate(() => document.documentElement.scrollWidth > window.innerWidth + 1)) fail('telefoon: Skills schuift opzij');
   await shot(phone, 'skills-telefoon');
   await axe(phone, 'telefoon, Skills');
@@ -194,7 +228,22 @@ try {
   if (await phone.evaluate(() => document.documentElement.scrollWidth > window.innerWidth + 1)) fail('telefoon: Aanbevolen schuift opzij');
   await shot(phone, 'aanbevolen-telefoon');
   await axe(phone, 'telefoon, Aanbevolen');
-  step('telefoon (402 px): tegel Klantenservice, Toevoegen → "Het hele team": beide bots hebben de skill; schuift niet opzij');
+  step('telefoon (402 px): tegel Klantenservice, Toevoegen in één tik: beide bots kunnen de skill laden, scripts staan meteen aan; schuift niet opzij');
+
+  // Removed: the skill folder goes from the werkplek of every bot; the werkplek itself stays.
+  if (good?.installed) {
+    const folders = [seo, help].flatMap((b) =>
+      ['.claude/skills', '.agents/skills'].map((place) => {
+        const list = JSON.parse(fs.readFileSync(path.join(b.workspace, ...place.split('/'), '.teambot-skills.json'), 'utf8'));
+        return path.join(b.workspace, ...place.split('/'), Object.keys(list.skills).find((n) => list.skills[n].id === good.installed.skillId));
+      }),
+    );
+    const del = await call(pcToken, 'DELETE', `/skills/${good.installed.skillId}`);
+    if (del.status !== 200) fail(`verwijderen: ${del.status} ${JSON.stringify(del.body)}`);
+    for (const f of folders) if (fs.existsSync(f)) fail(`verwijderen: de skillmap staat nog in de werkplek (${f})`);
+    for (const b of [seo, help]) if (!fs.existsSync(b.workspace)) fail(`verwijderen: de werkplek van ${b.name} is weg`);
+    step('Verwijderen: de skillmap gaat uit de werkplek van elke bot in de Teammap; de werkplek blijft');
+  }
 
   if (errors.length) fail(`fouten op de pagina: ${errors.join(' | ')}`);
   await pcCtx.close();
@@ -207,4 +256,4 @@ try {
   fs.rmSync(dir, { recursive: true, force: true });
   fs.rmSync(home, { recursive: true, force: true });
 }
-console.log(process.exitCode ? 'MISLUKT' : 'OK: Marktplaats duidelijk: tegels, zoeken, één knop Toevoegen, voor een bot of het hele team');
+console.log(process.exitCode ? 'MISLUKT' : 'OK: Marktplaats duidelijk: tegels, zoeken, één klik Toevoegen voor het hele team, skillpagina met pijl terug');

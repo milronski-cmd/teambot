@@ -1,14 +1,16 @@
 import React, { useState } from 'react';
-import { AlertTriangle, ArrowRight, Ban, Check, ClipboardCheck, GitMerge, ShieldAlert, Trash2, X } from 'lucide-react';
+import { AlertTriangle, ArrowRight, Ban, Check, ClipboardCheck, GitMerge, ShieldAlert, Trash2, X, GraduationCap, Wrench, Coins, Gauge } from 'lucide-react';
 import { api } from '../../lib/api';
 import { stripRefs } from '../../lib/preview';
 import { useApp } from '../../lib/store';
-import { Badge, Button, Card, EmptyState, Field, Input, Select, Tabs, Textarea, Toggle, timeAgo, toast, useAsync } from '../../components/ui';
+import { Badge, Button, Card, EmptyState, Field, Input, Select, Tabs, Toggle, timeAgo, toast, useAsync, CardHead } from '../../components/ui';
 import { ChangeRow, ErrorBox, ForgetDialog, ItemCard, ItemEditor, Loading, Meter } from './parts';
+import { MoreOptions } from '../../components/MoreOptions';
 import { ExportButtons, MemoryShell } from './pages';
-import { ALL_TEAMS, type Change, type MemItem, defaultTeamFor, engineLabel, fmtBytes, fmtDate, memPath, REASON_LABEL, REVIEW_OPTIONS, reviewLabel, SCOPE_LABEL, SOURCE_LABEL, teamQuery, TYPE_LABEL, useMem, useMemTeams, useTeamFilter } from './lib';
+import { ALL_TEAMS, type Change, type MemItem, engineLabel, fmtDate, memPath, REASON_LABEL, REVIEW_OPTIONS, reviewLabel, SCOPE_LABEL, SOURCE_LABEL, teamQuery, TYPE_LABEL, useMem, useMemTeams, useTeamFilter } from './lib';
 import { t, translate } from '../../lib/i18n';
-import { formatSeconds, formatUsd } from '../../lib/format';
+import { Words } from '../../components/Words';
+import { formatSeconds, formatUsd, formatBytes } from '../../lib/format';
 import { SemanticCard } from './semantic';
 import { SizeCard } from './size';
 import { Segmented } from '../../components/SettingControls';
@@ -145,17 +147,17 @@ function ProposalCard({ p, selected, onSelect, reload }: { p: { item: MemItem; c
               <div className="grid gap-2 sm:grid-cols-[1fr_auto_1fr] sm:items-center">
                 <div className="rounded-lg border border-line p-2 text-sm">
                   <div className="mb-0.5 text-xs text-muted">Oud — nu bewaard (sinds {fmtDate(p.conflict.observed_at || p.conflict.created_at)})</div>
-                  {p.conflict.content}
+                  <span translate="no">{p.conflict.content}</span>
                 </div>
                 <ArrowRight className="mx-auto hidden h-4 w-4 text-muted sm:block" aria-hidden />
                 <div className="rounded-lg border border-accent/50 bg-accent-soft p-2 text-sm">
                   <div className="mb-0.5 text-xs text-muted">Nieuw ({timeAgo(it.created_at)})</div>
-                  {it.content}
+                  <span translate="no">{it.content}</span>
                 </div>
               </div>
             </div>
           ) : (
-            <p className="whitespace-pre-wrap text-sm">{it.content}</p>
+            <p className="whitespace-pre-wrap text-sm" translate="no">{it.content}</p>
           )}
           {p.merged.length > 0 && (
             <div className="space-y-1">
@@ -164,7 +166,7 @@ function ProposalCard({ p, selected, onSelect, reload }: { p: { item: MemItem; c
               </div>
               <ul className="list-disc space-y-0.5 ps-5 text-xs text-muted">
                 {p.merged.map((m) => (
-                  <li key={m.id}>{m.content}</li>
+                  <li key={m.id} translate="no">{m.content}</li>
                 ))}
               </ul>
             </div>
@@ -210,17 +212,21 @@ function DecisionCard({ x, reload }: { x: any; reload(): void }) {
   return (
     <Card className="space-y-2 p-3 text-sm">
       <div className="text-xs text-muted">
-        Dossier <a className="text-accent hover:underline" href={memPath(`dossiers/${rec.dossier_id}`)}>{rec.dossier_title}</a> · voorgesteld door {rec.author_name} · {timeAgo(rec.created_at)}
+        Dossier{' '}
+        <a className="text-accent hover:underline" href={memPath(`dossiers/${rec.dossier_id}`)} translate="no">
+          {rec.dossier_title}
+        </a>{' '}
+        · <Words text="voorgesteld door {0}" values={[rec.author_name]} /> · {timeAgo(rec.created_at)}
       </div>
       <div className="grid gap-2 sm:grid-cols-2">
         <div className="rounded-lg border border-line p-2">
           <div className="mb-0.5 text-xs text-muted">Huidig besluit</div>
-          {x.conflict?.title || '—'}
+          <span translate="no">{x.conflict?.title || '—'}</span>
         </div>
         <div className="rounded-lg border border-accent/50 bg-accent-soft p-2">
           <div className="mb-0.5 text-xs text-muted">Nieuw</div>
-          {rec.title}
-          {rec.body && <div className="mt-1 text-xs text-muted">{rec.body}</div>}
+          <span translate="no">{rec.title}</span>
+          {rec.body && <div className="mt-1 text-xs text-muted" translate="no">{rec.body}</div>}
         </div>
       </div>
       <div className="flex gap-2">
@@ -361,7 +367,7 @@ export function HistoryPage() {
                 <Card key={e.id} className="space-y-1 p-3 text-sm">
                   <div className="flex flex-wrap items-center gap-2">
                     <a className="min-w-0 flex-1 truncate font-medium text-accent hover:underline" href={`#/t/${e.thread_id}`}>
-                      {e.title || 'Gesprek'}
+                      {e.title ? <span translate="no">{e.title}</span> : 'Gesprek'}
                     </a>
                     <span className="text-xs text-muted">
                       {e.agent_names.join(', ')} · {fmtDate(e.updated_at)}
@@ -370,7 +376,7 @@ export function HistoryPage() {
                       Vergeten
                     </Button>
                   </div>
-                  <p className="text-muted">{stripRefs(e.summary)}</p>
+                  <p className="text-muted" translate="no">{stripRefs(e.summary)}</p>
                   {e.decisions.length > 0 && <p className="text-xs">Besluiten: {e.decisions.map((d: any) => d.text).join(' · ')}</p>}
                   {e.actions.length > 0 && <p className="text-xs">Acties: {e.actions.map((d: any) => d.text).join(' · ')}</p>}
                 </Card>
@@ -393,7 +399,7 @@ export function HistoryPage() {
                 {blocks.data.map((b) => (
                   <div key={b.id} className="flex flex-wrap items-center gap-2 px-3 py-2 text-sm">
                     <Ban className="h-4 w-4 text-muted" />
-                    <span className="min-w-0 flex-1">{b.label || 'Vergeten item'}</span>
+                    {b.label ? <span className="min-w-0 flex-1" translate="no">{b.label}</span> : <span className="min-w-0 flex-1">Vergeten item</span>}
                     <span className="text-xs text-muted">{fmtDate(b.created_at)}</span>
                     <Button size="sm" loading={busy} onClick={() => run(async () => (await api.del(`/memory/blocks/${b.id}`), blocks.reload()), 'Blokkade opgeheven')}>
                       Opheffen
@@ -432,7 +438,7 @@ export function StoragePage() {
     <MemoryShell tab="opslag" actions={<ExportButtons />}>
       <div className="grid gap-4 lg:grid-cols-2">
         <Card className="space-y-3 p-4">
-          <h2 className="text-sm font-semibold">Leren</h2>
+          <CardHead icon={GraduationCap} tone="violet" title="Leren" />
           <Segmented<string>
             label="Leermodus"
             value={settings.learnMode}
@@ -449,17 +455,52 @@ export function StoragePage() {
             <p>Uit: er wordt niets nieuws onthouden. Bestaand geheugen blijft bruikbaar.</p>
           </MoreInfo>
           <Toggle checked={settings.paused} onChange={(v) => save({ paused: v })} label="Even pauzeren (ook het onderhoud)" />
+        </Card>
+
+        <Card className="space-y-3 p-4">
+          <CardHead icon={Wrench} tone="teal" title="Onderhoud" />
+          <p className="text-xs text-muted">
+            Elke nacht ruimt TeamBot je geheugen op. <MoreInfo>Ruimt 's nachts het geheugen op. Het verslag staat onder Geschiedenis, alles is terug te draaien.</MoreInfo>
+          </p>
+          <Toggle checked={settings.nightly} onChange={(v) => save({ nightly: v })} label="Elke nacht onderhoud uitvoeren" />
+          <Button
+            size="sm"
+            loading={busy}
+            onClick={() =>
+              run(async () => {
+                const out = await api.post<any>('/memory/maintenance', {});
+                toast(out.lines?.length ? t('Onderhoud klaar: {0}', out.summary ? translate(out.summary) : t('{0, plural, one {# wijziging} other {# wijzigingen}}', out.lines.length)) : 'Onderhoud klaar: alles was al op orde', 'ok');
+                r.reload();
+              })
+            }
+          >
+            Nu onderhoud uitvoeren
+          </Button>
+          {eng.data?.lastMaintenanceAt && <p className="text-xs text-muted">Laatste onderhoud: {fmtDate(eng.data.lastMaintenanceAt, true)}</p>}
+        </Card>
+
+        <SemanticCard settings={settings} save={save} />
+
+        <AssistantImport />
+
+        {/* Everything below is fine as it is for almost everyone: how learning works under the hood, the budgets, the
+            quota, cleaning up and wiping. Folded, never removed; a link with ?meer=1 opens it. */}
+        <div className="lg:col-span-2">
+          <MoreOptions>
+            <div className="grid gap-4 lg:grid-cols-2">
+        <Card className="space-y-3 p-4">
+          <CardHead icon={GraduationCap} tone="violet" title="Hoe TeamBot leert" />
           <Field label="Herkennen met" hint={<MoreInfo>Standaard het model van de bot zelf, als dat niets extra kost.</MoreInfo>}>
             <Select value={settings.extractor} onChange={(e) => save({ extractor: e.target.value })}>
               <option value="own">Slim, met het model van de bot (aanbevolen)</option>
               <option value="free">Slim, met een zuinig gratis model</option>
-              <option value="heuristic">Alleen vaste patronen</option>
+              <option value="heuristic">Niet nalezen (de bots houden het zelf bij)</option>
               <option value="model">Model van de bot, ook als dat geld kost</option>
             </Select>
           </Field>
           {settings.extractor !== 'heuristic' && (
             <>
-              <Field label="Welk model" hint={eng.data?.engine ? (eng.data.today?.calls ? t('Nu: {0} · vandaag {1}× gebruikt, gemiddeld {2}, {3}', engineLabel(eng.data.engine.label), eng.data.today.calls, formatSeconds(eng.data.today.avgMs), eng.data.today.cost ? formatUsd(eng.data.today.cost) : translate('geen extra kosten')) : t('Nu: {0}', engineLabel(eng.data.engine.label))) :'Er is nu geen gratis model beschikbaar; TeamBot gebruikt vaste patronen tot er weer een is.'}>
+              <Field label="Welk model" hint={eng.data?.engine ? (eng.data.today?.calls ? t('Nu: {0} · vandaag {1}× gebruikt, gemiddeld {2}, {3}', engineLabel(eng.data.engine.label), eng.data.today.calls, formatSeconds(eng.data.today.avgMs), eng.data.today.cost ? formatUsd(eng.data.today.cost) : translate('geen extra kosten')) : t('Nu: {0}', engineLabel(eng.data.engine.label))) : translate(eng.data?.blocked || 'Er is nu geen gratis model beschikbaar; je bots houden hun dossiers zelf bij.')}>
                 <Select value={settings.engine?.providerId || ''} onChange={(e) => save({ engine: { providerId: e.target.value || null, model: null } })}>
                   <option value="">Automatisch (het model van de bot als dat gratis is)</option>
                   {(eng.data?.options || []).map((o: any) => (
@@ -477,8 +518,8 @@ export function StoragePage() {
                 <Field label="Of na zoveel minuten stilte">
                   <Input type="number" min={1} max={240} defaultValue={settings.quietMin} onBlur={(e) => save({ quietMin: Number(e.target.value) })} />
                 </Field>
-                <Field label="Max. modelaanroepen per dag">
-                  <Input type="number" min={0} max={5000} defaultValue={settings.modelDailyCap} onBlur={(e) => save({ modelDailyCap: Number(e.target.value) })} />
+                <Field label="Max. modelaanroepen per dag" hint="0 = geen limiet">
+                  <Input type="number" min={0} max={100000} defaultValue={settings.modelDailyCap} onBlur={(e) => save({ modelDailyCap: Number(e.target.value) })} />
                 </Field>
               </div>
             </>
@@ -507,11 +548,7 @@ export function StoragePage() {
         </Card>
 
         <Card className="space-y-3 p-4">
-          <h2 className="text-sm font-semibold">Onderhoud</h2>
-          <p className="text-xs text-muted">
-            Elke nacht ruimt TeamBot je geheugen op. <MoreInfo>Ruimt 's nachts het geheugen op. Het verslag staat onder Geschiedenis, alles is terug te draaien.</MoreInfo>
-          </p>
-          <Toggle checked={settings.nightly} onChange={(v) => save({ nightly: v })} label="Elke nacht onderhoud uitvoeren" />
+          <CardHead icon={Wrench} tone="teal" title="Nakijken en kernprofiel" />
           <Field label="Standaard nakijken" hint={<MoreInfo>Voor feiten die kunnen veranderen. Ze komen terug bij Te beoordelen als “Klopt dit nog?”.</MoreInfo>}>
             <Select value={String(settings.reviewEveryDays ?? 180)} onChange={(e) => save({ reviewEveryDays: Number(e.target.value) })} aria-label="Standaard nakijken">
               {REVIEW_OPTIONS.map((o) => (
@@ -525,24 +562,10 @@ export function StoragePage() {
           <Field label="Kernprofiel: altijd geladen (tokens)" hint="Je naam, woonplaats, werk en vaste voorkeuren die elke bot altijd weet. 0 = uit.">
             <Input type="number" min={0} max={2000} defaultValue={settings.briefTokens} onBlur={(e) => save({ briefTokens: Number(e.target.value) })} />
           </Field>
-          <Button
-            size="sm"
-            loading={busy}
-            onClick={() =>
-              run(async () => {
-                const out = await api.post<any>('/memory/maintenance', {});
-                toast(out.lines?.length ? t('Onderhoud klaar: {0}', out.summary ? translate(out.summary) : t('{0, plural, one {# wijziging} other {# wijzigingen}}', out.lines.length)) : 'Onderhoud klaar: alles was al op orde', 'ok');
-                r.reload();
-              })
-            }
-          >
-            Nu onderhoud uitvoeren
-          </Button>
-          {eng.data?.lastMaintenanceAt && <p className="text-xs text-muted">Laatste onderhoud: {fmtDate(eng.data.lastMaintenanceAt, true)}</p>}
         </Card>
 
         <Card className="space-y-3 p-4">
-          <h2 className="text-sm font-semibold">Budget per beurt</h2>
+          <CardHead icon={Coins} tone="amber" title="Budget per beurt" />
           <p className="text-xs text-muted">
             Hoeveel geheugen er per bericht meegaat. <MoreInfo>Meer = meer context maar hogere kosten. Vastgezette instructies tellen niet mee.</MoreInfo>
           </p>
@@ -557,35 +580,34 @@ export function StoragePage() {
           </Field>
         </Card>
 
-        <SemanticCard settings={settings} save={save} />
         <SizeCard settings={settings} save={save} />
 
         <Card className="space-y-3 p-4">
-          <h2 className="text-sm font-semibold">Gebruik en quota</h2>
-          <Meter label="Over jou" value={d.scopes.about_you.items} max={d.scopes.about_you.quota.items} hint={`${d.scopes.about_you.items} / ${d.scopes.about_you.quota.items} · ${fmtBytes(d.scopes.about_you.bytes)}`} />
+          <CardHead icon={Gauge} tone="amber" title="Gebruik en quota" />
+          <Meter label="Over jou" value={d.scopes.about_you.items} max={d.scopes.about_you.quota.items} hint={`${d.scopes.about_you.items} / ${d.scopes.about_you.quota.items} · ${formatBytes(d.scopes.about_you.bytes)}`} />
           {/* Shared knowledge has a quota per team (two or more teams), else one. */}
           {d.sharedByTeam?.length ? (
             d.sharedByTeam.map((x: any) => (
-              <Meter key={x.teamId} label={x.teamId === ALL_TEAMS ? 'Gedeeld met alle teams' : t('Gedeeld in team {0}', x.name)} value={x.items} max={x.quota.items} hint={`${x.items} / ${x.quota.items} · ${fmtBytes(x.bytes)}`} />
+              <Meter key={x.teamId} label={x.teamId === ALL_TEAMS ? 'Gedeeld met alle teams' : t('Gedeeld in team {0}', x.name)} value={x.items} max={x.quota.items} hint={`${x.items} / ${x.quota.items} · ${formatBytes(x.bytes)}`} />
             ))
           ) : (
-            <Meter label="Gedeeld" value={d.scopes.shared.items} max={d.scopes.shared.quota.items} hint={`${d.scopes.shared.items} / ${d.scopes.shared.quota.items} · ${fmtBytes(d.scopes.shared.bytes)}`} />
+            <Meter label="Gedeeld" value={d.scopes.shared.items} max={d.scopes.shared.quota.items} hint={`${d.scopes.shared.items} / ${d.scopes.shared.quota.items} · ${formatBytes(d.scopes.shared.bytes)}`} />
           )}
           {d.agents.map((a: any) => (
-            <Meter key={a.id} label={`Bot: ${a.name}`} value={a.items} max={a.quota.items} hint={`${a.items} / ${a.quota.items} · ${fmtBytes(a.bytes)}`} />
+            <Meter key={a.id} label={<Words text="Bot: {0}" values={[a.name]} />} value={a.items} max={a.quota.items} hint={`${a.items} / ${a.quota.items} · ${formatBytes(a.bytes)}`} />
           ))}
           {d.dossiers.slice(0, 8).map((x: any) => (
-            <Meter key={x.id} label={`Dossier: ${x.title}`} value={x.items} max={x.quota.items} />
+            <Meter key={x.id} label={<Words text="Dossier: {0}" values={[x.title]} />} value={x.items} max={x.quota.items} />
           ))}
           <Meter label="Gesprekssamenvattingen" value={d.episodes.items} max={d.episodes.quota.items} />
           <Meter label="Open voorstellen" value={d.proposals.items} max={d.proposals.quota} />
           <p className="text-xs text-muted">
-            {t('Totaal {0} · {1, plural, one {# indexregel} other {# indexregels}} · {2, plural, one {# documentdeel} other {# documentdelen}} · {3, plural, one {# blokkade} other {# blokkades}}.', fmtBytes(d.totalBytes), d.index.rows, d.index.chunks, d.blocks)}
+            {t('Totaal {0} · {1, plural, one {# indexregel} other {# indexregels}} · {2, plural, one {# documentdeel} other {# documentdelen}} · {3, plural, one {# blokkade} other {# blokkades}}.', formatBytes(d.totalBytes), d.index.rows, d.index.chunks, d.blocks)}
           </p>
         </Card>
 
         <Card className="space-y-3 p-4">
-          <h2 className="text-sm font-semibold">Opruimen</h2>
+          <CardHead icon={Trash2} title="Opruimen" />
           <p className="text-sm">
             {t('Prullenbak: {0, plural, one {# herinnering} other {# herinneringen}}, {1, plural, one {# dossierregel} other {# dossierregels}} (na {2, plural, one {# dag} other {# dagen}} automatisch weg).', d.trash.items, d.trash.records, d.trash.days)}
           </p>
@@ -620,12 +642,8 @@ export function StoragePage() {
           )}
         </Card>
 
-        <AssistantImport />
-
         <Card className="space-y-3 border-danger/40 p-4 lg:col-span-2">
-          <h2 className="flex items-center gap-1.5 text-sm font-semibold text-danger">
-            <AlertTriangle className="h-4 w-4" /> Alles wissen
-          </h2>
+          <CardHead icon={AlertTriangle} tone="rose" title={<span className="text-danger">Alles wissen</span>} />
           <p className="text-sm text-muted">
             Verwijdert al je herinneringen, dossiers en geschiedenis. Exporteer eerst wat je wilt bewaren. <MoreInfo>Ook de samenvattingen gaan weg. Wat je liet vergeten blijft geblokkeerd.</MoreInfo>
           </p>
@@ -647,6 +665,9 @@ export function StoragePage() {
             </Button>
           </div>
         </Card>
+            </div>
+          </MoreOptions>
+        </div>
       </div>
     </MemoryShell>
   );

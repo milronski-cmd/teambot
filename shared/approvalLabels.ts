@@ -68,8 +68,8 @@ function teambotAction(name: string, input: any, risk: string): ApprovalAction |
         : a('wil iets in het geheugen aanpassen', 'Geheugen', `De oude versie blijft bewaard. ${UNDO_MEMORY}`, 'neutral');
     case 'memory_forget':
       return a('wil iets definitief vergeten', 'Vergeten', 'Dit kan niet ongedaan worden gemaakt.', 'danger');
-    case 'dossier_create':
-      return a('wil een dossier aanmaken', 'Dossier', 'Een nieuw dossier in Geheugen › Dossiers.', 'neutral');
+    case 'dossier_write':
+      return a('wil een dossier bijwerken', 'Dossier', `De vorige tekst blijft bewaard. ${UNDO_MEMORY}`, 'neutral');
     case 'dossier_add':
       return a('wil iets aan een dossier toevoegen', 'Dossier', UNDO_MEMORY, 'neutral');
     case 'dossier_update':

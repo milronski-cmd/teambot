@@ -1,4 +1,5 @@
 import type { PlanStep, ToolDef } from '../../core/types.js';
+import { words } from '../../../shared/i18n-core.js';
 
 /**
  * The plan card: a bot's steps as a checklist in the chat that updates while it works. Every engine feeds it: Codex
@@ -54,7 +55,7 @@ export function planTool(): ToolDef {
     },
     summarize: (a) => {
       const steps = normalizePlan(a?.steps);
-      return steps ? `Plan bijwerken (${planSummary(steps)})` : 'Plan bijwerken';
+      return steps ? words('Plan bijwerken ({0} van {1} klaar)', steps.filter((s) => s.status === 'completed').length, steps.length) : words('Plan bijwerken');
     },
     async run(a) {
       const steps = normalizePlan(a?.steps);

@@ -2,6 +2,7 @@ import os from 'node:os';
 import fs from 'node:fs';
 import { execFile } from 'node:child_process';
 import { safeEnv } from '../../tools/builtin/shell.js';
+import { isLoopbackHost } from '../../core/util.js';
 
 export interface NetAddr {
   address: string;
@@ -16,11 +17,6 @@ export function isTailscaleIp(ip: string): boolean {
 export function isPrivateLan(ip: string): boolean {
   return /^10\./.test(ip) || /^192\.168\./.test(ip) || /^172\.(1[6-9]|2\d|3[01])\./.test(ip);
 }
-export function isLoopbackHost(host: string): boolean {
-  const h = host.replace(/^\[|\]$/g, '').toLowerCase();
-  return h === 'localhost' || h === '::1' || h.startsWith('127.');
-}
-
 export function interfaces(): { lan: NetAddr[]; tailscale: NetAddr[] } {
   const lan: NetAddr[] = [];
   const tailscale: NetAddr[] = [];

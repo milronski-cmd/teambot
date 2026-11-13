@@ -1,4 +1,5 @@
 import crypto from 'node:crypto';
+import { newer } from '../../../shared/version.js';
 import fs from 'node:fs';
 import path from 'node:path';
 import zlib from 'node:zlib';
@@ -720,13 +721,7 @@ export class Runtimes {
 
 const encodePkg = (name: string) => name.replace('/', '%2f');
 
-/** a > b for plain x.y.z versions. */
-export function newer(a: string, b: string): boolean {
-  const pa = a.split('.').map(Number);
-  const pb = b.split('.').map(Number);
-  for (let i = 0; i < 3; i++) if ((pa[i] || 0) !== (pb[i] || 0)) return (pa[i] || 0) > (pb[i] || 0);
-  return false;
-}
+export { newer };
 
 /** The newest stable "vX.Y.Z" release (of one major line when given) in a GitHub releases list. */
 export function newestStable(releases: any[], line?: number): string | null {

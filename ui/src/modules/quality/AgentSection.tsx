@@ -5,6 +5,8 @@ import { useApp } from '../../lib/store';
 import { Field, Input, Toggle } from '../../components/ui';
 import { SelectBox as Select } from '../../components/Listbox';
 import { t } from '../../lib/i18n';
+import { rowWorks } from '../../pages/agentRows';
+import { LOOP_DEFAULTS as LD, LOOP_RANGE as LR } from '../../../../shared/loopGuard.js';
 
 /**
  * Bot editor › Werk dat af is: the second look before "klaar" (and on which engine), stopping loops, and learning from
@@ -16,7 +18,7 @@ export function QualityAgentSection({ agent, onChange }: { agent: Agent; onChang
   const loop = q.loopGuard && typeof q.loopGuard === 'object' ? q.loopGuard : {};
   const loopOn = q.loopGuard !== false && loop.on !== false;
   const set = (p: Record<string, any>) => onChange({ settings: { ...(agent.settings || {}), quality: { ...q, ...p } } });
-  const setLoop = (p: Record<string, any>) => set({ loopGuard: { on: loopOn, repeat: loop.repeat ?? 3, idle: loop.idle ?? 6, ...p } });
+  const setLoop = (p: Record<string, any>) => set({ loopGuard: { on: loopOn, repeat: loop.repeat ?? LD.repeat, idle: loop.idle ?? LD.idle, ...p } });
   const [lessons, setLessons] = useState<number | null>(null);
   useEffect(() => {
     if (!agent.id) return;
@@ -26,6 +28,7 @@ export function QualityAgentSection({ agent, onChange }: { agent: Agent; onChang
       .catch(() => setLessons(null));
   }, [agent.id]);
   const usable = providers.filter((p) => p.enabled);
+  const engine = providers.find((p) => p.id === agent.provider_id);
   const num = (v: string, lo: number, hi: number, d: number) => {
     const n = Math.round(Number(v));
     return Number.isFinite(n) && n > 0 ? Math.min(hi, Math.max(lo, n)) : d;
@@ -61,11 +64,14 @@ export function QualityAgentSection({ agent, onChange }: { agent: Agent; onChang
         {loopOn && (
           <div className="grid gap-3 sm:grid-cols-2">
             <Field label="Zelfde stap, hoe vaak" hint="Dezelfde stap met hetzelfde resultaat (2–10).">
-              <Input type="number" min={2} max={10} value={loop.repeat ?? 3} onChange={(e) => setLoop({ repeat: num(e.target.value, 2, 10, 3) })} aria-label="Zelfde stap, hoe vaak" />
+              <Input type="number" min={LR.repeat[0]} max={LR.repeat[1]} value={loop.repeat ?? LD.repeat} onChange={(e) => setLoop({ repeat: num(e.target.value, LR.repeat[0], LR.repeat[1], LD.repeat) })} aria-label="Zelfde stap, hoe vaak" />
             </Field>
-            <Field label="Stappen zonder iets nieuws" hint="Achter elkaar, zonder nieuwe uitkomst (3–30).">
-              <Input type="number" min={3} max={30} value={loop.idle ?? 6} onChange={(e) => setLoop({ idle: num(e.target.value, 3, 30, 6) })} aria-label="Stappen zonder iets nieuws" />
-            </Field>
+            {/* Only TeamBot's own loop counts steps without anything new; a program is watched for the same step only. */}
+            {rowWorks('loopIdle', engine) && (
+              <Field label="Stappen zonder iets nieuws" hint="Achter elkaar, zonder nieuwe uitkomst (3–30).">
+                <Input type="number" min={LR.idle[0]} max={LR.idle[1]} value={loop.idle ?? LD.idle} onChange={(e) => setLoop({ idle: num(e.target.value, LR.idle[0], LR.idle[1], LD.idle) })} aria-label="Stappen zonder iets nieuws" />
+              </Field>
+            )}
           </div>
         )}
       </div>

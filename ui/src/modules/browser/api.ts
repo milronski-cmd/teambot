@@ -1,7 +1,9 @@
 import { useEffect, useRef, useState } from 'react';
 import { api, on } from '../../lib/api';
 import { uiLocale } from '../../lib/i18n';
-import { formatBytes, formatNumber } from '../../lib/format';
+import { formatNumber } from '../../lib/format';
+import type { VaultEntryView, VaultImportPreview, VaultImportResult } from '../../../../shared/vault.js';
+import type { RemoteTestResult } from '../../../../shared/computers.js';
 
 export type ModeId = 'none' | 'workspace' | 'browser' | 'host' | 'container' | 'remote';
 
@@ -18,22 +20,6 @@ export interface RemoteConfig {
   workdir: string;
   docker: { enabled: boolean; image: string; memoryMb: number; cpus: number };
   limits: { timeoutSec: number; maxOutputKb: number; transferMb: number };
-}
-
-export interface RemoteTestResult {
-  ok: boolean;
-  host: string;
-  port: number;
-  username: string;
-  fingerprint: string | null;
-  trusted: boolean;
-  mismatch?: boolean;
-  expected?: string | null;
-  windows?: boolean;
-  os?: string;
-  docker?: { installed: boolean; usable: boolean; version: string | null };
-  message?: string;
-  error?: string;
 }
 
 export type VmStatus = 'creating' | 'booting' | 'running' | 'stopping' | 'off' | 'starting' | 'deleting' | 'deleted' | 'error';
@@ -126,7 +112,9 @@ export type HostLevel = 'every' | 'task' | 'auto';
 export const LEVELS: { id: HostLevel; label: string; text: string }[] = [
   { id: 'every', label: 'Vraag bij elke actie', text: 'Elke klik, toets of typactie vraagt eerst jouw goedkeuring met een schermvoorbeeld. Veilig, maar langzaam.' },
   { id: 'task', label: 'Vraag één keer per taak', text: 'De bot vraagt aan het begin van een taak toestemming (doel, apps, maximale tijd) en werkt daarbinnen zelfstandig.' },
-  { id: 'auto', label: 'Volledige toegang', text: 'De bot werkt zelfstandig binnen de toegestane apps, zonder per actie te vragen (zoals “Full access” in OpenBot).' },
+  // Not called "Volledige toegang": that is the bot's own access level (Bot › Toegang), and a bot with that level never
+  // asks per desktop action, whatever is chosen here (server/modules/browser/service.ts withBotAccess).
+  { id: 'auto', label: 'Niet vragen', text: 'De bot werkt zelfstandig binnen de toegestane apps, zonder per actie te vragen (zoals “Full access” in OpenBot).' },
 ];
 
 export interface HostOptions {
@@ -224,25 +212,6 @@ export interface BrowserTab {
   active: boolean;
 }
 
-/** A login in the vault. The password and the 2FA secret never come back from the server. */
-export interface VaultEntry {
-  id: string;
-  label: string;
-  origins: string[];
-  username: string;
-  has_password: boolean;
-  has_totp: boolean;
-  /** an http:// address other than this computer: the password would travel unencrypted */
-  insecure: boolean;
-  /** bots that may ask for this login ([] = all your bots) */
-  agent_ids: string[];
-  /** "always allow for this bot on this site" */
-  grants: { agent_id: string; origin: string; created_at: string }[];
-  created_at: string;
-  updated_at: string;
-  last_used_at: string | null;
-}
-
 export interface VaultDraft {
   label?: string;
   origins?: string;
@@ -254,48 +223,15 @@ export interface VaultDraft {
   agent_ids?: string[];
 }
 
-/** One row of a CSV import preview (no password, no 2FA key). */
-export interface VaultImportRow {
-  index: number;
-  /** row number as a spreadsheet shows it (header = 1) */
-  line: number;
-  label: string;
-  origins: string[];
-  username: string;
-  has_totp: boolean;
-  insecure: boolean;
-  /** new = can be imported · duplicate = already in the vault or twice in the file · skip = not a usable login */
-  status: 'new' | 'duplicate' | 'skip';
-  reason?: string;
-  warning?: string;
-}
-
-export interface VaultImportPreview {
-  handle: string;
-  format: { id: string; label: string };
-  expires_at: string;
-  /** how many more logins fit in the vault */
-  room: number;
-  rows: VaultImportRow[];
-}
-
-export interface VaultImportResult {
-  imported: number;
-  skipped: { line: number; label: string; reason: string }[];
-}
-
-/** Same limit as the server (vault-import.ts). */
-export const VAULT_IMPORT_MAX_BYTES = 2 * 1024 * 1024;
-
 export const vault = {
-  list: () => api.get<VaultEntry[]>('/computers/vault'),
+  list: () => api.get<VaultEntryView[]>('/computers/vault'),
   /** the CSV text goes once to TeamBot, which parses it in memory; the answer never holds a password */
   importPreview: (csv: string) => api.post<VaultImportPreview>('/computers/vault/import/preview', { csv }),
   importRun: (handle: string, rows: number[]) => api.post<VaultImportResult>('/computers/vault/import', { handle, rows }),
-  create: (d: VaultDraft) => api.post<VaultEntry>('/computers/vault', d),
-  update: (id: string, d: VaultDraft) => api.put<VaultEntry>(`/computers/vault/${id}`, d),
+  create: (d: VaultDraft) => api.post<VaultEntryView>('/computers/vault', d),
+  update: (id: string, d: VaultDraft) => api.put<VaultEntryView>(`/computers/vault/${id}`, d),
   remove: (id: string) => api.del(`/computers/vault/${id}`),
-  revoke: (id: string, agentId: string) => api.del<VaultEntry>(`/computers/vault/${id}/grants/${agentId}`),
+  revoke: (id: string, agentId: string) => api.del<VaultEntryView>(`/computers/vault/${id}/grants/${agentId}`),
 };
 
 export const browserApi = {
@@ -308,23 +244,6 @@ export const browserApi = {
   profileMembers: (profileId: string, agentIds: string[]) => api.put<{ profile: Profile; members: string[] }>(`/computers/profiles/${profileId}/members`, { agent_ids: agentIds }),
   wipeProfile: (profileId: string) => api.post(`/computers/profiles/${profileId}/wipe`, {}),
 };
-
-/** "accounts.google.com" → "google.com" (same rule as the server: rough registrable domain). */
-export function siteOf(input: string): string {
-  let d = String(input || '').trim().toLowerCase();
-  try {
-    if (d.includes('://')) d = new URL(d).hostname;
-  } catch {
-    return d;
-  }
-  d = d.replace(/^\.+/, '').replace(/\.$/, '');
-  if (/^\d+\.\d+\.\d+\.\d+$/.test(d) || d.includes(':') || !d.includes('.')) return d;
-  const parts = d.split('.');
-  if (parts.length <= 2) return d;
-  const sld = parts[parts.length - 2];
-  const n = parts[parts.length - 1].length === 2 && ['co', 'com', 'net', 'org', 'gov', 'ac', 'edu', 'or', 'ne', 'go'].includes(sld) ? 3 : 2;
-  return parts.slice(-n).join('.');
-}
 
 export interface Rehearsal {
   id: string;
@@ -456,10 +375,6 @@ export const CAP_STATUS: Record<Capability['status'], { label: string; tone: 'ok
   unsupported: { label: 'Niet mogelijk', tone: 'neutral' },
   unknown: { label: 'Onbekend', tone: 'neutral' },
 };
-
-export function fmtBytes(n: number) {
-  return formatBytes(n);
-}
 
 export function fmtTime(iso: string) {
   return new Date(iso).toLocaleString(uiLocale(), { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });

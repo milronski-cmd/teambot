@@ -107,7 +107,7 @@ test('extractor: nested templates, the security log per actor, labels and badges
     [' ({0})', '{h} de routine {0} gemaakt{1}'],
   );
   const { strings } = extractStrings(process.cwd());
-  for (const s of ['hebt een instelling van {0} gewijzigd', 'heeft een instelling van {0} gewijzigd', 'AI-diensten', 'lokaal, gratis', 'abonnement', 'betaald', 'gevonden', 'nog downloaden', 'Het lokale spraakmodel is nog niet gedownload ({0}). Download het bij Instellingen › Spraak.', 'Bots met een reserve-engine gaan daarop verder.'])
+  for (const s of ['hebt een instelling van {0} gewijzigd', 'heeft een instelling van {0} gewijzigd', 'AI-diensten', 'lokaal, gratis', 'abonnement', 'betaald', 'gevonden', 'nog downloaden', 'De gratis spraakherkenning is nog niet gedownload ({0}). Download hem bij {1}.', 'Meer mogelijkheden', 'Spraak', 'Bots met een reserve-engine gaan daarop verder.'])
     assert.ok(strings.has(s), `extracted: ${s}`);
   // Acceptance round 5 (C-15): "Active path: ChatGPT-abonnement" and "Ingelogd (ChatGPT)." stayed Dutch in English
   // (one word is never picked up; a bracket before the full stop is no known text).
@@ -130,4 +130,51 @@ test('extractor: nested templates, the security log per actor, labels and badges
   );
   for (const s of ['^(?:de|onze|mijn) ([\\p{L}-]{3,30}) (?:staat|is) gepland (?:voor|op) (\\d{1,2} (?:{0})(?: \\d{4})?|{1})\\b.{0,60}$', '#inhoud', 'memory/beoordelen'])
     assert.ok(!strings.has(s), `not interface text: ${s}`);
+});
+
+test('extractor: drawing and styling code is no interface text (no language can translate it)', async () => {
+  const { extractStrings, isStyleCode } = await lib();
+  // Code that came in as "texts" from the bot faces, the chat header and the menus: SVG markup, CSS values, media
+  // features and class lists with variants or arbitrary values. Ukrainian and Arabic could never pass the script check.
+  const code = [
+    '<ellipse cx="{0}" cy="0" rx="{1}" ry="{2}" fill="{3}"/>',
+    '<path d="M{0},{1}H{2}" stroke="{3}" stroke-width="{4}" stroke-linecap="round"/>',
+    'calc(100vw - 700px)',
+    'min(560px, calc(100vw - 24px))',
+    '(pointer: coarse)',
+    '@container flex h-[60px] items-center px-2 desk:px-4',
+    'coarse:-my-3',
+    '[overflow-wrap:anywhere] hover:underline',
+    'tb-in relative rounded-xl border border-line bg-surface text-sm transition-[opacity,border-color] duration-150 hover:border-line-strong',
+  ];
+  for (const s of code) assert.ok(isStyleCode(s), `style code: ${s}`);
+  // Dutch with a dash, colon or @ stays interface text.
+  for (const s of ['app-wachtwoord', '@iedereen', 'check-in loopt', 'browser_submit:betaling', 'webhook-id, webhook-timestamp of webhook-signature ontbreekt', 'Status van TeamBot', '(gecontroleerd: klaar)'])
+    assert.ok(!isStyleCode(s), `interface text: ${s}`);
+  const { strings } = extractStrings(process.cwd());
+  for (const s of code) assert.ok(!strings.has(s), `not extracted: ${s}`);
+  // Keys of the route table ("PATCH /skills/:id") are code too; a sentence that names a route stays a text.
+  for (const s of ['PATCH /skills/:id', 'GET /folders/browse', 'DELETE /memory/blocks/:id']) assert.ok(!strings.has(s), `not extracted: ${s}`);
+  // A shell line the server writes into a launcher script is code as well.
+  assert.ok(!strings.has('ELECTRON_RUN_AS_NODE=1 exec {0}{1} "$@"'), 'not extracted: the launcher line');
+  // A condition between two JSX branches is code ("NAMED.has(p.kind) ?" in routines/Planned.tsx).
+  assert.ok(!strings.has('NAMED.has(p.kind) ?'), 'not extracted: a JSX condition');
+  assert.ok(strings.has('Privacy en gegevens') && strings.has('Status van TeamBot'), 'the settings titles are still extracted');
+});
+
+test('extractor: a table of actions under quoted keys ("{0} later starten") is interface text', async () => {
+  const { extractStrings } = await lib();
+  const { strings } = extractStrings(process.cwd());
+  // server/modules/teams/manage.ts ACTIONS: the step line names the thing and what is done to it.
+  for (const s of ['{0} later starten', '{0} heropenen', '{0} leegmaken', '{0} afsplitsen', '{0} pauzeren'])
+    assert.ok(strings.has(s), `extracted: ${s}`);
+});
+
+test('extractor: a file with its own local words() helper (voice/textlang.ts word lists) is not TeamBot words()', async () => {
+  const { extractStrings } = await lib();
+  const { strings } = extractStrings(process.cwd());
+  assert.ok(![...strings.keys()].some((s) => s.startsWith('de het een en van ik je jij u we wij zij')), 'the Dutch stop-word list is not extracted');
+  assert.ok(![...strings.keys()].some((s) => s.startsWith('the a an and of i you we they he she it')), 'the English stop-word list is not extracted');
+  // A file that imports words() and also has a local variable called words still has its words('…') texts.
+  assert.ok(strings.has('{0} bijwerken'), 'words() texts in teams/manage.ts are still extracted');
 });

@@ -12,7 +12,8 @@ import { createRequire } from 'node:module';
 
 const require = createRequire(import.meta.url);
 const { chromium } = require('playwright-core');
-const { createApp } = await import('../../server/app.ts');
+const { createApp } = await import('./server.mjs');
+const { settled } = await import('./axe-check.mjs');
 
 const step = (s) => console.log(`• ${s}`);
 const fail = (s) => {
@@ -26,6 +27,7 @@ const axeSource = fs.readFileSync(require.resolve('axe-core/axe.min.js'), 'utf8'
 const axe = async (page, where) => {
   // evaluate (not a script tag): the app's own CSP stays on, as for a real user
   await page.evaluate(axeSource);
+  await settled(page); // contrast on what stays on screen, not half-way a fade (axe-check.mjs)
   const v = await page.evaluate(async () => {
     // @ts-ignore
     const r = await window.axe.run(document, { runOnly: { type: 'tag', values: ['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa', 'wcag22aa'] } });
@@ -71,7 +73,9 @@ app.ctx.providers.registerKind({
     async chat(req, _signal, onEvent) {
       systems.push(req.system || '');
       const last = req.messages.at(-1);
-      const said = JSON.stringify(last?.content || '');
+      // Only what the person wrote: TeamBot adds a <context> block to each message (date, colleagues such as "Planner
+      // (Planning)"), which must not trigger a page by itself.
+      const said = JSON.stringify(last?.content || '').split('<context>')[0];
       const done = { usage: { input: 10, output: 5 }, model: req.model };
       if (last?.role === 'user' && /rapport/i.test(said)) return { text: '', toolCalls: [{ id: 'c' + Date.now(), name: 'show_html', args: { title: 'Kwartaalrapport', html: PAGE1 } }], stop: 'tool_use', ...done };
       if (last?.role === 'user' && /planning/i.test(said)) return { text: '', toolCalls: [{ id: 'c' + Date.now(), name: 'show_html', args: { title: 'Planning', html: PAGE2 } }], stop: 'tool_use', ...done };
@@ -100,7 +104,9 @@ const idle = async (threadId) => until(() => !app.ctx.store.all("SELECT id FROM 
 const send = async (page, text) => {
   const box = page.getByRole('textbox', { name: 'Bericht' });
   await box.fill(text);
-  await box.press('Enter');
+  // On a phone Enter is a new line (there is no Shift+Enter): the button sends.
+  if (await page.evaluate(() => matchMedia('(pointer: coarse)').matches)) await page.getByRole('button', { name: 'Versturen' }).click();
+  else await box.press('Enter');
 };
 const noOverflow = async (page, where) => {
   const w = await page.evaluate(() => document.documentElement.scrollWidth);
@@ -226,9 +232,14 @@ try {
   step('tabblad sluiten, paneel sluiten en weer openen');
 
   // ---- answer style ----
-  // Antwoordstijl is a row on the tab Instructies of the bot page.
-  await page.goto(`${app.url}/#/agents/${bot.id}`);
-  await page.getByRole('tab', { name: 'Instructies' }).click();
+  // Antwoordstijl is part of the row "Beschrijving, taal en stijl" under Meer mogelijkheden on the bot page.
+  const openStyleRow = async (p) => {
+    const row = p.getByRole('button', { name: /^Beschrijving, taal en stijl/ });
+    await row.waitFor({ timeout: 15000 });
+    if ((await row.getAttribute('aria-expanded')) !== 'true') await row.click();
+  };
+  await page.goto(`${app.url}/#/agents/${bot.id}?tab=meer`);
+  await openStyleRow(page);
   const legend = page.getByText('Antwoordstijl', { exact: true });
   await legend.waitFor({ timeout: 15000 });
   if (!(await page.getByRole('radio', { name: 'Natuurlijk' }).isChecked())) fail('standaard staat Natuurlijk niet aan');
@@ -246,8 +257,7 @@ try {
   else step('Zakelijk opgeslagen en in de instructies van het model');
 
   // ---- delete the bot's history ----
-  const files = app.ctx.store.all('SELECT path FROM attachments WHERE thread_id = ?', threadId).map((r) => r.path);
-  await page.goto(`${app.url}/#/t/${threadId}`);
+  const files = app.ctx.store.all('SELECT path FROM attachments WHERE thread_id = ?', threadId).map((r) => r.path);  await page.goto(`${app.url}/#/t/${threadId}`);
   await page.getByRole('button', { name: 'Meer opties' }).click();
   await page.getByRole('button', { name: 'Bot beheren', exact: true }).click();
   await page.getByRole('button', { name: 'Geschiedenis wissen…' }).click();
@@ -315,8 +325,8 @@ try {
   await noOverflow(ph, 'dialoog geschiedenis wissen');
   await shot(ph, 'p3-geschiedenis-dialoog');
   await pd.getByRole('button', { name: 'Annuleren' }).tap();
-  await ph.goto(`${app.url}/#/agents/${bot.id}`);
-  await ph.getByRole('tab', { name: 'Instructies' }).tap();
+  await ph.goto(`${app.url}/#/agents/${bot.id}?tab=meer`);
+  await openStyleRow(ph);
   await ph.getByText('Antwoordstijl', { exact: true }).waitFor({ timeout: 15000 });
   await ph.getByText('Antwoordstijl', { exact: true }).scrollIntoViewIfNeeded();
   await noOverflow(ph, 'bot-editor');

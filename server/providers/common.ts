@@ -5,6 +5,7 @@
  * SDK/stream errors). The category decides three things at once: the Dutch message the user sees, the fix hint in
  * "Test verbinding", and which reserve-engine reason the runner uses (limit → reserve, auth → reserve, ...).
  */
+import { PLACE } from '../../shared/places.js';
 
 /** What went wrong, in terms the user can act on. */
 export type ErrorCategory =
@@ -58,7 +59,7 @@ export const ERROR_TEXT: Record<ErrorCategory, { title: string; fix: string }> =
   network: { title: 'Niet bereikbaar', fix: 'Controleer je internetverbinding. Lokaal: start de server (Ollama, LM Studio, ...) en controleer het adres en de poort.' },
   refusal: { title: 'Geweigerd door het inhoudsfilter', fix: 'De provider blokkeerde dit verzoek. Formuleer het anders of kies een ander model.' },
   bad_request: { title: 'Verzoek geweigerd', fix: 'De provider weigerde het verzoek; zie de melding hierboven.' },
-  other: { title: 'Onbekende fout', fix: 'Probeer het opnieuw; blijft het misgaan, download dan het diagnosebestand bij Instellingen › Gegevens.' },
+  other: { title: 'Onbekende fout', fix: `Probeer het opnieuw; blijft het misgaan, download dan het diagnosebestand bij ${PLACE.privacy}.` },
 };
 
 export class ProviderError extends Error {

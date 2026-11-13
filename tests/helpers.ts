@@ -60,6 +60,11 @@ export interface TestApp {
 }
 
 export async function startTestApp(opts: { modules?: Module[]; mode?: 'desktop' | 'server' } = {}): Promise<TestApp> {
+  // The implicit first team gets no starting rules in tests (teams/service.ts ensureDefault): the money rule makes
+  // every outward step wait for a reviewer, which the mock AI is not. Tests about those rules make a team themselves.
+  process.env.TEAMBOT_TEST_NO_STARTER_RULES = '1';
+  // An e2e script on this helper (no node --test around it) never fetches the 124 MB search model by itself either.
+  process.env.TEAMBOT_NO_AUTO_DOWNLOAD ??= '1';
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'tb-test-'));
   const script: MockStep[] = [];
   const requests: ChatRequest[] = [];
@@ -125,4 +130,14 @@ export async function startTestApp(opts: { modules?: Module[]; mode?: 'desktop' 
     },
   };
   return t;
+}
+
+/**
+ * A finished turn the owner started by typing in his chat with this bot: what a tool sees as `t.run` when the owner
+ * asked for something himself (tools that change a bot only do so on the owner's own word: agent/owner-turn.ts).
+ */
+export function ownerTurn(ctx: any, userId: string, agentId: string) {
+  const thread = ctx.chat.threadForAgent(userId, agentId);
+  const msg = ctx.store.createMessage({ thread_id: thread.id, role: 'user', author_type: 'user', author_id: userId, content: 'Doe dit voor mij.' });
+  return ctx.store.createRun({ thread_id: thread.id, agent_id: agentId, user_id: userId, status: 'done', trigger: 'user', input_message_id: msg.id });
 }

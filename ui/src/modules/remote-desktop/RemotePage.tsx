@@ -3,9 +3,10 @@ import { Eye, Laptop, Monitor, MonitorSmartphone, MousePointer2, Power, ShieldCh
 import { on } from '../../lib/api';
 import { navigate } from '../../lib/router';
 import { t } from '../../lib/i18n';
-import { askConfirm, Badge, Button, Card, EmptyState, Field, Page, PageHeader, Select, Spinner, Toggle, timeAgo, toast, toastError } from '../../components/ui';
+import { askConfirm, Badge, Button, Card, CardHead, EmptyState, Field, Page, PageHeader, Select, Spinner, Toggle, timeAgo, toast, toastError } from '../../components/ui';
 import { ComputerOnly } from '../../shell/computerOnly';
 import { IDLE_CHOICES, remote, type RemoteSessionInfo, type RemoteState } from './api';
+import { PLACE } from '../../../../shared/places.js';
 
 export function useRemoteState() {
   const [data, setData] = useState<RemoteState | null>(null);
@@ -118,11 +119,7 @@ export function RemotePage() {
         ) : (
           <>
             <Card className="space-y-4 p-4 sm:p-5">
-              <div className="flex flex-wrap items-center gap-2">
-                <MonitorSmartphone className="h-5 w-5 text-accent" aria-hidden />
-                <h2 className="text-base font-bold">Status</h2>
-                {s.enabled ? <Badge tone="warn">Staat aan</Badge> : <Badge>Staat uit</Badge>}
-              </div>
+              <CardHead icon={MonitorSmartphone} tone="blue" title="Status" action={s.enabled ? <Badge tone="warn">Staat aan</Badge> : <Badge>Staat uit</Badge>} />
               {!s.available && (
                 <p className="text-sm leading-relaxed text-muted">
                   {s.unavailable === 'platform'
@@ -146,7 +143,7 @@ export function RemotePage() {
                   </Field>
                   {s.enabled && (
                     <p className="text-sm text-muted">
-                      Open TeamBot op je telefoon en kies Meer › Instellingen › Telefoon › Bureaublad op afstand › <b>Bureaublad openen</b>.
+                      {t('Open TeamBot op je telefoon en kies Meer › {0} ›', t(PLACE.remoteDesktop))} <b>Bureaublad openen</b>.
                     </p>
                   )}
                 </div>
@@ -166,7 +163,7 @@ export function RemotePage() {
                   </div>
                 </div>
               ) : (
-                <ComputerOnly>Staat uit. Aanzetten kan alleen op de computer zelf (Instellingen › Telefoon › Bureaublad op afstand).</ComputerOnly>
+                <ComputerOnly>{t('Staat uit. Aanzetten kan alleen op de computer zelf ({0}).', t(PLACE.remoteDesktop))}</ComputerOnly>
               )}
               {s.here && s.enabled && (
                 <div className="flex flex-wrap gap-2 border-t border-line pt-3">
@@ -178,7 +175,7 @@ export function RemotePage() {
             </Card>
 
             <Card className="p-4 sm:p-5">
-              <h2 className="text-base font-bold">Wie kijkt er mee</h2>
+              <CardHead icon={Eye} tone="blue" title="Wie kijkt er mee" />
               {s.sessions.length ? (
                 <ul className="mt-1 divide-y divide-line">
                   {s.sessions.map((x) => (
@@ -194,8 +191,7 @@ export function RemotePage() {
             <Card className="p-4 sm:p-5">
               <details open>
                 <summary className="flex cursor-pointer list-none items-center gap-2 rounded-lg outline-none focus-visible:ring-2 focus-visible:ring-accent [&::-webkit-details-marker]:hidden">
-                  <ShieldCheck className="h-5 w-5 text-ok" aria-hidden />
-                  <h2 className="text-base font-bold">Zo is het beveiligd</h2>
+                  <CardHead className="flex-1" icon={ShieldCheck} tone="rose" title="Zo is het beveiligd" />
                 </summary>
                 <ul className="mt-2 list-disc space-y-1.5 ps-5 text-sm leading-relaxed text-muted">
                   <li>Standaard uit. Aanzetten kan alleen op deze computer zelf.</li>
@@ -203,7 +199,7 @@ export function RemotePage() {
                   <li>Zolang iemand meekijkt staat bovenaan een balk met Stop. Noodstop: Ctrl+Alt+Esc.</li>
                   <li>{t('Een sessie stopt vanzelf na {0, plural, one {# minuut} other {# minuten}} zonder bediening.', s.idleMinutes)}</li>
                   <li>TeamBot zelf is afgedekt en niet op afstand te bedienen.</li>
-                  <li>Elke sessie staat in het logboek (Instellingen › Beveiliging), met apparaat, begin en einde.</li>
+                  <li>{t('Elke sessie staat in het logboek ({0}), met apparaat, begin en einde.', t(PLACE.security))}</li>
                 </ul>
               </details>
             </Card>

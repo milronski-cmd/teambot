@@ -40,7 +40,7 @@ export function skillChoiceContext(ctx: Ctx, lib: SkillLibrary, agent: Agent, in
   const names = picked.map((s) => `“${s.name}”`).join(' en ');
   const toolsOk = agent.access_mode !== 'chat' && ctx.tools.groupEnabled(agent, 'skills');
   return toolsOk
-    ? `De gebruiker koos voor dit bericht de skill ${names} (met / of $ in het bericht). Laad ${picked.length > 1 ? 'die' : 'hem'} eerst met skill_load en volg de instructies bij dit verzoek.`
+    ? `De gebruiker koos voor dit bericht de skill ${names} (met / of $ in het bericht). Laad ${picked.length > 1 ? 'die' : 'hem'} eerst (met je eigen skill-tool als je die hebt, anders met skill_load) en volg de instructies bij dit verzoek.`
     : `De gebruiker koos voor dit bericht de skill ${names} (met / of $ in het bericht). Volg de instructies van die skill uit je instructies hierboven.`;
 }
 

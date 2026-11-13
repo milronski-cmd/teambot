@@ -175,15 +175,20 @@ export const useUsageBar = create<BarState>((set, get) => ({
   },
 }));
 
-/** Ask the CLIs again when their numbers may be older than this (the server keeps its own two-minute cache too). */
-const ASK_AFTER_MS = 2 * 60_000;
+/**
+ * Ask the CLIs again when their numbers may be older than this (the server keeps its own cache too: a minute, 20
+ * seconds while a bot works on that engine).
+ */
+const ASK_AFTER_MS = 60_000;
 /** While TeamBot is in view, ask now and then, so use outside TeamBot (the Claude app, a terminal) shows up too. */
-const ASK_EVERY_MS = 10 * 60_000;
+const ASK_EVERY_MS = 3 * 60_000;
 
 /**
  * The bar's data, kept live: usage.updated events (WebSocket) reload it right away; once a minute the countdowns move
- * on, a cheap reload of stored numbers runs when the WebSocket is down, and every ten minutes in view (or when the
- * window comes back into view after two) the CLIs are asked again. Reading costs no quota; runs ask by themselves.
+ * on, a cheap reload of stored numbers runs when the WebSocket is down, and every three minutes in view (or when the
+ * window comes back into view after one) the CLIs are asked again. Reading costs no quota. Work by the bots needs no
+ * asking from here: the server reads an engine once a minute while a bot works on it and three seconds after a run
+ * ends (server/modules/usage/service.ts), and tells it with usage.updated.
  */
 export function useLiveUsageBar(): BarView | null {
   const bar = useUsageBar((s) => s.bar);
@@ -283,7 +288,7 @@ export function wireUsageEvents() {
         tb = setTimeout(() => {
           tb = null;
           useUsageBar.getState().load().catch(() => {});
-        }, 300);
+        }, 150);
       if (!useUsage.getState().engines || t) return;
       t = setTimeout(() => {
         t = null;

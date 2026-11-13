@@ -14,6 +14,10 @@ import { createFixtureServer } from './mcp-fixture-server.js';
 import { guessReadOnly, riskFromAnnotations, riskOf } from '../server/modules/mcp/risk.js';
 import { CATALOG } from '../server/modules/mcp/catalog.js';
 
+// These tests are about bots that are not the main bot: without this the first bot would be it (teams `autoMain`,
+// covered in works-right-away.test.ts).
+process.env.TEAMBOT_TEST_NO_AUTO_MAIN = '1';
+
 const FIXTURE = path.resolve('tests/mcp-fixture-server.ts');
 const SECRET = 'fixture-secret-value-123';
 
@@ -197,9 +201,15 @@ test('tools only for bound bots; actions only after test + opt-in; ask mode appr
   const t = await startTestApp();
   try {
     const c = await stdioConn(t);
-    const a = await t.agent({ name: 'Met app', access_mode: 'ask' });
+    // The owner's apps start with their actions on (mcp/defaults.ts); this test is about an app that is read-only.
+    assert.equal(c.allow_actions, true);
+    await t.api('POST', `/mcp/connections/${c.id}/actions`, { enabled: false });
+    // Every tool in each call: this test is about binding an app, not about which parts fit in one call (tools/selection.ts).
+    const a = await t.agent({ name: 'Met app', access_mode: 'ask', tool_groups: ['files', 'web', 'memory', 'team', 'skills', 'routines'], settings: { contextSaver: { selectTools: false } } });
     const b = await t.agent({ name: 'Zonder app', access_mode: 'auto' });
+    // A new bot gets the apps that are connected (mcp/defaults.ts); the owner takes this one away from the second bot.
     await t.api('PUT', `/mcp/agents/${a.id}/${c.id}`, { enabled: true });
+    await t.api('PUT', `/mcp/agents/${b.id}/${c.id}`, { enabled: false });
 
     // not verified yet → no tools at all
     let seen: string[] = [];

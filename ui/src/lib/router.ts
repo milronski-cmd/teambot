@@ -48,7 +48,22 @@ export function useRoute(): string[] {
   return parts;
 }
 
-export function navigate(to: string) {
+/**
+ * Go to `to`.
+ * - `from`: only while the user is still on that page (its query, such as an open dialog, does not count). Code that
+ *   moves the user once an answer arrives passes the page it started on (`location.hash` before the request): whoever
+ *   went elsewhere in the meantime stays where they went.
+ * - `replace`: in place of the current page, without a step in the history (a link that stands for another page, such
+ *   as #/a/<bot> for that bot's chat).
+ */
+export function navigate(to: string, { from, replace }: { from?: string; replace?: boolean } = {}) {
+  if (from !== undefined && parseHash().join('/') !== parseHash(from).join('/')) return;
   const h = to.startsWith('#') ? to : '#' + (to.startsWith('/') ? to : '/' + to);
-  if (location.hash !== h) location.hash = h;
+  if (location.hash === h) return;
+  if (!replace) {
+    location.hash = h;
+    return;
+  }
+  history.replaceState(null, '', h);
+  dispatchEvent(new HashChangeEvent('hashchange'));
 }

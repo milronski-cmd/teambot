@@ -321,6 +321,29 @@ test('thin text: links and markup do not count as text', () => {
   assert.equal(isThinText('Dit is een gewone alinea. '.repeat(20)), false);
 });
 
+test('a short page that is complete is not called a JavaScript page (example.com, a tracking pixel in noscript)', async () => {
+  // example.com as it is served since November 2026: one sentence and a script tag.
+  const EXAMPLE = '<!doctype html><html lang=en><head><meta charset=utf-8><title>Example Domain</title><style>body{font:16px system-ui}</style></head><body><p>This domain is for use in documentation examples without needing permission. This is not a service; avoid relying on it for testing and monitoring purposes.</p><script src=/s.js></script></body></html>';
+  const PIXEL = '<html><head><title>Open</title><script>track()</script></head><body><h1>Openingstijden</h1><p>Elke werkdag van 9 tot 17 uur open.</p><noscript><img src="https://px.example/p.gif"></noscript></body></html>';
+  const BARE = '<html><head><title>App</title></head><body><div id="app"></div><script type="module" src="/main.js"></script></body></html>';
+  const page = (body: string) => new Response(body, { status: 200, headers: { 'content-type': 'text/html; charset=utf-8' } });
+  const m = mockFetch((c) => (c.url === 'http://93.184.216.34/' ? page(EXAMPLE) : c.url === 'http://93.184.216.34/open' ? page(PIXEL) : c.url === 'http://93.184.216.34/bare' ? page(BARE) : undefined));
+  try {
+    const ex = await fetchPage('http://93.184.216.34/', 10_000, false);
+    assert.match(ex.text, /documentation examples/);
+    assert.equal(ex.note, undefined, 'a complete short page gets no warning');
+    const open = await fetchPage('http://93.184.216.34/open', 10_000, false);
+    assert.match(open.text, /van 9 tot 17 uur/);
+    assert.equal(open.note, undefined, 'an image in <noscript> is not a "turn on JavaScript" notice');
+    // An empty element that a script fills, without any notice: that one is a JavaScript page.
+    const bare = await fetchPage('http://93.184.216.34/bare', 10_000, false);
+    assert.match(bare.note || '', /JavaScript/);
+    assert.ok(!m.calls.some((c) => c.url.includes('jina')));
+  } finally {
+    m.restore();
+  }
+});
+
 test('a page built by JavaScript: Jina Reader only when switched on, with DNT; off, an honest note', async () => {
   const m = mockFetch((c) => {
     if (c.url === PUBLIC) return new Response(SHELL, { status: 200, headers: { 'content-type': 'text/html' } });
@@ -332,6 +355,7 @@ test('a page built by JavaScript: Jina Reader only when switched on, with DNT; o
     assert.equal(off.via, undefined);
     assert.match(off.note!, /JavaScript/);
     assert.match(off.note!, /Jina/, 'the tip names the switch and that the address would go to Jina');
+    assert.match(off.note!, /“Pagina’s lezen via Jina als het zelf niet lukt” \(Instellingen › Meer mogelijkheden › Zoeken op internet\)/, 'the switch and its place as the screens name them');
     assert.ok(!m.calls.some((c) => c.url.includes('jina')), 'off: nothing goes to Jina');
 
     m.calls.length = 0;

@@ -6,7 +6,7 @@ export default {
   status: 'new',
   category: 'prive',
   name: 'Privé: geld en administratie',
-  description: 'Budget, rekeningen, abonnementen en belastingdeadlines op een rij. De bots betalen nooit iets; ze zetten klaar en vragen het jou.',
+  description: 'Budget, rekeningen, abonnementen en belastingdeadlines op een rij. De bots houden alles zelf bij; betalen doen ze nooit zonder jou.',
   note: 'Geldzaken zijn privé. Kies voor dit team bij voorkeur een AI die op je eigen pc draait, zoals Ollama.',
   goal: 'Grip op geld en papieren: weten wat er binnenkomt en uitgaat, welke rekeningen openstaan en welke deadlines eraan komen.',
   rules: [

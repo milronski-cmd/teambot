@@ -3,18 +3,20 @@
  * answers without tools (or a limit of steps, a loop or a stop ends the turn). Streaming, steering by the owner while
  * it runs, the context budget and the loop guard meet here; each of those has its own file.
  */
-import type { Agent, ChatResult, Ctx, Message, MessageParts, PlanStep, Run, StreamEvent, Thread, ToolCall, ToolDef } from '../core/types.js';
+import type { Agent, ChatMsg, ChatResult, Ctx, Message, MessageParts, PlanStep, Run, StreamEvent, Thread, ToolCall, ToolDef } from '../core/types.js';
 import { now } from '../core/db.js';
 import { redact } from '../core/secrets.js';
 import { categoryOf, ProviderError } from '../providers/common.js';
-import { executeTool, safeSummary } from '../tools/execute.js';
+import { executeTool, stepSummary } from '../tools/execute.js';
+import type { OnDemand } from '../tools/selection.js';
 import { toolLabel } from '../../shared/toolLabels.js';
-import { checkBudget, lastCallCost, recordUsage } from './budget.js';
-import { ContextSaver } from './context-budget.js';
+import { readImageText } from './attachments.js';
+import { checkBudget, lastCallCost, recordUnfinished, recordUsage, usageOf } from './budget.js';
+import { ContextSaver, cutMiddle } from './context-budget.js';
 import type { Active, EngineFailure } from './engines.js';
 import { plainError } from './fallback.js';
 import { buildHistory, toolsCrowdOut } from './history.js';
-import { LoopGuard, loopLimits, reportLoopStop, skippedText, wrapUpNote } from './loops.js';
+import { LoopGuard, loopLimits, maxSteps, reportLoopStop, skippedText, wrapUpNote } from './loops.js';
 import { userTz } from './prompt.js';
 import { hasPendingSteer } from './queue.js';
 
@@ -37,6 +39,8 @@ export class DeltaStream {
     private tools: ToolDef[] = [],
   ) {}
   push(e: StreamEvent) {
+    // Every chunk is a sign of life (agent/runs.ts RunPulse); writing text is no particular step any more.
+    alive(this.ctx, this.msg.run_id, e.type === 'status' ? e.text : e.type === 'tool_start' ? preparingText(e.name, this.tools) : e.type === 'text' ? '' : undefined);
     if (e.type === 'text') {
       this.text += e.delta;
       this.pendingText += e.delta;
@@ -67,9 +71,15 @@ export class DeltaStream {
   }
 }
 
+/** A sign of life of a run: something real just happened (agent/runs.ts RunPulse sends it on, throttled). */
+export function alive(ctx: Ctx, runId: string | null | undefined, doing?: string) {
+  if (runId) ctx.runs?.pulse?.touch(runId, doing);
+}
+
 /** A message of the bot in this run (an answer, a tool result), saved and sent to everyone who watches the chat. */
 function botMessage(ctx: Ctx, run: Run, agent: Agent, thread: Thread, m: Pick<Message, 'role'> & Partial<Pick<Message, 'content' | 'status' | 'parts'>>): Message {
   const msg = ctx.store.createMessage({ thread_id: thread.id, author_type: 'agent', author_id: agent.id, author_name: agent.name, run_id: run.id, ...m });
+  alive(ctx, run.id);
   ctx.chat.emitMessage(thread, msg);
   return msg;
 }
@@ -85,12 +95,6 @@ export function preparingText(name: string, tools: ToolDef[] = []): string {
   return app ? `Gebruikt ${app}…` : `${toolLabel({ name }, true)}…`;
 }
 
-function truncateOutput(s: string): string {
-  if (s.length <= MAX_TOOL_OUTPUT) return s;
-  const half = Math.floor(MAX_TOOL_OUTPUT / 2) - 100;
-  return s.slice(0, half) + `\n… (${s.length - 2 * half} tekens weggelaten) …\n` + s.slice(-half);
-}
-
 function setCall(ctx: Ctx, thread: Thread, messageId: string, callId: string, patch: Partial<ToolCall>) {
   const m = ctx.store.message(messageId);
   if (!m?.parts?.toolCalls) return;
@@ -101,13 +105,14 @@ function setCall(ctx: Ctx, thread: Thread, messageId: string, callId: string, pa
 
 /** A tool call that is not run (loop guard): a tool result that says why, so the history stays complete. */
 function skipTool(ctx: Ctx, run: Run, agent: Agent, thread: Thread, messageId: string, call: ToolCall, text: string) {
-  botMessage(ctx, run, agent, thread, { role: 'tool', content: text, parts: { toolResult: { toolCallId: call.id, name: call.name, isError: true } } });
+  botMessage(ctx, run, agent, thread, { role: 'tool', content: text, parts: { toolResult: { toolCallId: call.id, name: call.name, isError: true, ...(call.via ? { via: call.via } : {}) } } });
   setCall(ctx, thread, messageId, call.id, { status: 'denied' });
 }
 
-async function runTool(ctx: Ctx, run: Run, agent: Agent, thread: Thread, messageId: string, call: ToolCall, tools: ToolDef[], signal: AbortSignal) {
+async function runTool(ctx: Ctx, run: Run, agent: Agent, thread: Thread, messageId: string, call: ToolCall, tools: ToolDef[], signal: AbortSignal, demand: OnDemand) {
   setCall(ctx, thread, messageId, call.id, { status: 'running' });
-  const { out: final, denied } = await executeTool({
+  alive(ctx, run.id, call.summary ? `${toolLabel(call, true)}: ${call.summary}` : toolLabel(call, true));
+  const { out, denied, tool } = await executeTool({
     ctx,
     agent,
     thread,
@@ -117,10 +122,19 @@ async function runTool(ctx: Ctx, run: Run, agent: Agent, thread: Thread, message
     args: call.args,
     callId: call.id,
     signal,
-    onState: (st) => setCall(ctx, thread, messageId, call.id, { status: st }),
-    progress: (text) => ctx.chat.emit(thread, 'tool.progress', { threadId: thread.id, messageId, callId: call.id, text }),
+    onState: (st) => {
+      alive(ctx, run.id);
+      setCall(ctx, thread, messageId, call.id, { status: st });
+    },
+    progress: (text) => {
+      alive(ctx, run.id);
+      ctx.chat.emit(thread, 'tool.progress', { threadId: thread.id, messageId, callId: call.id, text });
+    },
   });
-  botMessage(ctx, run, agent, thread, { role: 'tool', content: truncateOutput(final.text || ''), parts: { toolResult: { toolCallId: call.id, name: call.name, isError: !!final.isError }, attachments: final.attachments } });
+  alive(ctx, run.id, '');
+  // A tool outside the list: the fields when the arguments did not fit, and once what the bot must know about its part.
+  const final = await demand.after(tool, call.args, out, denied);
+  botMessage(ctx, run, agent, thread, { role: 'tool', content: cutMiddle(final.text || '', MAX_TOOL_OUTPUT), parts: { toolResult: { toolCallId: call.id, name: call.name, isError: !!final.isError, ...(call.via ? { via: call.via } : {}) }, attachments: final.attachments } });
   setCall(ctx, thread, messageId, call.id, { status: denied ? 'denied' : final.isError ? 'error' : 'done' });
   if (!final.isError && Array.isArray(final.data?.plan)) setPlan(ctx, thread, run, messageId, final.data.plan);
   return final;
@@ -148,27 +162,63 @@ export async function afterRun(ctx: Ctx, agent: Agent, thread: Thread, run: Run,
   }
 }
 
+/** An answer without text or tool call: an error on the answer and on the run (the same words the chat used). */
+function emptyAnswer(ctx: Ctx, thread: Thread, m: Message, thought: boolean): EngineFailure {
+  const error = thought ? 'Het model gaf geen antwoord. Probeer het opnieuw of zet het denkniveau lager.' : 'Het model gaf een leeg antwoord. Probeer het opnieuw.';
+  ctx.chat.emitMessage(thread, ctx.store.updateMessage(m.id, { status: 'error', parts: { ...m.parts, error } }), 'message.updated');
+  return { error: new Error(error), messageId: m.id };
+}
+
+const hasImage = (messages: ChatMsg[]) => messages.some((m) => Array.isArray(m.content) && m.content.some((p) => p.type === 'image'));
+
+/** Whether this engine's model looks at images, as TeamBot knows it (the facts on the bot page). Unknown: yes, as before. */
+async function seesImages(ctx: Ctx, active: Active, userId: string): Promise<boolean> {
+  try {
+    const m = await ctx.services.modelCatalog?.facts?.(active.cfg, userId, active.model);
+    return m?.vision !== false;
+  } catch {
+    return true;
+  }
+}
+
 /** Returns the error (instead of throwing) when the engine failed, so the runner can switch to a reserve. */
 export async function chatLoop(ctx: Ctx, run: Run, agent: Agent, thread: Thread, active: Active, system: string, signal: AbortSignal): Promise<EngineFailure | null> {
   if (!active.adapter.chat) throw new Error('Deze provider ondersteunt geen chat');
   // Context budget (agent/context-budget.ts): per model call the history and tool list, shortened where safe, with
-  // the tokens per part on the answer. `tools` = what the bot may use, plus tools_load when parts are left out.
+  // the tokens per part on the answer. `tools` = every tool a call may name; the model is listed the core of them,
+  // plus tools_find and tools_call for the rest (tools/selection.ts).
   const saver = new ContextSaver(ctx, agent, thread, run, await ctx.tools.forAgent(agent, thread), system, (o) => buildHistory(ctx, agent, thread, o));
   const tools = saver.tools;
-  const maxTurns = Number(agent.settings?.maxTurns) || 40;
+  const maxTurns = maxSteps(agent);
   let finalText = '';
   let turn = 0;
   let restarts = 0;
   let calls = 0;
+  // The turn asked for a tool somewhere: then an empty last answer is a quiet end, not a failure.
+  let acted = false;
   // Loop guard (agent/loops.ts): after a stop the bot gets one last step, without running tools, to ask for help.
   const guard = new LoopGuard(loopLimits(agent));
+  // Images go to a model that can look at them. Whether this one can is looked up once, when there is an image to send
+  // (undefined: not yet); viewing switched off for the bot counts as no.
+  let vision: boolean | undefined = agent.settings?.vision === false ? false : undefined;
   for (; turn < maxTurns; turn++) {
     if (signal.aborted) throw signal.reason || new Error('Gestopt');
     // The daily budget before every model call, not only before the run (acceptance round 6, B-70: one long run went
     // past it). The previous call of this bot here is the estimate for this one; after steps of this run that is the
     // previous step. Over budget: the run stops here, with what it already did above (BudgetError, midRun).
     checkBudget(ctx, run.user_id, agent, { cfg: active.cfg, estimate: lastCallCost(ctx, thread.id, agent.id, active.cfg.id), midRun: calls > 0 });
-    const { messages, truncated, specs, stats } = saver.next({ vision: agent.settings?.vision !== false });
+    let step0 = saver.next({ vision: vision !== false });
+    // A model that cannot look at images refused the whole call ("Multimodal data provided…", Ollama, 12 nov). It gets
+    // the text on the images of this message instead (OCR, agent/attachments.ts), or a note that there is an image it
+    // cannot see. The same on every API engine; a CLI engine reads its attachments itself.
+    if (vision === undefined && hasImage(step0.messages)) {
+      vision = await seesImages(ctx, active, thread.user_id);
+      if (!vision) {
+        await readImageText(ctx, agent, ctx.store.message(run.input_message_id), signal);
+        step0 = saver.next({ vision: false });
+      }
+    }
+    const { messages, truncated, specs, stats } = step0;
     const msg = startAnswer(ctx, run, agent, thread, active);
     const stream = new DeltaStream(ctx, thread, msg, tools);
     // Steering (A-21): a message the owner adds while this model call is still generating stops the call and the
@@ -186,8 +236,10 @@ export async function chatLoop(ctx: Ctx, run: Run, agent: Agent, thread: Thread,
         })
       : () => {};
     let result: ChatResult;
+    let toolsBegun = '';
     try {
       result = await active.adapter.chat!({ model: active.model, system: guard.stopped ? `${system}\n\n${wrapUpNote(guard.stopped)}` : system, messages, tools: specs, reasoning: agent.reasoning, historyTruncated: truncated }, step.signal, (e) => {
+        if (e.type === 'tool_start') toolsBegun += e.name;
         if (!step.signal.aborted) stream.push(e);
       });
       // An engine that swallowed the stop and returned what it had: still start the step again with the message.
@@ -195,6 +247,8 @@ export async function chatLoop(ctx: Ctx, run: Run, agent: Agent, thread: Thread,
       stream.flush();
     } catch (e: any) {
       stream.flush();
+      // What the call used until it ended without its result (stopped, steered, failed) is counted too (budget.ts).
+      const used = recordUnfinished(ctx, run, agent, active.cfg, active.model, { reported: usageOf(e), sent: stats.total, received: stream.reasoning + stream.text + toolsBegun });
       if (steeredMid && !signal.aborted) {
         // What the bot had written so far stays visible, marked as interrupted, but the model does not see it as an
         // answer (history.ts skips it). Nothing written yet: the attempt disappears (the steer message says it).
@@ -213,6 +267,7 @@ export async function chatLoop(ctx: Ctx, run: Run, agent: Agent, thread: Thread,
       const upd = ctx.store.updateMessage(msg.id, {
         content: stream.text,
         status: aborted ? 'cancelled' : 'error',
+        ...(used ? { usage: used } : {}),
         parts: { ...msg.parts, reasoning: stream.reasoning || undefined, error: aborted ? undefined : redact(plainError(e, { engine: active.cfg.name, tz: userTz(ctx, thread.user_id) })) },
       });
       ctx.chat.emitMessage(thread, upd, 'message.updated');
@@ -225,8 +280,10 @@ export async function chatLoop(ctx: Ctx, run: Run, agent: Agent, thread: Thread,
     const usage = recordUsage(ctx, run, agent, active.cfg, result.model || active.model, result.usage);
     calls++;
     const toolCalls: ToolCall[] = result.toolCalls.map((c) => {
-      const t = tools.find((x) => x.name === c.name);
-      return { ...c, status: 'pending', summary: t?.summarize ? safeSummary(t, c.args) : undefined };
+      // A tools_call is, from here on, the call it names: shown, checked, logged and stored as that tool.
+      const real = saver.demand.resolve(c.name, c.args);
+      const t = tools.find((x) => x.name === real.name);
+      return { ...c, ...real, ...(real.name !== c.name ? { via: c.name } : {}), status: 'pending', ...(t?.summarize ? stepSummary(t, real.args) : {}) };
     });
     const updated = ctx.store.updateMessage(msg.id, {
       content: result.text,
@@ -244,8 +301,12 @@ export async function chatLoop(ctx: Ctx, run: Run, agent: Agent, thread: Thread,
     if (!toolCalls.length || result.stop === 'refusal') {
       // Steering (agent/queue.ts): the owner added a message to this turn while it ran; take it in before finishing.
       if (result.stop !== 'refusal' && hasPendingSteer(ctx, thread.id, run.id, updated.seq)) continue;
+      // Nothing came back in the whole turn (no text, no tool call): it failed, it is not "klaar". Said on the answer
+      // itself. A turn that did its work and ends without closing words is done (a routine with nothing new is quiet).
+      if (result.stop !== 'refusal' && !result.text?.trim() && !finalText.trim() && !acted) return emptyAnswer(ctx, thread, updated, !!result.reasoning);
       break;
     }
+    acted = true;
     for (const call of toolCalls) {
       // Stopped: the calls that never started are closed with a result that says so. A call left "pending" without
       // a result kept spinning in the chat for ever (the words are the ones history.ts gives the model for it).
@@ -258,7 +319,7 @@ export async function chatLoop(ctx: Ctx, run: Run, agent: Agent, thread: Thread,
         skipTool(ctx, run, agent, thread, updated.id, call, skippedText(guard.stopped!));
         continue;
       }
-      const out = await runTool(ctx, run, agent, thread, updated.id, call, tools, signal);
+      const out = await runTool(ctx, run, agent, thread, updated.id, call, tools, signal, saver.demand);
       guard.after(call.name, call.args, label, out.text || '', !!out.isError);
     }
     if (!signal.aborted && (guard.stopped || guard.endStep())) reportLoopStop(ctx, run, agent, thread, guard.stopped!);

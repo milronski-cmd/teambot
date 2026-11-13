@@ -15,6 +15,7 @@ import { now } from '../../core/db.js';
 import { bad } from '../../core/http.js';
 import type { ConnectionRow, OAuthState } from './db.js';
 import { entryForConn } from './package.js';
+import { GOOGLE_PREVIEW } from './catalog.js';
 import { cleanError, guardedFetch, mayUsePrivateNetwork, randomToken, resolveKV, sha256 } from './util.js';
 
 export const CALLBACK_PATH = '/api/public/mcp/oauth/callback';
@@ -279,6 +280,19 @@ export async function prepareOAuth(ctx: Ctx, c: ConnectionRow) {
   };
 }
 
+/**
+ * The short, true answer when a service does not let TeamBot register itself (no dynamic client registration) and no
+ * own client is filled in yet: what is needed, where to fill it in, and the easier way where there is one.
+ */
+export function ownAppNeeded(c: ConnectionRow, redirectUri: string): string {
+  const e = entryForConn(c);
+  const name = e && !['custom', 'registry'].includes(e.id) ? e.name : c.label ? `${c.name} (${c.label})` : c.name;
+  const vendor = e?.oauthAppGuide?.vendor || (e && !['custom', 'registry'].includes(e.id) ? e.publisher : '') || 'de dienst';
+  const secret = e?.oauthAppGuide?.secretRequired ? ' en het clientgeheim' : ' (en het clientgeheim, als je dat kreeg)';
+  const easier = e && GOOGLE_PREVIEW.has(e.id) ? ' Eenvoudiger: de kaart Google bovenaan Apps geeft Gmail, Agenda en Drive (ook spreadsheets lezen) zonder Developer Preview.' : '';
+  return `${name} laat apps zoals TeamBot zich niet zelf aanmelden. Eerst is één keer een eigen app bij ${vendor} nodig, met als redirect-URL ${redirectUri}. Vul daarna de client-ID${secret} in bij Apps › ${name} › Inloggen; daar staan ook de stappen.${easier}`;
+}
+
 /** Step 2: register (if needed), PKCE + state, return the URL the user opens. */
 export async function beginOAuth(ctx: Ctx, c: ConnectionRow, scopes: string[], redirectUri: string): Promise<{ authorizationUrl: string }> {
   if (!c.oauth?.discovery?.authorizationServerMetadata) await prepareOAuth(ctx, c);
@@ -296,7 +310,7 @@ export async function beginOAuth(ctx: Ctx, c: ConnectionRow, scopes: string[], r
   if (client && c.oauth.preregistered && !(client as any).client_secret && entryForConn(c)?.oauthAppGuide?.secretRequired) throw bad(`Vul ook het clientgeheim (client secret) van je eigen OAuth-client in: ${entryForConn(c)!.oauthAppGuide!.vendor} vraagt het altijd.`);
   if (!client || stale) {
     if (c.oauth.preregistered) throw bad('Vul de client-ID van je eigen OAuth-app in.');
-    if (!md.registration_endpoint) throw bad('Deze dienst ondersteunt geen automatische registratie. Registreer een eigen OAuth-app bij de dienst en vul de client-ID in.');
+    if (!md.registration_endpoint) throw bad(ownAppNeeded(c, redirectUri));
     const full = await registerClient(asUrl, { metadata: md, clientMetadata: clientMetadata(ctx, redirectUri, scope || undefined), scope: scope || undefined, fetchFn });
     client = { ...full, issuer } as any;
     saveClientInfoFor(ctx, c, client as any);

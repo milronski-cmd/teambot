@@ -108,7 +108,9 @@ const milaThread = () => tb.app.ctx.store.all("SELECT id FROM threads WHERE agen
 const openMila = async () => go(page, `#/t/${milaThread()}`, 900);
 const memoryNew = async (content, { type, pin } = {}) => {
   await go(page, '#/m/memory/', 900);
-  await page.getByRole('button', { name: 'Onthouden', exact: true }).first().click();
+  // Adding one yourself is rare: it sits behind "Meer opties".
+  await page.locator('#inhoud').getByRole('button', { name: 'Meer opties', exact: true }).first().click();
+  await page.getByRole('menuitem', { name: 'Zelf iets toevoegen' }).click();
   const dlg = page.getByRole('dialog', { name: 'Nieuwe herinnering' });
   await dlg.waitFor({ timeout: 5000 });
   await dlg.getByLabel('Inhoud').fill(content);
@@ -123,7 +125,7 @@ const searchMemory = async (q) => {
   await go(page, '#/', 200); // a fresh visit, so no earlier result is still on screen
   await go(page, '#/m/memory/', 900);
   await page.locator('#mem-ask').fill(q);
-  await page.getByRole('button', { name: 'Zoeken', exact: true }).click();
+  await page.locator('#inhoud').getByRole('button', { name: 'Zoeken', exact: true }).click();
   const box = page.locator('#mem-ask').locator('xpath=ancestor::form/..');
   const text = await until(async () => {
     const t = (await box.innerText()).replace(/\s+/g, ' ');
@@ -152,7 +154,7 @@ try {
     const section = async () => {
       await go(page, '#/m/memory/', 200);
       await go(page, '#/m/memory/opslag', 1200);
-      return ((await page.locator('h2', { hasText: 'Zoeken op betekenis' }).locator('xpath=..').innerText().catch(() => '')) || '').replace(/\s+/g, ' ');
+      return ((await page.locator('h2', { hasText: 'Zoeken op betekenis' }).locator('xpath=ancestor::*[contains(@class,"rounded-card")][1]').innerText().catch(() => '')) || '').replace(/\s+/g, ' ');
     };
     const on = await until(async () => {
       const t = await section();
@@ -274,9 +276,12 @@ try {
   await part('N-01', 'een back-up maken in Instellingen › Back-ups', async () => {
     await memoryNew('Ik werk bij Bakkerij Jansen.');
     await go(page, '#/settings/backups-app', 1200);
+    // What is in a back-up and how many to keep are behind "Meer opties".
+    await page.evaluate(() => document.querySelectorAll('[data-testid="more-options"]').forEach((x) => (x.open = true)));
+    await page.waitForTimeout(300);
     const text0 = await mainText(page);
     check('N-01', 'de pagina zegt wat erin zit en wat niet, en hoe het met de sleutels zit', /Wat zit erin, en wat niet/.test(text0) && /Niet in een back-up/.test(text0) && /sleutel/i.test(text0), text0.slice(0, 200));
-    check('N-01', 'elke dag automatisch staat standaard aan, bewaar de laatste 7', (await page.getByRole('switch', { name: 'Elke dag automatisch een back-up maken' }).getAttribute('aria-checked')) === 'true' && (await page.locator('#backup-keep').inputValue()) === '7');
+    check('N-01', 'elke dag automatisch staat standaard aan, bewaar de laatste 7', (await page.getByRole('switch', { name: 'Elke dag automatisch een back-up maken' }).getAttribute('aria-checked')) === 'true' && /^7 back-ups/.test((await page.locator('#backup-keep').innerText()).trim()), (await page.locator('#backup-keep').innerText()).trim());
     await page.getByRole('button', { name: 'Nu een back-up maken' }).click();
     const made = await until(async () => /Zelf gemaakt/.test(await mainText(page)), 30_000, 300);
     check('N-01', '"Nu een back-up maken": de back-up staat in de lijst (zelf gemaakt)', !!made);
@@ -410,9 +415,9 @@ try {
     check('D-04', 'Groq staat aan: Beschikbaar, 2 gratis modellen (spraakmodel niet)', !!avail && /2 gratis modellen/.test(gtext), gtext.slice(0, 300));
     check('D-04', 'de sleutel komt nooit terug in de pagina of de API', !(await page.content()).includes('gsk_e2e_niet_echt') && !JSON.stringify(await tb.api('GET', '/free-models')).includes('gsk_e2e_niet_echt'));
     check('D-04', 'de sleutel ging alleen naar Groq (Authorization bij de modellenlijst)', seen.some((s) => s.url === '/groq/openai/v1/models' && s.auth === 'Bearer gsk_e2e_niet_echt_123456'));
-    // Kilo works without a key.
+    // Kilo works without a key: its one action is "Koppelen" (was "Aanzetten" before 12 Nov).
     const kilo = rowOf('Kilo Gateway');
-    await kilo.getByRole('button', { name: 'Aanzetten' }).click();
+    await kilo.getByRole('button', { name: 'Koppelen', exact: true }).click();
     const kOn = await until(async () => /Beschikbaar/.test(await kilo.innerText()), 20_000, 300);
     check('D-04', 'Kilo werkt zonder sleutel: aan en Beschikbaar', !!kOn && !(await kilo.getByLabel('API-sleutel').count()), (await kilo.innerText()).replace(/\s+/g, ' ').slice(0, 200));
     // Labels per model: "nog niet getest" until a probe; one small probe with one tool makes it "tools werken".
@@ -427,13 +432,14 @@ try {
     for (const c of chats) perModel[c.body.model] = (perModel[c.body.model] || 0) + 1;
     check('D-05', 'hoogstens één proef per model', Object.values(perModel).every((n) => n <= 1), JSON.stringify(perModel));
     await shot(page, 'd05-gratis-aan');
-    // The usage bar shows them as dots.
-    const bar = page.locator('section').filter({ has: page.getByRole('heading', { name: 'Gebruik', exact: true }) }).first();
+    // "Gebruik en limieten" names the free sources (Groq) under the limits.
+    await go(page, '#/m/usage/', 1200);
+    const bar = page.locator('#inhoud');
     const dots = await until(async () => {
       const t = (await bar.innerText().catch(() => '')).replace(/\s+/g, ' ');
-      return /Gratis/.test(t) && /Groq/.test(t) ? t : false;
+      return /Groq/.test(t) ? t : false;
     }, 15_000, 500);
-    check('E-06', 'de gebruiksbalk toont de gratis bronnen als bolletje (Groq)', !!dots, String(dots || '').slice(0, 200));
+    check('E-06', 'Gebruik en limieten noemt de gratis bronnen (Groq)', !!dots, String(dots || (await bar.innerText().catch(() => ''))).replace(/\s+/g, ' ').slice(0, 300));
     // Every request to a free provider went to the fixture server; nothing else carried the key.
     const freeHosts = /groq\.com|openrouter\.ai|kilo\.ai|cloudflare\.com|z\.ai/;
     check('D-08', 'geen verzoek naar een echte gratis aanbieder (alles naar de nepserver op deze pc)', !outside.some((u) => freeHosts.test(u)), outside.filter((u) => freeHosts.test(u)).join(', '));

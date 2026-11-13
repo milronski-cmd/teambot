@@ -5,6 +5,7 @@ import { navigate } from '../../lib/router';
 import { t } from '../../lib/i18n';
 import { Button, cx, Field, Modal, Select, Spinner, Toggle, toast } from '../../components/ui';
 import { endedReason, fetchFrame, remote, type MonitorInfo, type RemoteInput, type SessionStatus } from './api';
+import { PLACE } from '../../../../shared/places.js';
 import { Adaptive, frameSide, fromPicture, Gestures, KEY_BUTTONS, keyInput, LEVELS, nextDelay, NO_ZOOM, panBy, toPicture, typedChange, zoomAt, type Box, type GestureOut, type QualityChoice, type View } from './logic';
 
 type Phase = 'starting' | 'live' | 'ended' | 'failed';
@@ -122,7 +123,7 @@ export function Viewer() {
     remote
       .state()
       .then((st) => {
-        if (!st.enabled) throw new Error(t('Bureaublad op afstand staat uit. Zet het aan op de computer zelf (Instellingen › Telefoon › Bureaublad op afstand).'));
+        if (!st.enabled) throw new Error(t('Bureaublad op afstand staat uit. Zet het aan op de computer zelf ({0}).', t(PLACE.remoteDesktop)));
         if (!st.available) throw new Error(st.unavailable === 'platform' ? t('Bureaublad op afstand werkt alleen op Windows.') : t('Bureaublad op afstand werkt alleen in de TeamBot-app op deze computer: daar staat de stopknop op het scherm.'));
         return remote.start({ monitor: monitorRef.current });
       })

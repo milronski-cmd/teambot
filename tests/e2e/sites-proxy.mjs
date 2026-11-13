@@ -14,7 +14,7 @@ process.env.TEAMBOT_SITES_PORT = '0';
 process.env.TEAMBOT_SITES_HOST = '127.0.0.1'; // never 0.0.0.0 here (no firewall prompt)
 const require = createRequire(import.meta.url);
 const { chromium } = require('playwright-core');
-const { createApp } = await import('../../server/app.ts');
+const { createApp } = await import('./server.mjs');
 const { mockAdapter } = await import('../helpers.ts');
 
 const OUT = process.env.SHOTS_DIR || path.join(process.cwd(), '.data', 'shots');
@@ -262,8 +262,8 @@ try {
   await phone.getByText('Wat gaat via de proxy?').evaluate((e) => e.scrollIntoView({ block: 'start' }));
   await shot(phone, 'proxy-what-phone.png');
   await noOverflow(phone, 'telefoon proxy (onder)');
-  // members never: the tab is admin-only (desktop mode = owner). It is an expert setting: in the phone settings list
-  // under Geavanceerd once "Geavanceerd tonen" is on, and always found by the filter.
+  // members never: the tab is admin-only (desktop mode = owner). Since 12 Nov it is one row under Instellingen › Meer
+  // mogelijkheden › Deze computer for everyone, and always found by the filter.
   await phone.goto(`${app.url}/#/settings`);
   await phone.getByLabel('Zoek een instelling').fill('proxy');
   await phone.getByRole('link', { name: /Netwerk en proxy/ }).waitFor({ timeout: 10000 });

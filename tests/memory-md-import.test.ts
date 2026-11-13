@@ -47,14 +47,14 @@ test('preview, import, duplicates skipped or renamed, secrets refused, instructi
     assert.match(pre.lines[2].message, /wachtwoord of code/);
     assert.match(pre.lines[3].warning, /gewone tekst \(data\), nooit als opdracht/);
     assert.equal(pre.toImport, 2);
-    assert.equal((await t.api('GET', '/memory/dossiers')).length, 1, 'a preview creates nothing');
+    assert.equal((await t.api('GET', '/memory/dossiers')).filter((d: any) => !d.core).length, 1, 'a preview creates nothing');
 
     // Import, duplicates renamed.
     const out = await t.api('POST', '/memory/dossiers/import', { files, duplicates: 'rename' });
     assert.deepEqual(out.lines.map((l: any) => l.status), ['created', 'created', 'rejected', 'created', 'not_markdown', 'empty']);
     assert.equal(out.lines[1].title, 'Klant Bouwmaat (2)');
     assert.equal(out.created, 3);
-    const list = await t.api('GET', '/memory/dossiers');
+    const list = (await t.api('GET', '/memory/dossiers')).filter((d: any) => !d.core);
     assert.deepEqual(list.map((d: any) => d.title).sort(), ['Klant Bouwmaat', 'Klant Bouwmaat (2)', 'Planning', 'Verbouwing keuken']);
     assert.ok(!list.some((d: any) => /Thuisnetwerk/.test(d.title)), 'a file with a secret creates nothing');
 

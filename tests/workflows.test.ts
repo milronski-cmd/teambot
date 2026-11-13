@@ -1,7 +1,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { startTestApp, type TestApp } from './helpers.js';
-import { checkHolds, cronOf, renderPrompt } from '../server/modules/workflows/engine.js';
+import { checkHolds, planOf, renderPrompt } from '../server/modules/workflows/engine.js';
+import { TEMPLATES } from '../server/modules/workflows/templates.js';
 
 /**
  * PARITEIT 9.8, workflows: a chain of steps over several bots, with a check that sends the work back, the owner's
@@ -34,9 +35,10 @@ test('workflows: prompt variables, checks and schedule patterns', () => {
   assert.equal(checkHolds('starts_with', 'AKKOORD', 'AFGEKEURD: niet akkoord'), false);
   assert.equal(checkHolds('contains', 'fout', 'geen FOUTEN'), true);
   assert.equal(checkHolds('not_contains', 'fout', 'alles goed'), true);
-  assert.equal(cronOf({ kind: 'none' }), null);
-  assert.equal(cronOf({ kind: 'daily', time: '09:05' }), '5 9 * * *');
-  assert.equal(cronOf({ kind: 'weekly', time: '18:30', days: [1, 4] }), '30 18 * * 1,4');
+  // The schedule in the planner's terms: days of the week and a time (the one planner starts it: tests/planner.test.ts).
+  assert.equal(planOf({ kind: 'none' }), null);
+  assert.deepEqual(planOf({ kind: 'daily', time: '09:05' }), { kind: 'weekly', days: [0, 1, 2, 3, 4, 5, 6], times: ['09:05'] });
+  assert.deepEqual(planOf({ kind: 'weekly', time: '18:30', days: [1, 4] }), { kind: 'weekly', days: [1, 4], times: ['18:30'] });
 });
 
 test('workflows: bots work in turn, the check loops back, the owner approves, the result is told', async () => {
@@ -169,20 +171,33 @@ test('workflows: versions, restore, templates, webhook with a key, bots start an
   const t = await startTestApp();
   try {
     const owner = t.app.ctx.auth.owner()!;
-    await assert.rejects(t.api('POST', '/workflows', { template: 'productpagina' }), /Maak eerst een bot/);
+    await assert.rejects(t.api('POST', '/workflows', { template: 'tekst' }), /Maak eerst een bot/);
     const seo = await t.agent({ name: 'SEO & Content' });
-    const ads = await t.agent({ name: 'Ads & Shopping' });
-    const service = await t.agent({ name: 'Klantenservice' });
+    const research = await t.agent({ name: 'Onderzoeker', role: 'Zoekt dingen uit' });
+    const writer = await t.agent({ name: 'Schrijver', role: 'Schrijft teksten' });
+    const checker = await t.agent({ name: 'Controleur', role: 'Controleert teksten op kwaliteit' });
+    const service = await t.agent({ name: 'Klantenservice', role: 'Beantwoordt vragen' });
 
-    // A template picks the owner's own bots by what they are called.
-    const tpl = await t.api('POST', '/workflows', { template: 'ads-controle' });
-    assert.equal(tpl.name, 'Wekelijkse controle Ads en Shopping');
-    assert.ok(tpl.steps.filter((s: any) => s.kind === 'bot').every((s: any) => s.agentId === ads.id));
-    const klant = await t.api('POST', '/workflows', { template: 'klantvraag' });
-    assert.equal(klant.steps[1].agentId, service.id);
-    const page = await t.api('POST', '/workflows', { template: 'productpagina' });
-    const back = page.steps.find((s: any) => s.kind === 'condition');
-    assert.equal(back.gotoStep, page.steps[1].id, 'the check goes back to the writer');
+    // The ready-made workflows fit any business: no webshop, product, ads or orders in the code (that is what a user
+    // sets up himself). A template picks the owner's own bots by what they are called.
+    const list = (await t.api('GET', '/workflows/templates')).templates;
+    assert.deepEqual(list.map((x: any) => x.id), ['tekst', 'bericht', 'onderzoek', 'overzicht']);
+    const words = JSON.stringify(TEMPLATES);
+    for (const w of ['webshop', 'product', 'Merchant', 'Ads', 'Shopping', 'SEO', 'order', 'klacht', 'campagne']) assert.ok(!new RegExp(w, 'i').test(words), `a template is about one kind of business: “${w}”`);
+    const text = await t.api('POST', '/workflows', { template: 'tekst' });
+    assert.equal(text.name, 'Tekst schrijven en laten controleren');
+    assert.deepEqual(text.steps.filter((s: any) => s.kind === 'bot').map((s: any) => s.agentId), [research.id, writer.id, checker.id, service.id]);
+    const back = text.steps.find((s: any) => s.kind === 'condition');
+    assert.equal(back.gotoStep, text.steps[1].id, 'the check goes back to the writer');
+    assert.deepEqual(text.steps.map((s: any) => s.kind), ['bot', 'bot', 'bot', 'condition', 'approval', 'bot', 'notify']);
+    const reply = await t.api('POST', '/workflows', { template: 'bericht' });
+    assert.equal(reply.steps[1].agentId, service.id);
+    assert.equal(reply.steps[2].kind, 'approval', 'a message to someone else waits for the owner');
+    const study = await t.api('POST', '/workflows', { template: 'onderzoek' });
+    assert.equal(study.steps[0].agentId, research.id);
+    assert.ok(!study.steps.some((s: any) => s.kind === 'approval'), 'finding something out asks nothing');
+    const review = await t.api('POST', '/workflows', { template: 'overzicht' });
+    assert.equal(review.steps.at(-1).kind, 'notify');
 
     // Versions: a change of the steps is a new version; a rename is not; restore brings the old steps back as a new one.
     const wf = await t.api('POST', '/workflows', { name: 'Kort', steps: [{ id: 'a', kind: 'bot', title: 'Een', agentId: seo.id, prompt: 'Doe een' }] });

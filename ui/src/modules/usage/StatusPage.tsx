@@ -13,6 +13,8 @@ import { Badge, Button, EmptyState, Input, Page, PageHeader, cx, timeAgo, toast,
 import { StopAllButton } from '../../shell/Sidebar';
 import { isUnread, markSeen, onSeen } from '../../shell/unread';
 import { openDock } from '../browser/BrowserDock';
+import { PLACE } from '../../../../shared/places.js';
+import { tText } from '../../lib/format';
 
 /** What the desktop shell adds for the floating status window (preload.ts). */
 interface DesktopStatusBridge {
@@ -354,11 +356,11 @@ export function StatusView({ floating }: { floating?: boolean }) {
                     </span>
                   </button>
                   {failed && (
-                    <Button size="icon" variant="ghost" aria-label={`${name}: opnieuw proberen`} title="Opnieuw proberen" loading={busy === t.id} onClick={() => retry(t)}>
+                    <Button size="icon" variant="ghost" aria-label={tText('{0}: opnieuw proberen', name)} title="Opnieuw proberen" loading={busy === t.id} onClick={() => retry(t)}>
                       <RotateCcw className="h-3.5 w-3.5" />
                     </Button>
                   )}
-                  <Button size="icon" variant="ghost" aria-label={`${name}: gezien`} title="Gezien" onClick={() => markSeen(t.id, t.updated_at)}>
+                  <Button size="icon" variant="ghost" aria-label={tText('{0}: gezien', name)} title="Gezien" onClick={() => markSeen(t.id, t.updated_at)}>
                     <Check className="h-4 w-4" />
                   </Button>
                 </li>
@@ -431,7 +433,7 @@ export function StatusView({ floating }: { floating?: boolean }) {
               }
               return (
                 <li key={r.id} className="flex items-center gap-2.5 px-2.5 py-2">
-                  <button type="button" className="flex min-w-0 flex-1 items-center gap-2.5 text-start" onClick={() => openThread(r.thread_id, !!floating)} aria-label={`${agent?.name || 'Bot'}: ${what} — gesprek openen`}>
+                  <button type="button" className="flex min-w-0 flex-1 items-center gap-2.5 text-start" onClick={() => openThread(r.thread_id, !!floating)} aria-label={t('{0}: {1} — gesprek openen', agent?.name || 'Bot', t(what))}>
                     <LiveBotAvatar bot={agent || { id: r.agent_id, name: 'Bot' }} size={floating ? 26 : 30} />
                     <span className="min-w-0 flex-1">
                       <span className="flex items-baseline gap-1.5">
@@ -441,7 +443,7 @@ export function StatusView({ floating }: { floating?: boolean }) {
                       <span className={cx('block truncate text-[12.5px]', r.status === 'waiting' ? 'text-warn' : 'text-muted')}>{what}</span>
                     </span>
                   </button>
-                  <Button size="icon" variant="ghost" aria-label={`${agent?.name || 'Bot'} stoppen`} title="Stoppen" loading={busy === r.id} onClick={() => stop(r.id)}>
+                  <Button size="icon" variant="ghost" aria-label={t('{0} stoppen', agent?.name || 'Bot')} title="Stoppen" loading={busy === r.id} onClick={() => stop(r.id)}>
                     <Square className="h-3.5 w-3.5 fill-current" />
                   </Button>
                 </li>
@@ -485,7 +487,7 @@ export function FloatingStatus() {
           <Button size="icon" variant="ghost" aria-label="TeamBot openen" title="TeamBot openen" onClick={() => desktopBridge()?.show?.('#/m/usage/status')}>
             <ExternalLink className="h-3.5 w-3.5" />
           </Button>
-          <Button size="icon" variant="ghost" aria-label="Statusvenster verbergen" title="Verbergen (aanzetten via het systeemvak of Instellingen › Limieten)" onClick={() => desktopBridge()?.statusWindow?.hide()}>
+          <Button size="icon" variant="ghost" aria-label="Statusvenster verbergen" title={t('Verbergen (aanzetten via het systeemvak of {0})', t(PLACE.limits))} onClick={() => desktopBridge()?.statusWindow?.hide()}>
             <X className="h-4 w-4" />
           </Button>
         </div>

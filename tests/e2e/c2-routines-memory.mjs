@@ -13,7 +13,7 @@ import { createRequire } from 'node:module';
 
 const require = createRequire(import.meta.url);
 const { chromium } = require('playwright-core');
-const { createApp } = await import('../../server/app.ts');
+const { createApp } = await import('./server.mjs');
 
 const step = (s) => console.log(`• ${s}`);
 const fail = (s) => {
@@ -175,7 +175,8 @@ try {
   await page.getByRole('dialog', { name: 'Geheim roteren' }).getByRole('button', { name: 'Nieuw geheim maken' }).click();
   await page.getByRole('dialog', { name: 'Nieuw geheim' }).waitFor({ timeout: 8000 });
   await page.keyboard.press('Escape');
-  const banner = page.getByRole('status').filter({ hasText: /Oud geheim werkt nog tot \d{2}:\d{2}/ });
+  // "tot 14:20", or with the day in front when the 15 minutes run past midnight ("tot vr 13 nov 00:10").
+  const banner = page.getByRole('status').filter({ hasText: /Oud geheim werkt nog tot .*\d{2}:\d{2}/ });
   await banner.waitFor({ timeout: 8000 }).catch(() => fail('b: kaart toont niet tot wanneer het oude geheim werkt'));
   if ((await hook(trg.id, second)) !== 202) fail('b: oud geheim werkt niet binnen de gekozen overgangstijd');
   await shot(page, 'c2-6b-oud-geheim-tot-desktop');
@@ -220,7 +221,7 @@ try {
   await sleep(600);
   const after = (await api('GET', '/memory/items?scope=about_you&status=all')).items;
   if (after.find((i) => i.id === max.id)?.status !== 'active' || after.find((i) => i.id === mo.id)?.status !== 'superseded') fail('c: "Nieuwe bewaren" vervangt het oude niet');
-  await go(page, '#/m/memory/opslag');
+  await go(page, '#/m/memory/opslag?meer=1');
   const conflictSel = page.getByRole('combobox', { name: 'Bij tegenspraak' });
   await conflictSel.waitFor({ timeout: 8000 }).catch(() => fail('c: instelling "Bij tegenspraak" ontbreekt'));
   if ((await conflictSel.inputValue()) !== 'ask') fail('c: standaard is niet "Eerst aan mij vragen"');
@@ -236,6 +237,9 @@ try {
   fs.writeFileSync(f1, '# Verbouwing keuken\n\nNieuwe keuken met kookeiland, aannemer Jansen, start in week 11.\n\n## Offerte\n- € 18.400\n');
   fs.writeFileSync(f2, 'Klant sinds 2021; bestelt elke maand kozijnen.\n\n- Contact: Petra\n');
   fs.writeFileSync(f3, '# Thuisnetwerk\n\nHet wachtwoord is Zomer2026!Huis\n');
+  // Every note belongs to a dossier now (the owner, lessons, a bot's work notes …): what the earlier parts wrote is
+  // already in dossiers. The import is judged by what it adds to those.
+  const dossiersBefore = new Set((await api('GET', '/memory/dossiers')).map((d) => d.id));
   await go(page, '#/m/memory/dossiers');
   await page.getByRole('button', { name: 'Meer acties bij dossiers' }).click({ timeout: 10000 });
   await page.getByRole('menuitem', { name: 'Importeren uit Markdown' }).click({ timeout: 10000 });
@@ -245,13 +249,16 @@ try {
   await prevList.waitFor({ timeout: 8000 });
   await imp.getByText('Verbouwing keuken').waitFor({ timeout: 5000 });
   if (!(await prevList.getByText('Geweigerd').count())) fail('d: bestand met wachtwoord niet geweigerd in het voorbeeld');
-  if ((await api('GET', '/memory/dossiers')).length !== 0) fail('d: voorbeeld maakte al dossiers');
+  {
+    const extra = (await api('GET', '/memory/dossiers')).filter((d) => !dossiersBefore.has(d.id));
+    if (extra.length) fail(`d: voorbeeld maakte al dossiers (${extra.map((d) => d.title).join(', ')})`);
+  }
   await shot(page, 'c2-6d-voorbeeld-desktop');
   await imp.getByRole('button', { name: 'Importeren (2)' }).click();
   await imp.getByRole('list', { name: 'Resultaat van de import' }).waitFor({ timeout: 8000 });
   await shot(page, 'c2-6d-resultaat-desktop');
   await imp.getByRole('button', { name: 'Klaar' }).click();
-  const dossiers = await api('GET', '/memory/dossiers');
+  const dossiers = (await api('GET', '/memory/dossiers')).filter((d) => !dossiersBefore.has(d.id));
   const titles = dossiers.map((d) => d.title).sort();
   if (JSON.stringify(titles) !== JSON.stringify(['Klant Bouwmaat', 'Verbouwing keuken'])) fail(`d: verkeerde dossiers: ${titles.join(', ')}`);
   const full = await api('GET', `/memory/dossiers/${dossiers.find((d) => d.title === 'Verbouwing keuken').id}`);
@@ -292,7 +299,7 @@ try {
   await sleep(600);
   const conf = app.ctx.store.get('memory_items', fact.id);
   if (Math.round((Date.parse(conf.review_at) - Date.now()) / 864e5) !== 90) fail('e: "Klopt nog" plant niet over 3 maanden opnieuw');
-  await go(page, '#/m/memory/opslag');
+  await go(page, '#/m/memory/opslag?meer=1');
   const def = page.getByRole('combobox', { name: 'Standaard nakijken' });
   await def.waitFor({ timeout: 8000 }).catch(() => fail('e: standaard-interval ontbreekt in Opslag'));
   await def.evaluate((el) => el.scrollIntoView({ block: 'center' }));

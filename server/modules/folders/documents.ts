@@ -3,8 +3,9 @@ import path from 'node:path';
 import AdmZip from 'adm-zip';
 import TurndownService from 'turndown';
 import type { ToolDef } from '../../core/types.js';
-import { resolveInWorkspace } from '../../tools/builtin/files.js';
+import { refuseReadOf, resolveInWorkspace } from '../../tools/builtin/files.js';
 import { MAX_OCR_PAGES, OCR_HINT, isImage, ocrEngine } from './ocr.js';
+import { words } from '../../../shared/i18n-core.js';
 
 /**
  * read_document (A-39): the text of a document in the bot's folders, as a plain TeamBot read tool. A CLI engine
@@ -12,8 +13,8 @@ import { MAX_OCR_PAGES, OCR_HINT, isImage, ocrEngine } from './ocr.js';
  * this is one read step that needs no approval (risk "read", only inside the bot's folders).
  *
  * One entry (`readDocument`) for every kind, also used for dossier sources:
- *  - pdf: pdf.js (pdfjs-dist, Apache-2.0); pages without a text layer (scans) are read with OCR (ocr.ts) when the
- *    owner downloaded the language data, else an honest note says how;
+ *  - pdf: pdf.js (pdfjs-dist, Apache-2.0); pages without a text layer (scans) are read with OCR (ocr.ts; the first
+ *    scan fetches the language data by itself, and when that fails an honest note says the next scan tries again);
  *  - Word (.docx): mammoth (BSD-2-Clause) to HTML, then turndown to markdown, so headings, lists and tables stay;
  *    when mammoth fails the plain reader below still gives the paragraphs;
  *  - Excel (.xlsx): read-excel-file (MIT), every sheet as a markdown table;
@@ -77,7 +78,8 @@ export async function pdfText(data: Uint8Array, pages?: string, o: { maxChars?: 
   const maxChars = o.maxChars ?? MAX_CHARS;
   const lib = await loadPdfJs();
   // pdf.js may detach the buffer it gets: PDFium (for scans) reads its own copy.
-  const copy = o.ocr !== false && ocrEngine()?.ready() ? data.slice() : null;
+  const engine = o.ocr === false ? null : ocrEngine();
+  const copy = engine ? data.slice() : null;
   const task = lib.getDocument({ data, useSystemFonts: false, disableFontFace: true, verbosity: 0 });
   const doc = await task.promise;
   const bodies = new Map<number, string>();
@@ -108,8 +110,8 @@ export async function pdfText(data: Uint8Array, pages?: string, o: { maxChars?: 
   }
   const scanned = [...bodies].filter(([, b]) => b.replace(/\s/g, '').length < 3).map(([n]) => n);
   const ocr: number[] = [];
-  const engine = ocrEngine();
-  if (scanned.length && copy && engine?.ready()) {
+  // The first scan fetches the language data by itself (ocr.ts `ensure`).
+  if (scanned.length && copy && engine && (await engine.ensure())) {
     const todo = scanned.slice(0, MAX_OCR_PAGES);
     const got = await engine.pdfPages(copy, todo);
     for (const [n, t] of got) {
@@ -342,7 +344,12 @@ export async function readDocument(file: string, o: { pages?: string; name?: str
   if (kind === 'pdf') {
     const r = await pdfText(new Uint8Array(buf), o.pages, { maxChars: o.maxChars, ocr: o.ocr });
     if (r.ocr.length) notes.push(r.ocr.length === 1 ? `Pagina ${r.ocr[0]} is een scan en is gelezen met tekstherkenning (OCR); controleer namen en getallen.` : `${r.ocr.length} pagina's zijn scans en zijn gelezen met tekstherkenning (OCR); controleer namen en getallen.`);
-    if (r.unread.length) notes.push(ocrEngine()?.ready() ? `Pagina ${r.unread.join(', ')} ${r.unread.length === 1 ? 'is' : 'zijn'} niet gelezen: per keer leest TeamBot ${MAX_OCR_PAGES} gescande pagina's. Vraag om de volgende pagina's met pages.` : `Pagina ${r.unread.join(', ')} ${r.unread.length === 1 ? 'is een scan' : 'zijn scans'} zonder tekst. ${OCR_HINT}`);
+    const engine = ocrEngine();
+    // One whole sentence per form ("Pagina 4 is", "Pagina's 4, 5 zijn"): never "is"/"zijn" as a value in one sentence.
+    const one = r.unread.length === 1;
+    const pages = r.unread.join(', ');
+    if (r.unread.length && engine?.ready()) notes.push(one ? `Pagina ${pages} is niet gelezen: per keer leest TeamBot ${MAX_OCR_PAGES} gescande pagina's. Vraag om de volgende pagina's met pages.` : `Pagina's ${pages} zijn niet gelezen: per keer leest TeamBot ${MAX_OCR_PAGES} gescande pagina's. Vraag om de volgende pagina's met pages.`);
+    else if (r.unread.length) notes.push(one ? `Pagina ${pages} is een scan zonder tekst. ${engine?.problem() ?? OCR_HINT}` : `Pagina's ${pages} zijn scans zonder tekst. ${engine?.problem() ?? OCR_HINT}`);
     if (r.truncated) notes.push("De tekst is afgekapt; vraag om minder pagina's.");
     const head = `${name} — pdf, ${r.pages} ${r.pages === 1 ? 'pagina' : "pagina's"}${r.shown.length < r.pages ? ` (getoond: ${r.shown.length})` : ''}`;
     return { kind, head, text: r.text, notes, pdf: r };
@@ -354,8 +361,8 @@ export async function readDocument(file: string, o: { pages?: string; name?: str
   if (kind === 'excel') return { kind, head: `${name} — Excel-werkmap`, text: await xlsxText(buf), notes };
   if (kind === 'powerpoint') return { kind, head: `${name} — PowerPoint-presentatie`, text: pptxText(buf), notes };
   if (kind === 'image') {
-    const engine = ocrEngine();
-    if (o.ocr === false || !engine?.ready()) throw new Error(`Dit is een afbeelding. ${OCR_HINT}`);
+    const engine = o.ocr === false ? null : ocrEngine();
+    if (!engine || !(await engine.ensure())) throw new Error(`Dit is een afbeelding. ${engine?.problem() ?? OCR_HINT}`);
     const text = await engine.recognize(buf);
     notes.push('Gelezen met tekstherkenning (OCR); controleer namen en getallen.');
     return { kind, head: `${name} — afbeelding`, text: text || '(geen tekst gevonden op deze afbeelding)', notes };
@@ -379,7 +386,8 @@ export const readDocumentTool: ToolDef = {
     'Lees de tekst van een pdf (ook een scan), Word-document (.docx), Excel-werkmap (.xlsx), PowerPoint (.pptx), foto van een tekst of tekstbestand in je werkmap of je andere mappen (bijv. een bijlage in uploads/). Gebruik dit in plaats van een script of opdracht in de terminal. Optioneel pages, bijv. "1-3".',
   parameters: { type: 'object', properties: { path: { type: 'string', description: 'Pad in je werkmap of een van je mappen' }, pages: { type: 'string', description: 'Alleen deze pagina\'s van een pdf, bijv. "1-3,5"' } }, required: ['path'] },
   // An attachment's short id ("uploads/ac62bc-offerte.pdf") means nothing to the owner: "Document lezen: offerte.pdf".
-  summarize: (a) => `Document lezen: ${String(a.path ?? '').replace(/(^|[\\/])uploads[\\/][0-9a-f]{6}-/i, '$1')}`,
+  summarize: (a) => words('Document lezen: {0}', String(a.path ?? '').replace(/(^|[\\/])uploads[\\/][0-9a-f]{6}-/i, '$1')),
+  refuse: refuseReadOf('path'),
   async run(a, t) {
     const f = resolveInWorkspace(t.agent, String(a.path || ''));
     if (!fs.existsSync(f)) return { text: `Bestand niet gevonden: ${a.path}`, isError: true };

@@ -3,15 +3,15 @@ import path from 'node:path';
 import type { Agent, Ctx } from '../../core/types.js';
 import { defineTable, newId, now } from '../../core/db.js';
 import { HttpError } from '../../core/http.js';
-import { resolveInWorkspace } from '../../tools/builtin/files.js';
+import { fullAccess } from '../../tools/builtin/files.js';
 import { type FileMap, checkLimits, checksumOf, safeRelPath, totalSize, writeFilesAtomic } from './files.js';
 import { type ParsedSkill, parseSkillMd } from './format.js';
-import { type Permissions, type PermissionDiff, type ScanResult, diffPermissions, permissionsOf, scanSkill, scriptsChecksum } from './scan.js';
+import type { PermissionDiff, Permissions } from '../../../shared/skills.js';
+import { type ScanResult, diffPermissions, permissionsOf, scanSkill, scriptsChecksum } from './scan.js';
 import { type PackageInfo, infoSummary } from './publishers.js';
 
 defineTable('skills', { json: ['source', 'labels', 'package'], bool: ['pinned'] });
 defineTable('skill_versions', { json: ['meta', 'scan', 'permissions', 'source', 'warnings', 'package'] });
-defineTable('skill_materializations', { json: ['files'] });
 
 export const MAX_REVISIONS = 50;
 
@@ -210,6 +210,17 @@ DROP INDEX IF EXISTS skills_user_name;
 CREATE UNIQUE INDEX skills_team_name ON skills(user_id, install_scope, COALESCE(team_id, ''), name) WHERE status != 'draft';
 `,
   },
+  // An install makes a skill's scripts usable (SkillLibrary.installed). What was installed before that, with its scripts
+  // still off, gets the same once: not a bot's own skill, a draft, or one whose scripts the owner switched off himself.
+  {
+    id: 'skills-006',
+    sql: `
+UPDATE skills SET trusted_scripts = (SELECT v.scripts_checksum FROM skill_versions v WHERE v.skill_id = skills.id AND v.rev = skills.active_rev)
+WHERE kind = 'scripts' AND status != 'draft' AND COALESCE(json_extract(source, '$.type'), '') != 'bot'
+  AND COALESCE((SELECT v.scripts_checksum FROM skill_versions v WHERE v.skill_id = skills.id AND v.rev = skills.active_rev), '') != ''
+  AND NOT EXISTS (SELECT 1 FROM audit a WHERE a.user_id = skills.user_id AND a.kind = 'skill.untrusted' AND json_extract(a.data, '$.skill') = skills.name);
+`,
+  },
 ];
 
 const ID_SAFE = /^[A-Za-z0-9_-]{1,80}$/;
@@ -346,6 +357,18 @@ export class SkillLibrary {
 
   teamName(teamId: string | null): string {
     return (teamId && this.teams?.team(teamId)?.name) || '';
+  }
+
+  /**
+   * Can the skills of this bot be worked out by only reading? The teams module gives a bot its team at the first
+   * question about that bot, so with more than one team, asking about a bot that has no team (a new bot before the
+   * teams module's own turn, a bot that is being removed) would decide its team from here. Such a bot waits: when it
+   * gets its team, "teams.changed" follows and it is brought up to date then. With one team nothing here asks.
+   */
+  placed(agent: Pick<Agent, 'id' | 'user_id'>): boolean {
+    const t = this.teams;
+    if (!t?.multi?.(agent.user_id)) return true;
+    return (t.list(agent.user_id) as { id: string }[]).some((team) => t.botsOf(team.id).includes(agent.id));
   }
 
   /**
@@ -561,6 +584,7 @@ export class SkillLibrary {
       if (/UNIQUE/i.test(String(e?.message))) throw new HttpError(409, `Je hebt al een skill met de naam "${a.parsed.meta.name}".`);
       throw e;
     }
+    if (status === 'active') this.changed(userId);
     return this.get(userId, id)!;
   }
 
@@ -624,6 +648,7 @@ export class SkillLibrary {
       if (/UNIQUE/i.test(String(e?.message))) throw new HttpError(409, `Je hebt al een andere skill met de naam "${v.meta.name}".`);
       throw e;
     }
+    this.changed(s.user_id);
   }
 
   /** Switch to another stored revision (rollback / roll forward). */
@@ -647,7 +672,7 @@ export class SkillLibrary {
       if (/UNIQUE/i.test(String(e?.message))) throw new HttpError(409, `Je hebt al een skill met de naam "${skill.name}".`);
       throw e;
     }
-    if (status !== 'active') this.cleanupSkillMaterializations(skill);
+    this.changed(skill.user_id);
   }
 
   setPinned(skill: SkillRow, pinned: boolean) {
@@ -670,6 +695,7 @@ export class SkillLibrary {
       if (/UNIQUE/i.test(String(e?.message))) throw new HttpError(409, `Daar is al een skill met de naam "${skill.name}".`);
       throw e;
     }
+    this.changed(skill.user_id);
     return this.ctx.store.get<SkillRow>('skills', skill.id)!;
   }
 
@@ -677,11 +703,53 @@ export class SkillLibrary {
     const v = this.version(skill);
     if (skill.kind !== 'scripts' || !v?.scripts_checksum) throw new HttpError(400, 'Deze skill bevat geen scripts; vertrouwen is niet nodig.');
     this.ctx.store.update('skills', skill.id, { trusted_scripts: trusted ? v.scripts_checksum : null, updated_at: now() });
-    if (!trusted) this.cleanupSkillMaterializations(skill);
+    this.changed(skill.user_id);
   }
 
-  noteUse(skill: SkillRow) {
+  /**
+   * An install (the owner's click, or a bot on his word: the importer, a template) makes a skill usable at once for the
+   * whole team, scripts included: they are trusted, and a script runs like any command at the bot's own level (asked on
+   * "Vragen", done from "Automatisch" on, not at all on "Alleen lezen"). The owner switches them off under Veiligheid.
+   */
+  installed(skill: SkillRow) {
+    const cur = this.ctx.store.get<SkillRow>('skills', skill.id);
+    const v = cur && this.version(cur);
+    if (cur?.kind === 'scripts' && v?.scripts_checksum && cur.trusted_scripts !== v.scripts_checksum) this.setTrusted(cur, true);
+  }
+
+  /**
+   * A bot used this skill: counted and logged in this one place, whether TeamBot handed the text over (`skill_load`)
+   * or the engine loaded the skill folder itself (its own skill tool in the stream TeamBot reads).
+   */
+  used(agent: Pick<Agent, 'id' | 'user_id'>, skill: SkillRow, userId = agent.user_id) {
     this.ctx.store.exec('UPDATE skills SET use_count = use_count + 1, last_used_at = ? WHERE id = ?', now(), skill.id);
+    this.ctx.audit(userId, 'skill.loaded', { skill: skill.name, rev: skill.active_rev, checksum: skill.checksum }, agent.id);
+  }
+
+  // ---------- after a change ----------
+  /**
+   * Set by the module: bring the skill folders in the work folders of this owner's bots up to date (workspace.ts).
+   * Every write here that changes which skills a bot has, or what is in them, ends in it, so no install path can
+   * forget it.
+   */
+  onChange: ((userId: string) => void) | null = null;
+  private waiting: Set<string> | null = null;
+
+  private changed(userId: string) {
+    if (this.waiting) this.waiting.add(userId);
+    else this.onChange?.(userId);
+  }
+
+  /** Several writes in one go (a pack of skills): the work folders are brought up to date once, at the end. */
+  batch<T>(fn: () => T): T {
+    if (this.waiting) return fn();
+    const users = (this.waiting = new Set<string>());
+    try {
+      return fn();
+    } finally {
+      this.waiting = null;
+      for (const u of users) this.onChange?.(u);
+    }
   }
 
   /** Keep the newest revisions (and always the active one). */
@@ -694,9 +762,8 @@ export class SkillLibrary {
     }
   }
 
-  /** Uninstall: managed storage, managed workspace copies and enablement only. */
+  /** Uninstall: managed storage and enablement; the work folders follow (onChange). */
   remove(skill: SkillRow) {
-    this.cleanupSkillMaterializations(skill);
     for (const a of this.ctx.store.agents(skill.user_id, { archived: true })) {
       if (a.skills?.includes(skill.id)) {
         const upd = this.ctx.store.updateAgent(a.id, { skills: a.skills.filter((x) => x !== skill.id) });
@@ -707,128 +774,68 @@ export class SkillLibrary {
     if (path.resolve(dir).startsWith(path.resolve(this.root(skill.user_id)) + path.sep)) fs.rmSync(dir, { recursive: true, force: true });
     this.ctx.store.tx(() => {
       this.ctx.store.exec('DELETE FROM skill_versions WHERE skill_id = ?', skill.id);
+      this.ctx.store.exec('DELETE FROM skill_offers WHERE skill_id = ?', skill.id);
       this.ctx.store.remove('skills', skill.id);
     });
+    this.changed(skill.user_id);
   }
 
-  // ---------- per-bot enablement ----------
+  // ---------- which skills a bot has ----------
+  /** Set by the module (defaults.ts): put on a bot's list what it has and was not on it yet; the bot as stored now. */
+  offer: ((agent: Pick<Agent, 'id' | 'user_id'>) => Agent | null) | null = null;
+
   /**
-   * Active skills enabled for this bot that belong to the bot's owner (sorted by name), and that the bot's team may
-   * see: its own team's, those for all teams, and (to read) those of teams it may look into. A skill of a team the bot
-   * has no access to is left out, also when it is still in its list (it moved, or lost access).
+   * The one rule for which skills a bot has: the active skills of its team (those for all teams included, and to read
+   * those of a team it may look into), minus the ones taken away from this bot. Sorted by name. The prompt, the tools,
+   * the "/" menu and the skill folders in the work folder all read this.
    */
   enabledFor(agent: Agent): SkillRow[] {
-    const ids = Array.isArray(agent.skills) ? agent.skills.filter((x) => typeof x === 'string') : [];
-    if (!ids.length) return [];
-    const rows = this.ctx.store.all<any>(`SELECT * FROM skills WHERE user_id = ? AND status = 'active' AND id IN (${ids.map(() => '?').join(',')}) ORDER BY name`, agent.user_id, ...ids);
+    const off = this.takenAway(agent);
+    return this.ofTeam(agent).filter((s) => !off.has(s.id));
+  }
+
+  private ofTeam(agent: Agent): SkillRow[] {
+    const rows = this.ctx.store.all<any>("SELECT * FROM skills WHERE user_id = ? AND status = 'active' ORDER BY name", agent.user_id);
     return rows.map((r) => this.ctx.store.decode<SkillRow>('skills', r)).filter((s) => this.reach(agent, s) !== 'none');
   }
 
+  /**
+   * The skills taken away from a bot: once on its list (skill_offers keeps that) and no longer on it, also when that
+   * was its last one. A skill that never was on its list was not taken away, so a new skill or a new bot needs nobody
+   * to switch anything on.
+   */
+  takenAway(agent: Pick<Agent, 'id' | 'user_id'>): Set<string> {
+    const cur = this.ctx.store.agent(agent.id);
+    // A shared bot in a member's conversation is a copy with the member's id: nothing was taken away from that copy.
+    if (!cur || cur.user_id !== agent.user_id) return new Set();
+    const list = new Set(Array.isArray(cur.skills) ? cur.skills : []);
+    return new Set(this.ctx.store.all<{ skill_id: string }>('SELECT skill_id FROM skill_offers WHERE agent_id = ?', cur.id).map((r) => r.skill_id).filter((id) => !list.has(id)));
+  }
+
+  /**
+   * May the scripts of a skill be in this bot's work folder and run there: only a skill of its own team (or for all
+   * teams) that the owner trusts. On "Volledige toegang" a script is a command like any other the bot may run.
+   */
+  scriptsFor(agent: Agent, skill: SkillRow): boolean {
+    return skill.kind === 'scripts' && this.reach(agent, skill) === 'use' && (this.isTrusted(skill) || fullAccess(agent));
+  }
+
+  /**
+   * The owner (or the bot itself) says which skills this bot has: of the skills its team has now, what is left out is
+   * taken away from it and what is named is given (back). A skill that is switched off keeps its place on the list.
+   */
   setAgentSkills(agent: Agent, ids: string[]): Agent {
-    const valid = [...new Set(ids)].filter((id) => {
-      const s = this.get(agent.user_id, id);
-      return s && s.status !== 'draft' && this.reach(agent, s) !== 'none';
-    });
-    const removed = (agent.skills || []).filter((x) => !valid.includes(x));
-    const upd = this.ctx.store.updateAgent(agent.id, { skills: valid });
-    for (const id of removed) {
-      const m = this.ctx.store.one<any>('SELECT * FROM skill_materializations WHERE agent_id = ? AND skill_id = ?', agent.id, id);
-      if (m) this.cleanupMaterialization(this.ctx.store.decode('skill_materializations', m));
-    }
+    // First on its list what it has, so that leaving a skill out below is kept as "taken away".
+    const cur = this.offer?.(agent) || this.ctx.store.agent(agent.id) || agent;
+    const now = new Set(this.ofTeam(cur).map((s) => s.id));
+    const list = [...new Set([...(cur.skills || []).filter((id) => !now.has(id) || ids.includes(id)), ...ids.filter((id) => now.has(id))])];
+    const upd = this.ctx.store.updateAgent(agent.id, { skills: list });
     this.ctx.events.emit(agent.user_id, 'agent.updated', upd);
     return upd;
   }
 
-  // ---------- scripts in the workspace (only for trusted skills) ----------
-  /**
-   * Copy the files of a trusted skill into `<workspace>/.skills/<name>/` so the bot can run them with the
-   * normal shell tool (and its normal approval). A marker file records exactly which paths we manage.
-   */
-  materialize(agent: Agent, skill: SkillRow): { dir: string; rel: string; files: string[] } {
-    if (!this.isTrusted(skill)) throw new HttpError(403, 'Deze skill is niet vertrouwd; scripts zijn geblokkeerd.');
-    const rel = `.skills/${skill.name}`;
-    const target = resolveInWorkspace(agent, rel);
-    const markerFile = path.join(target, '.teambot-skill.json');
-    let previous: string[] = [];
-    if (fs.existsSync(target)) {
-      if (!fs.existsSync(markerFile)) throw new HttpError(409, `De map ${rel} bestaat al en wordt niet door TeamBot beheerd; hernoem of verwijder die map eerst.`);
-      let mk: any = null;
-      try {
-        mk = JSON.parse(fs.readFileSync(markerFile, 'utf8'));
-      } catch {
-        /* ignore */
-      }
-      if (mk?.skillId !== skill.id) throw new HttpError(409, `De map ${rel} hoort bij een andere skill.`);
-      previous = Array.isArray(mk.files) ? mk.files : [];
-    }
-    const files = this.readFiles(skill);
-    const list = [...files.keys()].sort();
-    // Remove managed files that no longer exist in this revision.
-    this.deleteManaged(target, previous.filter((p) => !files.has(p)));
-    for (const [p, b] of files) {
-      const safe = safeRelPath(p);
-      if (!safe) continue;
-      const f = path.join(target, ...safe.split('/'));
-      if (!path.resolve(f).startsWith(path.resolve(target) + path.sep)) continue;
-      fs.mkdirSync(path.dirname(f), { recursive: true });
-      fs.writeFileSync(f, b);
-    }
-    fs.writeFileSync(markerFile, JSON.stringify({ managedBy: 'TeamBot', skillId: skill.id, rev: skill.active_rev, checksum: skill.checksum, files: list }, null, 2));
-    this.ctx.store.exec('DELETE FROM skill_materializations WHERE agent_id = ? AND skill_id = ?', agent.id, skill.id);
-    this.ctx.store.insert('skill_materializations', { id: newId('skm_'), user_id: agent.user_id, agent_id: agent.id, skill_id: skill.id, rev: skill.active_rev, path: target, files: list, created_at: now() });
-    return { dir: target, rel, files: list };
-  }
-
-  private deleteManaged(target: string, rels: string[]) {
-    const base = path.resolve(target);
-    const dirs = new Set<string>();
-    for (const r of rels) {
-      const safe = safeRelPath(r);
-      if (!safe) continue;
-      const f = path.resolve(base, ...safe.split('/'));
-      if (!f.startsWith(base + path.sep)) continue;
-      const st = fs.lstatSync(f, { throwIfNoEntry: false });
-      if (st?.isFile() || st?.isSymbolicLink()) fs.unlinkSync(f);
-      let d = path.dirname(f);
-      while (d.startsWith(base + path.sep)) {
-        dirs.add(d);
-        d = path.dirname(d);
-      }
-    }
-    for (const d of [...dirs].sort((a, b) => b.length - a.length)) {
-      try {
-        fs.rmdirSync(d); // only succeeds when empty
-      } catch {
-        /* not empty or gone: keep */
-      }
-    }
-  }
-
-  cleanupMaterialization(m: { id: string; path: string; files: string[]; skill_id: string }) {
-    const target = m.path;
-    const markerFile = path.join(target, '.teambot-skill.json');
-    try {
-      if (fs.existsSync(markerFile)) {
-        const mk = JSON.parse(fs.readFileSync(markerFile, 'utf8'));
-        if (mk?.skillId === m.skill_id && path.basename(path.dirname(target)) === '.skills') {
-          this.deleteManaged(target, [...new Set([...(m.files || []), ...(Array.isArray(mk.files) ? mk.files : [])])]);
-          fs.unlinkSync(markerFile);
-          for (const d of [target, path.dirname(target)]) {
-            try {
-              fs.rmdirSync(d);
-            } catch {
-              /* user files left: keep */
-            }
-          }
-        }
-      }
-    } catch (e) {
-      this.ctx.log.warn('[skills] cleanup failed', String(e));
-    }
-    this.ctx.store.remove('skill_materializations', m.id);
-  }
-
-  cleanupSkillMaterializations(skill: SkillRow) {
-    for (const r of this.ctx.store.find<any>('skill_materializations', { skill_id: skill.id })) this.cleanupMaterialization(r);
+  /** Give skills (back) to a bot; its other skills stay as they are. */
+  giveSkills(agent: Agent, ids: string[]): Agent {
+    return this.setAgentSkills(agent, [...this.enabledFor(agent).map((s) => s.id), ...ids]);
   }
 }

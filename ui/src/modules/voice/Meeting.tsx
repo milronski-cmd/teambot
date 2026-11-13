@@ -1,12 +1,13 @@
 import { useEffect, useRef, useState } from 'react';
-import { FileText, Mic, Square } from 'lucide-react';
+import { Download, FileText, Mic, Square } from 'lucide-react';
 import { api, upload } from '../../lib/api';
 import { useApp } from '../../lib/store';
 import { navigate } from '../../lib/router';
 import { Badge, Button, Card, EmptyState, Field, Page, PageHeader, Select, Spinner, Textarea, cx, toastError } from '../../components/ui';
 import { closeMic, micProblem, openMic, Recording } from './audio';
 import { PcmCapture, type PcmRecording, unlockAudio } from './capture';
-import { clock, money, transcribeBlob, useVoice } from './api';
+import { clock, mb, money, transcribeBlob, useVoice } from './api';
+import { LocalSetupModal, sttDownload } from './LocalModels';
 import { t, uiLocale } from '../../lib/i18n';
 
 const SEGMENT_MS = 45_000;
@@ -20,6 +21,7 @@ export function MeetingPage() {
   const voice = useVoice();
   const agents = useApp((s) => s.agents).filter((a) => !a.archived && a.provider_id);
   const [consent, setConsent] = useState(false);
+  const [setup, setSetup] = useState(false);
   const [title, setTitle] = useState('');
   const [running, setRunning] = useState(false);
   const [elapsed, setElapsed] = useState(0);
@@ -109,6 +111,7 @@ export function MeetingPage() {
   const makeMinutes = async () => {
     if (!botId || !transcript.trim()) return;
     setBusy(true);
+    const from = location.hash;
     try {
       const name = `${(title || 'vergadering').replace(/[^\w\- ]+/g, '').trim() || 'vergadering'}-transcript.txt`;
       const att = await upload(new Blob([transcript], { type: 'text/plain' }), name);
@@ -118,7 +121,7 @@ export function MeetingPage() {
         attachments: [att.id],
       });
       await useApp.getState().refreshThreads();
-      navigate(`/t/${t.id}`);
+      navigate(`/t/${t.id}`, { from });
     } catch (e) {
       toastError(e);
     } finally {
@@ -137,11 +140,23 @@ export function MeetingPage() {
         ) : !sttReady ? (
           <Card>
             <EmptyState icon={<Mic className="h-6 w-6" />} title="Spraak-naar-tekst is nog niet ingesteld">
-              {voice.info.status.stt.missing || 'Koppel een OpenAI-sleutel of een eigen transcriptiedienst.'}{' '}
-              <a className="underline" href="#/settings/voice-spraak">
-                Naar Instellingen → Spraak
-              </a>
+              {sttDownload(voice.info) ? (
+                <div className="space-y-3">
+                  <p>De gratis spraakherkenning staat nog niet op deze computer. Eén keer downloaden; daarna werkt het offline en gaat je audio niet naar internet.</p>
+                  <Button variant="primary" icon={<Download className="h-4 w-4" />} onClick={() => setSetup(true)}>
+                    {t('Downloaden ({0})', mb(sttDownload(voice.info)))}
+                  </Button>
+                </div>
+              ) : (
+                <>
+                  {voice.info.status.stt.missing || 'Koppel een OpenAI-sleutel of een eigen transcriptiedienst.'}{' '}
+                  <a className="underline" href="#/settings/voice-spraak">
+                    Naar Instellingen › Meer mogelijkheden › Spraak
+                  </a>
+                </>
+              )}
             </EmptyState>
+            {setup && <LocalSetupModal need={['stt']} onClose={() => setSetup(false)} />}
           </Card>
         ) : (
           <Card className="space-y-4 p-5">

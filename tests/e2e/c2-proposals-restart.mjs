@@ -14,7 +14,7 @@ import { DatabaseSync } from 'node:sqlite';
 
 const require = createRequire(import.meta.url);
 const { chromium, devices } = require('playwright-core');
-const { createApp } = await import('../../server/app.ts');
+const { createApp } = await import('./server.mjs');
 const { mockAdapter } = await import('../helpers.ts');
 
 const step = (s) => console.log(`• ${s}`);

@@ -26,6 +26,8 @@ test('skills: one request puts a skill on all bots (or takes it off), archived a
     const a = await t.agent({ name: 'Een' });
     const b = await t.agent({ name: 'Twee' });
     const archived = await t.agent({ name: 'Oud' });
+    // Every bot has the team's active skills from the start (skills/defaults.ts): take it off first, to see the request put it on.
+    for (const x of [a, b, archived]) await t.api('PUT', `/skills/agents/${x.id}`, { skillIds: [] });
     await t.api('PATCH', `/agents/${archived.id}`, { archived: true });
     const all = await t.api('PUT', `/skills/${skillId}/agents`, { agentIds: [a.id, b.id] });
     assert.deepEqual(all.agentIds.sort(), [a.id, b.id].sort());

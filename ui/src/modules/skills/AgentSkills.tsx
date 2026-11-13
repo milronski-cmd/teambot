@@ -12,7 +12,10 @@ import { useTeamStore } from '../teams/scope';
 import { homeMap } from '../../shell/teamFilter';
 import { firstSentence } from '../../lib/sentence';
 
-/** Bot editor section: enable/disable skills per bot (saved together with the bot). */
+/**
+ * Bot editor section. A bot can load every active skill of its team; here the owner may pick the ones this bot names
+ * first in its instructions (optional; nothing picked = all of them, the default). Saved together with the bot.
+ */
 export function AgentSkillsSection({ agent, onChange }: { agent: Agent; onChange(patch: Partial<Agent>): void }) {
   const { list, error, reload } = useSkills();
   const [importing, setImporting] = useState(false);
@@ -38,7 +41,7 @@ export function AgentSkillsSection({ agent, onChange }: { agent: Agent; onChange
   return (
     <div className="space-y-3">
       <p className="text-sm text-muted">
-        De bot laadt de instructies van een skill pas als een taak erom vraagt. Wijzigingen worden bewaard met opslaan.
+        {enabled.length ? 'Deze bot noemt de gekozen skills eerst in zijn instructies. De andere skills van het team kan hij ook laden.' : 'Deze bot gebruikt alle skills van zijn team. Je hoeft hier niets te kiezen.'} Een skill wordt pas geladen als een taak erom vraagt.
       </p>
       {groupOff && enabled.length > 0 && (
         <p className="rounded-lg bg-warn-soft px-3 py-2 text-sm text-warn">De toolgroep “Skills” staat uit voor deze bot; alle instructies komen dan in de prompt (meer tokens).</p>
@@ -77,10 +80,10 @@ export function AgentSkillsSection({ agent, onChange }: { agent: Agent; onChange
                   </div>
                   <p className="line-clamp-1 text-xs text-muted">{firstSentence(s.description)}</p>
                 </div>
-                <a href={`#/m/skills/mine/${s.id}`} className="mt-0.5 rounded p-1 text-muted hover:text-fg" aria-label={`${s.name} bekijken`} title="Bekijken">
+                <a href={`#/m/skills/mine/${s.id}`} className="mt-0.5 rounded p-1 text-muted hover:text-fg" aria-label={t('{0} bekijken', s.name)} title="Bekijken">
                   <Eye className="h-4 w-4" />
                 </a>
-                <Toggle checked={on} disabled={s.status !== 'active'} onChange={(v) => toggle(s.id, v)} label={<span className="sr-only">{`${s.name} ${on ? 'uitschakelen' : 'inschakelen'}`}</span>} />
+                <Toggle checked={on} disabled={s.status !== 'active'} onChange={(v) => toggle(s.id, v)} label={<span className="sr-only">{`${s.name} ${on ? 'niet meer als vaste skill' : 'als vaste skill kiezen'}`}</span>} />
               </li>
             );
           })}
@@ -160,17 +163,45 @@ export function AgentTemplateSection({ agent }: { agent: Agent; onChange(patch: 
   );
 }
 
-/** Extra content under a skill_draft tool card in the chat. */
+
+/**
+ * Under a bot's `skill_save` in the chat: the skill is active for the team at once, or (when it
+ * spends money or writes to customers) a draft that waits for the owner. Which of the two is read from the skill itself.
+ */
 export function SkillDraftRenderer({ call }: { call: ToolCall; message: Message }) {
+  const { list } = useSkills();
   if (call.status !== 'done') return null;
+  const slug = String(call.args?.name || '')
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-|-$/g, '');
+  const mine = (list || []).filter((s) => s.name === slug);
+  const draft = mine.find((s) => s.status === 'draft');
+  const active = mine.find((s) => s.status === 'active');
+  if (!list || (!draft && !active)) return null;
   return (
     <div className="flex flex-wrap items-center gap-2 text-xs">
-      <span>
-        Skillconcept <span className="font-medium">{String(call.args?.name || '')}</span> wacht op jouw beoordeling.
-      </span>
-      <a href="#/m/skills/mine/concepten" className="font-medium text-accent underline">
-        Beoordelen
-      </a>
+      {draft && !active ? (
+        <>
+          <span>
+            Skillconcept <span className="font-medium">{slug}</span> wacht op jouw beoordeling.
+          </span>
+          <a href="#/m/skills/mine/concepten" className="font-medium text-accent underline">
+            Beoordelen
+          </a>
+        </>
+      ) : (
+        <>
+          <span>
+            Skill <span className="font-medium">{slug}</span> is vastgelegd en actief voor het team.
+          </span>
+          <a href={`#/m/skills/mine/${active!.id}`} className="font-medium text-accent underline">
+            Bekijken
+          </a>
+        </>
+      )}
     </div>
   );
 }

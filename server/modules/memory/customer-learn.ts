@@ -27,9 +27,6 @@ import { consolidateFacts } from './consolidate.js';
 import { markCheck } from './refresh.js';
 import { customerDossierOf, extHash, channelCustomer } from './customers.js';
 
-/** Keys a customer has one value of: a new value replaces his earlier one (no model needed). */
-export const CUSTOMER_SINGLE_KEYS = new Set(['adres', 'woonplaats', 'telefoon', 'telefoonnummer', 'e-mail', 'email', 'e-mailadres', 'taal', 'abonnement', 'bestelstatus', 'naam', 'voorkeur contact']);
-
 export const LEARN_CUSTOMER_SYSTEM = `Je bent de klantgeheugenmodule van TeamBot. Je leest berichten van één klant aan de klantenservice van een bedrijf en haalt er feiten uit over DEZE klant, zodat de bot hem de volgende keer kent.
 
 Regels:

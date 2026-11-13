@@ -7,21 +7,24 @@ import { navigate } from '../../lib/router';
 import { useIsDesktop } from '../../lib/media';
 import type { Approval } from '../../lib/types';
 import { BotAvatar } from '../../components/BotFace';
-import { Badge, Button, Card, cx, EmptyState, Field, Input, Modal, Page, PageHeader, Spinner, Textarea, timeAgo, toastError, useAsync } from '../../components/ui';
+import { Badge, Button, Card, cx, EmptyState, Field, Input, Modal, Page, PageHeader, Textarea, timeAgo, useAsync } from '../../components/ui';
 import { MoreInfo } from '../../components/MoreInfo';
 import { Menu, SkeletonRows } from '../../components/overview';
 import { t } from '../../lib/i18n';
-import { useLive, vault, type VaultDraft, type VaultEntry } from './api';
+import { useLive, vault, type VaultDraft } from './api';
+import type { VaultEntryView } from '../../../../shared/vault.js';
 import { openDock } from './BrowserDock';
 import { hostOf, SiteMark } from './SiteMark';
 import { VaultImportDialog } from './VaultImport';
 import { ComputerOnly, useIsPhoneSession } from '../../shell/computerOnly';
+import { useDecide } from '../../shell/approvalDecide';
+import { ApprovalMeta } from '../../shell/ApprovalMeta';
 import { ScriptKeysOverview } from '../script-keys/Overview';
 
 /** "Kluis": the owner's site logins. TeamBot fills them in itself; bots never see a password or a 2FA code. */
 const HOW = (
   <>
-    Moet een bot inloggen, dan vraagt TeamBot jou eerst om toestemming en vult het de gegevens (en een 2FA-code) zelf in. De bot hoort alleen of het gelukt is. Dat gebeurt alleen op precies het adres dat je opgeeft: een nagemaakte site of een ander subdomein
+    Moet een bot inloggen, dan vult TeamBot de gegevens (en een 2FA-code) zelf in. De bot ziet ze nooit en hoort alleen of het gelukt is. Passen er meer accounts bij een site, dan vraagt TeamBot jou welk. Dat gebeurt alleen op precies het adres dat je opgeeft: een nagemaakte site of een ander subdomein
     krijgt niets. Alles staat versleuteld op deze computer.
   </>
 );
@@ -31,8 +34,8 @@ function VaultList({ children }: { children?: React.ReactNode }) {
   const list = useLive(() => vault.list(), ['vault.updated'], []);
   const agents = useApp((s) => s.agents);
   const { busy, run } = useAsync();
-  const [edit, setEdit] = useState<VaultEntry | 'new' | null>(null);
-  const [del, setDel] = useState<VaultEntry | null>(null);
+  const [edit, setEdit] = useState<VaultEntryView | 'new' | null>(null);
+  const [del, setDel] = useState<VaultEntryView | null>(null);
   const [importing, setImporting] = useState(false);
   const nameOf = (id: string) => agents.find((a) => a.id === id)?.name || 'verwijderde bot';
   return (
@@ -105,20 +108,20 @@ function VaultList({ children }: { children?: React.ReactNode }) {
                   ))}
                 </div>
                 <div className="text-xs text-muted">
-                  {e.agent_ids.length ? `Alleen voor: ${e.agent_ids.map(nameOf).join(', ')}` : 'Alle bots mogen erom vragen'}
+                  {e.agent_ids.length ? `Alleen voor: ${e.agent_ids.map(nameOf).join(', ')}` : 'Voor al je bots'}
                   {e.last_used_at ? ` · laatst gebruikt ${timeAgo(e.last_used_at)}` : ''}
                 </div>
                 {e.grants.length > 0 && (
                   <div className="flex flex-wrap items-center gap-1.5 pt-0.5">
-                    <span className="text-xs text-muted">Altijd toegestaan:</span>
+                    <span className="text-xs text-muted">Account onthouden voor:</span>
                     {e.grants.map((g) => (
                       <span key={g.agent_id + g.origin} className="inline-flex items-center gap-1 rounded-full bg-surface-3 py-0.5 ps-2 pe-0.5 text-xs">
                         {nameOf(g.agent_id)} · {hostOf(g.origin)}
                         <button
                           type="button"
                           className="flex h-5 w-5 items-center justify-center rounded-full hover:bg-line coarse:h-8 coarse:w-8"
-                          aria-label={`Altijd toestaan intrekken voor ${nameOf(g.agent_id)}`}
-                          onClick={() => run(() => vault.revoke(e.id, g.agent_id), 'Ingetrokken: er wordt weer om toestemming gevraagd').then(list.reload)}
+                          aria-label={t('Niet meer onthouden voor {0}', nameOf(g.agent_id))}
+                          onClick={() => run(() => vault.revoke(e.id, g.agent_id), 'Vergeten: TeamBot vraagt weer welk account').then(list.reload)}
                         >
                           <X className="h-3 w-3" />
                         </button>
@@ -148,7 +151,7 @@ function VaultList({ children }: { children?: React.ReactNode }) {
       <Modal
         open={!!del}
         onClose={() => setDel(null)}
-        title={`Login verwijderen: ${del?.label || ''}`}
+        title={t('Login verwijderen: {0}', del?.label || '')}
         footer={
           <>
             <Button onClick={() => setDel(null)}>Annuleren</Button>
@@ -164,7 +167,7 @@ function VaultList({ children }: { children?: React.ReactNode }) {
   );
 }
 
-function VaultEditor({ entry, onClose, onSaved }: { entry: VaultEntry | null; onClose(): void; onSaved(): void }) {
+function VaultEditor({ entry, onClose, onSaved }: { entry: VaultEntryView | null; onClose(): void; onSaved(): void }) {
   const agents = useApp((s) => s.agents);
   const { busy, run } = useAsync();
   const [label, setLabel] = useState(entry?.label || '');
@@ -296,52 +299,16 @@ export function VaultPage() {
 
 // ---------------- approval cards ----------------
 
-function useDecide(a: Approval) {
-  const [busy, setBusy] = useState<string | null>(null);
-  const decide = async (decision: 'approve' | 'deny' | 'always', answer?: string, key: string = decision) => {
-    setBusy(key);
-    try {
-      await api.post(`/approvals/${a.id}`, { decision, answer });
-      useApp.setState((s) => ({ approvals: s.approvals.filter((x) => x.id !== a.id) }));
-    } catch (e) {
-      toastError(e);
-    } finally {
-      setBusy(null);
-    }
-  };
-  return { busy, decide };
-}
-
-function Meta({ a, showThreadLink, verb }: { a: Approval; showThreadLink?: boolean; verb: string }) {
-  const agent = agentById(a.agent_id);
-  return (
-    <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted">
-      <BotAvatar bot={agent || { id: a.agent_id || 'bot', name: 'bot' }} size={20} mood="waiting" />
-      <span>
-        <span className="font-semibold text-fg">{agent?.name || 'Bot'}</span> {verb}
-      </span>
-      <span aria-hidden>·</span>
-      <span>{timeAgo(a.created_at)}</span>
-      {showThreadLink && a.thread_id && (
-        <>
-          <span aria-hidden>·</span>
-          <a className="font-semibold underline underline-offset-2 hover:text-fg" href={`#/t/${a.thread_id}`}>
-            naar gesprek
-          </a>
-        </>
-      )}
-    </div>
-  );
-}
-
 const SELF = 'Zelf inloggen';
 
 /**
- * "Operations wil inloggen op ads.google.com als …": approve once, always for this bot on this site, log in
- * yourself, or refuse. The bot never gets the account or the password, only "ingelogd" / "mislukt".
+ * "Operations wil inloggen op ads.google.com. Met welk account?": only when several logins of the vault fit the page
+ * (server/modules/browser/tools.ts). A choice, not a permission: the owner gave these logins to his bots already. Log
+ * in with the chosen account once, or remember it for this bot on this site, log in yourself, or not now. The bot never
+ * gets the account or the password, only "ingelogd" / "mislukt".
  */
 export function VaultLoginCard({ a, showThreadLink }: { a: Approval; showThreadLink?: boolean }) {
-  // "Altijd toestaan" only on the computer: a paired phone approves once (server/modules/mobile/policy.ts).
+  // Remembering the choice only on the computer: a paired phone answers once (server/modules/mobile/policy.ts).
   const wide = useIsDesktop();
   const phone = useIsPhoneSession();
   const desktop = wide && !phone;
@@ -357,7 +324,7 @@ export function VaultLoginCard({ a, showThreadLink }: { a: Approval; showThreadL
   const origin = String(a.input?.origin || '');
   return (
     <div role="group" aria-label="Inloggen met de kluis" className="w-full rounded-2xl border tb-ask p-4">
-      <Meta a={a} showThreadLink={showThreadLink} verb="vraagt toestemming" />
+      <ApprovalMeta a={a} showThreadLink={showThreadLink} verb="vraagt welk account" avatar />
       <div className="mt-3 flex items-start gap-3">
         <span className="relative">
           <SiteMark origin={origin || 'https://' + site} size={40} />
@@ -406,15 +373,15 @@ export function VaultLoginCard({ a, showThreadLink }: { a: Approval; showThreadL
           Inloggen
         </Button>
         {desktop && (
-          <Button size="sm" loading={busy === 'always'} disabled={!!busy || !chosen} onClick={() => decide('always', chosen!.option)} title={`${agent?.name || 'Deze bot'} mag deze login op ${site} voortaan zonder te vragen gebruiken (intrekken kan in de Kluis)`}>
-            Altijd toestaan voor {agent?.name || 'deze bot'} op deze site
+          <Button size="sm" loading={busy === 'always'} disabled={!!busy || !chosen} onClick={() => decide('always', chosen!.option)} title={agent?.name ? t('{0} gebruikt dit account op {1} voortaan zonder te vragen (vergeten kan in de Kluis)', agent.name, site) : t('Deze bot gebruikt dit account op {0} voortaan zonder te vragen (vergeten kan in de Kluis)', site)}>
+            Inloggen en onthouden
           </Button>
         )}
         <Button size="sm" variant="ghost" loading={busy === 'self'} disabled={!!busy} onClick={() => decide('approve', SELF, 'self')}>
           Zelf inloggen
         </Button>
         <Button size="sm" variant="ghost" loading={busy === 'deny'} disabled={!!busy} onClick={() => decide('deny')}>
-          Weigeren
+          Niet nu
         </Button>
       </div>
     </div>
@@ -434,7 +401,7 @@ export function LoginHandoffCard({ a, showThreadLink }: { a: Approval; showThrea
   };
   return (
     <div role="group" aria-label="Zelf inloggen" className="w-full rounded-2xl border tb-ask p-4">
-      <Meta a={a} showThreadLink={showThreadLink} verb="wacht op jou" />
+      <ApprovalMeta a={a} showThreadLink={showThreadLink} verb="wacht op jou" avatar />
       <div className="mt-3 flex items-start gap-3">
         <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-surface-3">
           <Globe className="h-5 w-5" aria-hidden />

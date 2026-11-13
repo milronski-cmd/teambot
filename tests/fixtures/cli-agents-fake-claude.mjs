@@ -30,6 +30,11 @@ if (argv[0] === '--help') {
   --settings <file-or-json>    Path to a settings JSON file or a JSON string`);
   process.exit(0);
 }
+// `claude mcp list` (no model call): FAKE_CLAUDE_MCP_LIST, else no servers of its own.
+if (argv[0] === 'mcp' && argv[1] === 'list') {
+  process.stdout.write(process.env.FAKE_CLAUDE_MCP_LIST || 'No MCP servers configured. Use `claude mcp add` to add a server.\n');
+  process.exit(0);
+}
 // FAKE_CLAUDE_LOGIN_FILE: logged out until `auth login` succeeded (it writes that file).
 const loginFile = process.env.FAKE_CLAUDE_LOGIN_FILE;
 if (argv[0] === 'auth' && argv[1] === 'status') {
@@ -82,7 +87,10 @@ process.stdin.setEncoding('utf8');
 process.stdin.on('data', (d) => (prompt += d));
 process.stdin.on('end', main);
 
-function mcpCall(cfgFile, toolName, input) {
+const mcpCall = (cfgFile, toolName, input) => mcpCalls(cfgFile, [{ name: toolName, input }]).then((r) => r[0]);
+
+/** One permission prompt per step ({ name, input }), in order, over one connection to TeamBot's MCP server. */
+function mcpCalls(cfgFile, steps) {
   const cfg = JSON.parse(fs.readFileSync(cfgFile, 'utf8'));
   const srv = cfg.mcpServers.teambot;
   const child = spawn(srv.command, srv.args, { env: { ...process.env, ...srv.env }, stdio: ['pipe', 'pipe', 'inherit'] });
@@ -105,31 +113,41 @@ function mcpCall(cfgFile, toolName, input) {
     const gate = tools.result.tools.find((t) => t.name === 'permission_prompt');
     if (!gate) {
       child.kill();
-      return { behavior: 'deny', message: 'geen permission tool (print-modus weigert)' };
+      return steps.map(() => ({ behavior: 'deny', message: 'geen permission tool (print-modus weigert)' }));
     }
-    const r = await req('tools/call', { name: gate.name, arguments: { tool_name: toolName, input, tool_use_id: 'tu_1' } });
+    const got = [];
+    const listed = tools.result.tools.map((t) => t.name);
+    for (const [i, st] of steps.entries()) {
+      // { teambot: { name, arguments } }: one of TeamBot's own tools, by its name or (outside the list) with tools_call.
+      // With `direct`: by its own name even when it is not in the list.
+      if (st.teambot) {
+        const r = await req('tools/call', st.direct || listed.includes(st.teambot.name) ? st.teambot : { name: 'tools_call', arguments: { name: st.teambot.name, args: st.teambot.arguments } });
+        got.push({ behavior: r.result?.isError === false ? 'allow' : 'deny', message: r.result?.content?.[0]?.text || r.error?.message });
+        continue;
+      }
+      const r = await req('tools/call', { name: gate.name, arguments: { tool_name: st.name, input: st.input, tool_use_id: `tu_${i + 1}` } });
+      got.push(JSON.parse(r.result.content[0].text));
+    }
     child.kill();
-    return JSON.parse(r.result.content[0].text);
+    return got;
   })();
 }
 
 /**
- * The tool names TeamBot's MCP server offers this run (SCENARIO:tools), like Claude Code sees them. When the list leaves
- * parts out (tools_load), this loads every part and lists again after `notifications/tools/list_changed`, as Claude Code
- * does for a server with `capabilities.tools.listChanged`: `{ listed, loaded }`.
+ * The tools TeamBot's MCP server offers this run (SCENARIO:tools), like Claude Code sees them: `listed`. When the list
+ * has `tools_find` and `tools_call` (the rest of the bot's tools is on demand), this also looks up everything outside
+ * the list (`found`) and uses one of them through `tools_call` in the same run (`used`: SCENARIO_CALL:<name>, else the
+ * first of routine_list, memory_get … that was found), as a model would.
  */
-async function mcpToolLists(cfgFile) {
+async function mcpToolLists(cfgFile, wanted) {
   const cfg = JSON.parse(fs.readFileSync(cfgFile, 'utf8'));
   const srv = cfg.mcpServers.teambot;
   const child = spawn(srv.command, srv.args, { env: { ...process.env, ...srv.env }, stdio: ['pipe', 'pipe', 'inherit'] });
   const rl = readline.createInterface({ input: child.stdout });
   const pending = new Map();
-  // Like Claude Code: on list_changed, list again at once (TeamBot holds the call's result until then).
-  let relist = null;
   rl.on('line', (l) => {
     const m = JSON.parse(l);
-    if (m.method === 'notifications/tools/list_changed') relist = req('tools/list', {});
-    else pending.get(m.id)?.(m);
+    pending.get(m.id)?.(m);
   });
   let id = 0;
   const req = (method, params) =>
@@ -138,24 +156,33 @@ async function mcpToolLists(cfgFile) {
       pending.set(i, resolve);
       child.stdin.write(JSON.stringify({ jsonrpc: '2.0', id: i, method, params }) + '\n');
     });
-  const init = await req('initialize', { protocolVersion: '2025-06-18', capabilities: {}, clientInfo: { name: 'fake', version: '1' } });
+  await req('initialize', { protocolVersion: '2025-06-18', capabilities: {}, clientInfo: { name: 'fake', version: '1' } });
   const first = (await req('tools/list', {})).result?.tools || [];
   const listed = first.map((t) => t.name);
-  let loaded = [];
-  const loader = first.find((t) => t.name === 'tools_load');
-  if (loader && init.result?.capabilities?.tools?.listChanged) {
-    const parts = loader.inputSchema?.properties?.names?.items?.enum || [];
-    const r = await req('tools/call', { name: 'tools_load', arguments: { names: parts } });
-    if (!r.result?.isError && relist) loaded = ((await relist).result?.tools || []).map((t) => t.name).filter((n) => !listed.includes(n));
+  let found = [];
+  let used = null;
+  if (listed.includes('tools_find') && listed.includes('tools_call')) {
+    const all = await req('tools/call', { name: 'tools_find', arguments: { query: '' } });
+    const text = all.result?.content?.[0]?.text || '';
+    found = [...text.matchAll(/^- [^:\n]+: (.+)$/gm)].flatMap((m) => m[1].split(', ').map((x) => x.trim())).filter((n) => /^[a-zA-Z0-9_-]+$/.test(n));
+    const name = wanted || ['routine_list', 'task_list', 'team_status'].find((n) => found.includes(n));
+    if (name) {
+      // A model first reads the fields, then uses the tool.
+      const spec = await req('tools/call', { name: 'tools_find', arguments: { query: name } });
+      const r = await req('tools/call', { name: 'tools_call', arguments: { name, args: {} } });
+      used = { name, fields: /velden: \{/.test(spec.result?.content?.[0]?.text || ''), ok: !r.result?.isError, text: String(r.result?.content?.[0]?.text || '').slice(0, 200) };
+    }
   }
   child.kill();
-  return { listed, loaded };
+  // Listed by name only (Claude Code defers them behind its own tool search and loads them when called).
+  const deferred = first.filter((t) => t._meta?.['anthropic/alwaysLoad'] === false).map((t) => t.name);
+  return { listed, deferred, found, used, sizes: Object.fromEntries(first.map((t) => [t.name, JSON.stringify({ name: t.name, description: t.description, parameters: t.inputSchema }).length])) };
 }
 
 async function main() {
   const resume = arg('--resume');
   const sysFile = arg('--append-system-prompt-file');
-  log({ argv, prompt, cwd: process.cwd(), system: sysFile && fs.existsSync(sysFile) ? fs.readFileSync(sysFile, 'utf8') : null, leakedSecret: !!process.env.TEAMBOT_TEST_SECRET || !!process.env.MY_API_KEY, autoMemoryOff: process.env.CLAUDE_CODE_DISABLE_AUTO_MEMORY === '1' });
+  log({ argv, prompt, cwd: process.cwd(), system: sysFile && fs.existsSync(sysFile) ? fs.readFileSync(sysFile, 'utf8') : null, leakedSecret: !!process.env.TEAMBOT_TEST_SECRET || !!process.env.MY_API_KEY, autoMemoryOff: process.env.CLAUDE_CODE_DISABLE_AUTO_MEMORY === '1', claudeAiOff: process.env.ENABLE_CLAUDEAI_MCP_SERVERS === 'false' });
   if (scen(prompt) === 'badresume' && resume) {
     process.stderr.write(`No conversation found with session ID: ${resume}\n`);
     process.exit(1);
@@ -191,7 +218,16 @@ async function main() {
     out({ type: 'result', subtype: 'success', is_error: false, num_turns: 0, session_id: sid, total_cost_usd: 0.01, result: '' });
     return;
   }
-  out({ type: 'system', subtype: 'init', session_id: sid, model: 'fake-sonnet', permissionMode: arg('--permission-mode'), tools: ['Read', 'Write', 'Bash'] });
+  // FAKE_CLAUDE_INIT: more of the init message (the owner's own MCP servers and their tools, as Claude Code lists them).
+  out({ type: 'system', subtype: 'init', session_id: sid, model: 'fake-sonnet', permissionMode: arg('--permission-mode'), tools: ['Read', 'Write', 'Bash'], ...(process.env.FAKE_CLAUDE_INIT ? JSON.parse(process.env.FAKE_CLAUDE_INIT) : {}) });
+  // SCENARIO:werktekst: English working text between steps (as Claude Code writes it), then the answer in Dutch.
+  if (scen(prompt) === 'werktekst') {
+    out({ type: 'assistant', message: { id: 'msg_w1', content: [{ type: 'text', text: 'The timestamp came out as 19:21, let me check the notes.' }, { type: 'tool_use', id: 'tu_w1', name: 'Read', input: { file_path: path.join(process.cwd(), 'notities.md') } }] }, parent_tool_use_id: null, session_id: sid });
+    out({ type: 'user', message: { content: [{ type: 'tool_result', tool_use_id: 'tu_w1', content: 'geen notities' }] }, session_id: sid });
+    out({ type: 'assistant', message: { id: 'msg_w2', content: [{ type: 'text', text: 'Om 19:21 stonden er geen nieuwe notities.' }] }, parent_tool_use_id: null, session_id: sid });
+    out({ type: 'result', subtype: 'success', is_error: false, result: 'Om 19:21 stonden er geen nieuwe notities.', session_id: sid, num_turns: 2, usage: { input_tokens: 10, output_tokens: 6 }, total_cost_usd: 0.01 });
+    return;
+  }
   if (scen(prompt) === 'limithit') {
     out({ type: 'rate_limit_event', rate_limit_info: { status: 'rejected', resetsAt: Math.floor(Date.now() / 1000) + 3600, rateLimitType: 'five_hour', utilization: 1, unifiedWindows: { five_hour: { utilization: 1, resetsAt: Math.floor(Date.now() / 1000) + 3600, status: 'rejected' } } }, session_id: sid });
     out({ type: 'result', subtype: 'success', is_error: true, result: `Claude AI usage limit reached|${Math.floor(Date.now() / 1000) + 3600}`, session_id: sid });
@@ -200,6 +236,25 @@ async function main() {
   if (scen(prompt) === 'halfhang') {
     // Streams the start of an answer, then hangs (stopped mid-answer).
     for (const t of ['Er was eens ', 'een vuurtorenwachter ', 'die HALVERWEGE-ZIN']) out({ type: 'stream_event', event: { type: 'content_block_delta', index: 0, delta: { type: 'text_delta', text: t } }, parent_tool_use_id: null, session_id: sid });
+    setInterval(() => {}, 1000);
+    return;
+  }
+  if (scen(prompt) === 'telthang') {
+    // Like a real turn that is stopped: one model call finished (with its usage), the next one started and streamed
+    // a little (its usage on message_start and message_delta), then nothing: the result line never comes.
+    out({ type: 'assistant', message: { id: 'msg_a', model: 'fake-sonnet', content: [{ type: 'text', text: 'Ik begin. ' }], usage: { input_tokens: 800, cache_read_input_tokens: 20000, cache_creation_input_tokens: 0, output_tokens: 150 } }, parent_tool_use_id: null, session_id: sid });
+    out({ type: 'stream_event', event: { type: 'message_start', message: { id: 'msg_b', usage: { input_tokens: 1200, cache_read_input_tokens: 30000, cache_creation_input_tokens: 500, output_tokens: 1 } } }, parent_tool_use_id: null, session_id: sid });
+    out({ type: 'stream_event', event: { type: 'content_block_delta', index: 0, delta: { type: 'text_delta', text: 'Nu het TWEEDE-DEEL ' } }, parent_tool_use_id: null, session_id: sid });
+    out({ type: 'stream_event', event: { type: 'message_delta', delta: {}, usage: { output_tokens: 40 } }, parent_tool_use_id: null, session_id: sid });
+    setInterval(() => {}, 1000);
+    return;
+  }
+  if (scen(prompt) === 'schrijfhang') {
+    // As Claude Code really does it (seen live on haiku): message_start counts the input and 1 output token; the
+    // output of the call comes only with message_delta at its end. Stopped while it writes: that never comes.
+    out({ type: 'stream_event', event: { type: 'message_start', message: { id: 'msg_s', usage: { input_tokens: 9, cache_read_input_tokens: 39000, cache_creation_input_tokens: 400, output_tokens: 1 } } }, parent_tool_use_id: null, session_id: sid });
+    for (let i = 0; i < 30; i++) out({ type: 'stream_event', event: { type: 'content_block_delta', index: 0, delta: { type: 'text_delta', text: `De vuurtorenwachter klom voor de ${i + 1}e keer de trap op en keek over zee. ` } }, parent_tool_use_id: null, session_id: sid });
+    out({ type: 'stream_event', event: { type: 'content_block_delta', index: 0, delta: { type: 'text_delta', text: 'SCHRIJFT-NOG' } }, parent_tool_use_id: null, session_id: sid });
     setInterval(() => {}, 1000);
     return;
   }
@@ -219,11 +274,24 @@ async function main() {
   }
   if (scen(prompt) === 'tools') {
     const cfgFile = arg('--mcp-config');
-    const { listed, loaded } = cfgFile ? await mcpToolLists(cfgFile).catch((e) => (log({ toolsError: String(e?.stack || e) }), { listed: [], loaded: [] })) : { listed: [], loaded: [] };
-    log({ teambotListed: listed, teambotLoaded: loaded });
-    const text = `TeamBot-tools: ${listed.sort().join(', ') || 'geen'}${loaded.length ? ` · na tools_load: ${loaded.sort().join(', ')}` : ''}`;
+    const wanted = /SCENARIO_CALL:(\w+)/.exec(prompt)?.[1];
+    const none = { listed: [], found: [], used: null, sizes: {} };
+    const { listed, deferred = [], found, used, sizes } = cfgFile ? await mcpToolLists(cfgFile, wanted).catch((e) => (log({ toolsError: String(e?.stack || e) }), none)) : none;
+    log({ teambotListed: listed, teambotDeferred: deferred, teambotFound: found, teambotUsed: used, teambotSizes: sizes });
+    const text = `TeamBot-tools: ${listed.sort().join(', ') || 'geen'}${found.length ? ` · via tools_find: ${found.sort().join(', ')}` : ''}${used ? ` · tools_call ${used.name}: ${used.ok ? 'gelukt' : 'mislukt'}` : ''}`;
     out({ type: 'assistant', message: { id: 'msg_1', model: 'fake-sonnet', content: [{ type: 'text', text }] }, parent_tool_use_id: null, session_id: sid });
     out({ type: 'result', subtype: 'success', is_error: false, result: text, session_id: sid, num_turns: 1, usage: { input_tokens: 10, output_tokens: 6 }, total_cost_usd: 0.01 });
+    return;
+  }
+  // SCENARIO:stappen STAPPEN:<base64url JSON [{ name, input }]>: asks permission for every step and does none of them
+  // (the case table of tests/permission-gate.test.ts).
+  if (scen(prompt) === 'stappen') {
+    const steps = JSON.parse(Buffer.from(/STAPPEN:([\w-]+)/.exec(prompt)[1], 'base64url').toString('utf8'));
+    const cfgFile = arg('--mcp-config');
+    const got = cfgFile ? await mcpCalls(cfgFile, steps) : steps.map(() => ({ behavior: 'deny', message: 'geen permission tool (print-modus weigert)' }));
+    log({ stappen: got.map((d) => d.behavior), teksten: got.map((d) => String(d.message || '')) });
+    out({ type: 'assistant', message: { id: 'msg_1', content: [{ type: 'text', text: 'Stappen gevraagd.' }] }, parent_tool_use_id: null, session_id: sid });
+    out({ type: 'result', subtype: 'success', is_error: false, result: 'Stappen gevraagd.', session_id: sid, usage: { input_tokens: 5, output_tokens: 3 }, total_cost_usd: 0.01 });
     return;
   }
   const tool = scen(prompt) === 'danger'

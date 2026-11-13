@@ -1,9 +1,11 @@
 import type { Ctx, Thread } from '../../core/types.js';
+import { oneLine } from '../../core/util.js';
 import { now } from '../../core/db.js';
 import { bad, notFound } from '../../core/http.js';
 import { trUser } from '../../core/i18n.js';
 import { redact } from '../../core/secrets.js';
 import { plainEngineError } from '../../agent/fallback.js';
+import { plannerOf } from '../routines/planner.js';
 import type { TeamsService } from './service.js';
 
 /**
@@ -21,6 +23,7 @@ import type { TeamsService } from './service.js';
  *
  * Without a main bot nothing is written here (the normal notifications stay). Work in the main bot's own chat is left
  * out: you see it there already. Delegations are left out too: the bot that gave the work hears about it.
+ * It has no clock of its own: the one planner looks once a minute (routines/planner.ts, source `stuck`).
  * The idea comes from OpenMausBot's team escalations (Apache-2.0); this is our own code.
  */
 
@@ -62,17 +65,8 @@ export interface StuckPart {
   retriedAt?: string;
 }
 
-const line = (s: unknown, n = 140) => {
-  const v = String(s ?? '')
-    .replace(/\s+/g, ' ')
-    .trim();
-  return v.length > n ? v.slice(0, n - 1) + '…' : v;
-};
 const minutesSince = (iso: string, at: number) => Math.max(0, Math.round((at - Date.parse(iso)) / 60_000));
 
-function hasTable(ctx: Ctx, name: string) {
-  return !!ctx.store.one("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?", name);
-}
 
 /** What is stuck right now for this owner (not yet filtered on what was reported before). */
 export function collectStuck(ctx: Ctx, svc: TeamsService, userId: string, at = Date.now()): StuckItem[] {
@@ -94,7 +88,7 @@ export function collectStuck(ctx: Ctx, svc: TeamsService, userId: string, at = D
   for (const r of store.all<any>("SELECT id, agent_id, thread_id, kind, summary, created_at FROM approvals WHERE user_id = ? AND status = 'pending' AND created_at <= ? AND created_at >= ? ORDER BY created_at LIMIT 50", userId, waitCut, since)) {
     if (r.thread_id && mainThreads.has(r.thread_id)) continue;
     const question = r.kind === 'question';
-    out.push({ ref: `apr:${r.id}`, kind: question ? 'question' : 'approval', agentId: r.agent_id, bot: name(r.agent_id) || 'Een bot', team: teamName(r.agent_id), title: line(r.summary) || (question ? 'Vraag' : 'Toestemming gevraagd'), since: r.created_at, link: '#/inbox', threadId: r.thread_id || null, retry: false });
+    out.push({ ref: `apr:${r.id}`, kind: question ? 'question' : 'approval', agentId: r.agent_id, bot: name(r.agent_id) || 'Een bot', team: teamName(r.agent_id), title: oneLine(r.summary, 140) || (question ? 'Vraag' : 'Toestemming gevraagd'), since: r.created_at, link: '#/inbox', threadId: r.thread_id || null, retry: false });
   }
 
   // Broken or cut-off tasks nobody picked up again.
@@ -115,17 +109,17 @@ export function collectStuck(ctx: Ctx, svc: TeamsService, userId: string, at = D
     if (later) continue;
     const agent = store.agent(r.agent_id);
     const engine = agent?.provider_id ? ctx.providers.config(agent.provider_id)?.name : undefined;
-    const err = r.status === 'interrupted' ? '' : line(redact(plainEngineError(String(r.error || ''), { engine })), 200);
+    const err = r.status === 'interrupted' ? '' : oneLine(redact(plainEngineError(String(r.error || ''), { engine })), 200);
     const canRetry = !!store.one("SELECT 1 FROM messages WHERE thread_id = ? AND role = 'user' AND deleted = 0 LIMIT 1", r.thread_id);
     out.push({ ref: `run:${r.id}`, kind: r.status === 'interrupted' ? 'interrupted' : 'error', agentId: r.agent_id, bot: agent?.name || 'Een bot', team: teamName(r.agent_id), title: err, since: r.finished_at || r.created_at, link: `#/t/${r.thread_id}`, threadId: r.thread_id, retry: canRetry });
   }
 
   // Failed routine runs (the routine engine retries by its own policy first: only the final failure counts).
-  if (hasTable(ctx, 'routine_runs') && hasTable(ctx, 'routines'))
+  if (ctx.store.hasTable('routine_runs') && ctx.store.hasTable('routines'))
     for (const r of store.all<any>("SELECT rr.id, rr.error, rr.finished_at, rr.created_at, ro.id AS routine_id, ro.name, ro.agent_id FROM routine_runs rr JOIN routines ro ON ro.id = rr.routine_id WHERE rr.user_id = ? AND rr.status = 'error' AND COALESCE(rr.finished_at, rr.created_at) <= ? AND rr.created_at >= ? ORDER BY rr.created_at LIMIT 50", userId, brokeCut, since)) {
       const later = store.one("SELECT 1 FROM routine_runs WHERE routine_id = ? AND created_at > ? AND status IN ('done','no_update','running','pending','retrying') LIMIT 1", r.routine_id, r.created_at);
       if (later) continue;
-      out.push({ ref: `rr:${r.id}`, kind: 'routine', agentId: r.agent_id, bot: name(r.agent_id) || 'Een bot', team: teamName(r.agent_id), title: line(r.name, 80), since: r.finished_at || r.created_at, link: `#/m/routines/r/${r.routine_id}?tab=history`, threadId: null, routineId: r.routine_id, error: line(r.error, 200), retry: true });
+      out.push({ ref: `rr:${r.id}`, kind: 'routine', agentId: r.agent_id, bot: name(r.agent_id) || 'Een bot', team: teamName(r.agent_id), title: oneLine(r.name, 80), since: r.finished_at || r.created_at, link: `#/m/routines/r/${r.routine_id}?tab=history`, threadId: null, routineId: r.routine_id, error: oneLine(r.error, 200), retry: true });
     }
   return out.sort((a, b) => a.since.localeCompare(b.since));
 }
@@ -150,25 +144,28 @@ export function stuckSentence(ctx: Ctx, userId: string, i: StuckItem, at = Date.
 }
 
 export class StuckReporter {
-  private timer: NodeJS.Timeout | null = null;
+  private off: (() => void) | null = null;
   private busy = false;
-  /** Test seam. */
-  clock = () => Date.now();
+  /** The planner's clock (a test may set its own). */
+  clock = () => plannerOf(this.ctx)?.now() ?? Date.now();
 
   constructor(
     private ctx: Ctx,
     private svc: TeamsService,
   ) {}
 
-  start(everyMs = 60_000) {
+  /**
+   * Register with the planner (source `stuck`): a look once a minute. It plans nothing and starts no turn: a look only
+   * writes the message about what is newly stuck, without a model call.
+   */
+  start() {
     this.stop();
-    this.timer = setInterval(() => void this.tick(), everyMs);
-    this.timer.unref?.();
+    this.off = plannerOf(this.ctx)?.register({ id: 'stuck', everyMs: 60_000, look: () => void this.tick() }) ?? null;
   }
 
   stop() {
-    if (this.timer) clearInterval(this.timer);
-    this.timer = null;
+    this.off?.();
+    this.off = null;
   }
 
   /** Report what is newly stuck for every owner with a main bot. Returns the messages written (for tests). */
@@ -215,7 +212,7 @@ export class StuckReporter {
     // One notification, so it also reaches you outside the chat (Dutch: the outlets translate it themselves).
     ctx.events.emit(userId, 'notification', {
       title: `${main.name}: er ligt werk stil`,
-      body: fresh.length === 1 ? line(`${fresh[0].bot}: ${fresh[0].title}`, 200) : `${fresh.length} punten wachten op je.`,
+      body: fresh.length === 1 ? oneLine(`${fresh[0].bot}: ${fresh[0].title}`, 200) : `${fresh.length} punten wachten op je.`,
       link: `#/t/${thread.id}`,
       kind: 'warning',
       agentId: main.id,

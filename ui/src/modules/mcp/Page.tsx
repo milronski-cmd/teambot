@@ -4,7 +4,7 @@ import { api } from '../../lib/api';
 import { navigate, query } from '../../lib/router';
 import { t } from '../../lib/i18n';
 import { useApp } from '../../lib/store';
-import { Button, EmptyState, Input, Page, PageHeader, Spinner } from '../../components/ui';
+import { Button, CardHead, EmptyState, Input, Page, PageHeader, Spinner } from '../../components/ui';
 import { ConnectCard, ConnectResult, type ConnectState } from '../../components/ConnectCard';
 import { MoreOptions } from '../../components/MoreOptions';
 import { AppMark, hasAppMark } from '../../components/AppMark';
@@ -17,6 +17,7 @@ import type { ConnDraft } from './forms';
 import { GoogleCard } from './Google';
 import { ServerTab } from './ServerTab';
 import { firstSentence } from '../../lib/sentence';
+import { useQuickConnect, QuickStatus } from './quick';
 
 /** What a newcomer most often wants, first (the rest follows by name). */
 const FIRST = ['github-readonly', 'notion', 'slack', 'email-imap', 'stripe', 'mollie', 'shopify', 'woocommerce', 'duckduckgo', 'fetch', 'filesystem'];
@@ -43,6 +44,19 @@ function ConnCard({ c }: { c: Conn }) {
       setBusy(false);
     }
   };
+  /** npx/uvx missing: TeamBot's own copy (POST /mcp/runtimes/:id), then the same test. */
+  const install = async () => {
+    setBusy(true);
+    setRes(null);
+    try {
+      await api.post(`/mcp/runtimes/${c.needsRuntime}`, {});
+    } catch (e: any) {
+      setBusy(false);
+      return setRes({ ok: false, error: e.message });
+    }
+    setBusy(false);
+    await test();
+  };
   const error = res?.ok === false ? res.error : failing ? c.runtime.lastError || c.last_error : null;
   return (
     <ConnectCard
@@ -54,7 +68,11 @@ function ConnCard({ c }: { c: Conn }) {
       line={`${t('{0, plural, one {# tool} other {# tools}}', c.counts.usable)} · ${names.length ? names.join(', ') : 'nog aan geen bot gekoppeld'}${c.allow_actions ? '' : ' · alleen lezen'}`}
       action={
         <>
-          {needsLogin ? (
+          {c.needsRuntime ? (
+            <Button variant="primary" loading={busy} onClick={install}>
+              Installeren
+            </Button>
+          ) : needsLogin ? (
             <Button variant="primary" onClick={open}>
               Inloggen
             </Button>
@@ -81,22 +99,41 @@ function ConnCard({ c }: { c: Conn }) {
   );
 }
 
-/** One app from the catalogue: its name, one line and "Koppelen". */
+/**
+ * One app from the catalogue: its name, one line and "Koppelen". One click makes it for every bot and tests it; an app
+ * that logs in opens only that login; an app that needs a key opens the short form. npx/uvx missing: "Installeren"
+ * gets TeamBot's own copy on the way. Every option of the form stays under "Meer opties".
+ */
 function CatalogCard({ e, onPick }: { e: CatalogEntry; onPick(): void }) {
+  const q = useQuickConnect(() => onPick());
+  const s = q.state;
+  const needsRuntime = e.commandFound === false && !!e.runtime;
+  const go = () => (e.oneClick === 'form' ? onPick() : q.start({ catalog_id: e.id }, { login: e.oneClick === 'login', runtime: needsRuntime }));
+  const state: ConnectState = q.busy ? 'busy' : s.phase === 'done' ? 'on' : s.phase === 'error' ? 'error' : 'off';
   return (
     <ConnectCard
       data-testid="catalog-card"
       icon={hasAppMark(e.id) ? <AppMark id={e.id} /> : e.transport === 'stdio' ? <Terminal /> : <Globe />}
       title={e.name}
-      state="off"
-      stateLabel={e.commandFound === false ? (e.command === 'uvx' ? 'Python nodig' : 'Node.js nodig') : undefined}
+      state={state}
+      stateLabel={s.phase === 'login' ? 'wacht op inloggen' : s.phase === 'idle' && e.commandFound === false ? (e.command === 'uvx' ? 'Python nodig' : 'Node.js nodig') : undefined}
       line={<span className="line-clamp-1">{firstSentence(e.description)}</span>}
       action={
-        <Button variant={e.available ? 'soft' : 'secondary'} disabled={!e.available} title={e.unavailableReason} icon={<Plus className="h-4 w-4" />} onClick={onPick}>
-          {e.available ? 'Koppelen' : 'Niet beschikbaar'}
+        s.phase === 'done' ? undefined : (
+          <Button variant={e.available ? 'soft' : 'secondary'} disabled={!e.available || q.busy} loading={q.busy && s.phase !== 'login'} title={e.unavailableReason} icon={<Plus className="h-4 w-4" />} onClick={go}>
+            {!e.available ? 'Niet beschikbaar' : needsRuntime && s.phase === 'idle' ? 'Installeren' : 'Koppelen'}
+          </Button>
+        )
+      }
+      result={s.phase === 'done' || s.phase === 'error' ? <QuickStatus s={s} name={e.name} onRetry={go} /> : undefined}
+      more={
+        <Button size="sm" variant="ghost" onClick={onPick}>
+          Alle instellingen…
         </Button>
       }
-    />
+    >
+      {(s.phase === 'runtime' || s.phase === 'connecting' || s.phase === 'testing' || s.phase === 'login') && <QuickStatus s={s} name={e.name} />}
+    </ConnectCard>
   );
 }
 
@@ -115,7 +152,12 @@ export function MainPage() {
   useEffect(() => {
     api
       .get<CatalogEntry[]>('/mcp/catalog')
-      .then(setCatalog)
+      .then((l) => {
+        setCatalog(l);
+        // #/m/mcp?app=<catalogId> (Marktplaats, when an app needs more than one click): its short form right away.
+        const want = l.find((e) => e.id === query().get('app'));
+        if (want) setPick(want);
+      })
       .catch(() => setCatalog([]));
   }, []);
   const custom = catalog?.find((e) => e.id === 'custom') || null;
@@ -133,11 +175,7 @@ export function MainPage() {
     <Page>
       <PageHeader
         width="5xl"
-        title={
-          <span className="flex items-center gap-2">
-            <Blocks className="h-5 w-5" /> Apps
-          </span>
-        }
+        title="Apps"
         subtitle="Geef je bots toegang tot je diensten."
         actions={
           <Button icon={<Download className="h-4 w-4" />} onClick={() => setImporter('paste')}>
@@ -159,15 +197,18 @@ export function MainPage() {
         </div>
 
         <section className="space-y-3" aria-labelledby="apps-meer">
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            <h2 id="apps-meer" className="font-semibold">
-              Meer apps
-            </h2>
-            <div className="relative w-full sm:w-72">
-              <Search className="pointer-events-none absolute start-2.5 top-2.5 h-4 w-4 text-muted" />
-              <Input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Zoek een app…" className="ps-8" aria-label="Zoeken in catalogus" />
-            </div>
-          </div>
+          <CardHead
+            id="apps-meer"
+            icon={Blocks}
+            tone="blue"
+            title="Meer apps"
+            action={
+              <div className="relative w-full sm:w-72">
+                <Search className="pointer-events-none absolute start-2.5 top-2.5 h-4 w-4 text-muted" />
+                <Input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Zoek een app…" className="ps-8" aria-label="Zoeken in catalogus" />
+              </div>
+            }
+          />
           {!catalog ? (
             <div className="flex justify-center p-6">
               <Spinner />

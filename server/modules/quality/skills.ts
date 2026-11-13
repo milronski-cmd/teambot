@@ -5,7 +5,7 @@ import type { QualityService } from './service.js';
 /**
  * A bot that does the same kind of task well, again and again, may suggest turning it into a skill (a fixed way of
  * working). TeamBot only *suggests*: a card under "Wacht op jou". Saying yes asks the bot (in its own chat) to draft
- * one with skill_draft; that draft goes through the normal review in Mijn skills. Nothing is installed by itself.
+ * one with skill_save (active for its team at once; a draft for the owner only when it spends money or writes to customers).
  */
 
 /** How many checked-and-done tasks of the same kind before a suggestion. */
@@ -80,7 +80,7 @@ export async function decideSuggestion(svc: QualityService, u: Pick<User, 'id' |
   if (accept && agent) {
     const text = [
       `Je hebt taken als “${s.title}” al ${s.count} keer goed gedaan. Maak er een skill van: een korte, herbruikbare werkwijze (stappen, vorm, regels) zonder geheimen, persoonsgegevens of eenmalige details.`,
-      'Gebruik daarvoor skill_draft. Het wordt een concept; ik beoordeel het zelf in Mijn skills voordat het actief wordt.',
+      'Gebruik daarvoor skill_save. De skill is daarna meteen actief voor het hele team; alleen als hij geld uitgeeft of zelf klanten bericht, kijk ik er eerst naar.',
     ].join('\n\n');
     sent = await svc.tellBot(u, agent, text, { kind: 'skill_suggestion', suggestionId: id });
   }

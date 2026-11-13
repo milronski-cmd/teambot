@@ -1,9 +1,9 @@
 import { useEffect, useState } from 'react';
-import { Copy, Undo2 } from 'lucide-react';
+import { Copy, Undo2, Import } from 'lucide-react';
 import { api } from '../../lib/api';
 import { t } from '../../lib/i18n';
 import { formatDateTime } from '../../lib/format';
-import { Badge, Button, Card, Field, Select, Textarea, toast, useAsync } from '../../components/ui';
+import { Badge, Button, Card, Field, Select, Textarea, toast, useAsync, CardHead } from '../../components/ui';
 import { ALL_TEAMS, defaultTeamFor, memPath, useMemTeams, useTeamFilter } from './lib';
 
 /**
@@ -97,7 +97,7 @@ export function AssistantImport() {
 
   return (
     <Card className="space-y-3 p-4 lg:col-span-2">
-      <h2 className="text-sm font-semibold">Geheugen overnemen uit ChatGPT, Claude of Gemini</h2>
+      <CardHead icon={Import} tone="violet" title="Geheugen overnemen uit ChatGPT, Claude of Gemini" />
       <ol className="list-decimal space-y-3 ps-5 text-sm">
         <li className="space-y-2">
           <span>Stel deze vraag in de andere assistent:</span>
@@ -143,7 +143,7 @@ export function AssistantImport() {
             rows={7}
             value={text}
             onChange={(e) => (setText(e.target.value), setPreview(null))}
-            placeholder={'- Woont in Utrecht\n- Houdt van korte antwoorden'}
+            placeholder={[t('Werkt het liefst in de ochtend'), t('Wil eerst de conclusie, dan de uitleg')].map((line) => `- ${line}`).join('\n')}
             aria-label="Antwoord van de andere assistent"
           />
           <div className="flex flex-wrap gap-2">
@@ -174,7 +174,7 @@ export function AssistantImport() {
             {preview.lines.map((l, i) => (
               <li key={i} className="flex items-start justify-between gap-2 px-3 py-1.5">
                 <span className={l.status === 'new' ? '' : 'text-muted'}>
-                  {l.content}
+                  <span translate="no">{l.content}</span>
                   {l.instructionLike && <span className="block text-xs text-warn">Leest als een opdracht; het wordt bewaard als gewone tekst.</span>}
                 </span>
                 <Badge tone={STATUS[l.status].tone} className="shrink-0">

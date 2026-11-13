@@ -256,7 +256,18 @@ interface EvalApp {
   say(threadId: string, content: string): Promise<any[]>;
 }
 
-/** Run one case in its own conversation and score it. The memory settings are set by the caller. */
+/** The lines of every dossier text, by dossier (to see what a conversation added). */
+function dossierLines(t: EvalApp): Map<string, string[]> {
+  const out = new Map<string, string[]>();
+  for (const d of t.app.ctx.store.all("SELECT id, body FROM memory_dossiers WHERE status IN ('active','closed')") as any[])
+    out.set(d.id, String(d.body || '').split('\n').map((l) => l.replace(/^[\s>*-]+/, '').trim()).filter((l) => l && !/^#{1,6}\s/.test(l)));
+  return out;
+}
+
+/**
+ * Run one case in its own conversation and score it. The memory settings are set by the caller. What was learned: the
+ * lines the conversation added to a dossier's text (active, what the bots read) and the notes and cards it made.
+ */
 export async function runEvalCase(t: EvalApp, agentId: string, c: EvalCase): Promise<CaseScore> {
   const svc = t.app.ctx.services.memory;
   const pth = await t.api('POST', '/threads', { agentId });
@@ -266,6 +277,7 @@ export async function runEvalCase(t: EvalApp, agentId: string, c: EvalCase): Pro
   }
   await svc.drain();
   const priorIds: string[] = t.app.ctx.store.all('SELECT id FROM memory_items WHERE source_thread_id = ?', pth.id).map((r: any) => r.id);
+  const before = dossierLines(t);
   const th = await t.api('POST', '/threads', { agentId });
   for (let i = 0; i < c.turns.length; i++) {
     t.script.push({ text: c.replies?.[i] ?? 'Oké.' });
@@ -273,19 +285,23 @@ export async function runEvalCase(t: EvalApp, agentId: string, c: EvalCase): Pro
   }
   await svc.drain();
   const view = (r: any) => svc.svc.view(t.app.ctx.store.decode('memory_items', r));
-  const learned = t.app.ctx.store.all("SELECT * FROM memory_items WHERE source_thread_id = ? AND status NOT IN ('forgotten','rejected','trashed')", th.id).map(view);
+  const lines: LearnedItem[] = [];
+  for (const [id, now] of dossierLines(t)) {
+    const had = new Set(before.get(id) || []);
+    now.filter((l) => !had.has(l)).forEach((l, i) => lines.push({ id: `${id}:${i}`, content: l, status: 'active' }));
+  }
+  const learned = [...lines, ...t.app.ctx.store.all("SELECT * FROM memory_items WHERE source_thread_id = ? AND status NOT IN ('forgotten','rejected','trashed')", th.id).map(view)];
   const prior = priorIds.map((id) => view(t.app.ctx.store.get('memory_items', id)));
   return scoreCase(c, learned, prior);
 }
 
-/** Build the ideal model answer for a case from the learner's prompt (message aliases + known item refs). */
+/** The ideal answer of the review for a case, in its plain-line form, from the review's prompt (what the dossiers say). */
 export function oracleAnswer(c: EvalCase, prompt: string): string {
-  const msgs = [...prompt.matchAll(/<eigenaar id="(\d+)">([\s\S]*?)<\/eigenaar>/g)].map((m) => ({ id: m[1], text: m[2] }));
-  const known = [...prompt.matchAll(/^- (m:[a-z0-9]+)(?: \[[^\]]*\])? (.*)$/gm)].map((m) => ({ ref: m[1], text: m[2] }));
-  const items = (c.oracle || []).map((o) => {
-    const msg = msgs.find((m) => normalize(m.text).includes(normalize(o.evidence))) || msgs[msgs.length - 1];
-    const rep = o.replaces ? known.find((k) => normalize(k.text).includes(normalize(o.replaces!))) : null;
-    return { content: o.content, type: o.type, key: o.key ?? null, about: o.about, evidence: o.evidence, msg: msg?.id ?? '1', replaces: rep?.ref ?? null };
+  const known = [...prompt.matchAll(/^- (.+)$/gm)].map((m) => m[1].trim());
+  const lines = (c.oracle || []).map((o) => {
+    const where = o.about === 'owner' || o.type === 'instruction' ? 'Eigenaar' : 'Overzicht';
+    const rep = o.replaces ? known.find((k) => normalize(k).includes(normalize(o.replaces!))) : null;
+    return `${where}: ${o.content}${rep ? ` (vervangt: ${rep})` : ''}`;
   });
-  return JSON.stringify({ items, episode: { summary: 'Kort gesprek.', decisions: [], actions: [], open_questions: [] } });
+  return [...lines, 'Samenvatting: Kort gesprek.'].join('\n');
 }

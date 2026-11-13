@@ -41,7 +41,7 @@ export type Part = 'about_you' | 'agent' | 'shared' | 'dossier';
 /** The part of memory an item belongs to, as a key (team-aware, like dedup and quotas). */
 export function partKey(svc: MemoryService, r: MemoryItemRow): string {
   const team = r.scope === 'agent' || r.scope === 'shared' ? svc.resolveTeam(r.user_id, r.team_id ?? null) || '' : '';
-  return `${r.scope}|${r.agent_id || ''}|${r.dossier_id || ''}|${team}`;
+  return `${r.scope}|${r.agent_id || ''}|${r.scope === 'dossier' ? r.dossier_id || '' : ''}|${team}`;
 }
 
 /** When was this memory last of use: used in a turn or a tool, confirmed, changed or made. */
@@ -94,7 +94,7 @@ export function dossierActivity(svc: MemoryService, dossierId: string): number {
 
 /**
  * Customers nobody worked on for `archiveAfterDays` (0.4.4): their dossier goes to the archive — out of every bot's
- * per-turn context, still found with memory_search / dossier_search, and active again as soon as the customer comes
+ * per-turn context, still found with memory_search / dossier_get, and active again as soon as the customer comes
  * back (a conversation names it). Never a pinned dossier. One change per dossier, with undo.
  */
 export function archiveInactiveCustomers(svc: MemoryService, userId: string, lines: ReportLine[], counts: Record<string, number>, at = Date.now()) {

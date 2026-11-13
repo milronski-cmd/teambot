@@ -1,11 +1,13 @@
 import { useEffect, useState } from 'react';
-import { AppWindow, ExternalLink, FileText, Globe, KeyRound, PencilLine, Search, SquareTerminal, Trash2 } from 'lucide-react';
+import { AppWindow, ExternalLink, FileText, Globe, KeyRound, PencilLine, Search, SquareTerminal, Trash2, type LucideIcon } from 'lucide-react';
 import { on } from '../../lib/api';
 import { agentById, useApp } from '../../lib/store';
-import { Badge, Card, EmptyState, Page, PageHeader, Select, Spinner, cx, timeAgo } from '../../components/ui';
+import { Badge, Card, EmptyState, Page, PageHeader, Select, Spinner, cx, timeAgo, CardHead, type Tone } from '../../components/ui';
 import { FilePreviewModal, type PreviewSource } from '../../components/FilePreview';
 import { BotAvatar } from '../../components/BotFace';
-import { folderLink, seenApi, workspacePreview, type SeenFile, type SeenItem, type SeenView } from './api';
+import { folderLink, seenApi, workspacePreview } from './api';
+import type { SeenFile, SeenItem, SeenView } from '../../../../shared/seen.js';
+import { t } from '../../lib/i18n';
 
 /** Load the view and refresh it when the bot finishes a turn. */
 function useSeen(agentId: string | null | undefined, o: { threadId?: string; days?: number }) {
@@ -71,7 +73,7 @@ function FileRow({ agentId, f, onOpen, busy }: { agentId: string; f: SeenFile; o
         <div className="flex min-w-0 flex-1 items-center gap-2 px-2 py-1.5 text-sm opacity-70">{inner}</div>
       )}
       {can && (
-        <a href={folderLink(agentId, f)} className="rounded-lg p-1.5 text-muted hover:bg-surface-2 hover:text-fg coarse:p-2.5" aria-label={`${f.name} openen in Bestanden`} title="Openen in Bestanden">
+        <a href={folderLink(agentId, f)} className="rounded-lg p-1.5 text-muted hover:bg-surface-2 hover:text-fg coarse:p-2.5" aria-label={t('{0} openen in Bestanden', f.name)} title="Openen in Bestanden">
           <ExternalLink className="h-3.5 w-3.5" />
         </a>
       )}
@@ -95,7 +97,7 @@ export function BotFilesInThread({ agentId, threadId, bare, onCount }: { agentId
       <p className="text-sm text-danger">{error}</p>
     ) : files.length ? (
       <>
-        <ul className="space-y-0.5" aria-label={`Gemaakt of gewijzigd door ${name}`}>
+        <ul className="space-y-0.5" aria-label={t('Gemaakt of gewijzigd door {0}', name)}>
           {files.map((f) => (
             <FileRow key={f.op + f.target} agentId={agentId} f={f} onOpen={pv.open} busy={pv.loading === f.name} />
           ))}
@@ -104,7 +106,7 @@ export function BotFilesInThread({ agentId, threadId, bare, onCount }: { agentId
       </>
     ) : null;
   return (
-    <section aria-label={`Gemaakt of gewijzigd door ${name}`}>
+    <section aria-label={t('Gemaakt of gewijzigd door {0}', name)}>
       <div className="mb-1.5 text-[11.5px] font-bold uppercase tracking-wider text-muted">Gemaakt of gewijzigd door {name}</div>
       {error ? (
         <p className="text-sm text-danger">{error}</p>
@@ -133,14 +135,20 @@ const STATUS: Record<string, { label: string; tone: 'ok' | 'warn' | 'danger' | '
   cancelled: { label: 'ingetrokken', tone: 'neutral' },
 };
 
-function Section({ icon, title, count, children, empty }: { icon: React.ReactNode; title: string; count: number; children: React.ReactNode; empty: string }) {
+function Section({ icon, tone, title, count, children, empty }: { icon: LucideIcon; tone?: Tone; title: string; count: number; children: React.ReactNode; empty: string }) {
   return (
     <Card className="p-4">
-      <h2 className="mb-2 flex items-center gap-2 text-[14px] font-bold">
-        <span className="text-muted">{icon}</span>
-        {title}
-        {count > 0 && <Badge>{count}</Badge>}
-      </h2>
+      <CardHead
+        className="mb-2"
+        icon={icon}
+        tone={tone}
+        title={
+          <span className="flex items-center gap-2">
+            {title}
+            {count > 0 && <Badge>{count}</Badge>}
+          </span>
+        }
+      />
       {count === 0 ? <p className="text-sm text-muted">{empty}</p> : children}
     </Card>
   );
@@ -176,8 +184,8 @@ export function SeenPage({ params }: { params: string[] }) {
   const { data, error } = useSeen(agent ? agentId : null, { days });
   const pv = usePreview(agentId);
   if (!agent) return <EmptyState title="Bot niet gevonden" action={<a className="text-sm font-semibold underline" href="#/agents">Naar alle bots</a>} />;
-  const files = (list: SeenFile[], empty: string, icon: React.ReactNode, title: string) => (
-    <Section icon={icon} title={title} count={list.length} empty={empty}>
+  const files = (list: SeenFile[], empty: string, icon: LucideIcon, title: string) => (
+    <Section icon={icon} tone="amber" title={title} count={list.length} empty={empty}>
       <ul className="space-y-0.5">
         {list.map((f) => (
           <FileRow key={f.op + f.target} agentId={agentId} f={f} onOpen={pv.open} busy={pv.loading === f.name} />
@@ -189,7 +197,7 @@ export function SeenPage({ params }: { params: string[] }) {
   return (
     <Page>
       <PageHeader
-        title={`Wat ${agent.name} zag en deed`}
+        title={t('Wat {0} zag en deed', agent.name)}
         subtitle="Uit de stappen van zijn antwoorden en de goedkeuringen. Alleen jij ziet dit."
         back={{ href: `#/a/${agent.id}`, label: `Terug naar ${agent.name}` }}
         width="3xl"
@@ -221,10 +229,10 @@ export function SeenPage({ params }: { params: string[] }) {
           </EmptyState>
         ) : (
           <>
-            {files(data.written, 'Geen bestanden geschreven of gewijzigd.', <PencilLine className="h-4 w-4" />, 'Bestanden geschreven of gewijzigd')}
-            {files(data.read, 'Geen bestanden gelezen.', <FileText className="h-4 w-4" />, 'Bestanden gelezen')}
-            {data.deleted.length > 0 && files(data.deleted, '', <Trash2 className="h-4 w-4" />, 'Bestanden verwijderd')}
-            <Section icon={<Globe className="h-4 w-4" />} title="Webpagina's bezocht" count={data.pages.length + data.searches.length} empty="Geen webpagina's bezocht en niets opgezocht.">
+            {files(data.written, 'Geen bestanden geschreven of gewijzigd.', PencilLine, 'Bestanden geschreven of gewijzigd')}
+            {files(data.read, 'Geen bestanden gelezen.', FileText, 'Bestanden gelezen')}
+            {data.deleted.length > 0 && files(data.deleted, '', Trash2, 'Bestanden verwijderd')}
+            <Section icon={Globe} tone="blue" title="Webpagina's bezocht" count={data.pages.length + data.searches.length} empty="Geen webpagina's bezocht en niets opgezocht.">
               <ul className="divide-y divide-line">
                 {data.pages.map((x) => (
                   <ItemRow key={x.target} x={x} href={/^https?:\/\//i.test(x.target) ? x.target : undefined} />
@@ -234,21 +242,21 @@ export function SeenPage({ params }: { params: string[] }) {
                 ))}
               </ul>
             </Section>
-            <Section icon={<SquareTerminal className="h-4 w-4" />} title="Opdrachten uitgevoerd" count={data.commands.length} empty="Geen opdrachten uitgevoerd.">
+            <Section icon={SquareTerminal} tone="blue" title="Opdrachten uitgevoerd" count={data.commands.length} empty="Geen opdrachten uitgevoerd.">
               <ul className="divide-y divide-line">
                 {data.commands.map((x) => (
                   <ItemRow key={x.target} x={x} mono />
                 ))}
               </ul>
             </Section>
-            <Section icon={<AppWindow className="h-4 w-4" />} title="Apps gebruikt" count={data.apps.length} empty="Geen gekoppelde apps gebruikt.">
+            <Section icon={AppWindow} tone="blue" title="Apps gebruikt" count={data.apps.length} empty="Geen gekoppelde apps gebruikt.">
               <ul className="divide-y divide-line">
                 {data.apps.map((x) => (
                   <ItemRow key={x.target} x={x} />
                 ))}
               </ul>
             </Section>
-            <Section icon={<KeyRound className="h-4 w-4" />} title="Gevraagd om toestemming" count={data.approvals.length} empty="Niets gevraagd.">
+            <Section icon={KeyRound} tone="rose" title="Gevraagd om toestemming" count={data.approvals.length} empty="Niets gevraagd.">
               <ul className="divide-y divide-line">
                 {data.approvals.map((a) => (
                   <li key={a.id} className="flex items-start gap-2 py-1.5 text-sm">

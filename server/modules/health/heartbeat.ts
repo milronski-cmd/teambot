@@ -13,7 +13,7 @@ import type { Ctx } from '../../core/types.js';
  * restart (before-quit) and when Windows signs off or shuts down (session-end), and by the installer before it closes
  * TeamBot (build/installer.nsh, customInit). The watchdog honours it until TeamBot starts again (start() removes it).
  * The script writes its finding to
- * `<data>/health/watchdog.json`, which Hoe gaat het met TeamBot? shows. No database, no keys, no AI: the file holds only
+ * `<data>/health/watchdog.json`, which Status van TeamBot shows. No database, no keys, no AI: the file holds only
  * the facts below.
  * The idea comes from OpenMausBot's Sentinel (Apache-2.0); this is our own code.
  */

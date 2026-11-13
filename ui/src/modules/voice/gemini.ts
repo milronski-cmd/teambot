@@ -3,7 +3,7 @@
  * through Web Audio. Google's own voice detection hears you while the bot talks; when it says "interrupted" the
  * playback stops at once (barge-in). Authentication: the single-use token our server minted (POST /voice/gemini/session).
  */
-import { audioCtx, PcmCapture } from './capture';
+import { audioCtx, concat, PcmCapture } from './capture';
 import { geminiUsage } from './cloudcall';
 
 export interface GeminiCallbacks {
@@ -86,10 +86,7 @@ export class GeminiLiveClient {
       this.frames.push(f);
       if (this.frames.length < 5) return; // 100 ms per message
       this.cb.onLevel?.(this.cap?.level() || 0);
-      const n = this.frames.reduce((a, x) => a + x.length, 0);
-      const pcm = new Int16Array(n);
-      let o = 0;
-      for (const x of this.frames.splice(0)) pcm.set(x, o), (o += x.length);
+      const pcm = concat(this.frames.splice(0));
       this.send({ realtimeInput: { audio: { data: b64(new Uint8Array(pcm.buffer)), mimeType: 'audio/pcm;rate=16000' } } });
     });
   }

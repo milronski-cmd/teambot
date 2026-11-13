@@ -10,7 +10,8 @@ import { GOOGLE_ID, registerGoogle, revokeGoogle } from './google.js';
 import { CALLBACK_PATH, beginOAuth, completeOAuth, connectionSecretPrefix, copyOAuthClient, getConn, prepareOAuth, revokeOAuth, setOAuthClient, sharedOAuthClients } from './oauth.js';
 import { isRisk, riskOf, riskRank } from './risk.js';
 import type { McpManager } from './runtime.js';
-import { label } from './runtime.js';
+import { ToolchainMissingError, label } from './runtime.js';
+import { ensure as ensureToolchain, find as findToolchain, status as toolchainStatus, toolchainOf, type ToolchainId } from '../../core/runtimes.js';
 import { GROUP, effectiveRisk, exposedName, formatContent, logCall, usableTools } from './tools.js';
 import { deleteKVSecrets, forbiddenErr, mayUsePrivateNetwork, mayUseStdio, slugify, storeKV, viewKV, cleanError, commandOnPath } from './util.js';
 import { type ConnectionPackage, connectionSignature, connectorFromPackage, entryForConn, packageOf } from './package.js';
@@ -21,6 +22,7 @@ import { budgetParam, isOffline } from '../skills/webcache.js';
 import { FALLBACK_ICON_SVG, NO_ICON_PNG } from './icons.js';
 import { probeUrl } from './oauth.js';
 import { registerImportRoutes } from './import-routes.js';
+import { actionsByDefault } from './defaults.js';
 
 export function baseUrl(ctx: Ctx, req: Request): string {
   if (ctx.config.publicUrl) return ctx.config.publicUrl.replace(/\/+$/, '');
@@ -121,6 +123,8 @@ export function connView(ctx: Ctx, mgr: McpManager, c: ConnectionRow, detail = f
     package: c.package ? { name: c.package.name || null, version: c.package.version || null, publisher: c.package.publisher?.name || null, fingerprint: c.package.publisher?.fingerprint || null } : null,
     registry: c.registry ? registryView(ctx, c.registry) : null,
     dataDir: c.transport === 'stdio' ? mgr.connDir(c) : undefined,
+    /** npx/uvx not on this computer and no own copy yet: Apps shows "Installeren". */
+    needsRuntime: c.transport === 'stdio' && !path.isAbsolute(c.command) && toolchainOf(c.command) && !findToolchain(toolchainOf(c.command)!, ctx.config.dataDir) ? toolchainOf(c.command) : null,
   };
   if (detail) {
     v.tools = tools(ctx, c.id).map((t) => toolView(c, t));
@@ -295,6 +299,18 @@ function callbackPage(ok: boolean, title: string, body: string, link?: string) {
 <body><h1>${esc(title)}</h1><p>${esc(body)}</p>${link ? `<p><a href="${esc(link)}">Terug naar TeamBot</a></p>` : ''}<p>Je kunt dit tabblad sluiten.</p></body></html>`;
 }
 
+/**
+ * What one click on a catalogue app does: "connect" (nothing is needed: made, tested, on for every bot), "login" (only
+ * the service's own login), "form" (a key, an address or an own OAuth app is needed first: the short form).
+ */
+export function oneClick(e: CatalogEntry): 'connect' | 'login' | 'form' {
+  if (e.id === 'custom') return 'form';
+  if ([...(e.env || []), ...(e.headers || [])].some((f) => f.required && !f.default)) return 'form';
+  if (e.argsPrompt && !e.argsPrompt.defaultWorkFolders) return 'form';
+  if (e.auth === 'oauth') return e.oauthClient === 'own-app' ? 'form' : 'login';
+  return 'connect';
+}
+
 /** Restricted member under a strict publisher policy: templates are installed exactly as published. */
 function strictPolicyFor(ctx: Ctx, u: { role: any }) {
   return isRestricted(ctx, u) && publisherSettings(ctx).policy !== 'open';
@@ -334,7 +350,10 @@ export function registerRoutes(ctx: Ctx, mgr: McpManager, registry?: Registry) {
         ...e,
         available: e.transport !== 'stdio' || e.id === 'custom' || stdioOk,
         unavailableReason: e.transport === 'stdio' && e.id !== 'custom' && !stdioOk ? 'Lokale programma’s zijn op deze server alleen voor beheerders.' : undefined,
-        commandFound: e.command ? commandOnPath(e.command) : undefined,
+        commandFound: e.command ? commandOnPath(e.command, ctx.config.dataDir) : undefined,
+        /** npx/uvx: what "Installeren" gets when it is not on this computer (core/runtimes.ts). */
+        runtime: (e.command && toolchainOf(e.command)) || undefined,
+        oneClick: oneClick(e),
         advanced: BEHIND_GOOGLE.has(e.id) || undefined,
         // Built-in templates count as trusted (publisher TeamBot); "Eigen server" is configured by the user.
         signature: e.id === 'custom' ? null : builtinView(),
@@ -354,7 +373,7 @@ export function registerRoutes(ctx: Ctx, mgr: McpManager, registry?: Registry) {
           ...r.entry,
           available: r.entry.transport !== 'stdio' || stdioOk,
           unavailableReason: r.entry.transport === 'stdio' && !stdioOk ? 'Lokale programma’s zijn op deze server alleen voor beheerders.' : undefined,
-          commandFound: r.entry.command ? commandOnPath(r.entry.command) : undefined,
+          commandFound: r.entry.command ? commandOnPath(r.entry.command, ctx.config.dataDir) : undefined,
         },
         signature: r.signature,
         policy: decide(ctx, u, r.signature),
@@ -536,6 +555,7 @@ export function registerRoutes(ctx: Ctx, mgr: McpManager, registry?: Registry) {
         subfolder: it.subfolder,
         options: it.options.map((o) => ({
           ...o,
+          commandFound: o.command ? commandOnPath(o.command, ctx.config.dataDir) : o.commandFound,
           available: o.supported && (o.kind === 'remote' || stdioOk),
           unavailableReason: !o.supported ? o.reason : o.kind !== 'remote' && !stdioOk ? 'Lokale programma’s zijn op deze server alleen voor beheerders.' : undefined,
         })),
@@ -573,7 +593,7 @@ export function registerRoutes(ctx: Ctx, mgr: McpManager, registry?: Registry) {
           ...r.entry,
           available: r.entry.transport !== 'stdio' || stdioOk,
           unavailableReason: r.entry.transport === 'stdio' && !stdioOk ? 'Lokale programma’s zijn op deze server alleen voor beheerders.' : undefined,
-          commandFound: r.entry.command ? commandOnPath(r.entry.command) : undefined,
+          commandFound: r.entry.command ? commandOnPath(r.entry.command, ctx.config.dataDir) : undefined,
           signature: sig,
         },
         registry: { name: r.info.name, version: r.info.version, option: r.info.option, inputs: r.info.inputs, auth: r.entry.auth },
@@ -755,7 +775,8 @@ export function registerRoutes(ctx: Ctx, mgr: McpManager, registry?: Registry) {
         trusted_at: p.trusted_at ?? null,
         allow_private: !!p.allow_private,
         enabled: p.enabled ?? true,
-        allow_actions: false,
+        // Not read-only by default for the owner (defaults.ts): what a bot may do is its own access level.
+        allow_actions: actionsByDefault(ctx, u.id),
         verified_at: null,
         verify_result: null,
         status: 'new',
@@ -794,6 +815,69 @@ export function registerRoutes(ctx: Ctx, mgr: McpManager, registry?: Registry) {
 
   registerGoogle(ctx, mgr, { baseUrl: (req) => baseUrl(ctx, req), uniqueSlug: (userId, wanted) => uniqueSlug(ctx, userId, wanted), callbackPage, emit, view: (c) => connView(ctx, mgr, c, true), setBindings: (userId, connId, ids) => setBindings(ctx, userId, connId, ids) });
   registerImportRoutes(ctx, mgr, { createConnection, probe: (userId, url, transport) => probeUrl(ctx, userId, url, transport), view: (c) => connView(ctx, mgr, c) });
+
+  /**
+   * One click (Apps and Marktplaats): a catalogue app, or an app from the MCP Registry, made for every bot of the user,
+   * with what it needs fetched on the way (TeamBot's own npx/uvx) and tested, so the bots can use it from their next
+   * turn. Only the service's own login is left to the user ("login": the address to open). When the app needs more
+   * than that (a key, an address, an own OAuth app, a command to confirm), nothing is made and the answer says so
+   * ("form" / "details"): the screen then opens the short form with every option.
+   */
+  api.post(
+    '/mcp/quick',
+    ah(async (req) => {
+      const u = user(req);
+      const b = req.body || {};
+      const bots = ctx.store.agents(u.id).map((a) => a.id);
+      let create: any;
+      let entry: CatalogEntry | undefined;
+      if (b.registry) {
+        const reg = needRegistry();
+        const name = str(b.registry.name, 220);
+        let it: RegistryItem;
+        try {
+          it = await reg.get(name, str(b.registry.version, 64) || 'latest');
+        } catch (e) {
+          webFail(e);
+        }
+        const sig = unsignedView();
+        if (!decide(ctx, u, sig).allowed) return { needs: 'details' };
+        // A remote address without required settings or a secret header: one click. A program to run (npx/uvx from
+        // a publisher TeamBot does not know) is confirmed in the details first.
+        const opt = it.options.find((o) => o.supported && o.kind === 'remote' && !o.inputs.some((f) => f.required && !f.default) && !o.headers.some((h) => h.required && !h.default));
+        if (!opt) return { needs: 'details' };
+        const r = await registryInstall(u.id, { name: it.name, version: it.version, option: opt.key, inputs: {} });
+        const probe = await probeUrl(ctx, u.id, r.entry.url!, r.entry.transport as 'http' | 'sse');
+        create = { registry: { name: it.name, version: it.version, option: opt.key, inputs: {}, auth: probe.oauth ? 'oauth' : 'none' }, agentIds: bots };
+        entry = { ...r.entry, auth: probe.oauth ? 'oauth' : 'none' };
+      } else {
+        entry = catalogEntry(b.catalog_id);
+        if (!entry) throw bad('Onbekend catalogus-item');
+        if (oneClick(entry) === 'form') return { needs: 'form' };
+        create = { catalog_id: entry.id, agentIds: bots, ...(entry.transport === 'stdio' ? { trust_command: true } : {}) };
+      }
+      if (entry.transport === 'stdio') {
+        const need = toolchainOf(entry.command || '');
+        if (need && !findToolchain(need, ctx.config.dataDir)) await installToolchain(u.id, need);
+      }
+      const c = await createConnection(u, create);
+      if (c.auth !== 'oauth') return verify(u.id, c);
+      const prep = await prepareOAuth(ctx, c).catch((e: any) => ({ error: cleanError(e) }) as any);
+      if (prep.error || prep.registration === 'missing') {
+        // Not a one-click service after all: nothing half-made stays behind; the form explains what is needed.
+        await mgr.remove(c.id);
+        ctx.store.tx(() => {
+          ctx.store.exec('DELETE FROM mcp_bindings WHERE connection_id = ?', c.id);
+          ctx.store.remove('mcp_connections', c.id);
+        });
+        emit(u.id, null, c.id);
+        return { needs: b.registry ? 'details' : 'form', error: prep.error || null };
+      }
+      const scopes = (prep.scopes as { name: string; required: boolean; default: boolean }[]).filter((x) => x.default || x.required).map((x) => x.name);
+      const { authorizationUrl } = await beginOAuth(ctx, c, scopes, baseUrl(ctx, req) + CALLBACK_PATH);
+      return { needs: 'login', authorizationUrl, authorizationServer: prep.authorizationServer, connection: connView(ctx, mgr, getConn(ctx, c.id)!, true) };
+    }),
+  );
 
   api.get('/mcp/connections/:id', ah(async (req) => connView(ctx, mgr, ownConn(ctx, req), true)));
 
@@ -938,65 +1022,104 @@ export function registerRoutes(ctx: Ctx, mgr: McpManager, registry?: Registry) {
     }),
   );
 
-  /** Read-only test: connect, tools/list, optionally one read tool. Passing approves the tool list. */
+  /**
+   * Read-only test: connect, tools/list, optionally one read tool. Passing approves the tool list, so the bots can use
+   * the app from their next turn. Used by "Test", by one-click connecting and after a login.
+   */
+  async function verify(userId: string, c: ConnectionRow, b: any = {}) {
+    const started = Date.now();
+    try {
+      const client = await mgr.client(c, { force: true });
+      try {
+        await client.ping({ timeout: 10_000 });
+      } catch {
+        /* ping is optional for some servers */
+      }
+      if (client.getServerCapabilities()?.tools) {
+        const list: any[] = [];
+        let cursor: string | undefined;
+        for (let i = 0; i < 20; i++) {
+          const r = await client.listTools(cursor ? { cursor } : undefined, { timeout: c.timeout_sec * 1000 });
+          list.push(...(r.tools || []));
+          cursor = r.nextCursor;
+          if (!cursor) break;
+        }
+        mgr.syncTools(c.id, list);
+      }
+      let sample: any = null;
+      if (b.tool) {
+        const t = ctx.store.one<any>('SELECT * FROM mcp_tools WHERE connection_id = ? AND name = ? AND present = 1', c.id, String(b.tool));
+        const row = t ? ctx.store.decode<ToolRow>('mcp_tools', t) : null;
+        if (!row) throw bad('Onbekende tool');
+        if (effectiveRisk(row) !== 'read') throw bad('In de test mogen alleen leestools draaien.');
+        const args = b.args && typeof b.args === 'object' && !Array.isArray(b.args) ? b.args : {};
+        const t0 = Date.now();
+        const res: any = await mgr.use(c, (cl) => cl.callTool({ name: row.name, arguments: args }, { timeout: c.timeout_sec * 1000 }));
+        const f = formatContent(ctx, userId, null, `${c.slug}-test`, res?.content || [], res?.structuredContent);
+        logCall(ctx, { userId, connId: c.id, kind: 'test', tool: row.name, risk: 'read', summary: JSON.stringify(args).slice(0, 240), ok: !res?.isError, error: res?.isError ? f.text.slice(0, 300) : null, ms: Date.now() - t0 });
+        sample = { tool: row.name, isError: !!res?.isError, text: f.text.slice(0, 4000), attachments: f.attachments };
+      }
+      const ts = now();
+      ctx.store.exec('UPDATE mcp_tools SET approved = 1, changed = 0 WHERE connection_id = ? AND present = 1', c.id);
+      const result = { ok: true, at: ts, ms: Date.now() - started, tools: ctx.store.one<any>('SELECT COUNT(*) n FROM mcp_tools WHERE connection_id = ? AND present = 1', c.id)?.n ?? 0, sample: sample ? { tool: sample.tool, isError: sample.isError } : null };
+      ctx.store.update('mcp_connections', c.id, { verified_at: ts, verify_result: result, last_error: null, updated_at: ts });
+      logCall(ctx, { userId, connId: c.id, kind: 'test', tool: 'tools/list', risk: 'read', summary: result.tools === 1 ? '1 tool' : `${result.tools} tools`, ok: true, ms: Date.now() - started });
+      ctx.audit(userId, 'mcp.verified', { id: c.id, name: c.name, tools: result.tools });
+      const fresh = getConn(ctx, c.id)!;
+      emit(userId, fresh);
+      return { ok: true as const, sample, connection: connView(ctx, mgr, fresh, true) };
+    } catch (e: any) {
+      if (e instanceof HttpError) throw e;
+      const error = cleanError(e);
+      ctx.store.update('mcp_connections', c.id, { verify_result: { ok: false, at: now(), error }, last_error: error, updated_at: now() });
+      logCall(ctx, { userId, connId: c.id, kind: 'test', tool: 'tools/list', risk: 'read', summary: '', ok: false, error, ms: Date.now() - started });
+      const fresh = getConn(ctx, c.id)!;
+      emit(userId, fresh);
+      // npx/uvx missing: the answer names what "Installeren" gets (POST /mcp/runtimes/:id).
+      const needsRuntime = e instanceof ToolchainMissingError ? e.toolchain : undefined;
+      return { ok: false as const, error, authRequired: fresh.status === 'auth_required' || /inloggen/i.test(error), needsRuntime, connection: connView(ctx, mgr, fresh, true) };
+    }
+  }
+
   api.post(
     '/mcp/connections/:id/test',
+    ah(async (req) => verify(user(req).id, ownConn(ctx, req), req.body || {})),
+  );
+
+  /**
+   * TeamBot's own Node (npx) or uv (uvx) when this computer has none (core/runtimes.ts): one download into the data
+   * folder, progress as "mcp.runtime" events. Apps that were waiting for it start fresh afterwards.
+   */
+  api.get(
+    '/mcp/runtimes/:id',
     ah(async (req) => {
-      const u = user(req);
-      const c = ownConn(ctx, req);
-      const b = req.body || {};
-      const started = Date.now();
-      try {
-        const client = await mgr.client(c, { force: true });
-        try {
-          await client.ping({ timeout: 10_000 });
-        } catch {
-          /* ping is optional for some servers */
-        }
-        if (client.getServerCapabilities()?.tools) {
-          const list: any[] = [];
-          let cursor: string | undefined;
-          for (let i = 0; i < 20; i++) {
-            const r = await client.listTools(cursor ? { cursor } : undefined, { timeout: c.timeout_sec * 1000 });
-            list.push(...(r.tools || []));
-            cursor = r.nextCursor;
-            if (!cursor) break;
-          }
-          mgr.syncTools(c.id, list);
-        }
-        let sample: any = null;
-        if (b.tool) {
-          const t = ctx.store.one<any>('SELECT * FROM mcp_tools WHERE connection_id = ? AND name = ? AND present = 1', c.id, String(b.tool));
-          const row = t ? ctx.store.decode<ToolRow>('mcp_tools', t) : null;
-          if (!row) throw bad('Onbekende tool');
-          if (effectiveRisk(row) !== 'read') throw bad('In de test mogen alleen leestools draaien.');
-          const args = b.args && typeof b.args === 'object' && !Array.isArray(b.args) ? b.args : {};
-          const t0 = Date.now();
-          const res: any = await mgr.use(c, (cl) => cl.callTool({ name: row.name, arguments: args }, { timeout: c.timeout_sec * 1000 }));
-          const f = formatContent(ctx, u.id, null, `${c.slug}-test`, res?.content || [], res?.structuredContent);
-          logCall(ctx, { userId: u.id, connId: c.id, kind: 'test', tool: row.name, risk: 'read', summary: JSON.stringify(args).slice(0, 240), ok: !res?.isError, error: res?.isError ? f.text.slice(0, 300) : null, ms: Date.now() - t0 });
-          sample = { tool: row.name, isError: !!res?.isError, text: f.text.slice(0, 4000), attachments: f.attachments };
-        }
-        const ts = now();
-        ctx.store.exec('UPDATE mcp_tools SET approved = 1, changed = 0 WHERE connection_id = ? AND present = 1', c.id);
-        const result = { ok: true, at: ts, ms: Date.now() - started, tools: ctx.store.one<any>('SELECT COUNT(*) n FROM mcp_tools WHERE connection_id = ? AND present = 1', c.id)?.n ?? 0, sample: sample ? { tool: sample.tool, isError: sample.isError } : null };
-        ctx.store.update('mcp_connections', c.id, { verified_at: ts, verify_result: result, last_error: null, updated_at: ts });
-        logCall(ctx, { userId: u.id, connId: c.id, kind: 'test', tool: 'tools/list', risk: 'read', summary: result.tools === 1 ? '1 tool' : `${result.tools} tools`, ok: true, ms: Date.now() - started });
-        ctx.audit(u.id, 'mcp.verified', { id: c.id, name: c.name, tools: result.tools });
-        const fresh = getConn(ctx, c.id)!;
-        emit(u.id, fresh);
-        return { ok: true, sample, connection: connView(ctx, mgr, fresh, true) };
-      } catch (e: any) {
-        if (e instanceof HttpError) throw e;
-        const error = cleanError(e);
-        ctx.store.update('mcp_connections', c.id, { verify_result: { ok: false, at: now(), error }, last_error: error, updated_at: now() });
-        logCall(ctx, { userId: u.id, connId: c.id, kind: 'test', tool: 'tools/list', risk: 'read', summary: '', ok: false, error, ms: Date.now() - started });
-        const fresh = getConn(ctx, c.id)!;
-        emit(u.id, fresh);
-        return { ok: false, error, authRequired: fresh.status === 'auth_required' || /inloggen/i.test(error), connection: connView(ctx, mgr, fresh, true) };
-      }
+      user(req);
+      const id = String(req.params.id) as ToolchainId;
+      if (id !== 'node' && id !== 'uv') throw notFound('Onbekend programma');
+      return toolchainStatus(id, ctx.config.dataDir);
     }),
   );
+  api.post(
+    '/mcp/runtimes/:id',
+    ah(async (req) => {
+      const u = user(req);
+      const id = String(req.params.id) as ToolchainId;
+      if (id !== 'node' && id !== 'uv') throw notFound('Onbekend programma');
+      if (!mayUseStdio(ctx, u.id)) throw forbiddenErr('Lokale programma’s zijn op deze server alleen voor beheerders.');
+      await installToolchain(u.id, id);
+      return toolchainStatus(id, ctx.config.dataDir);
+    }),
+  );
+
+  async function installToolchain(userId: string, id: ToolchainId) {
+    try {
+      await ensureToolchain(id, ctx.config.dataDir, { onProgress: (p) => ctx.events.emit(userId, 'mcp.runtime', p) });
+    } catch (e: any) {
+      throw bad(cleanError(e));
+    }
+    ctx.audit(userId, 'mcp.runtime.installed', { id });
+    for (const c of ctx.store.find<ConnectionRow>('mcp_connections', { user_id: userId })) if (c.transport === 'stdio' && toolchainOf(c.command) === id) await mgr.stop(c.id, `${id} geïnstalleerd`);
+  }
 
   api.post(
     '/mcp/connections/:id/actions',
@@ -1178,11 +1301,17 @@ export function registerRoutes(ctx: Ctx, mgr: McpManager, registry?: Registry) {
       if (r.conn) {
         if (r.ok) {
           ctx.store.update('mcp_connections', r.conn.id, { status: 'authorized' });
+          // The read test right after the login: the bots can use the app also when the page was closed meanwhile.
+          const conn = r.conn;
           mgr
-            .restart(r.conn)
+            .restart(conn)
+            .then(() => {
+              const fresh = getConn(ctx, conn.id);
+              return fresh && !fresh.verified_at ? verify(fresh.user_id, fresh) : null;
+            })
             .catch(() => {})
             .finally(() => {
-              const fresh = getConn(ctx, r.conn!.id);
+              const fresh = getConn(ctx, conn.id);
               if (fresh) emit(fresh.user_id, fresh);
             });
           ctx.events.emit(r.conn.user_id, 'mcp.oauth', { id: r.conn.id, ok: true });

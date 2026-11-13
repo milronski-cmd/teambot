@@ -46,7 +46,6 @@ export interface CustomerConfig {
 
 export const KNOWLEDGE_MAX = 20_000;
 const DEFAULT_HOURS: WorkHours = { enabled: false, days: [1, 2, 3, 4, 5], from: '09:00', to: '17:00' };
-export const CUSTOMER_DEFAULTS: CustomerConfig = { enabled: false, open: true, aiLabel: true, handoff: true, approveMoney: true, hours: DEFAULT_HOURS, knowledge: '', profile: false };
 
 /** Adapters where strangers may not write to the bot, even in customer mode. */
 const NO_OPEN_DOOR = new Set(['whatsapp-web']);

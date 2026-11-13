@@ -598,22 +598,3 @@ export function restoreSnapshot(root: string, dir: string, o: { deleteExtra?: bo
   if (o.deleteExtra) for (const k of plan.extra) fs.rmSync(safeJoin(root, k), { force: true });
   return plan;
 }
-
-export function dirSize(dir: string): number {
-  let n = 0;
-  const walk = (d: string) => {
-    let entries: fs.Dirent[] = [];
-    try {
-      entries = fs.readdirSync(d, { withFileTypes: true });
-    } catch {
-      return;
-    }
-    for (const e of entries) {
-      const f = path.join(d, e.name);
-      if (e.isDirectory()) walk(f);
-      else if (e.isFile()) n += fs.statSync(f, { throwIfNoEntry: false })?.size || 0;
-    }
-  };
-  walk(dir);
-  return n;
-}

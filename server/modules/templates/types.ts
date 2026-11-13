@@ -112,7 +112,7 @@ export interface TemplateDef {
   goal: string;
   /** Team rules, on top of the fixed way of working. */
   rules: string[];
-  /** 3–5 questions that fill the business profile. */
+  /** 3–5 questions that fill the business profile. Not a form: the owner's main bot asks them in the chat, one at a time (intake.ts). */
   questions: ProfileQuestion[];
   /** Typical first tasks with their "klaar als", for the picker and the first-run screen. */
   examples: DoneWhen[];

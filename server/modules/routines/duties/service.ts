@@ -1,4 +1,5 @@
 import type { Agent, Ctx } from '../../../core/types.js';
+import { oneLine } from '../../../core/util.js';
 import { engineTier } from '../../../agent/fallback.js';
 import { redact } from '../../../core/secrets.js';
 import { tellOwner } from '../../notifications/owner.js';
@@ -6,35 +7,60 @@ import { effectiveRisk, exposedName } from '../../mcp/tools.js';
 import type { RoutineEngine } from '../engine.js';
 import { STARTED_RUN, type Routine, type RoutineRun, type RunOverride } from '../schema.js';
 import * as S from '../schedule.js';
-import { CATALOG_VERSION, allPresets, cleanPresets, defaultDuties, rolesFor, toDuty, type CatalogDuty, type Preset } from './catalog.js';
+import type { WorkLoop } from './work.js';
+import { BUILTIN_KEYS, CATALOG_VERSION, SETUP_KEY, allPresets, builtinDuty, cleanPresets, defaultDuties, toDuty, type CatalogDuty, type Preset } from './catalog.js';
 import { checkSites, checkUrl, compare, pageFacts, pick } from './checks.js';
 import { ACTION_LABEL, SOURCE_APP, SOURCE_LABEL, cleanProactive, type CheckResult, type Duty, type DutySource, type Finding, type Measure, OPS, type ProactiveSettings, type Reminder } from './types.js';
+import { PLACE } from '../../../../shared/places.js';
 
 /**
  * Vaste taken on top of the routines engine. The engine keeps doing what it does (schedule, claim, limits, receipts);
  * this service decides, right before a duty's run would wake its bot:
  *
- *  1. measure first, without a model where TeamBot can (the team's websites, the bot's open tasks, unscored
- *     opportunities). Nothing wrong → the run ends there as "niets nieuws": one quiet line, no tokens, no notification;
+ *  1. measure first, without a model where TeamBot can (the team's websites, a number from a connected app or the
+ *     team database). Nothing wrong → the run ends there as "niets nieuws": one quiet line with the number that was
+ *     measured, no tokens, no notification. That is a conclusion after looking, never a skipped look;
  *  2. every problem becomes one task on the team's board with a "klaar als" and the measurement as its reason (never a
  *     second task for the same open problem), and a problem the next measurement no longer finds closes its task with
  *     that measurement as proof: the loop ends by measuring, not by a bot saying so;
- *  3. only then, and only within the owner's budget for proactive work, the bot is woken, on the cheapest engine
- *     there is (free or local first), to fix what it may fix itself.
+ *  3. only then the bot is woken, on its own model with its own tools, to fix what it may fix itself.
  *
- * A duty whose source is not there (no website filled in, the app not connected) waits quietly and says what it
- * needs; it never asks a model to make something up.
+ * A duty whose source is not there (no website filled in, the app not connected) has nothing to look at: it is parked
+ * (paused, with what it needs as the reason) instead of running on schedule for nothing, and goes on by itself the
+ * moment the source is there (`park`, `unpark`).
+ *
+ * No bot gets a duty by itself (catalog.ts says why). What TeamBot once seeded and never produced anything is
+ * archived on the first start after the update (`retire`): logged, shown at Werk, and one click puts it back.
  */
 
 const SETTINGS_KEY = 'proactive';
 const SEEDED_KEY = 'proactive.seeded';
 const PRESETS_KEY = 'proactive.presets';
-/** The one-off run in which a bot that fits no preset proposes its own duties. */
-export const SETUP_KEY = 'vaste-taken.bedenken';
+const ARCHIVE_KEY = 'proactive.archived';
+const CLEANUP_KEY = 'proactive.cleanup';
+const CLEANUP_VERSION = 1;
+/** A parked duty's pause reason starts with this (the check-in and the unpark sweep recognise it). */
+export const WAIT_PREFIX = 'Wacht: ';
+export { SETUP_KEY };
 const CLOSED = ['klaar', 'geannuleerd', 'kon_niet', 'vervallen'];
 const RETRY_PROBLEM_DAYS = 14;
 /** A customer message counts as unanswered after this many hours. */
 export const INBOX_HOURS = 4;
+
+/** A routine TeamBot took away at the clean-up, kept whole so it can be put back. */
+export interface ArchivedRoutine {
+  id: string;
+  name: string;
+  agentId: string;
+  agentName: string;
+  /** Why it was archived, in plain Dutch. */
+  reason: string;
+  archivedAt: string;
+  /** How many times it ran, and what its last run said. */
+  runs: number;
+  lastSummary: string | null;
+  routine: { name: string; agent_id: string; prompt: string; timezone: string; schedule: any; options: any; status: string; created_at: string; created_by: string };
+}
 
 export interface DutyStart {
   /** End the run here, without a model call. */
@@ -60,26 +86,24 @@ export interface DutyView {
   actionLabel: string;
   /** What this duty waits for before it can measure anything (a website, a connected app), or null. */
   needs: string | null;
+  /** Parked by TeamBot until that is there (paused with the need as its reason); it goes on by itself. */
+  parked: boolean;
   last: { status: string | null; summary: string | null; at: string | null };
   openTasks: number;
 }
 
 const iso = (ms: number) => new Date(ms).toISOString();
-const short = (s: unknown, n = 200) => {
-  const v = String(s ?? '').replace(/\s+/g, ' ').trim();
-  return v.length > n ? `${v.slice(0, n - 1)}…` : v;
-};
 
 export function cleanDuty(raw: any): Duty | null {
   if (!raw || typeof raw !== 'object') return null;
-  const check = short(raw.check, 1000);
+  const check = oneLine(raw.check, 1000);
   if (!check) return null;
   const source = (Object.keys(SOURCE_LABEL) as DutySource[]).includes(raw.source) ? (raw.source as DutySource) : 'team';
   return {
-    key: short(raw.key, 60) || 'eigen',
+    key: oneLine(raw.key, 60) || 'eigen',
     check,
     source,
-    okWhen: short(raw.okWhen, 500),
+    okWhen: oneLine(raw.okWhen, 500),
     onProblem: ['fix', 'task', 'ask'].includes(raw.onProblem) ? raw.onProblem : 'task',
     ...(raw.guard === true ? { guard: true } : {}),
     ...(Number.isInteger(raw.projectId) ? { projectId: raw.projectId } : {}),
@@ -117,7 +141,8 @@ export function cleanReminder(raw: any): Reminder | null {
 }
 
 export class DutyService {
-  private lastSweep = 0;
+  /** The work loop (work.ts): set by the module. */
+  work: WorkLoop | null = null;
   private turn = 0;
 
   constructor(
@@ -132,9 +157,12 @@ export class DutyService {
   }
 
   setSettings(userId: string, patch: any): ProactiveSettings {
-    const next = cleanProactive({ ...this.settings(userId), ...(patch && typeof patch === 'object' ? patch : {}) });
+    const prev = this.settings(userId);
+    const next = cleanProactive({ ...prev, ...(patch && typeof patch === 'object' ? patch : {}) });
     this.ctx.store.setSetting(userId, SETTINGS_KEY, next);
     this.ctx.events.emit(userId, 'proactive.settings', next);
+    // A higher maximum in the sprint, or none: the projects that waited move up now (teamdata/projects.ts).
+    if (next.maxSprint !== prev.maxSprint) void Promise.resolve(this.ctx.services.projects?.fill?.(userId)).catch((e: any) => this.ctx.log.warn('[projecten] doorschuiven', String(e?.message || e)));
     return next;
   }
 
@@ -142,7 +170,8 @@ export class DutyService {
   usedToday(userId: string): number {
     const since = iso(S.startOfDay(this.engine.now(), this.engine.userTz(userId)));
     const statuses = STARTED_RUN.map((s) => `'${s}'`).join(',');
-    return this.ctx.store.one<{ n: number }>(`SELECT COUNT(*) n FROM routine_runs WHERE user_id = ? AND started_at >= ? AND status IN (${statuses}) AND json_extract(meta, '$.duty.model') = 1`, userId, since)?.n || 0;
+    const duties = this.ctx.store.one<{ n: number }>(`SELECT COUNT(*) n FROM routine_runs WHERE user_id = ? AND started_at >= ? AND status IN (${statuses}) AND json_extract(meta, '$.duty.model') = 1`, userId, since)?.n || 0;
+    return duties + (this.work?.turnsToday(userId) || 0);
   }
 
   budget(userId: string) {
@@ -166,15 +195,18 @@ export class DutyService {
     return this.engine.routinesOf(userId, agentId).filter((r) => !!r.options.duty);
   }
 
-  /** Once a minute: every bot gets the duties of its role (once; a duty the owner removed stays removed). */
-  sweep(now: number) {
-    if (now - this.lastSweep < 60_000 && now >= this.lastSweep) return;
-    this.lastSweep = now;
+  /**
+   * Once a minute, from the planner (source `duties`): the one-off clean-up, the owner's own presets, and parked duties
+   * whose source is there now. No model call.
+   */
+  sweep() {
     for (const { user_id } of this.ctx.store.all<{ user_id: string }>('SELECT DISTINCT user_id FROM agents WHERE archived = 0')) {
       try {
+        this.retire(user_id);
         this.seed(user_id);
+        this.unpark(user_id);
       } catch (e: any) {
-        this.ctx.log.warn('[vaste taken] standaardtaken', redact(String(e?.message || e)));
+        this.ctx.log.warn('[vaste taken] onderhoud', redact(String(e?.message || e)));
       }
     }
   }
@@ -195,29 +227,25 @@ export class DutyService {
   }
 
   /**
-   * Give every bot of this owner the duties it does not have yet: those of the presets that fit it, and for a bot
-   * with a role that fits no preset one run in which it proposes its own (SETUP_KEY). Returns how many were made.
+   * Apply the owner's OWN presets: a bot one of them recognises gets its duties (once; a duty he removed stays
+   * removed). Built-in presets are never applied, and no bot gets anything "because every bot does". Returns how many
+   * were made.
    */
   seed(userId: string): number {
     const store = this.ctx.store;
+    const presets = this.ownPresets(userId);
+    if (!presets.length) return 0;
     const seeded = { ...(store.getSetting<Record<string, { v: number; keys: string[] }>>(userId, SEEDED_KEY, {}) || {}) };
-    const mainId: string | null = this.teams?.mainOf?.(userId) || null;
-    const presets = this.presets(userId);
-    const psig = presets.map((p) => `${p.id}:${p.words.join(',')}:${p.duties.map((d) => d.key).join(',')}`).join('|').length;
+    const psig = presets.map((p) => `${p.id}:${p.words.join(',')}:${p.duties.map((d) => d.key).join(',')}`).join('|');
     let made = 0;
     let changed = false;
     for (const agent of store.agents(userId)) {
-      const sig = `${agent.role}|${agent.name}|${agent.id === mainId ? 'm' : ''}|${psig}`;
+      const sig = `${agent.role}|${agent.name}|${psig}`;
       const prev = seeded[agent.id] as any;
       if (prev && prev.v === CATALOG_VERSION && prev.sig === sig) continue;
       const known = new Set<string>(prev?.keys || []);
       const have = new Set(this.duties(userId, agent.id).map((r) => r.options.duty!.key));
-      const main = agent.id === mainId;
-      const list = defaultDuties(agent, { main, presets });
-      // A role nobody foresaw: the bot proposes its own duties, once, from its role, instructions and tools.
-      if (!main && (agent.role || '').trim() && !rolesFor(agent, presets).length && ![...have].some((k) => k !== 'werk.afmaken'))
-        list.push({ key: SETUP_KEY, title: 'Vaste taken bedenken', check: 'Bedenk welke vaste taken bij je rol passen en stel ze in.', source: 'team', okWhen: 'je vaste taken zijn ingesteld', onProblem: 'task', days: [], times: [] });
-      for (const d of list) {
+      for (const d of defaultDuties(agent, { presets })) {
         if (known.has(d.key) || have.has(d.key)) continue;
         try {
           this.create(userId, agent.id, d);
@@ -236,6 +264,137 @@ export class DutyService {
     return made;
   }
 
+  // ------------------------------------------------------------------ clean-up of what TeamBot once seeded
+
+  archived(userId: string): ArchivedRoutine[] {
+    const list = this.ctx.store.getSetting<ArchivedRoutine[]>(userId, ARCHIVE_KEY, []);
+    return Array.isArray(list) ? list : [];
+  }
+
+  /**
+   * Once per owner, on the first start after the update: archive the vaste taken TeamBot made by itself and that never
+   * produced anything. Three kinds, each only when its history shows it never did more than "niets nieuws" without a
+   * model (no bot turn, no finding, no task made or closed):
+   *  - a built-in duty the old seeder gave the bot (recorded in `proactive.seeded`) and nobody changed since;
+   *  - the one-off run "Vaste taken bedenken" itself (its job no longer exists);
+   *  - a duty a bot made during that run: thought up because TeamBot told it to, not because anyone asked.
+   * Kept, always: what the owner made or edited, what a bot set in a conversation, a project's guard, reminders,
+   * ordinary routines, and anything that ever found or did something. Archived is not deleted: the whole routine is
+   * kept in `proactive.archived`, each one is in the audit log, the owner gets one notification, and `restore` puts it
+   * back as it was.
+   */
+  retire(userId: string): ArchivedRoutine[] {
+    const store = this.ctx.store;
+    if ((store.getSetting<any>(userId, CLEANUP_KEY, null)?.v || 0) >= CLEANUP_VERSION) return [];
+    const seeded = store.getSetting<Record<string, { v: number; keys: string[] }>>(userId, SEEDED_KEY, {}) || {};
+    const runsOf = (id: string) => store.all<any>('SELECT * FROM routine_runs WHERE routine_id = ?', id).map((x) => store.decode<RoutineRun>('routine_runs', x));
+    const quiet = ['no_update', 'skipped', 'limited', 'cancelled'];
+    /** Did this duty ever do more than conclude "niets nieuws" without a model? */
+    const productive = (runs: RoutineRun[]) => runs.some((x) => !quiet.includes(x.status) || !!x.run_id || Number(x.meta?.duty?.findings) > 0 || (x.meta?.duty?.created || []).length > 0 || Number(x.meta?.duty?.closed) > 0);
+    const all = this.duties(userId);
+    // When each bot was in its "Vaste taken bedenken" run: a duty made in that window was thought up there.
+    const windows = new Map<string, [number, number][]>();
+    for (const r of all.filter((x) => x.options.duty!.key === SETUP_KEY)) {
+      for (const x of runsOf(r.id)) {
+        if (!x.run_id || !x.started_at) continue;
+        windows.set(r.agent_id, [...(windows.get(r.agent_id) || []), [Date.parse(x.started_at) - 1000, (Date.parse(x.finished_at || '') || Date.parse(x.started_at) + 30 * 60_000) + 5000]]);
+      }
+    }
+    const out: ArchivedRoutine[] = [];
+    for (const r of all) {
+      const duty = r.options.duty!;
+      if (duty.guard) continue;
+      const runs = runsOf(r.id);
+      const made = Date.parse(r.created_at);
+      let reason = '';
+      if (duty.key === SETUP_KEY) reason = 'De eenmalige ronde “Vaste taken bedenken” bestaat niet meer: bots verzinnen geen vaste taken meer voor zichzelf.';
+      else if (BUILTIN_KEYS.has(duty.key)) {
+        const lib = builtinDuty(duty.key);
+        const old = seeded[r.agent_id];
+        const untouched = !!lib && r.name === lib.title && r.prompt === lib.check;
+        if (old && Number(old.v) < CATALOG_VERSION && (old.keys || []).includes(duty.key) && untouched && !productive(runs)) reason = 'Door TeamBot zelf aangemaakt op grond van de rol van de bot, niet door jou gevraagd. Heeft nooit iets opgeleverd.';
+      } else if ((windows.get(r.agent_id) || []).some(([from, to]) => made >= from && made <= to) && !productive(runs)) reason = 'Door de bot bedacht in de automatische ronde “Vaste taken bedenken”, niet door jou gevraagd. Heeft nooit iets gevonden.';
+      if (!reason) continue;
+      const agent = store.agent(r.agent_id);
+      const need = agent && duty.key !== SETUP_KEY ? this.needs(r, agent) : null;
+      const entry: ArchivedRoutine = {
+        id: r.id,
+        name: r.name,
+        agentId: r.agent_id,
+        agentName: agent?.name || '',
+        reason: need ? `${reason} (${need})` : reason,
+        archivedAt: iso(this.engine.now()),
+        runs: runs.length,
+        lastSummary: r.last_summary,
+        routine: { name: r.name, agent_id: r.agent_id, prompt: r.prompt, timezone: r.timezone, schedule: r.schedule, options: r.options, status: r.status, created_at: r.created_at, created_by: r.created_by },
+      };
+      // First the copy and the log line, then the routine itself: nothing is lost when the second step fails.
+      store.setSetting(userId, ARCHIVE_KEY, [...this.archived(userId), entry].slice(-500));
+      this.ctx.audit(userId, 'routine.archived', { id: r.id, name: r.name, reason: entry.reason, runs: runs.length }, r.agent_id);
+      // (The conversation of a run that did call a model stays: only a thread nobody ever spoke in goes.)
+      this.engine.remove(r, { deleteThread: !runs.some((x) => x.run_id) });
+      out.push(entry);
+    }
+    store.setSetting(userId, CLEANUP_KEY, { v: CLEANUP_VERSION, at: iso(this.engine.now()), archived: out.length });
+    if (out.length) {
+      this.ctx.log.info?.(`[vaste taken] opgeruimd: ${out.length} automatische routines gearchiveerd`);
+      this.ctx.events.emit(userId, 'notification', {
+        title: 'TeamBot heeft opgeruimd',
+        // One whole sentence per form: a Dutch "n" or "is"/"zijn" as a value is a piece no other language can translate.
+        body:
+          out.length === 1
+            ? '1 automatische routine die nooit iets opleverde, is gearchiveerd. Niets is weg: je vindt hem bij Werk onder “Opgeruimd” en kunt hem terugzetten.'
+            : `${out.length} automatische routines die nooit iets opleverden, zijn gearchiveerd. Niets is weg: je vindt ze bij Werk onder “Opgeruimd” en kunt ze terugzetten.`,
+        link: '#/m/routines/werk',
+        kind: 'routine',
+        ref: 'proactive.cleanup',
+      });
+    }
+    return out;
+  }
+
+  /** Put an archived routine back as it was (a one-off whose moment has passed comes back paused). */
+  restore(userId: string, id: string): Routine | null {
+    const list = this.archived(userId);
+    const e = list.find((x) => x.id === id);
+    if (!e) return null;
+    const body = { name: e.routine.name, agent_id: e.routine.agent_id, prompt: e.routine.prompt, timezone: e.routine.timezone, schedule: e.routine.schedule, options: e.routine.options };
+    const r = this.engine.create(userId, body, { status: e.routine.schedule?.kind === 'once' || e.routine.status === 'paused' ? 'paused' : 'active', createdBy: e.routine.created_by === 'agent' ? 'agent' : 'user', allowPastOnce: true });
+    this.ctx.store.setSetting(userId, ARCHIVE_KEY, list.filter((x) => x.id !== id));
+    this.ctx.audit(userId, 'routine.restored', { id: r.id, from: id, name: r.name }, r.agent_id);
+    return r;
+  }
+
+  // ------------------------------------------------------------------ a duty with nothing to look at does not run
+
+  /** The source is not there: pause the duty with what it needs, so it is not scheduled for nothing. */
+  private park(r: Routine, need: string) {
+    if (r.status !== 'active') return;
+    this.engine.setStatus(r, 'paused', `${WAIT_PREFIX}${need}`.slice(0, 500), 'system');
+  }
+
+  /** A parked duty whose source is there now goes on by itself. */
+  unpark(userId: string): number {
+    let n = 0;
+    for (const r of this.duties(userId)) {
+      if (r.status !== 'paused' || !String(r.paused_reason || '').startsWith(WAIT_PREFIX)) continue;
+      const agent = this.ctx.store.agent(r.agent_id);
+      if (!agent || agent.archived) continue;
+      const need = this.needs(r, agent);
+      if (need) {
+        if (`${WAIT_PREFIX}${need}`.slice(0, 500) !== r.paused_reason) this.ctx.store.update('routines', r.id, { paused_reason: `${WAIT_PREFIX}${need}`.slice(0, 500) });
+        continue;
+      }
+      try {
+        this.engine.setStatus(r, 'active', null, 'system');
+        n++;
+      } catch {
+        /* a one-off whose moment has passed stays paused */
+      }
+    }
+    return n;
+  }
+
   /** A duty is a routine: quiet unless something is wrong, never waiting on a limit, one catch-up after the pc was off. */
   create(userId: string, agentId: string, d: CatalogDuty | (Duty & { title: string; days?: any[]; times?: string[]; everyMinutes?: number })): Routine {
     const duty = cleanDuty(d);
@@ -244,17 +403,15 @@ export class DutyService {
     const times = Array.isArray((d as any).times) && (d as any).times.length ? (d as any).times : ['07:00'];
     const every = Math.round(Number((d as any).everyMinutes));
     const tz = this.engine.userTz(userId);
-    const pad = (n: number) => String(n).padStart(2, '0');
-    const soon = S.wallTime(this.engine.now() + 90_000, tz);
     // Any frequency the owner or the bot asks for: every N minutes (from 1), or days and times.
-    const schedule = duty.key === SETUP_KEY ? { kind: 'once', at: `${soon.y}-${pad(soon.m)}-${pad(soon.d)}T${pad(soon.h)}:${pad(soon.mi)}` } : every >= 1 ? { kind: 'interval', everyMinutes: every } : { kind: 'weekly', days, times };
+    const schedule = every >= 1 ? { kind: 'interval', everyMinutes: every } : { kind: 'weekly', days, times };
     return this.engine.create(userId, {
       name: d.title,
       agent_id: agentId,
       prompt: duty.check,
       timezone: tz,
       schedule,
-      options: { duty, notify: 'errors', missedPolicy: 'catchup', maxRunsPerDay: 0, maxCostPerDayUsd: 0, timeoutMinutes: 30, limitPolicy: 'skip', retries: 1, hideSilentRuns: true },
+      options: { duty, notify: 'errors', missedPolicy: 'catchup', maxRunsPerDay: 0, maxCostPerDayUsd: 0, timeoutMinutes: 0, limitPolicy: 'skip', retries: 1, hideSilentRuns: true },
     });
   }
 
@@ -280,7 +437,7 @@ export class DutyService {
     }
     const app = SOURCE_APP[duty.source];
     if (!app) return null;
-    return this.sourceTools(agent, duty.source).length ? null : `Koppel ${app.name} (Instellingen › Apps) en zet de app aan bij ${agent.name}.`;
+    return this.sourceTools(agent, duty.source).length ? null : `Koppel ${app.name} (${PLACE.apps}) en zet de app aan bij ${agent.name}.`;
   }
 
   private apps(agent: Agent): { id: string; name: string; tools: string[] }[] {
@@ -363,7 +520,7 @@ export class DutyService {
       const [res] = await this.write(r, [
         {
           sql: "INSERT INTO taken (titel, eigenaar, aangevraagd_door, site, status, klaar_als, beschrijving, bron, project_id) VALUES (?, ?, ?, ?, 'open', ?, ?, ?, ?)",
-          params: [short(f.title, 200), agent.name, `Vaste taak: ${r.name}`.slice(0, 120), f.site || null, short(f.doneWhen, 500), short(`${f.evidence}${again}`, 2000), bron, r.options.duty?.projectId ?? null],
+          params: [oneLine(f.title, 200), agent.name, `Vaste taak: ${r.name}`.slice(0, 120), f.site || null, oneLine(f.doneWhen, 500), oneLine(`${f.evidence}${again}`, 2000), bron, r.options.duty?.projectId ?? null],
         },
       ]);
       created.push({ id: Number(res?.lastInsertRowid) || 0, title: f.title });
@@ -447,7 +604,7 @@ export class DutyService {
     const duty = r.options.duty;
     const d = rr.meta?.duty;
     if (!duty || !d || d.result) return null;
-    const said = short(text, 600);
+    const said = oneLine(text, 600);
     const who = this.ctx.store.agent(r.agent_id)?.name || 'de bot';
     let summary: string;
     let result: string;
@@ -486,12 +643,17 @@ export class DutyService {
     if (!duty) return null;
     const manual = rr.trigger === 'manual' || rr.trigger === 'test';
 
+    // The retired one-off "Vaste taken bedenken" (an install that was not cleaned up yet): never wakes a bot again.
+    if (duty.key === SETUP_KEY) return { finish: { status: 'skipped', summary: 'Vervallen: bots verzinnen geen vaste taken meer voor zichzelf.' }, meta: { duty: { key: duty.key } } };
     const need = this.needs(r, agent);
-    if (need) return { finish: { status: 'no_update', summary: `Wacht: ${need}` }, meta: { duty: { key: duty.key, needs: need } } };
+    if (need) {
+      // Nothing to look at: say what is needed and stop being scheduled until it is there (unpark).
+      if (!manual) this.park(r, need);
+      return { finish: { status: 'skipped', summary: `${WAIT_PREFIX}${need}` }, meta: { duty: { key: duty.key, needs: need, parked: !manual } } };
+    }
 
     let measured: CheckResult | null = null;
     let work = '';
-    if (duty.key === SETUP_KEY) return this.gate(r, agent, manual, this.setupWork(agent), { key: duty.key });
     if (duty.measure && duty.measure.kind !== 'site') {
       measured = await this.measure(r, agent, duty.measure);
       return this.afterMeasure(r, agent, duty, measured, manual);
@@ -538,7 +700,7 @@ export class DutyService {
     if (duty.onProblem !== 'fix') return { finish: { status: 'done', summary, notify }, meta };
     const left = manual ? null : this.budget(r.user_id).left;
     if (left !== null && left <= 0) return { finish: { status: 'done', summary: `${summary} (De limiet voor proactief werk is voor vandaag bereikt: de taak wacht op het bord.)`, notify }, meta };
-    this.ctx.events.emit(r.user_id, 'notification', { title: notify.title, body: short(notify.body, 300), link: notify.link, kind: 'routine', routineId: r.id, ...notify.extra });
+    this.ctx.events.emit(r.user_id, 'notification', { title: notify.title, body: oneLine(notify.body, 300), link: notify.link, kind: 'routine', routineId: r.id, ...notify.extra });
     const tasks = await this.openTasks(r);
     const work = [
       'TeamBot heeft dit zelf gemeten:',
@@ -595,7 +757,7 @@ export class DutyService {
         const client = await this.ctx.services.mcp._manager.client(hit.conn);
         const res: any = await client.callTool({ name: hit.tool, arguments: m.args || {} }, undefined, { timeout: 60_000 });
         const text = (res?.content || []).map((c: any) => (c?.type === 'text' ? c.text : '')).join('');
-        if (res?.isError) return one(`${m.tool} gaf een fout`, {}, `${m.tool} gaf een fout: ${short(text, 300)}`);
+        if (res?.isError) return one(`${m.tool} gaf een fout`, {}, `${m.tool} gaf een fout: ${oneLine(text, 300)}`);
         let data: any = res?.structuredContent;
         if (data === undefined) {
           try {
@@ -615,19 +777,6 @@ export class DutyService {
     const mm = m as Extract<Measure, { kind: 'tool' | 'query' }>;
     const ok = compare(value, mm.op, mm.value);
     return one(`${value} uit ${from} (in orde als ${mm.op} ${mm.value})`, { waarde: value }, ok ? null : `${from} geeft ${value}; in orde is ${mm.op} ${mm.value}`);
-  }
-
-  /** What a bot with an unforeseen role is asked once: propose its own duties, from what it is and what it can reach. */
-  private setupWork(agent: Agent): string {
-    const apps = this.apps(agent);
-    return [
-      `Je rol is: ${agent.role}.${agent.description ? ` ${agent.description}` : ''}`,
-      apps.length ? `Je gekoppelde apps: ${apps.map((a) => `${a.name} (${a.tools.slice(0, 12).join(', ')})`).join('; ')}.` : 'Je hebt nog geen gekoppelde apps.',
-      '',
-      'Voor jouw rol zijn er nog geen vaste taken. Bedenk 1 tot 3 dingen die iemand in jouw rol uit zichzelf in de gaten houdt, en stel elk in met duty_set: een naam, wat je controleert, wanneer het in orde is, hoe vaak, en wat er gebeurt als het niet in orde is.',
-      'Kan TeamBot het zelf meten zonder jou (een webadres dat moet antwoorden, een getal uit een van je lees-tools, een getal uit de teamdatabase), geef dan een meting mee: dat kost geen AI en is nooit verzonnen.',
-      'Stel alleen taken in die je met je huidige tools echt kunt uitvoeren. De eigenaar ziet ze bij Werk en kan ze aanpassen of weghalen. Sluit af met duty_report (status in_orde) en in samenvatting welke vaste taken je hebt ingesteld.',
-    ].join('\n');
   }
 
   // ------------------------------------------------------------------ customer messages without an answer (channel data)
@@ -667,13 +816,13 @@ export class DutyService {
         if (c.last_outbound_at && Date.parse(c.last_outbound_at) >= at) continue;
         const hours = Math.floor((now - at) / 3_600_000);
         if (hours < INBOX_HOURS) continue;
-        const who = short(c.title || c.external_id || 'een klant', 60);
+        const who = oneLine(c.title || c.external_id || 'een klant', 60);
         findings.push({
           key: `gesprek:${c.id}:${c.last_inbound_at}`,
           title: `Klantbericht van ${who} wacht al ${hours} uur op antwoord`,
           evidence: `${b.name || 'Kanaal'}: laatste bericht van ${who} op ${String(c.last_inbound_at).slice(0, 16).replace('T', ' ')} UTC, ${c.last_outbound_at ? `laatste antwoord op ${String(c.last_outbound_at).slice(0, 16).replace('T', ' ')} UTC` : 'nog geen antwoord'} (gemeten ${iso(now).slice(0, 16).replace('T', ' ')} UTC)`,
           doneWhen: `het bericht van ${who} is beantwoord`,
-          site: short(b.name, 60) || undefined,
+          site: oneLine(b.name, 60) || undefined,
         });
       }
     }
@@ -717,7 +866,6 @@ export class DutyService {
   /** The instruction of a duty run: what, with what, when it is in order, and how the run ends. */
   input(r: Routine, work: string, tools?: string[]): string {
     const d = r.options.duty!;
-    if (d.key === SETUP_KEY) return `Vaste taken bedenken.\n${work}`;
     return [
       `Vaste taak “${r.name}”.`,
       `Wat je controleert: ${r.prompt.trim() || d.check}`,
@@ -743,7 +891,7 @@ export class DutyService {
     const teamId = this.engine.teamOf(r);
     const steps = findings.slice(0, 5).map((f) => ({
       sql: "INSERT INTO beslissingen (vraag, uitleg, opties, gevraagd_door) VALUES (?, ?, ?, ?)",
-      params: [short(`${f.title}: wat wil je dat ${agent.name} doet?`, 300), short(`${f.evidence}\nKlaar als: ${f.doneWhen}`, 2000), JSON.stringify(['Los het op', 'Laat het zo', 'Ik kijk er zelf naar']), agent.name],
+      params: [oneLine(`${f.title}: wat wil je dat ${agent.name} doet?`, 300), oneLine(`${f.evidence}\nKlaar als: ${f.doneWhen}`, 2000), JSON.stringify(['Los het op', 'Laat het zo', 'Ik kijk er zelf naar']), agent.name],
     }));
     await td.write(r.user_id, steps, teamId);
     this.ctx.events.emit(r.user_id, 'teamdata.changed', { tables: ['beslissingen'], by: 'TeamBot', teamId });
@@ -765,7 +913,7 @@ export class DutyService {
     if (!hit) return { text: 'Dit werkt alleen tijdens een run van een vaste taak.', isError: true };
     const { rr, r } = hit;
     const status = String(a?.status || '').toLowerCase();
-    const line = short(a?.samenvatting ?? a?.summary, 500);
+    const line = oneLine(a?.samenvatting ?? a?.summary, 500);
     const patch = (extra: Record<string, any>) => {
       const cur = this.engine.getRun(rr.id);
       if (cur) this.ctx.store.update('routine_runs', rr.id, { meta: { ...(cur.meta || {}), duty: { ...(cur.meta?.duty || {}), ...extra } } });
@@ -785,14 +933,14 @@ export class DutyService {
     if (!items.length) return { text: 'Geef per punt een titel, het bewijs en klaar_als in "punten".', isError: true };
     const findings: Finding[] = [];
     for (const it of items.slice(0, 10)) {
-      const title = short(it?.titel ?? it?.title, 200);
-      const evidence = short(it?.bewijs ?? it?.evidence, 2000);
-      const doneWhen = short(it?.klaar_als ?? it?.doneWhen, 500);
+      const title = oneLine(it?.titel ?? it?.title, 200);
+      const evidence = oneLine(it?.bewijs ?? it?.evidence, 2000);
+      const doneWhen = oneLine(it?.klaar_als ?? it?.doneWhen, 500);
       if (!title) return { text: 'Elk punt heeft een titel nodig.', isError: true };
       // Honest by construction: no number or source, no task.
       if (!evidence || !/\d|https?:\/\//.test(evidence)) return { text: `Bij “${title}” ontbreekt het bewijs: geef het gemeten cijfer met de bron en de datum. Zonder bewijs zet TeamBot niets op het bord.`, isError: true };
       if (!doneWhen) return { text: `Bij “${title}” ontbreekt klaar_als: wanneer is dit opgelost (meetbaar)?`, isError: true };
-      findings.push({ key: short(it?.sleutel ?? it?.key, 80) || title.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, '-').slice(0, 80), title, evidence, doneWhen, site: short(it?.site, 120) || undefined });
+      findings.push({ key: oneLine(it?.sleutel ?? it?.key, 80) || title.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, '-').slice(0, 80), title, evidence, doneWhen, site: oneLine(it?.site, 120) || undefined });
     }
     if (status === 'opgelost') {
       const td = this.teamdata;
@@ -803,7 +951,7 @@ export class DutyService {
     const sync = await this.sync(r, agent, findings, { complete: false, line });
     patch({ result: 'probleem', findings: findings.length, created: sync.created.map((c) => c.id), reported: true });
     if (sync.created.length) {
-      this.ctx.events.emit(r.user_id, 'notification', { title: `${agent.name}: ${sync.created.length === 1 ? 'probleem gevonden' : `${sync.created.length} problemen gevonden`}`, body: short(sync.created.map((c) => c.title).join('; '), 300), link: '#/tasks', kind: 'routine', routineId: r.id, level: 'warn', agentId: agent.id });
+      this.ctx.events.emit(r.user_id, 'notification', { title: `${agent.name}: ${sync.created.length === 1 ? 'probleem gevonden' : `${sync.created.length} problemen gevonden`}`, body: oneLine(sync.created.map((c) => c.title).join('; '), 300), link: '#/tasks', kind: 'routine', routineId: r.id, level: 'warn', agentId: agent.id });
       if (r.options.duty!.onProblem === 'ask') await this.ask(r, agent, findings.filter((f) => sync.created.some((c) => c.title === f.title)));
     }
     const made = sync.created.length ? `Op het bord gezet: ${sync.created.map((c) => `taak ${c.id}`).join(', ')}.` : 'Deze punten stonden al open op het bord; er is geen dubbele taak gemaakt.';
@@ -863,6 +1011,7 @@ export class DutyService {
         sourceLabel: SOURCE_LABEL[duty.source],
         actionLabel: ACTION_LABEL[duty.onProblem],
         needs: this.needs(r, agent),
+        parked: r.status === 'paused' && String(r.paused_reason || '').startsWith(WAIT_PREFIX),
         last: { status: r.last_status, summary: r.last_summary, at: r.last_run_at },
         openTasks: open,
       });

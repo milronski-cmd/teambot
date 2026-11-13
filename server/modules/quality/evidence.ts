@@ -29,7 +29,9 @@ const norm = (s: string) => s.replace(/\s+/g, ' ').trim().toLowerCase();
 
 /** The evidence a bot gave, as a clean list of strings (array, objects with a value, or one per line). */
 export function parseEvidence(raw: any): string[] {
-  const list: any[] = Array.isArray(raw) ? raw : typeof raw === 'string' ? raw.split(/\r?\n/) : raw && typeof raw === 'object' ? [raw] : [];
+  // One piece per line also inside a list: a bot that wrote all its evidence as one text gets every line looked at.
+  const given: any[] = Array.isArray(raw) ? raw : typeof raw === 'string' || (raw && typeof raw === 'object') ? [raw] : [];
+  const list = given.flatMap((x) => (typeof x === 'string' ? x.split(/\r?\n/) : [x]));
   const out: string[] = [];
   for (const x of list) {
     const v = typeof x === 'string' ? x : x && typeof x === 'object' ? String(x.value ?? x.path ?? x.url ?? x.link ?? x.id ?? x.text ?? '') : String(x ?? '');
@@ -59,6 +61,11 @@ export function looksLikePath(v: string): boolean {
   return /^[\w .,()@+-]+([\\/][\w .,()@+-]+)*\.[A-Za-z0-9]{1,8}$/.test(v) && v.split(/\s+/).length <= 6;
 }
 
+/** The paths a line may start with when more text follows the file name (shortest first, at most five). */
+function leadingPaths(v: string): string[] {
+  return [...v.matchAll(/\.[A-Za-z0-9]{1,8}(?=[\s,;:)]+\S)/g)].slice(0, 5).map((m) => v.slice(0, m.index! + m[0].length).trim());
+}
+
 /** What the bot really did in a run: its tool calls with their status and the start of their output (CLI: its steps). */
 export function runSteps(ctx: Ctx, runId: string | null | undefined, o: { exclude?: string[] } = {}): StepItem[] {
   if (!runId) return [];
@@ -73,7 +80,9 @@ export function runSteps(ctx: Ctx, runId: string | null | undefined, o: { exclud
       }
       for (const a of m.parts?.activity || []) {
         if (!a?.title || ['session', 'cli_session', 'settings', 'question', 'mode'].includes(a.kind)) continue;
-        steps.push({ tool: a.kind || 'stap', summary: `${a.title}${a.detail ? `: ${String(a.detail).slice(0, 200)}` : ''}`, ok: true, out: a.detail ? String(a.detail).slice(0, 4000) : undefined });
+        // A CLI engine's step: what its command printed (`out`), else the line under it; a failed step is not "gelukt".
+        const out = a.out || a.detail;
+        steps.push({ tool: a.kind || 'stap', summary: `${a.title}${a.detail ? `: ${String(a.detail).slice(0, 200)}` : ''}`, ok: a.kind !== 'tool_error', out: out ? String(out).slice(0, 4000) : undefined });
       }
     } else if (m.role === 'tool' && m.parts?.toolResult) {
       const s = steps.find((x) => x.id === m.parts.toolResult!.toolCallId);
@@ -180,7 +189,16 @@ export function inspectEvidence(ctx: Ctx, o: { userId: string; agent: Agent | nu
       const image = /^image\//.test(a.mime || '');
       return { type: image ? 'screenshot' : 'attachment', value: v, ok: true, note: `${image ? 'afbeelding' : 'bijlage'} “${a.name}” (${sizeText(Number(a.size) || 0)})` };
     }
-    if (looksLikePath(v)) return findFile(ctx, o.agent, v, o.roomFile);
+    if (looksLikePath(v)) {
+      const whole = findFile(ctx, o.agent, v, o.roomFile);
+      if (whole.ok !== false) return whole;
+      // "C:\map\rapport.md (118 regels, 8,5 kB)": a path with a remark after it is still that file.
+      for (const p of leadingPaths(v)) {
+        const f = findFile(ctx, o.agent, p, o.roomFile);
+        if (f.ok !== false) return { ...f, value: v.slice(0, 600) };
+      }
+      return whole;
+    }
     const s = fromStep(v);
     if (s) return { type: 'output', value: v.slice(0, 600), ok: true, note: `staat in de uitvoer van een echte stap (${s.summary.slice(0, 80)})` };
     return { type: 'text', value: v.slice(0, 600), ok: null, note: 'niet terug te vinden in de stappen van deze beurt' };

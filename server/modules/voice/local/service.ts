@@ -9,6 +9,7 @@ import { VitsPool, vitsProblem } from './vits.js';
 import { STT_RATE, hasSignal, parseWav, resample } from './pcm.js';
 import { decodeOggOpus } from './opus.js';
 import { spellNumbers } from '../numbers.js';
+import { PLACE } from '../../../../shared/places.js';
 
 let ttsOverride: TtsBackend | null = null;
 /** Tests: replace Piper and the in-process voices by a fake synthesiser (it gets every request, with `engine`). */
@@ -130,7 +131,7 @@ export class LocalVoice {
     if (!m || m.kind !== 'stt') return 'Onbekend lokaal spraakmodel';
     const p = sttBackend().problem();
     if (p) return p;
-    if (!this.models.installed(modelId)) return `Het lokale spraakmodel is nog niet gedownload (${mb(totalSize(m))}). Download het bij Instellingen › Spraak.`;
+    if (!this.models.installed(modelId)) return `De gratis spraakherkenning is nog niet gedownload (${mb(totalSize(m))}). Download hem bij ${PLACE.voice}.`;
     return null;
   }
 

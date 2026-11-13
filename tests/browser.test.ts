@@ -15,6 +15,7 @@ import { parseKeys, windowAllowed } from '../server/modules/browser/host.js';
 import { dockerRunArgs } from '../server/modules/browser/container.js';
 import { unifiedDiff } from '../server/modules/browser/diff.js';
 import type { ComputerService } from '../server/modules/browser/service.js';
+import { fillWords } from '../shared/i18n-core.js';
 
 // ---------------- helpers ----------------
 
@@ -363,7 +364,7 @@ test('host desktop control is off unless the owner opts in; by default every act
     assert.doesNotMatch(ins.text, /geheim/);
     assert.match(ins.text, /wachtwoordveld/);
     const ref = ins.text.match(/\[([0-9a-f]{6}\.e1)\] Button "Opslaan"/)![1];
-    assert.match(t.app.ctx.tools.get('desktop_click')!.summarize!({ ref }), /KLIK op Button "Opslaan" in "Naamloos - Kladblok"/);
+    assert.match(fillWords(t.app.ctx.tools.get('desktop_click')!.summarize!({ ref })), /KLIK op Button "Opslaan" in "Naamloos - Kladblok"/);
     // typing into a password field is refused before any input reaches the desktop
     const pw = await callTool(t, 'desktop_type', { ref: ref.replace('e1', 'e2'), text: '1234' }, toolCtx(t, a.id));
     assert.equal(pw.isError, true);
@@ -669,7 +670,7 @@ test('real browser: own profile, snapshot refs, typing, submit gating, proxy SSR
     assert.equal(z.isError, undefined, z.text);
     await waitFor(() => hits.some((h) => h === 'GET /?q=katten'));
     // the click answers with the page as it is now (no extra browser_snapshot step), as data and with references
-    assert.match(z.text, /^Geklikt op knop “Zoek”/);
+    assert.match(z.text, /^Geklikt op de knop “Zoek”/);
     assert.match(z.text, /URL: [^\n]*\?q=katten/);
     assert.match(z.text, /<webinhoud bron=[\s\S]*\[e\d+\]/);
     assert.doesNotMatch(z.text, /geheim123/);

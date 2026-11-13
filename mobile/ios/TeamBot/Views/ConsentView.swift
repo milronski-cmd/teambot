@@ -32,8 +32,9 @@ struct ConsentView: View {
                     Section {
                         HStack(spacing: 10) {
                             ProgressView()
-                            Text("Lijst ophalen van je pc…")
+                            Text("Lijst ophalen van je pc…").foregroundStyle(Theme.muted)
                         }
+                        .accessibilityElement(children: .combine)
                     }
                 }
                 PrivacyPromises()
@@ -44,6 +45,8 @@ struct ConsentView: View {
                     }
                 }
             }
+            .scrollContentBackground(.hidden)
+            .tbCanvas()
             .navigationTitle("Toestemming")
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
@@ -56,18 +59,17 @@ struct ConsentView: View {
                 }
             }
             .safeAreaInset(edge: .bottom) {
-                VStack(spacing: 8) {
-                    Button {
-                        model.grantConsent()
-                    } label: {
-                        Text("Ik geef toestemming").frame(maxWidth: .infinity)
-                    }
-                    .buttonStyle(.borderedProminent)
-                    .controlSize(.large)
-                    .disabled(request == nil)
+                VStack(spacing: Theme.gapSmall) {
+                    Button("Ik geef toestemming") { model.grantConsent() }
+                        .buttonStyle(PrimaryButtonStyle())
+                        .disabled(request == nil)
                     Button("Niet akkoord") { declined = true }
+                        .buttonStyle(SecondaryButtonStyle())
                 }
-                .padding()
+                .padding(.horizontal, Theme.gapLarge)
+                .padding(.vertical, 12)
+                .frame(maxWidth: Theme.columnWidth)
+                .frame(maxWidth: .infinity)
                 .background(.bar)
             }
         }
@@ -114,22 +116,22 @@ struct ProviderRow: View {
         VStack(alignment: .leading, spacing: 4) {
             Text(provider.vendor).font(.headline)
             if provider.service != provider.vendor {
-                Text(provider.service).font(.subheadline).foregroundStyle(.secondary)
+                Text(provider.service).font(.subheadline).foregroundStyle(Theme.muted)
             }
             if let host = provider.host {
-                Text("Adres: \(host)").font(.subheadline).foregroundStyle(.secondary)
+                Text("Adres: \(host)").font(.subheadline).foregroundStyle(Theme.muted)
             }
             if !provider.local {
                 Text("Krijgt: \(PrivacyInfo.dataText(provider.data))").font(.subheadline)
             }
             if provider.forwards == true {
-                Text("Stuurt door naar de aanbieder van het model dat daar is gekozen.").font(.footnote).foregroundStyle(.secondary)
+                Text("Stuurt door naar de aanbieder van het model dat daar is gekozen.").font(.footnote).foregroundStyle(Theme.muted)
             }
             if provider.free == true {
-                Text("Gratis laag: sommige gratis diensten mogen wat je stuurt gebruiken om hun modellen te verbeteren. Lees bij twijfel hun voorwaarden.").font(.footnote).foregroundStyle(.secondary)
+                Text("Gratis laag: sommige gratis diensten mogen wat je stuurt gebruiken om hun modellen te verbeteren. Lees bij twijfel hun voorwaarden.").font(.footnote).foregroundStyle(Theme.muted)
             }
             if let bots = provider.bots, !bots.isEmpty {
-                Text("Gebruikt door: \(bots.joined(separator: ", "))").font(.footnote).foregroundStyle(.secondary)
+                Text("Gebruikt door: \(bots.joined(separator: ", "))").font(.footnote).foregroundStyle(Theme.muted)
             }
         }
         .padding(.vertical, 2)

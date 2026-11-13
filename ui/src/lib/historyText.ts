@@ -25,7 +25,6 @@ const SETTING: Record<string, string> = {
   autoReview: 'Automatische controle',
   autoReviewModel: 'Model voor de automatische controle',
   fullAccessExternal: 'Volledige toegang: ook versturen naar anderen',
-  allowPrivateUrls: 'Interne netwerkadressen openen',
   allowPrivateNetwork: 'Interne netwerkadressen openen',
   maxTurns: 'Maximaal aantal stappen',
   vision: 'Afbeeldingen bekijken',

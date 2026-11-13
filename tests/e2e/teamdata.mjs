@@ -10,7 +10,7 @@ import { createRequire } from 'node:module';
 const require = createRequire(import.meta.url);
 const { chromium, devices } = require('playwright-core');
 const axeSource = fs.readFileSync(require.resolve('axe-core/axe.min.js'), 'utf8');
-const { createApp } = await import('../../server/app.ts');
+const { createApp } = await import('./server.mjs');
 
 const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'tb-teamdata-'));
 const app = await createApp({ dataDir: dir, port: 0, host: '127.0.0.1', mode: 'desktop', quiet: true });

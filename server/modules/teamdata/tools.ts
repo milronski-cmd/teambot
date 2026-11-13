@@ -3,6 +3,8 @@ import { nlCount } from '../../core/i18n.js';
 import { analyse, isLogAppend } from './sql.js';
 import { QUERY_MAX_ROWS, type Actor, type TeamData, TeamDataError } from './service.js';
 import { STANDARD_TABLES } from './schema.js';
+import { refuseReadOf } from '../../tools/builtin/files.js';
+import { words } from '../../../shared/i18n-core.js';
 
 /**
  * Bot tools for the shared team database. Same power as OpenBot's list_tables / query_data / execute_data:
@@ -53,7 +55,7 @@ export function teamdataTools(svc: TeamData, o: { teamParam?: boolean } = {}): T
         'Toon de tabellen van de gedeelde teamdatabase van je team: kolommen (het CREATE-statement), aantal rijen en wie de tabel maakte. ' +
         'Gebruik dit eerst, voordat je een query schrijft of een nieuwe tabel maakt (voeg liever rijen toe aan een tabel die al past).',
       parameters: { type: 'object', properties: withTeam({}) },
-      summarize: () => 'Teamdatabase: tabellen bekijken',
+      summarize: () => words('Teamdatabase: tabellen bekijken'),
       async run(a, t) {
         try {
           const team = svc.teamForBot(t.agent, a?.team);
@@ -85,9 +87,9 @@ export function teamdataTools(svc: TeamData, o: { teamParam?: boolean } = {}): T
       summarize: (a) => {
         try {
           const t = analyse(String(a?.sql || '')).table;
-          return t ? `Teamdatabase lezen: ${t}` : 'Teamdatabase lezen';
+          return t ? words('Teamdatabase lezen: {0}', t) : words('Teamdatabase lezen');
         } catch {
-          return 'Teamdatabase lezen';
+          return words('Teamdatabase lezen');
         }
       },
       async run(a, t) {
@@ -138,11 +140,13 @@ export function teamdataTools(svc: TeamData, o: { teamParam?: boolean } = {}): T
         const sql = String(a?.sql || '').replace(/\s+/g, ' ');
         try {
           const x = analyse(sql);
-          const what = { INSERT: 'toevoegen aan', REPLACE: 'toevoegen aan', UPDATE: 'wijzigen in', DELETE: 'verwijderen uit', CREATE: 'maken:', DROP: 'verwijderen:', ALTER: 'aanpassen:', SELECT: 'lezen', EXPLAIN: 'lezen' }[x.verb] || x.verb;
+          const tpl = { INSERT: 'Teamdatabase toevoegen aan {0}', REPLACE: 'Teamdatabase toevoegen aan {0}', UPDATE: 'Teamdatabase wijzigen in {0}', DELETE: 'Teamdatabase verwijderen uit {0}', CREATE: 'Teamdatabase maken: {0}', DROP: 'Teamdatabase verwijderen: {0}', ALTER: 'Teamdatabase aanpassen: {0}', SELECT: 'Teamdatabase lezen: {0}', EXPLAIN: 'Teamdatabase lezen: {0}' }[x.verb];
           // In words only (approval card, steps): the SQL itself stays under "Exacte invoer bekijken".
-          return `Teamdatabase ${what} ${x.table || ''}${x.allRows && x.verb !== 'DROP' ? ' (alle rijen)' : ''}`.trim();
+          const table = x.table || words('een tabel');
+          const what = tpl ? words(tpl, table) : words('Teamdatabase {0} {1}', x.verb, table);
+          return x.allRows && x.verb !== 'DROP' ? words('{0} (alle rijen)', what) : what;
         } catch {
-          return 'Teamdatabase wijzigen';
+          return words('Teamdatabase wijzigen');
         }
       },
       async run(a, t) {
@@ -201,7 +205,11 @@ export function teamdataTools(svc: TeamData, o: { teamParam?: boolean } = {}): T
         },
         required: ['path'],
       },
-      summarize: (a) => `Teamdatabase: ${String(a?.path ?? '').replace(/(^|[\\/])uploads[\\/][0-9a-f]{6}-/i, '$1')} importeren${a?.table ? ` in ${a.table}` : ''}`,
+      summarize: (a) => {
+        const file = String(a?.path ?? '').replace(/(^|[\\/])uploads[\\/][0-9a-f]{6}-/i, '$1');
+        return a?.table ? words('Teamdatabase: {0} importeren in {1}', file, a.table) : words('Teamdatabase: {0} importeren', file);
+      },
+      refuse: refuseReadOf('path'),
       async run(a, t) {
         try {
           const { resolveInWorkspace } = await import('../../tools/builtin/files.js');

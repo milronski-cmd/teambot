@@ -4,10 +4,12 @@ import type { Ctx, User } from '../../core/types.js';
 import { now } from '../../core/db.js';
 import { redact } from '../../core/secrets.js';
 import { HttpError } from '../../core/http.js';
-import { Limiter, SCIM_PATH, publicBase, scimSettings, sha256 } from './config.js';
+import { SCIM_PATH, publicBase, scimSettings, sha256 } from './config.js';
+import { Limiter } from '../../core/util.js';
 import { deactivateUser, deleteUserData, reactivateUser } from './accounts.js';
 import { type GroupMapper, scimGroupRoutes } from './groups.js';
 import { ENTERPRISE_SCHEMA, ERROR, GROUP_SCHEMA, LIST, MAX_COUNT, PATCH_OP, ScimError, USER_SCHEMA, clean, paging, parseEqFilter, send, toBool, wantAttr } from './scim-util.js';
+import { PLACE } from '../../../shared/places.js';
 
 /**
  * SCIM 2.0 (RFC 7643/7644) — the subset Microsoft Entra ID and Okta use for provisioning: Users and Groups with
@@ -233,7 +235,7 @@ export function scimRouter(ctx: Ctx, mapper: GroupMapper) {
       changePassword: { supported: false },
       sort: { supported: false },
       etag: { supported: false },
-      authenticationSchemes: [{ type: 'oauthbearertoken', name: 'OAuth Bearer Token', description: 'SCIM-sleutel uit TeamBot → Instellingen → Gebruikers', primary: true }],
+      authenticationSchemes: [{ type: 'oauthbearertoken', name: 'OAuth Bearer Token', description: `SCIM-sleutel uit TeamBot (${PLACE.users})`, primary: true }],
       meta: { resourceType: 'ServiceProviderConfig', location: `${base(req)}/ServiceProviderConfig` },
     }),
   );

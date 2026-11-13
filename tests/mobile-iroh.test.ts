@@ -168,3 +168,36 @@ test('iroh: off by default, on from the computer, QR carries the key, phone work
     await t.close();
   }
 });
+
+test('iroh: the guard starts the connection again when it stays offline or did not start, with the same key', async () => {
+  const t = await startTestApp();
+  const m = mobileOf(t);
+  try {
+    await t.api('POST', '/mobile/pair', { baseUrl: 'iroh' });
+    const iroh = (m as any).iroh;
+    const id = iroh.link()?.id as string;
+    assert.ok(id);
+    // online and well: nothing happens (the offline preset never gets online, so say it is)
+    iroh.state.online = true;
+    assert.equal(await iroh.check(), null);
+    // offline, but not long enough yet
+    iroh.state.online = false;
+    assert.equal(await iroh.check(), null);
+    // offline for too long: started again, same key, so paired phones still find this computer
+    iroh.guardOfflineMs = 0;
+    assert.equal(await iroh.check(), 'offline');
+    assert.equal(iroh.link()?.id, id);
+    // it could not start (no network yet right after switching on the computer): started again
+    await iroh.shutdown();
+    assert.equal(iroh.status().running, false);
+    assert.equal(await iroh.check(), 'not-running');
+    assert.equal(iroh.link()?.id, id);
+    // turned off by the owner: the guard leaves it off
+    iroh.saveSettings({ enabled: false, relay: null });
+    await iroh.apply();
+    assert.equal(await iroh.check(), null);
+    assert.equal(iroh.status().running, false);
+  } finally {
+    await t.close();
+  }
+});

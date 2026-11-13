@@ -13,7 +13,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import http from 'node:http';
-import { startTestApp, type MockStep, type TestApp } from './helpers.js';
+import { mockAdapter, startTestApp, type MockStep, type TestApp } from './helpers.js';
+import { setShortCallFake } from '../server/agent/short-call.js';
 import type { AdapterContext, AdapterDef, Outbound } from '../server/modules/channels/types.js';
 import type { ChannelManager } from '../server/modules/channels/manager.js';
 import { writeCandidate } from '../server/modules/memory/pipeline.js';
@@ -265,9 +266,11 @@ test('5 self-updating by default: a bot named after a known specialism becomes a
     const seo = await t.agent({ name: 'SEO-specialist' });
     const v = await until(async () => ((await t.api('GET', `/specialists/${seo.id}`)).enabled ? t.api('GET', `/specialists/${seo.id}`) : null), 3000, 'adopted');
     assert.equal(v.field, 'Zoekmachineoptimalisatie (SEO)');
-    assert.equal(v.learnOn, true);
-    assert.deepEqual([v.cadence, v.budget, v.learnWith], ['daily', 'none', 'own'], 'daily, on its own model, no limit of its own');
-    assert.ok(v.nextRoundAt, 'the next round is planned');
+    assert.equal(v.learnOn, false, 'nothing that costs model calls starts by itself');
+    assert.ok(!v.nextRoundAt, 'no round is planned until the round is switched on');
+    const on = await t.api('PUT', `/specialists/${seo.id}`, { learnOn: true });
+    assert.deepEqual([on.cadence, on.budget, on.learnWith], ['daily', 'none', 'own'], 'daily, on its own model, no limit of its own');
+    assert.ok(on.nextRoundAt, 'the next round is planned');
     assert.ok(v.sources.some((s: any) => s.kind === 'feed' && /developers\.google\.com\/static\/search\/blog\/feed\.xml/.test(s.target) && s.suggested && s.enabled));
     assert.ok(v.sources.some((s: any) => /status\.search\.google\.com/.test(s.target)));
     // An ordinary bot is left alone; a specialist the owner switched off is never adopted again.
@@ -386,20 +389,26 @@ test('6 memory is updated at once after a message on a channel: a customer (no 1
     await until(() => active(t, "dossier_id = ? AND content LIKE '%Haren%'", did).length === 1, 4000, 'the new address');
     assert.equal(active(t, "dossier_id = ? AND content LIKE '%Zuidlaren%'", did).length, 0, 'the old address is history');
 
-    // The owner himself on WhatsApp (his own verified number): his words are learned like in the app, at once.
+    // The owner himself on WhatsApp (his own verified number): his words are read like in the app, at once — by the
+    // one review, on a free engine (his customers' words stay with customer-learn above).
+    t.app.ctx.providers.registerKind({ id: 'mock-local', label: 'Lokaal testmodel', type: 'api', group: 'local', billing: 'local', needsKey: false, description: 'test', models: ['lokaal-1'], defaultModel: 'lokaal-1', create: () => mockAdapter(t.script, t.requests) });
+    await t.api('POST', '/providers', { kind: 'mock-local' });
+    await t.api('PUT', '/memory/settings', { extractor: 'free' });
+    setShortCallFake((system) => (/Je bent het geheugen van TeamBot/.test(system) ? 'Eigenaar: Ik woon in Amersfoort\nEigenaar: Mijn hond heet Bram' : ''));
     await t.api('POST', `/channels/bindings/${wa.b.id}/senders`, { external_id: 'id-Sanne', label: 'Sanne', is_owner: true });
     await writes(t, wa, 'Sanne', 'Ik woon in Amersfoort en mijn hond heet Bram.', 'Leuk!');
-    const mine = await until(() => {
-      const rows = active(t, "user_id = ? AND scope = 'about_you'", u);
-      return rows.length ? rows : null;
-    }, 4000, "the owner's words learned at once");
-    assert.match(mine.map((r: any) => r.content).join(' | '), /Amersfoort/);
+    const ownerBody = () => String(t.app.ctx.store.one<any>("SELECT body FROM memory_dossiers WHERE user_id = ? AND core = 'owner'", u)?.body || '');
+    await until(() => (/Amersfoort/.test(ownerBody()) ? true : null), 4000, "the owner's words learned at once");
+    assert.match(ownerBody(), /Mijn hond heet Bram/);
+    setShortCallFake(null);
     // "Onthoud dat …" over WhatsApp works too.
     await writes(t, wa, 'Sanne', 'Onthoud dat de winkel op koningsdag gesloten is.', 'Doe ik.');
     await until(() => t.app.ctx.store.one<any>("SELECT 1 FROM memory_items WHERE user_id = ? AND content LIKE '%koningsdag%' AND status IN ('active','proposed')", u), 3000, 'explicit remember over the channel');
     // Someone who is not the owner never writes into the owner's memory by saying "ik woon in …".
     assert.equal(active(t, "user_id = ? AND scope = 'about_you' AND content LIKE '%Zuidlaren%'", u).length, 0);
+    assert.doesNotMatch(ownerBody(), /Zuidlaren/);
   } finally {
+    setShortCallFake(null);
     await t.close();
   }
 });

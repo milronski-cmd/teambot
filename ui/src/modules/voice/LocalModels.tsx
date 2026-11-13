@@ -1,3 +1,4 @@
+import { useEffect, useRef } from 'react';
 import { CheckCircle2, Download, Loader2, Trash2, X } from 'lucide-react';
 import { askConfirm, Badge, Button, Modal, Spinner, cx, toastError } from '../../components/ui';
 import { type LocalModelView, type VoiceInfo, mb, useLocalModels, useVoice } from './api';
@@ -10,7 +11,8 @@ export function isLocalMissing(e: any): boolean {
   return e?.status === 409;
 }
 
-function Progress({ m }: { m: LocalModelView }) {
+/** The progress bar of one download (also in the first view of Instellingen › Meer mogelijkheden › Spraak). */
+export function Progress({ m }: { m: LocalModelView }) {
   const pct = m.total ? Math.min(100, Math.round((100 * m.received) / m.total)) : 0;
   return (
     <div className="space-y-1" aria-live="polite">
@@ -116,10 +118,25 @@ export function freeCallDownload(info: VoiceInfo | null): number {
   return info.local.models.filter((m) => ids.includes(m.id) && m.status !== 'installed' && m.status !== 'unsupported').reduce((n, m) => n + m.size, 0);
 }
 
-/** onReady: "Klaarmaken en bellen" — once everything is there, the footer offers to start the call. */
+/**
+ * The free speech recognition still to download on this computer (bytes), or 0: it is there, another recogniser is
+ * chosen, or this user cannot download (then the page says who can).
+ */
+export function sttDownload(info: VoiceInfo | null): number {
+  if (!info || info.settings.stt.engine !== 'local' || !info.local.canManage) return 0;
+  const id = info.settings.stt.localModel || info.effective?.stt.localModel || '';
+  const m = info.local.models.find((x) => x.id === id);
+  return m && m.status !== 'installed' && m.status !== 'unsupported' ? m.size : 0;
+}
+
+/**
+ * onReady: "Klaarmaken en bellen" — "Downloaden en bellen" goes on to the call by itself once the download is done
+ * (without a second tap); when everything was already there, the footer offers to start the call.
+ */
 export function LocalSetupModal({ need, onClose, onReady }: { need: ('stt' | 'tts')[]; onClose(): void; onReady?(): void }) {
   const { info } = useVoice();
   const { view, error, act } = useLocalModels();
+  const started = useRef(false);
   // The automatic choices (empty in the settings) are the model and voice for the interface language.
   const sttId = info ? info.settings.stt.localModel || info.effective?.stt.localModel || '' : '';
   const voiceId = info ? info.settings.tts.localVoice || info.effective?.tts.localVoice || '' : '';
@@ -132,6 +149,11 @@ export function LocalSetupModal({ need, onClose, onReady }: { need: ('stt' | 'tt
   const running = models.some((m) => m.status === 'downloading' || m.status === 'verifying');
   const total = missing.reduce((n, m) => n + m.size, 0);
   const done = !!view && models.length > 0 && !missing.length;
+  useEffect(() => {
+    if (!done || !started.current || !onReady) return;
+    started.current = false;
+    onReady();
+  }, [done, onReady]);
   return (
     <Modal
       open
@@ -162,10 +184,11 @@ export function LocalSetupModal({ need, onClose, onReady }: { need: ('stt' | 'tt
               icon={running ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
               disabled={running || !missing.length || !view?.canManage}
               onClick={async () => {
+                started.current = true;
                 for (const m of missing) await act(m.id, 'install').catch(toastError);
               }}
             >
-              {running ? 'Bezig met downloaden…' : `Downloaden (${mb(total)})`}
+              {running ? 'Bezig met downloaden…' : onReady ? t('Downloaden en bellen ({0})', mb(total)) : t('Downloaden ({0})', mb(total))}
             </Button>
           </>
         )
@@ -182,14 +205,14 @@ export function LocalSetupModal({ need, onClose, onReady }: { need: ('stt' | 'tt
           </p>
           {noVoice && (
             <p className="text-warn">
-              Voor het {langName(getLang())} is er nog geen gratis lokale stem met een vrije licentie. De stem van je browser of systeem leest voor; bij Instellingen › Spraak kun je een stem voor een andere taal kiezen.
+              Voor het {langName(getLang())} is er nog geen gratis lokale stem met een vrije licentie. De stem van je browser of systeem leest voor; bij Instellingen › Meer mogelijkheden › Spraak kun je een stem voor een andere taal kiezen.
             </p>
           )}
           {!view.canManage && <p className="text-warn">Alleen de eigenaar van de TeamBot-computer kan dit downloaden.</p>}
           {models.map((m) => (
             <LocalModelRow key={m.id} m={m} canManage={view.canManage} act={act} />
           ))}
-          <p className="text-[11px] text-muted">Controle met SHA-256 na het downloaden. Wijzigen of verwijderen kan bij Instellingen › Spraak.</p>
+          <p className="text-[11px] text-muted">Controle met SHA-256 na het downloaden. Wijzigen of verwijderen kan bij Instellingen › Meer mogelijkheden › Spraak.</p>
         </div>
       )}
     </Modal>

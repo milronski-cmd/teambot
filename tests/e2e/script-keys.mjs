@@ -11,7 +11,7 @@ import { createRequire } from 'node:module';
 
 const require = createRequire(import.meta.url);
 const { chromium } = require('playwright-core');
-const { createApp } = await import('../../server/app.ts');
+const { createApp } = await import('./server.mjs');
 const { mockAdapter } = await import('../helpers.ts');
 const { axeCheck } = await import('./axe-check.mjs');
 
@@ -33,6 +33,15 @@ const prov = app.ctx.providers.create(owner.id, { kind: 'mock', name: 'Testmodel
 const bot = app.ctx.store.createAgent(owner.id, { name: 'Winkelbot', role: 'Test', provider_id: prov.id, model: 'mock-1', access_mode: 'auto', tool_groups: ['shell'] });
 step(`TeamBot op ${app.url}`);
 
+/** Bot page › Meer mogelijkheden › Sleutels voor scripts, as a person opens it: the fold, then the row (each only when closed). */
+async function openKeys(p) {
+  const fold = p.locator('[data-testid="bot-advanced"] details[data-testid="more-options"]');
+  await fold.waitFor({ timeout: 15000 });
+  if ((await fold.getAttribute('open')) === null) await fold.locator('summary').first().click();
+  const row = p.getByRole('button', { name: /^Sleutels voor scripts/ }).first();
+  if ((await row.getAttribute('aria-expanded')) !== 'true') await row.click();
+}
+
 const browser = await chromium.launch({ channel: process.env.TEAMBOT_E2E_BROWSER || (process.platform === 'win32' ? 'msedge' : 'chrome'), headless: true });
 const errors = [];
 try {
@@ -42,7 +51,7 @@ try {
   await page.goto(`${app.url}/#token=${token}`);
   await page.waitForTimeout(600);
   await page.goto(`${app.url}/#/agents/${bot.id}/edit`);
-  await page.getByRole('button', { name: /^Sleutels voor scripts/ }).first().click();
+  await openKeys(page);
   await page.getByRole('button', { name: 'Sleutel toevoegen' }).click();
   await page.getByPlaceholder('SHOPIFY_TOKEN').fill('shopify token');
   await page.getByLabel('Sleutel of wachtwoord').fill(VALUE);
@@ -71,8 +80,8 @@ try {
   // take it away
   await page.goto(`${app.url}/#/agents/${bot.id}/edit`);
   await page.waitForTimeout(800);
-  // the editor remembers the open section
-  if (!(await page.locator('[data-testid="script-keys"]').isVisible())) await page.getByRole('button', { name: /^Sleutels voor scripts/ }).first().click();
+  // (the editor may remember the open fold and row; openKeys opens only what is closed)
+  await openKeys(page);
   await page.locator('[data-testid="script-keys"]').getByRole('button', { name: 'Weghalen' }).click();
   await page.getByRole('alertdialog').getByRole('button', { name: 'Weghalen' }).click();
   await page.locator('[data-testid="script-keys"]').getByText('Deze bot heeft nog geen sleutels voor scripts.').waitFor({ timeout: 8000 });
@@ -113,6 +122,9 @@ try {
   await page.goto(`${app.url}/#/m/skills/mine/${done.results[0].skillId}`);
   await page.getByRole('tab', { name: 'Veiligheid' }).click();
   await page.getByText(/maar wel de sleutels voor scripts die je de bot hebt gegeven/).waitFor({ timeout: 8000 });
+  // The scripts of a skill you add are trusted at once (it works right away): take that back, then trust it again.
+  const revoke = page.getByRole('button', { name: 'Vertrouwen intrekken' });
+  if (await revoke.isVisible().catch(() => false)) await revoke.click();
   await page.getByRole('button', { name: 'Vertrouw deze skill…' }).click();
   await page.getByText(/een vertrouwd script krijgt ook de sleutels voor scripts van de bot/).waitFor({ timeout: 8000 });
   await page.keyboard.press('Escape');
@@ -130,7 +142,7 @@ try {
   phone.on('pageerror', (e) => phoneFails.push(e.message));
   phone.on('response', (r) => r.url().includes('/api/script-keys') && phoneFails.push(`verzoek ${r.url()} → ${r.status()}`));
   await phone.goto(`${app.url}/#/agents/${bot.id}/edit`);
-  await phone.getByRole('button', { name: /^Sleutels voor scripts/ }).first().click();
+  await openKeys(phone);
   await phone.getByText('Sleutels voor scripts beheer je op je computer.').waitFor({ timeout: 8000 });
   if (phoneFails.length) fail(`telefoon: ${phoneFails.join('; ')}`);
   const deny = await fetch(`${app.url}/api/script-keys`, { headers: { authorization: `Bearer ${claimed.token}` } });

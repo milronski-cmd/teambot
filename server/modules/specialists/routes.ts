@@ -2,7 +2,6 @@ import type { Request } from 'express';
 import type { Ctx } from '../../core/types.js';
 import { HttpError, ah, bad, str, user } from '../../core/http.js';
 import { BUDGETS, SOURCE_KINDS, SOURCE_LABEL, type SpecialistService } from './service.js';
-import { decideProposal, proposals } from './skills.js';
 
 const p = (req: Request, k: string) => String(req.params[k] ?? '');
 
@@ -29,7 +28,7 @@ export function specialistRoutes(ctx: Ctx, svc: SpecialistService) {
 
   api.get('/specialists', ah(async (req) => svc.list(user(req).id)));
 
-  // ---- rounds, reports, goals and proposals by their own id (before /:agentId)
+  // ---- rounds, reports and goals by their own id (before /:agentId)
   api.post(
     '/specialists/rounds/:id/undo',
     ah(async (req) => {
@@ -51,7 +50,6 @@ export function specialistRoutes(ctx: Ctx, svc: SpecialistService) {
   );
   api.patch('/specialists/goals/:id', ah(async (req) => svc.updateGoal(user(req).id, p(req, 'id'), req.body || {})));
   api.delete('/specialists/goals/:id', ah(async (req) => svc.removeGoal(user(req).id, p(req, 'id'))));
-  api.post('/specialists/proposals/:id', ah(async (req) => decideProposal(svc, user(req).id, p(req, 'id'), req.body || {})));
 
   // ---- one specialist
   api.get(
@@ -139,13 +137,6 @@ export function specialistRoutes(ctx: Ctx, svc: SpecialistService) {
       const a = svc.ownAgent(u.id, p(req, 'agentId'));
       if (!svc.active(a.id)) throw bad(`${a.name} is nog geen specialist.`);
       return svc.weeklyReport(u.id, a.id, { force: true });
-    }),
-  );
-  api.get(
-    '/specialists/:agentId/proposals',
-    ah(async (req) => {
-      svc.ownAgent(user(req).id, p(req, 'agentId'));
-      return proposals(svc, p(req, 'agentId'));
     }),
   );
 }

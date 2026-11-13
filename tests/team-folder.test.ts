@@ -13,12 +13,14 @@ test('the suggested team folder is a TeamBot folder under Documents, never OpenB
   try {
     fs.mkdirSync(path.join(home, 'OpenBot', 'Shared'), { recursive: true });
     fs.mkdirSync(path.join(home, 'Documents'), { recursive: true });
-    const s = suggestTeamFolder(home);
+    const s = suggestTeamFolder(path.join(home, 'Documents'));
     assert.equal(s, path.join(home, 'Documents', 'TeamBot', 'Teammap'), 'never the live OpenBot folder');
     assert.equal(otherAppFolder(path.join(home, 'OpenBot', 'Shared'), home), 'OpenBot');
     assert.equal(otherAppFolder(s, home), null);
-    fs.mkdirSync(path.join(home, 'TeamBot', 'Gedeeld'), { recursive: true });
-    assert.equal(suggestTeamFolder(home), path.join(home, 'TeamBot', 'Gedeeld'), 'an older TeamBot folder in use stays');
+    // A new team folder starts empty: one an earlier TeamBot left with files in it is not taken over
+    // (own-data-folder.test.ts has the rest of that rule).
+    fs.mkdirSync(path.join(s, 'Oude bot'), { recursive: true });
+    assert.equal(suggestTeamFolder(path.join(home, 'Documents')), `${s} (2)`);
   } finally {
     fs.rmSync(home, { recursive: true, force: true });
   }

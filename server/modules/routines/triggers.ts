@@ -2,6 +2,7 @@ import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import vm from 'node:vm';
+import { sha256 } from '../../core/util.js';
 import { htmlToMarkdown, readBytes, safeFetch as guardedFetch } from '../../tools/builtin/web.js';
 import { bytesText } from '../../core/i18n.js';
 import type { FieldFilter, TriggerFilters, WebhookPreset } from './schema.js';
@@ -32,8 +33,6 @@ export function safeEqual(a: string, b: string): boolean {
   const B = Buffer.from(String(b));
   return A.length === B.length && crypto.timingSafeEqual(A, B);
 }
-
-export const sha256 = (data: string | Buffer) => crypto.createHash('sha256').update(data).digest('hex');
 
 export type Headers = Record<string, string | string[] | undefined>;
 const h = (headers: Headers, name: string): string => {

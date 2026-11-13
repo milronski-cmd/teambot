@@ -13,10 +13,6 @@ export function micProblem(): string | null {
   return null;
 }
 
-export function recorderSupported() {
-  return typeof MediaRecorder !== 'undefined' && !micProblem();
-}
-
 // With echo cancellation, noise suppression and automatic gain, always (mic.ts).
 export { MIC_CONSTRAINTS, echoCancellationActive } from './mic';
 
@@ -137,7 +133,7 @@ export function recognizeOnce(lang: string, onPartial?: (t: string) => void, con
     };
     r.onerror = (e: any) => {
       if (aborted || e.error === 'aborted' || e.error === 'no-speech') return;
-      reject(new Error(e.error === 'not-allowed' ? 'Microfoon of spraakherkenning geweigerd' : e.error === 'network' ? 'Browser-spraakherkenning niet beschikbaar (netwerk/dienst). Kies een spraakprovider in Instellingen › Spraak.' : `Spraakherkenning: ${e.error}`));
+      reject(new Error(e.error === 'not-allowed' ? 'Microfoon of spraakherkenning geweigerd' : e.error === 'network' ? 'Browser-spraakherkenning niet beschikbaar (netwerk/dienst). Kies een spraakprovider bij Instellingen › Meer mogelijkheden › Spraak.' : `Spraakherkenning: ${e.error}`));
     };
     r.onend = () => resolve(aborted ? '' : finalText.trim());
   });

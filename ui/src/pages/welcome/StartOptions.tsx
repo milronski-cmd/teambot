@@ -5,28 +5,16 @@ import { api } from '../../lib/api';
 import { useApp } from '../../lib/store';
 import { navigate } from '../../lib/router';
 import { t } from '../../lib/i18n';
+import { tKnown } from '../../lib/format';
 import type { ProviderKindView, ProviderTestResult, ProviderView } from '../../lib/types';
 import { Button, Card, Input, Spinner, cx, toast, toastError, useAsync } from '../../components/ui';
 import { MoreInfo } from '../../components/MoreInfo';
-import { FreeStartButton, JobProgress, LocalModelHint, useRuntimeJob, type RuntimeJob } from '../../modules/cli-agents/runtime';
-import { LOCAL_KINDS, engineRank } from '../newbot/choices';
+import { FreeStartButton, JobProgress, useRuntimeJob, type RuntimeJob } from '../../modules/cli-agents/runtime';
+import { LOCAL_KINDS } from '../newbot/choices';
+import { OllamaInstallButton } from '../../modules/local-models/install';
 import { cleanKey, guessKey, keyNoteText } from './keyFormat';
+import { subscriptionReady } from './mainAction';
 import { useIsPhoneSession } from '../../shell/computerOnly';
-
-/**
- * The first screen's three ways to get going (TeamBot 0.4.2), each in one or two clicks, then straight to a ready first
- * bot (#/start?ai=<provider>, 0.4.5; the three questions are optional there):
- *  - "Ik heb Claude of ChatGPT": the vendor's own program (Claude Code, Codex) with the person's own login. Logged in →
- *    "Gebruiken"; on this PC but not logged in → "Inloggen" opens the vendor's own login window and TeamBot goes on by
- *    itself once it sees the login; not here → "Installeren" puts TeamBot's own pinned, checked copy in place. TeamBot
- *    never offers a Claude login of its own and never sees or keeps a token (docs/PROVIDER_POLICY.md).
- *  - "Ik heb een API-sleutel": paste it; TeamBot recognises the service from the format (keyFormat.ts), checks it for
- *    free (the model list, never a paid prompt) and stores it encrypted.
- *  - "Gratis beginnen": a local model found on this PC, or OpenCode's free models in one click.
- */
-
-/** Where the questions of a new bot are, with the engine the person just chose on top. */
-export const questionsFor = (providerId: string) => `/agents/new?ai=${encodeURIComponent(providerId)}`;
 
 /**
  * Where the first screen goes once an AI is connected (0.4.5, like OpenBot): a ready first bot right away, with its own
@@ -79,17 +67,12 @@ const PLAN: Record<SubscriptionItem['id'], { name: string; plans: string; progra
   'codex-cli': { name: 'ChatGPT', plans: 'Plus of Pro', program: 'Codex', maker: 'OpenAI' },
 };
 
-/** A subscription engine that can be used right now. */
-export const subscriptionReady = (it: SubscriptionItem) => it.installed && it.loggedIn !== false;
-
-/** Rank of a ready subscription engine for the "recommended" choice (see newbot/choices.ts). */
-export const subscriptionRank = (it: SubscriptionItem) => engineRank({ kind: it.id, type: 'cli', billing: it.billing === 'api' ? 'paid' : 'subscription' }) + (it.billing === 'api' ? 40 : 0);
-
 /** Connect a subscription engine (no key: the vendor's program keeps the login) and go to the questions. */
 async function startWithSubscription(it: SubscriptionItem) {
+  const from = location.hash;
   const r = await api.post<{ provider: ProviderView }>(`/cli-agents/${it.id}/connect`, {});
   await useApp.getState().refreshProviders();
-  navigate(firstBotFor(r.provider.id));
+  navigate(firstBotFor(r.provider.id), { from });
 }
 
 /** How long TeamBot keeps looking for a login done in the vendor's own window. */
@@ -362,6 +345,7 @@ export function KeyPaste({ kinds, onConnected, autoFocus }: { kinds: ProviderKin
 }
 
 export function KeyCard({ kinds, connected, primaryId }: { kinds: ProviderKindView[] | null; connected: ProviderView[]; primaryId: string | null }) {
+  const page = location.hash;
   return (
     <Card className="p-4" data-testid="start-key">
       <h2 className="flex items-center gap-2 text-[15px] font-bold tracking-tight">
@@ -377,14 +361,14 @@ export function KeyCard({ kinds, connected, primaryId }: { kinds: ProviderKindVi
               <span className="min-w-0 flex-1 text-sm">
                 <span className="font-semibold">{p.name}</span> <span className="text-muted">· al gekoppeld</span>
               </span>
-              <Button size="sm" variant={primaryId === `p:${p.id}` ? 'primary' : 'secondary'} onClick={() => navigate(firstBotFor(p.id))} aria-label={t('{0} gebruiken', p.name)}>
+              <Button size="sm" variant={primaryId === `p:${p.id}` ? 'primary' : 'secondary'} onClick={() => navigate(firstBotFor(p.id))} aria-label={t('{0} gebruiken', tKnown(p.name))}>
                 Gebruiken
               </Button>
             </li>
           ))}
         </ul>
       )}
-      <KeyPaste kinds={kinds} onConnected={(p) => setTimeout(() => navigate(firstBotFor(p.id)), 500)} />
+      <KeyPaste kinds={kinds} onConnected={(p) => setTimeout(() => navigate(firstBotFor(p.id), { from: page }), 500)} />
     </Card>
   );
 }
@@ -419,6 +403,7 @@ export function freeOptions(kinds: ProviderKindView[] | null, providers: Provide
 
 /** Connect a free engine found on this PC (no key) and go to the questions. */
 async function startFree(o: FreeOption) {
+  const from = location.hash;
   let id = o.providerId;
   if (!id) {
     await api.post('/providers/autodetect');
@@ -426,10 +411,32 @@ async function startFree(o: FreeOption) {
     id = useApp.getState().providers.find((p) => p.enabled && p.kind === o.kind)?.id;
     if (!id) throw new Error(t('{0} kon niet gekoppeld worden. Kies een andere manier om te beginnen.', o.label));
   }
-  navigate(firstBotFor(id));
+  navigate(firstBotFor(id), { from });
 }
 
-export function FreeCard({ options, primaryId, freeStartPrimary, showLocalHint, children }: { options: FreeOption[]; primaryId: string | null; freeStartPrimary: boolean; showLocalHint: boolean; children?: React.ReactNode }) {
+/**
+ * A local model when none runs on this PC yet: a choice of its own with "Installeren" (not a dead end). The click
+ * installs Ollama (its official installer, silently) and connects it with a model that runs well here; then onFound
+ * reloads the list, so this row becomes "Ollama gebruiken" by itself.
+ */
+function LocalModelMissing({ onFound }: { onFound(): void }) {
+  return (
+    <li className="flex flex-wrap items-center gap-3 py-2.5" data-testid="start-local-missing">
+      <span className="min-w-0 flex-1 basis-48">
+        <span className="block text-sm font-semibold">Ollama</span>
+        <span className="block text-[12.5px] leading-snug text-muted">Met een lokaal model werkt het ook offline en zonder daglimiet. Nog niet op deze pc.</span>
+      </span>
+      <OllamaInstallButton variant="secondary" onDone={onFound} />
+    </li>
+  );
+}
+
+/**
+ * "Gratis beginnen": the free engines found or connected here, OpenCode ("Gratis starten" sets it up), and a local
+ * model: "Gebruiken" when one runs here, otherwise Ollama with "Installeren" (`onLocalFound` reloads the list).
+ */
+export function FreeCard({ options, primaryId, freeStartPrimary, localMissing, onLocalFound, children }: { options: FreeOption[]; primaryId: string | null; freeStartPrimary: boolean; localMissing: boolean; onLocalFound(): void; children?: React.ReactNode }) {
+  const page = location.hash;
   const go = useAsync();
   const hasOpencode = options.some((o) => o.kind === 'opencode');
   return (
@@ -456,11 +463,11 @@ export function FreeCard({ options, primaryId, freeStartPrimary, showLocalHint, 
               <span className="block text-sm font-semibold">OpenCode</span>
               <span className="block text-[12.5px] leading-snug text-muted">Gratis modellen, zonder account. TeamBot zet het zo nodig klaar (±125 MB).</span>
             </span>
-            <FreeStartButton className="w-full sm:w-auto" size="sm" primary={freeStartPrimary} label="Gratis starten" onReady={(p) => navigate(firstBotFor(p.id))} />
+            <FreeStartButton className="w-full sm:w-auto" size="sm" primary={freeStartPrimary} label="Gratis starten" onReady={(p) => navigate(firstBotFor(p.id), { from: page })} />
           </li>
         )}
+        {localMissing && <LocalModelMissing onFound={onLocalFound} />}
       </ul>
-      {showLocalHint && <LocalModelHint className="mt-1" />}
       {children}
     </Card>
   );

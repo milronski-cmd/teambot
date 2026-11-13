@@ -7,6 +7,7 @@ import { useApp } from '../../lib/store';
 import type { Agent, Message, ToolCall } from '../../lib/types';
 import { Badge, Button, Card, Field, Input, Select, Textarea, Toggle, cx, timeAgo, toast, useAsync } from '../../components/ui';
 import { ErrorBox, Loading } from './parts';
+import { Words } from '../../components/Words';
 import { type MemItem, memPath, REASON_LABEL, rememberToast, SCOPE_LABEL, STATUS_LABEL, useMem } from './lib';
 
 // ------------------------------------------------------------------ inspector tab
@@ -97,7 +98,7 @@ export function MemoryInspector({ threadId, agentId }: { threadId: string; agent
                   <Badge tone={i.status === 'proposed' ? 'warn' : i.status === 'active' ? 'ok' : 'neutral'}>{STATUS_LABEL[i.status]}</Badge>
                   <Badge>{SCOPE_LABEL[i.scope]}</Badge>
                 </div>
-                <p className="mt-1">{i.content}</p>
+                <p className="mt-1" translate="no">{i.content}</p>
                 <a className="text-xs text-accent hover:underline" href={memPath(i.status === 'proposed' ? 'beoordelen' : `item/${i.id}`)}>
                   {i.status === 'proposed' ? 'Beoordelen' : 'Bekijken'}
                 </a>
@@ -116,7 +117,7 @@ export function MemoryInspector({ threadId, agentId }: { threadId: string; agent
             </Button>
           </div>
           <Card className="space-y-1.5 p-3">
-            <p>{stripRefs(d.episode.summary)}</p>
+            <p translate="no">{stripRefs(d.episode.summary)}</p>
             {d.episode.decisions.length > 0 && <List title="Besluiten" items={d.episode.decisions} />}
             {d.episode.actions.length > 0 && <List title="Acties" items={d.episode.actions} />}
             {d.episode.questions.length > 0 && <List title="Open vragen" items={d.episode.questions} />}
@@ -149,7 +150,7 @@ export function MemoryInspector({ threadId, agentId }: { threadId: string; agent
             <Select value={d.linkedDossier?.id || ''} onChange={(e) => run(async () => (await api.put(`/memory/thread/${threadId}/link`, { dossierId: e.target.value || null }), r.reload()), 'Opgeslagen')} aria-label="Gekoppeld dossier">
               <option value="">Geen</option>
               {d.dossiers.map((x: any) => (
-                <option key={x.id} value={x.id}>
+                <option key={x.id} value={x.id} translate="no">
                   {x.title}
                 </option>
               ))}
@@ -168,7 +169,7 @@ function List({ title, items }: { title: string; items: { text: string }[] }) {
       <div className="text-xs font-medium text-muted">{title}</div>
       <ul className="list-disc ps-4 text-xs">
         {items.map((x, i) => (
-          <li key={i}>{x.text}</li>
+          <li key={i} translate="no">{x.text}</li>
         ))}
       </ul>
     </div>
@@ -189,19 +190,19 @@ function UsageBlock({ u }: { u: any }) {
           <li key={i} className="flex gap-1.5">
             <span className="shrink-0 text-xs text-muted">{REF_KIND[r.p] || 'Bron'}</span>
             {r.kind === 'item' && r.status !== 'forgotten' ? (
-              <a className="min-w-0 break-words hover:underline" href={memPath(`item/${r.id}`)}>
+              <a className="min-w-0 break-words hover:underline" href={memPath(`item/${r.id}`)} translate="no">
                 {r.label}
               </a>
             ) : r.kind === 'dossier' || r.dossier_id ? (
-              <a className="min-w-0 break-words hover:underline" href={memPath(`dossiers/${r.kind === 'dossier' ? r.id : r.dossier_id}`)}>
+              <a className="min-w-0 break-words hover:underline" href={memPath(`dossiers/${r.kind === 'dossier' ? r.id : r.dossier_id}`)} translate="no">
                 {r.label}
               </a>
             ) : r.kind === 'episode' ? (
-              <a className="min-w-0 break-words hover:underline" href={`#/t/${r.thread_id}`}>
+              <a className="min-w-0 break-words hover:underline" href={`#/t/${r.thread_id}`} translate="no">
                 {r.label}
               </a>
             ) : (
-              <span className={cx('min-w-0 break-words', r.status === 'forgotten' && 'text-muted')}>{r.label}</span>
+              <span className={cx('min-w-0 break-words', r.status === 'forgotten' && 'text-muted')} translate="no">{r.label}</span>
             )}
           </li>
         ))}
@@ -354,11 +355,21 @@ export function MemoryMessageExtra({ message }: { message: Message }) {
           <Brain className="h-3 w-3" aria-hidden />
           <span className="min-w-0 flex-1">
             {i.learned_from === 'tool' ? <span className="opacity-80">Gevonden met een tool · </span> : i.learned_from === 'bot' ? <span className="opacity-80">Uit dit antwoord · </span> : null}
-            {i.status === 'proposed' ? (i.conflict ? 'Botst met wat er al staat — eerst beoordelen' : 'Voorstel') : i.status === 'superseded' ? 'Inmiddels vervangen' : i.replaced ? 'Bijgewerkt' : 'Onthouden'} ({SCOPE_LABEL[i.scope]}): {i.content}
-            {i.replaced && i.status !== 'superseded' && <span className="opacity-80"> (was: {i.replaced.content})</span>}
-            {i.status === 'proposed' && i.conflict && <span className="opacity-80"> (nu bewaard: {i.conflict.content})</span>}
+            {i.status === 'proposed' ? (i.conflict ? 'Botst met wat er al staat — eerst beoordelen' : 'Voorstel') : i.status === 'superseded' ? 'Inmiddels vervangen' : i.replaced ? 'Bijgewerkt' : 'Onthouden'} ({i.line ? <bdi translate="no">{i.dossier_title}</bdi> : SCOPE_LABEL[i.scope]}): <span translate="no">{i.content}</span>
+            {i.replaced && i.status !== 'superseded' && (
+              <span className="opacity-80">
+                {' '}
+                <Words text="(was: {0})" values={[i.replaced.content]} />
+              </span>
+            )}
+            {i.status === 'proposed' && i.conflict && (
+              <span className="opacity-80">
+                {' '}
+                <Words text="(nu bewaard: {0})" values={[i.conflict.content]} />
+              </span>
+            )}
           </span>
-          <a className="underline" href={memPath(i.status === 'proposed' ? 'beoordelen' : `item/${i.id}`)}>
+          <a className="underline" href={memPath(i.line ? `dossiers/${i.dossier_id}` : i.status === 'proposed' ? 'beoordelen' : `item/${i.id}`)}>
             {i.status === 'proposed' ? 'Beoordelen' : 'Bekijken'}
           </a>
           {i.changeId && ['active', 'proposed'].includes(i.status) && (
@@ -394,6 +405,7 @@ export function MemoryMessageExtra({ message }: { message: Message }) {
               href={c.status === 'forgotten' ? undefined : c.kind === 'item' ? memPath(`item/${c.id}`) : c.kind === 'episode' ? `#/t/${c.thread_id}` : memPath(`dossiers/${c.kind === 'dossier' ? c.id : c.dossier_id}`)}
               className={cx('max-w-[260px] truncate rounded-md border border-line px-1.5 py-0.5', c.status === 'forgotten' ? 'text-muted line-through' : 'hover:bg-surface-2')}
               title={c.label}
+              translate="no"
             >
               {c.label}
             </a>
@@ -449,7 +461,7 @@ export function MemoryToolCard({ call }: { call: ToolCall; message: Message }) {
           <Badge tone={x.status === 'proposed' ? 'warn' : x.status === 'trashed' ? 'neutral' : 'ok'}>
             {x.status === 'proposed' ? `Voorstel${x.proposal_reason ? ` · ${REASON_LABEL[x.proposal_reason] || x.proposal_reason}` : ''}` : x.status === 'trashed' ? 'Ongedaan' : 'Opgeslagen'}
           </Badge>
-          <span className="min-w-0 flex-1 truncate">{x.label}</span>
+          <span className="min-w-0 flex-1 truncate" translate="no">{x.label}</span>
           <a className="inline-flex items-center gap-0.5 text-accent hover:underline" href={x.kind === 'item' ? memPath(x.status === 'proposed' ? 'beoordelen' : `item/${x.id}`) : memPath(`dossiers/${x.dossier_id}`)}>
             {x.status === 'proposed' ? <Check className="h-3 w-3" /> : <ExternalLink className="h-3 w-3" />}
             {x.status === 'proposed' ? 'Beoordelen' : 'Bekijken'}

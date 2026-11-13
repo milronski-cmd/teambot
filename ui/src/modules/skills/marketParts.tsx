@@ -7,6 +7,7 @@ import { Menu, PageLinks, SkeletonCards, type MenuEntry } from '../../components
 import { api } from '../../lib/api';
 import { REPORT_REASONS } from './api';
 import { isComplete, mergeStable } from './merge';
+import { t } from '../../lib/i18n';
 
 /** Small building blocks shared by the marketplace tabs (catalog, internet skills, MCP Registry apps). */
 
@@ -199,7 +200,7 @@ export function ReportButton({ type, catalogId, itemId, itemName }: { type: 'ski
       <Modal
         open={open}
         onClose={() => setOpen(false)}
-        title={`${itemName} melden`}
+        title={t('{0} melden', itemName)}
         footer={
           <Button variant="primary" loading={busy} disabled={!reason} onClick={() => run(() => api.post('/skills/market/report', { type, catalogId, itemId, itemName, reason, details }).then(() => setOpen(false)), 'Melding verstuurd naar de beheerder')}>
             Versturen

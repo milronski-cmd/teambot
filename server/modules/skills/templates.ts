@@ -1,11 +1,12 @@
 import type { Agent, Ctx } from '../../core/types.js';
 import { HttpError } from '../../core/http.js';
 import { sanitizeNewAgentFor } from '../../api/member-policy.js';
+import { defaultToolGroups } from '../../agent/new-bot.js';
 import { checksumOf } from './files.js';
 import { slugify } from './format.js';
 import { type Placement, type SkillLibrary, type SkillRow, analyze } from './library.js';
 import { type FileContent, filesToMap, mapToFiles, templateAvatar } from './catalog.js';
-import { redactSecrets } from './scan.js';
+import { ownerLooksFirst, redactSecrets } from './scan.js';
 import { type InlinePackage, type PackageVerification } from '../../../packages/teambot-sdk/src/index.js';
 import { type PackageInfo, infoSummary, verifyInline } from './publishers.js';
 
@@ -200,9 +201,48 @@ function planSkills(lib: SkillLibrary, userId: string, t: BotTemplate, placement
   });
 }
 
+/** The template's parts plus the bot's own browser — not for a bot that only chats or only reads. */
+function withBrowser(ctx: Ctx, t: BotTemplate): string[] {
+  const works = t.access_mode !== 'chat' && t.access_mode !== 'readonly';
+  return works && ctx.tools.groups.has('browser') && !t.tool_groups.includes('browser') ? [...t.tool_groups, 'browser'] : t.tool_groups;
+}
+
+/**
+ * The access level a bot from a template that ships with TeamBot starts with: "Volledige toegang" for the owner of
+ * this installation (the same condition as the bot editor, api/agents.ts checkFullAccess), "Automatisch" for anyone
+ * else. A template that only chats or only reads keeps that. Used by the preview and by the install, so both agree.
+ */
+export function ownStartAccess(ctx: Ctx, userId: string, mode: string): Agent['access_mode'] {
+  if (mode === 'chat' || mode === 'readonly') return mode;
+  return ctx.store.user(userId)?.role === 'owner' ? 'full' : 'auto';
+}
+
+/**
+ * A new bot from TeamBot's own templates (team templates, the built-in bots, the main bot made with a team) starts at
+ * "Volledige toegang", also for sending to others: it does its work without a question per step. Paying always asks
+ * (tools/broker.ts), and its routines stay paused. Only for the installation owner, and logged as `agent.full_access`
+ * like the switch in the bot editor. A template from someone else never comes here (previewTemplate caps it at "vragen").
+ * Owner, 10 nov: "ik wil gewoon dat de bots alles kunnen doen zonder mij te vragen, alleen geld beslissingen en
+ * belangrijke mails". Returns the changed bot, or null when nothing changed (read-only, chat, already there).
+ */
+export function startOwnBot(ctx: Ctx, userId: string, agentId: string, from: string): Agent | null {
+  const cur = ctx.store.agent(agentId);
+  if (!cur || cur.user_id !== userId || (cur.access_mode !== 'ask' && cur.access_mode !== 'auto')) return null;
+  const mode = ownStartAccess(ctx, userId, cur.access_mode);
+  if (mode === cur.access_mode) return null;
+  // The same start as any new bot of the owner (agent/new-bot.ts): every part it can use, on top of the template's own.
+  const next = ctx.store.updateAgent(agentId, mode === 'full' ? { access_mode: 'full', tool_groups: [...new Set([...(cur.tool_groups || []), ...defaultToolGroups(ctx)])], settings: { ...(cur.settings || {}), fullAccessExternal: true } } : { access_mode: mode }) || cur;
+  if (mode === 'full') ctx.audit(userId, 'agent.full_access', { on: true, external: true, from }, agentId);
+  ctx.events.emit(userId, 'agent.updated', next);
+  return next;
+}
+
 export function previewTemplate(ctx: Ctx, lib: SkillLibrary, userId: string, t: BotTemplate, extraWarnings: string[] = [], placement?: Placement) {
   const warnings = [...extraWarnings];
-  const groups = t.tool_groups.map((id) => ({ id, label: ctx.tools.groups.get(id)?.label || id, description: ctx.tools.groups.get(id)?.description || '', known: ctx.tools.groups.has(id) }));
+  // Every bot from a template gets its own browser where this installation has one, also when the template does not
+  // list it: the owner can watch along from the chat (the globe in the chat header).
+  const groupIds = withBrowser(ctx, t);
+  const groups = groupIds.map((id) => ({ id, label: ctx.tools.groups.get(id)?.label || id, description: ctx.tools.groups.get(id)?.description || '', known: ctx.tools.groups.has(id) }));
   for (const g of groups.filter((g) => !g.known)) warnings.push(`Toolgroep "${g.id}" bestaat niet in deze installatie en wordt overgeslagen.`);
   const access = t.access_mode === 'auto' || t.access_mode === 'full' ? 'ask' : t.access_mode;
   if (t.access_mode === 'auto' || t.access_mode === 'full') warnings.push(`Het sjabloon vraagt de modus "${t.access_mode === 'full' ? 'volledige toegang' : 'automatisch'}"; de bot start veilig in "vragen". Je kunt dat later zelf aanpassen.`);
@@ -230,7 +270,7 @@ export function previewTemplate(ctx: Ctx, lib: SkillLibrary, userId: string, t: 
     })),
     routines: { count: t.routines.length, supported: routinesSupported },
     externalCalls: [...domains].sort(),
-    needsAcknowledge: plan.some((p) => p.action === 'create' && p.analysis?.scan.level === 'danger'),
+    needsAcknowledge: plan.some((p) => p.action === 'create' && !!p.analysis && ownerLooksFirst(p.analysis.scan)),
     warnings,
   };
 }
@@ -281,10 +321,11 @@ export async function installTemplate(
         catalogRef,
         placement,
       });
+      lib.installed(s);
       created.push(s);
       skillIds.push(s.id);
     }
-    const groups = [...new Set([...t.tool_groups.filter((g) => ctx.tools.groups.has(g)), ...(skillIds.length ? ['skills'] : [])])].filter((g) => ctx.tools.groups.has(g));
+    const groups = [...new Set([...withBrowser(ctx, t).filter((g) => ctx.tools.groups.has(g)), ...(skillIds.length ? ['skills'] : [])])].filter((g) => ctx.tools.groups.has(g));
     const agent = ctx.store.createAgent(userId, sanitizeNewAgentFor(ctx, userId, {
       name: str(o.name, 80).trim() || t.name,
       avatar: t.avatar,

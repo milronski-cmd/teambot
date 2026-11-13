@@ -6,10 +6,11 @@ import type { Ctx } from '../../core/types.js';
 import { HttpError } from '../../core/http.js';
 import { type FileMap, filesFromDir, findSkillRoots, subset } from './files.js';
 import { ALL_TEAMS, type Analysis, type Placement, type SkillLibrary, type SkillRow, type SourceInfo, analyze } from './library.js';
-import { diffPermissions } from './scan.js';
+import { diffPermissions, ownerLooksFirst } from './scan.js';
 import { skillSubstance } from './substance.js';
 import { MANIFEST_FILE, type PackageVerification } from '../../../packages/teambot-sdk/src/index.js';
-import { type SignatureView, auditOverride, builtinView, decide, infoOf, publisherChange, verifyFiles, viewOf } from './publishers.js';
+import type { SignatureView } from '../../../shared/skills.js';
+import { auditOverride, builtinView, decide, infoOf, publisherChange, verifyFiles, viewOf } from './publishers.js';
 import { type PublisherCheck, checkPublisher, githubOwnerOf } from './import-rules.js';
 
 /** Publisher check of a GitHub source: a look-alike of a known organisation is flagged and must be acknowledged. */
@@ -113,6 +114,17 @@ export function lockedSource(lock: LockedSkill, name: string, full: string): Sou
   const gh = /^([A-Za-z0-9_.-]+)\/([A-Za-z0-9_.-]+)$/.exec(lock.source);
   const url = /^https:\/\//i.test(lock.sourceUrl) ? lock.sourceUrl.replace(/\.git$/, '') : gh && (!lock.sourceType || lock.sourceType === 'github') ? `https://github.com/${gh[1]}/${gh[2]}` : undefined;
   return { type: 'discover', label: `npx skills: ${name}${lock.source ? ` (${lock.source})` : ''}`, path: full, ...(url ? { url } : {}) };
+}
+
+export interface CommitOptions {
+  keys?: string[];
+  acknowledge?: boolean;
+  confirmPermissions?: boolean;
+  enableFor?: string[];
+  createdBy?: string;
+  overridePolicy?: boolean;
+  confirmPublisherChange?: boolean;
+  placement?: Placement;
 }
 
 export class Importer {
@@ -287,7 +299,7 @@ export class Importer {
       action,
       diff,
       needsConfirmation: action === 'update' && diff.elevated,
-      needsAcknowledge: a.scan.level === 'danger' || lookalike,
+      needsAcknowledge: ownerLooksFirst(a.scan) || lookalike,
       substance: skillSubstance(md, [...c.files.keys()], m.name),
       signature,
       policy,
@@ -311,11 +323,12 @@ export class Importer {
     };
   }
 
-  commit(
-    userId: string,
-    stagingId: string,
-    o: { keys?: string[]; acknowledge?: boolean; confirmPermissions?: boolean; enableFor?: string[]; createdBy?: string; overridePolicy?: boolean; confirmPublisherChange?: boolean; placement?: Placement },
-  ) {
+  /** Install what was staged. A pack of skills is one change: the bots' work folders follow once, at the end. */
+  commit(userId: string, stagingId: string, o: CommitOptions) {
+    return this.lib.batch(() => this.commitEach(userId, stagingId, o));
+  }
+
+  private commitEach(userId: string, stagingId: string, o: CommitOptions) {
     const st = this.get(userId, stagingId);
     // One team or all teams (package B4); without a choice, as before teams: all teams.
     const placement = o.placement || st.placement || ALL_TEAMS;
@@ -348,7 +361,8 @@ export class Importer {
         results.push({ key: c.key, name, status: 'needs-acknowledge', error: `${pub.reason} Bevestig dat je deze bron vertrouwt.`, publisherCheck: pub });
         continue;
       }
-      if (a.scan.level === 'danger' && !o.acknowledge) {
+      // A dangerous script is information (it is in the scan the owner and the bot see); what a bot reads waits for him.
+      if (ownerLooksFirst(a.scan) && !o.acknowledge) {
         results.push({ key: c.key, name, status: 'needs-acknowledge', error: 'Deze skill heeft ernstige waarschuwingen. Bevestig dat je ze gelezen hebt.' });
         continue;
       }
@@ -365,6 +379,8 @@ export class Importer {
           const status = r.status === 'activated' ? 'updated' : r.status === 'added' ? 'version-added' : r.status;
           results.push({ key: c.key, name, status, skillId: existing.id, rev: r.rev, diff: r.diff, ...(status === 'needs-confirmation' ? { error: 'Deze versie vraagt meer rechten. Bekijk de wijzigingen en bevestig.' } : {}) });
           if (status !== 'needs-confirmation') {
+            // A new version keeps what the owner chose: scripts that were on are on for the new scripts too.
+            if (status === 'updated' && existing.trusted_scripts) this.lib.installed(r.skill);
             touched.push(r.skill);
             this.ctx.audit(userId, 'skill.updated', { skill: name, rev: r.rev, status, source: c.source.type, elevated: r.diff.elevated, ...sigAudit });
             if (change && status !== 'unchanged') this.ctx.audit(userId, 'package.publisher_changed', { what: 'skill', item: name, from: change.from, to: change.to });
@@ -372,6 +388,7 @@ export class Importer {
           }
         } else {
           const s = this.lib.create(userId, c.files, a, { source: c.source, createdBy: o.createdBy || 'import', catalogRef: c.catalogRef, placement });
+          this.lib.installed(s);
           results.push({ key: c.key, name, status: 'created', skillId: s.id, rev: 1 });
           touched.push(s);
           this.ctx.audit(userId, 'skill.imported', { skill: name, source: c.source.type, label: c.source.label, checksum: a.checksum, scan: a.scan.level, kind: a.scan.kind, ...sigAudit });
@@ -385,13 +402,15 @@ export class Importer {
     const notEnabled: { agentId: string; name: string; skill: string }[] = [];
     for (const ag of agents) {
       const fresh = this.ctx.store.agent(ag.id)!;
-      const ids = new Set(fresh.skills || []);
+      const give: string[] = [];
       for (const s of touched) {
         if (s.status !== 'active') continue;
         if (this.lib.reach(fresh, s) === 'none') notEnabled.push({ agentId: fresh.id, name: fresh.name, skill: s.name });
-        else ids.add(s.id);
+        else give.push(s.id);
       }
-      if (ids.size !== (fresh.skills || []).length) this.lib.setAgentSkills(fresh, [...ids]);
+      // A new skill is the bot's without this; what was taken away from it before is given back here.
+      const off = this.lib.takenAway(fresh);
+      if (give.some((id) => off.has(id))) this.lib.giveSkills(fresh, give);
     }
     if (results.every((r) => !['needs-confirmation', 'needs-acknowledge', 'needs-policy-override', 'needs-publisher-confirmation', 'error'].includes(r.status))) this.stagings.delete(st.id);
     if (touched.length) this.ctx.events.emit(userId, 'skills.updated', { ids: touched.map((s) => s.id) });

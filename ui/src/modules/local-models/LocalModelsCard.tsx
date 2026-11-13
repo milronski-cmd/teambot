@@ -1,16 +1,21 @@
 import { useCallback, useEffect, useState } from 'react';
 import { ChevronDown, Cpu, Download, ExternalLink, RefreshCw, TriangleAlert, X } from 'lucide-react';
-import { on } from '../../lib/api';
+import { api, on } from '../../lib/api';
 import { t } from '../../lib/i18n';
 import { formatDate, formatNumber } from '../../lib/format';
 import { useApp } from '../../lib/store';
-import { Badge, Button, Card, Spinner, cx, toast, toastError, useAsync } from '../../components/ui';
-import { localModelsApi, type CatalogModel, type Fit, type FitWhy, type Hardware, type InstalledModel, type LocalModelsView, type Probe, type PullState } from './api';
+import type { ProviderTestResult } from '../../lib/types';
+import { Badge, Button, Card, CardHead, Spinner, cx, useAsync } from '../../components/ui';
+import { ConnectCard, ConnectResult } from '../../components/ConnectCard';
+import { localModelsApi } from './api';
+import type { CatalogView, Fit, FitWhy, Hardware, InstalledModel, LocalModelsView, ProbeView, PullState, ToolsKnown } from '../../../../shared/localModels.js';
+import { OllamaInstallButton } from './install';
 
 /**
  * "Lokale modellen op deze pc" (TeamBot 0.4, Q): what this pc has, which models fit, whether tools really work, a
  * warning when Ollama does not use the video card, and one-click downloads. Self-contained: the AI-provider settings
- * show it in full, the first-run screen can show it with `compact` (summary, warning and the advice only).
+ * show it in full, the first-run screen can show it with `compact` (summary, warning and the advice only; its buttons
+ * are quiet there, the first screen has one main button of its own).
  */
 
 const GiB = 1024 ** 3;
@@ -40,7 +45,7 @@ function FitBadge({ fit }: { fit: Fit }) {
   return <Badge tone={FIT_TONE[fit]}>{FIT_LABEL[fit]}</Badge>;
 }
 
-function ToolsBadge({ probe, known }: { probe: Probe | null; known?: 'yes' | 'no' | 'unknown' }) {
+function ToolsBadge({ probe, known }: { probe: ProbeView | null; known?: ToolsKnown }) {
   if (probe?.verdict === 'tools') return <Badge tone="ok">Tools werken</Badge>;
   if (probe?.verdict === 'text' || (!probe && known === 'no')) return <Badge>Alleen tekst</Badge>;
   if (probe?.verdict === 'unreliable') return <Badge tone="warn">Tools onbetrouwbaar</Badge>;
@@ -91,10 +96,86 @@ function Progress({ p, onCancel }: { p: PullState; onCancel(): void }) {
   );
 }
 
+/** What a tools test says, under the model's row: "Tools werken", or why not. */
+function ProbeResult({ r }: { r: ProbeView | { failed: string } }) {
+  if ('failed' in r) return <ConnectResult ok={false}>{t('De test is mislukt: {0}', r.failed)}</ConnectResult>;
+  if (r.verdict === 'tools') return <ConnectResult ok>Tools werken</ConnectResult>;
+  const why = DETAIL_TEXT[r.detail] || r.detail;
+  if (r.verdict === 'error') return <ConnectResult ok={false}>{t('De test is mislukt: {0}', r.message || why)}</ConnectResult>;
+  return (
+    <ConnectResult ok={false} next="Kies voor een bot met tools een ander model; praten kan wel.">
+      {r.verdict === 'unreliable' ? t('Tools werken niet altijd: {0}.', why) : t('Alleen tekst, tools werken niet: {0}.', why)}
+    </ConnectResult>
+  );
+}
+
+/** A download that finished, under the model's row. */
+function PullResult({ p }: { p: PullState }) {
+  if (p.ok) return <ConnectResult ok>{t('{0} is gedownload.', short(p.model))}</ConnectResult>;
+  if (p.cancelled) return <p className="text-xs text-muted">{t('Download van {0} gestopt. Downloaden gaat later verder waar het bleef.', short(p.model))}</p>;
+  return <ConnectResult ok={false}>{t('Download van {0} mislukt: {1}', short(p.model), p.error || '')}</ConnectResult>;
+}
+
+const linkAction = 'inline-flex h-8 items-center gap-1 rounded-lg bg-accent px-3 text-[13px] font-semibold text-accent-fg hover:opacity-90 coarse:h-11';
+
+/**
+ * Ollama itself, on the same row as every AI behind "AI toevoegen": not on this pc → Installeren (TeamBot installs it,
+ * connects it and fetches a model that runs well here); running and not connected → Koppelen; connected → Testen,
+ * with the outcome under it.
+ */
+function OllamaRow({ v, onChanged }: { v: LocalModelsView; onChanged(): void }) {
+  const [r, setR] = useState<ProviderTestResult | null>(null);
+  const a = useAsync();
+  const o = v.ollama;
+  const test = () =>
+    a.run(async () => {
+      setR(null);
+      setR(await api.post<ProviderTestResult>(`/providers/${o.providerId}/test`).catch((e) => ({ ok: false, detail: e?.message || String(e) })));
+    });
+  if (!o.running)
+    return (
+      <ConnectCard
+        data-testid="local-models-no-ollama"
+        icon={<Cpu aria-hidden />}
+        tone="violet"
+        title="Ollama"
+        line={o.local ? 'Met Ollama draaien modellen gratis op je eigen computer. Nog niet op deze pc.' : t('Ollama op {0} is niet bereikbaar', o.base)}
+        state="off"
+        stateLabel={o.local ? 'draait niet' : 'niet bereikbaar'}
+        action={o.local && <OllamaInstallButton onDone={onChanged} />}
+      />
+    );
+  return (
+    <ConnectCard
+      data-testid="local-models-ollama"
+      icon={<Cpu aria-hidden />}
+      tone="violet"
+      title="Ollama"
+      line={[o.version ? t('Versie {0}', o.version) : '', t('{0, plural, one {# model op deze pc} other {# modellen op deze pc}}', v.installed.length)].filter(Boolean).join(' · ')}
+      state={a.busy ? 'busy' : r && !r.ok ? 'error' : o.providerId ? 'on' : 'off'}
+      stateLabel={a.busy ? 'testen' : o.providerId ? undefined : 'staat op deze pc'}
+      action={
+        o.providerId ? (
+          <Button size="sm" loading={a.busy} onClick={test}>
+            Testen
+          </Button>
+        ) : (
+          <a className={linkAction} href="#/settings/providers?koppel=ollama">
+            Koppelen
+          </a>
+        )
+      }
+      result={r && (r.ok ? <ConnectResult ok /> : <ConnectResult ok={false} next={r.hint || undefined}>{r.detail}</ConnectResult>)}
+    />
+  );
+}
+
 export function LocalModelsCard({ compact = false, className }: { compact?: boolean; className?: string }) {
   const [v, setV] = useState<LocalModelsView | null>(null);
   const [err, setErr] = useState('');
   const [testing, setTesting] = useState<Record<string, boolean>>({});
+  // The outcome of a tools test, per model (`<providerId>|<model>`), shown under its row.
+  const [tested, setTested] = useState<Record<string, ProbeView | { failed: string }>>({});
   const reload = useAsync();
   const act = useAsync();
 
@@ -122,12 +203,13 @@ export function LocalModelsCard({ compact = false, className }: { compact?: bool
   const test = async (model: string, providerId?: string) => {
     const k = `${providerId || ''}|${model}`;
     setTesting((x) => ({ ...x, [k]: true }));
+    setTested(({ [k]: _old, ...x }) => x);
     try {
       const r = await localModelsApi.probe(model, providerId);
-      toast(r.verdict === 'tools' ? t('{0}: tools werken.', short(model)) : r.verdict === 'error' ? t('{0}: de test is mislukt.', short(model)) : t('{0}: alleen tekst, tools werken niet.', short(model)), r.verdict === 'tools' ? 'ok' : 'neutral');
+      setTested((x) => ({ ...x, [k]: r }));
       await load();
-    } catch (e) {
-      toastError(e);
+    } catch (e: any) {
+      setTested((x) => ({ ...x, [k]: { failed: e?.message || String(e) } }));
     } finally {
       setTesting((x) => ({ ...x, [k]: false }));
     }
@@ -147,16 +229,19 @@ export function LocalModelsCard({ compact = false, className }: { compact?: bool
   if (v && !v.allowed) return null;
 
   const title = (
-    <div className="flex flex-wrap items-center justify-between gap-2">
-      <h2 className="flex items-center gap-2 font-semibold">
-        <Cpu className="h-4 w-4 text-muted" aria-hidden /> Lokale modellen op deze pc
-      </h2>
-      {!compact && v && (
-        <Button size="sm" variant="ghost" icon={<RefreshCw className="h-3.5 w-3.5" />} loading={reload.busy} onClick={() => reload.run(() => load(true))}>
-          Opnieuw kijken
-        </Button>
-      )}
-    </div>
+    <CardHead
+      icon={Cpu}
+      tone="violet"
+      title="Lokale modellen op deze pc"
+      action={
+        !compact &&
+        v && (
+          <Button size="sm" variant="ghost" icon={<RefreshCw className="h-3.5 w-3.5" />} loading={reload.busy} onClick={() => reload.run(() => load(true))}>
+            Opnieuw zoeken
+          </Button>
+        )
+      }
+    />
   );
 
   if (!v)
@@ -205,15 +290,8 @@ export function LocalModelsCard({ compact = false, className }: { compact?: bool
         </div>
       )}
 
-      {!v.ollama.running ? (
-        <div className="rounded-lg bg-surface-2 px-3 py-2 text-sm" data-testid="local-models-no-ollama">
-          <div className="font-semibold">{v.ollama.local ? 'Ollama draait niet op deze pc' : t('Ollama op {0} is niet bereikbaar', v.ollama.base)}</div>
-          <p className="mt-0.5 text-muted">Met Ollama draaien modellen gratis op je eigen computer. Installeer en start het.</p>
-          <a className="mt-1 inline-flex items-center gap-1 font-semibold underline" href="https://ollama.com/download" target="_blank" rel="noreferrer">
-            ollama.com/download <ExternalLink className="h-3 w-3" aria-hidden />
-          </a>
-        </div>
-      ) : (
+      {(!compact || !v.ollama.running) && <OllamaRow v={v} onChanged={() => void load()} />}
+      {v.ollama.running && (
         rec &&
         recModel && (
           <div className="space-y-2 rounded-lg bg-accent-soft px-3 py-2.5 text-sm" data-testid="local-models-advice">
@@ -236,14 +314,14 @@ export function LocalModelsCard({ compact = false, className }: { compact?: bool
               isDefault(rec.id) ? (
                 <Badge tone="ok">{t('Standaard voor nieuwe bots op Ollama')}</Badge>
               ) : (
-                <Button size="sm" variant="primary" loading={act.busy} onClick={() => use(rec.id)}>
+                <Button size="sm" variant={compact ? 'secondary' : 'primary'} loading={act.busy} onClick={() => use(rec.id)}>
                   {t('Gebruik voor nieuwe bots')}
                 </Button>
               )
             ) : pulling(rec.id) ? (
               <Progress p={pulling(rec.id)!} onCancel={() => act.run(() => localModelsApi.cancel(rec.id))} />
             ) : (
-              <Button size="sm" variant="primary" icon={<Download className="h-3.5 w-3.5" />} loading={act.busy} onClick={() => pull(rec.id)}>
+              <Button size="sm" variant={compact ? 'secondary' : 'primary'} icon={<Download className="h-3.5 w-3.5" />} loading={act.busy} onClick={() => pull(rec.id)}>
                 {t('Downloaden ({0})', dl(recModel.size))}
               </Button>
             )}
@@ -257,6 +335,8 @@ export function LocalModelsCard({ compact = false, className }: { compact?: bool
         </a>
       ) : (
         <>
+          {/* Every model on the same row as every AI behind "AI toevoegen": what it is, one action (Downloaden or
+              Testen), and the outcome under it. */}
           {v.ollama.running && (
             <section className="space-y-2" aria-labelledby="lokaal-op-pc">
               <h3 id="lokaal-op-pc" data-i18n="label" className="text-xs font-semibold uppercase tracking-wide text-muted">
@@ -265,9 +345,9 @@ export function LocalModelsCard({ compact = false, className }: { compact?: bool
               {v.installed.length === 0 ? (
                 <p className="text-sm text-muted">Nog geen modellen in Ollama. Download hieronder een model dat past.</p>
               ) : (
-                <ul className="divide-y divide-line rounded-lg border border-line">
+                <ul className="space-y-2">
                   {v.installed.map((m) => (
-                    <InstalledRow key={m.id} m={m} busy={!!testing[`|${m.id}`]} isDefault={isDefault(m.id)} onTest={() => test(m.id)} />
+                    <InstalledRow key={m.id} m={m} busy={!!testing[`|${m.id}`]} isDefault={isDefault(m.id)} onTest={() => test(m.id)} result={tested[`|${m.id}`]} pulled={v.pulls.find((p) => p.model === m.id && p.done && p.ok)} />
                   ))}
                 </ul>
               )}
@@ -279,16 +359,11 @@ export function LocalModelsCard({ compact = false, className }: { compact?: bool
               <h3 id="lokaal-downloaden" data-i18n="label" className="text-xs font-semibold uppercase tracking-wide text-muted">
                 Downloaden
               </h3>
-              <ul className="divide-y divide-line rounded-lg border border-line">
+              <ul className="space-y-2">
                 {downloads.map((c) => (
-                  <CatalogRow key={c.id} c={c} pull={pulling(c.id)} busy={act.busy} onPull={() => pull(c.id)} onCancel={() => act.run(() => localModelsApi.cancel(c.id))} />
+                  <CatalogRow key={c.id} c={c} pull={v.pulls.find((p) => p.model === c.id)} busy={act.busy} onPull={() => pull(c.id)} onCancel={() => act.run(() => localModelsApi.cancel(c.id))} />
                 ))}
               </ul>
-              {v.pulls
-                .filter((p) => p.done)
-                .map((p) => (
-                  <Progress key={p.model} p={p} onCancel={() => {}} />
-                ))}
             </section>
           )}
 
@@ -297,32 +372,42 @@ export function LocalModelsCard({ compact = false, className }: { compact?: bool
               <h3 id="lokaal-anders" data-i18n="label" className="text-xs font-semibold uppercase tracking-wide text-muted">
                 Andere lokale servers
               </h3>
-              {v.others.map((s) => (
-                <div key={s.providerId} className="rounded-lg border border-line">
-                  <div className="border-b border-line px-3 py-2 text-sm font-semibold">{s.name}</div>
-                  {s.error ? (
-                    <p className="px-3 py-2 text-sm text-muted">{t('Niet bereikbaar: {0}', s.error)}</p>
-                  ) : s.models.length === 0 ? (
-                    <p className="px-3 py-2 text-sm text-muted">Geen modellen gevonden.</p>
+              <ul className="space-y-2">
+                {v.others.map((s) =>
+                  s.error || !s.models.length ? (
+                    <li key={s.providerId}>
+                      <ConnectCard title={s.name} line={s.error ? t('Niet bereikbaar: {0}', s.error) : 'Geen modellen gevonden.'} state={s.error ? 'error' : 'on'} stateLabel={s.error ? 'niet bereikbaar' : undefined} />
+                    </li>
                   ) : (
-                    <ul className="divide-y divide-line">
-                      {s.models.map((m) => (
-                        <li key={m.id} className="flex flex-wrap items-center gap-2 px-3 py-2 text-sm">
-                          <span className="min-w-0 flex-1 [overflow-wrap:anywhere]" translate="no">
-                            {m.id}
-                          </span>
-                          <ToolsBadge probe={m.probe} known={m.tools === false ? 'no' : undefined} />
-                          {!m.probe && (
-                            <Button size="sm" variant="ghost" loading={!!testing[`${s.providerId}|${m.id}`]} onClick={() => test(m.id, s.providerId)}>
-                              Tools testen
-                            </Button>
-                          )}
-                        </li>
-                      ))}
-                    </ul>
-                  )}
-                </div>
-              ))}
+                    s.models.map((m) => (
+                      <li key={`${s.providerId}|${m.id}`}>
+                        <ConnectCard
+                          title={
+                            <span translate="no" className="[overflow-wrap:anywhere]">
+                              {m.id}
+                            </span>
+                          }
+                          line={
+                            <>
+                              {s.name} <ToolsBadge probe={m.probe} known={m.tools === false ? 'no' : undefined} />
+                            </>
+                          }
+                          state={testing[`${s.providerId}|${m.id}`] ? 'busy' : 'off'}
+                          stateLabel={testing[`${s.providerId}|${m.id}`] ? 'testen' : undefined}
+                          action={
+                            m.tools !== false && (
+                              <Button size="sm" loading={!!testing[`${s.providerId}|${m.id}`]} onClick={() => test(m.id, s.providerId)}>
+                                Testen
+                              </Button>
+                            )
+                          }
+                          result={tested[`${s.providerId}|${m.id}`] && <ProbeResult r={tested[`${s.providerId}|${m.id}`]} />}
+                        />
+                      </li>
+                    ))
+                  ),
+                )}
+              </ul>
             </section>
           )}
 
@@ -333,55 +418,74 @@ export function LocalModelsCard({ compact = false, className }: { compact?: bool
   );
 }
 
-function InstalledRow({ m, busy, isDefault, onTest }: { m: InstalledModel; busy: boolean; isDefault: boolean; onTest(): void }) {
-  const canTest = m.fit !== 'too_big' && m.tools !== false && (!m.probe || m.probe.verdict === 'error');
+/** A model on this pc: what it is and how it fits, and one action, "Testen" (do tools work?), with the outcome under it. */
+function InstalledRow({ m, busy, isDefault, onTest, result, pulled }: { m: InstalledModel; busy: boolean; isDefault: boolean; onTest(): void; result?: ProbeView | { failed: string }; pulled?: PullState }) {
+  const canTest = m.fit !== 'too_big' && m.tools !== false;
   return (
-    <li className="space-y-1 px-3 py-2">
-      <div className="flex flex-wrap items-center gap-2 text-sm">
-        <span className="min-w-[7rem] flex-1 font-medium [overflow-wrap:anywhere]" translate="no">
-          {short(m.id)}
-        </span>
-        <FitBadge fit={m.fit} />
-        <ToolsBadge probe={m.probe} known={m.toolsKnown} />
-        {isDefault && <Badge tone="accent">standaard</Badge>}
-      </div>
-      <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted">
-        <span>{dl(m.size)}</span>
-        <span>{WHY_TEXT[m.why]}</span>
-        {canTest && (
-          <Button size="sm" variant="ghost" loading={busy} onClick={onTest}>
-            {m.probe?.verdict === 'error' ? 'Opnieuw testen' : 'Tools testen'}
-          </Button>
-        )}
-      </div>
+    <li data-local-model={m.id}>
+      <ConnectCard
+        title={
+          <span translate="no" className="[overflow-wrap:anywhere]">
+            {short(m.id)}
+          </span>
+        }
+        line={
+          <span className="flex flex-wrap items-center gap-1.5">
+            <FitBadge fit={m.fit} />
+            <ToolsBadge probe={m.probe} known={m.toolsKnown} />
+            {isDefault && <Badge tone="accent">standaard</Badge>}
+            <span>
+              {dl(m.size)} · {WHY_TEXT[m.why]}
+            </span>
+          </span>
+        }
+        state={busy ? 'busy' : 'off'}
+        stateLabel={busy ? 'testen' : undefined}
+        action={
+          canTest && (
+            <Button size="sm" loading={busy} onClick={onTest}>
+              Testen
+            </Button>
+          )
+        }
+        result={result ? <ProbeResult r={result} /> : pulled && <PullResult p={pulled} />}
+      />
     </li>
   );
 }
 
-function CatalogRow({ c, pull, busy, onPull, onCancel }: { c: CatalogModel; pull?: PullState; busy: boolean; onPull(): void; onCancel(): void }) {
+/** A model to download: what it is and whether it fits, and one action, "Downloaden"; the progress and outcome under it. */
+function CatalogRow({ c, pull, busy, onPull, onCancel }: { c: CatalogView; pull?: PullState; busy: boolean; onPull(): void; onCancel(): void }) {
+  const running = pull && !pull.done;
   return (
-    <li className="space-y-1 px-3 py-2">
-      <div className="flex flex-wrap items-center gap-2 text-sm">
-        <span className="min-w-[7rem] flex-1 font-medium [overflow-wrap:anywhere]" translate="no">
-          {c.id}
-        </span>
-        {c.best && <Badge tone="accent">Beste keuze voor deze pc</Badge>}
-        <FitBadge fit={c.fit} />
-      </div>
-      <p className="text-xs text-muted">{NOTE[c.id] || ''}</p>
-      {pull ? (
-        <Progress p={pull} onCancel={onCancel} />
-      ) : (
-        <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted">
-          <span>{dl(c.size)}</span>
-          <span>{WHY_TEXT[c.why]}</span>
-          {c.fit !== 'too_big' && (
-            <Button size="sm" variant="ghost" icon={<Download className="h-3.5 w-3.5" />} disabled={busy} onClick={onPull}>
+    <li data-local-download={c.id}>
+      <ConnectCard
+        title={
+          <span translate="no" className="[overflow-wrap:anywhere]">
+            {c.id}
+          </span>
+        }
+        line={
+          <span className="flex flex-wrap items-center gap-1.5">
+            {c.best && <Badge tone="accent">Beste keuze voor deze pc</Badge>}
+            <FitBadge fit={c.fit} />
+            <span>{[NOTE[c.id] || '', `${dl(c.size)} · ${WHY_TEXT[c.why]}`].filter(Boolean).join(' ')}</span>
+          </span>
+        }
+        state={running ? 'busy' : 'off'}
+        stateLabel={running ? 'downloaden' : undefined}
+        action={
+          !running &&
+          c.fit !== 'too_big' && (
+            <Button size="sm" icon={<Download className="h-3.5 w-3.5" />} disabled={busy} onClick={onPull}>
               Downloaden
             </Button>
-          )}
-        </div>
-      )}
+          )
+        }
+        result={pull?.done && <PullResult p={pull} />}
+      >
+        {running && <Progress p={pull} onCancel={onCancel} />}
+      </ConnectCard>
     </li>
   );
 }

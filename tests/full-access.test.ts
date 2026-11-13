@@ -31,11 +31,12 @@ test('Volledige toegang: normal work without asking, sending to others and payme
   assert.equal(b.decide(bot({ access_mode: 'ask' }), { name: 'write_file', risk: 'write' }), 'ask');
 });
 
-test('Volledige toegang for CLI commands: local destruction runs, pushing/publishing asks, the blocklist and the workspace still hold', async () => {
+test('Volledige toegang for CLI commands: deleting, pushing and publishing run; only mailing someone counts as "to others"; wiping the drive and TeamBot data stay refused', async () => {
   assert.equal(commandImpact('rm -rf build'), 'local');
   assert.equal(commandImpact('git reset --hard HEAD~1'), 'local');
-  assert.equal(commandImpact('git push origin main'), 'external');
-  assert.equal(commandImpact('rm -rf dist && npm publish'), 'external');
+  assert.equal(commandImpact('git push origin main'), 'local', 'pushing code is the own work of the bot');
+  assert.equal(commandImpact('rm -rf dist && npm publish'), 'local');
+  assert.equal(commandImpact('Send-MailMessage -To klant@example.com -Subject Offerte'), 'external', 'a mail to someone');
   assert.equal(commandImpact('ls'), 'local');
   const t = await startTestApp();
   try {
@@ -43,20 +44,11 @@ test('Volledige toegang for CLI commands: local destruction runs, pushing/publis
     const agent = t.app.ctx.store.agent(a.id)!;
     const gs = { ctx: t.app.ctx, agent, thread: null, run: null, userId: a.user_id, signal: new AbortController().signal, ns: 'claude-code' };
     assert.equal((await gate(gs, { tool: 'Bash', risk: 'danger', summary: 'rm', input: {}, command: 'rm -rf build' })).allow, true);
-    assert.equal((await gate(gs, { tool: 'Bash', risk: 'exec', summary: 'x', input: {}, command: 'format c:' })).allow, false, 'hard blocklist');
-    assert.equal((await gate(gs, { tool: 'Write', risk: 'write', summary: 'x', input: {}, paths: [path.resolve(a.workspace, '..', '..', 'buiten.txt')] })).allow, false, 'outside the workspace');
-    const ac = new AbortController();
-    const p = gate({ ...gs, signal: ac.signal }, { tool: 'Bash', risk: 'danger', summary: 'push', input: {}, command: 'git push' });
-    const ap = await (async () => {
-      for (let i = 0; i < 200; i++) {
-        const x = (await t.api('GET', '/approvals')).find((y: any) => y.status === 'pending');
-        if (x) return x;
-        await new Promise((r) => setTimeout(r, 25));
-      }
-    })();
-    assert.ok(ap, 'git push still asks');
-    await t.api('POST', `/approvals/${ap.id}`, { decision: 'deny' });
-    assert.equal((await p).allow, false);
+    assert.equal((await gate(gs, { tool: 'Bash', risk: 'exec', summary: 'x', input: {}, command: 'format c:' })).allow, false, 'wiping the system drive');
+    assert.equal((await gate(gs, { tool: 'Write', risk: 'write', summary: 'x', input: {}, paths: [path.resolve(a.workspace, '..', '..', 'buiten.txt')] })).allow, false, 'the data of TeamBot itself');
+    const push = await gate(gs, { tool: 'Bash', risk: 'danger', summary: 'push', input: {}, command: 'git push' });
+    assert.deepEqual([push.allow, push.asked], [true, false], 'git push runs without a question');
+    assert.equal((await t.api('GET', '/approvals?status=all')).length, 0, 'no approval card');
   } finally {
     await t.close();
   }

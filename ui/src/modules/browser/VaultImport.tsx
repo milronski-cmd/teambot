@@ -5,7 +5,8 @@ import { t } from '../../lib/i18n';
 import { MoreInfo } from '../../components/MoreInfo';
 import { Fold } from '../../components/overview';
 import { formatBytes } from '../../lib/format';
-import { vault, VAULT_IMPORT_MAX_BYTES, type VaultImportPreview, type VaultImportResult, type VaultImportRow } from './api';
+import { vault } from './api';
+import { VAULT_IMPORT_MAX_BYTES, type VaultImportPreview, type VaultImportResult, type VaultImportRow } from '../../../../shared/vault.js';
 import { hostOf, SiteMark } from './SiteMark';
 
 /** Where each app hides its export (menu names differ a little per version and language). */
@@ -227,7 +228,7 @@ function ImportRow({ row, checked, onChange }: { row: VaultImportRow; checked: b
   return (
     <li>
       <label className={cx('flex items-start gap-3 px-3.5 py-2.5', dup ? 'cursor-default' : 'cursor-pointer hover:bg-surface-2')}>
-        <input type="checkbox" className="mt-2.5 shrink-0" checked={!dup && checked} disabled={dup} onChange={(e) => onChange(e.target.checked)} aria-label={`${row.label} importeren`} />
+        <input type="checkbox" className="mt-2.5 shrink-0" checked={!dup && checked} disabled={dup} onChange={(e) => onChange(e.target.checked)} aria-label={t('{0} importeren', row.label)} />
         <SiteMark origin={row.origins[0]} size={32} />
         <span className="min-w-0 flex-1 space-y-0.5">
           <span className="flex flex-wrap items-center gap-x-2 gap-y-1">

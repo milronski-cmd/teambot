@@ -11,11 +11,13 @@ import { CARD, ErrorCard, LoadingCards, Meta, RefreshNote, ReportButton, SearchB
 import { refreshLabel } from './merge';
 import { Collapse, SignatureBadge } from './common';
 import { Wizard, type RegistryPick } from '../mcp/Wizard';
+import { QuickStatus, useQuickConnect } from '../mcp/quick';
 import { AppIcon } from './AppIcon';
 import type { CatalogEntry } from '../mcp/shared';
 import { AppCard, CategoryTiles } from './ClearMarket';
 import { tileIdOf, tilesFor } from './marketGroups';
 import { firstSentence } from '../../lib/sentence';
+import { t } from '../../lib/i18n';
 
 function useDebounced<T>(v: T, ms = 400) {
   const [d, setD] = useState(v);
@@ -106,7 +108,7 @@ export function RegistryApps({ onOpenCatalog, onShowCatalog, tools }: { onOpenCa
                   <div className="flex items-start gap-3">
                     <AppIcon src={null} title={s.title} name={s.id} />
                     <div className="min-w-0">
-                      <div className="break-words font-semibold">{s.title}</div>
+                      <div className="break-words font-semibold" translate="no">{s.title}</div>
                       <div className="text-xs text-muted [overflow-wrap:anywhere]">{s.publisher}</div>
                     </div>
                   </div>
@@ -136,7 +138,7 @@ export function RegistryApps({ onOpenCatalog, onShowCatalog, tools }: { onOpenCa
           <ul className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
             {items.map((i) => (
               <li key={i.name} className="min-w-0">
-                <AppCard i={i} onAdd={() => setOpen(i.name)} />
+                <QuickAppCard i={i} onDetails={() => setOpen(i.name)} onChanged={reload} />
               </li>
             ))}
           </ul>
@@ -153,6 +155,25 @@ export function RegistryApps({ onOpenCatalog, onShowCatalog, tools }: { onOpenCa
         <p className="text-xs text-muted">{data.errors.length === 1 ? '1 app kon nu niet worden opgehaald.' : `${data.errors.length} apps konden nu niet worden opgehaald.`}</p>
       )}
       {open && <RegistryDetailModal name={open} onClose={() => (setOpen(null), reload())} />}
+    </div>
+  );
+}
+
+/**
+ * An app from the register with one click on "Toevoegen": a remote app without account or key is made for every bot
+ * and tested right there; one that logs in asks only for that login; anything else (a key, a program to confirm)
+ * opens the details with every option, as before.
+ */
+export function QuickAppCard({ i, onDetails, onChanged }: { i: RegistryCard; onDetails(): void; onChanged(): void }) {
+  const q = useQuickConnect(() => onDetails());
+  const s = q.state;
+  useEffect(() => {
+    if (s.phase === 'done' || s.phase === 'error') onChanged();
+  }, [s.phase]);
+  return (
+    <div className="space-y-2">
+      <AppCard i={i} busy={q.busy && s.phase !== 'login'} onOpen={onDetails} onAdd={() => (i.needsSecrets ? onDetails() : q.start({ registry: { name: i.name } }))} />
+      {s.phase !== 'idle' && <QuickStatus s={s} name={i.title} />}
     </div>
   );
 }
@@ -199,8 +220,8 @@ export function RegistryDetailModal({ name, onClose }: { name: string; onClose()
           <div className="flex items-start gap-3">
             <AppIcon src={d.icon} title={d.title} name={d.name} size={40} />
             <div className="min-w-0">
-              <div className="font-mono text-xs text-muted">{d.name}</div>
-              <p className="text-sm">{d.description}</p>
+              <div className="font-mono text-xs text-muted" translate="no">{d.name}</div>
+              <p className="text-sm" translate="no">{d.description}</p>
             </div>
           </div>
           <div className="flex flex-wrap items-center gap-2">
@@ -303,7 +324,7 @@ export function RegistryDetailModal({ name, onClose }: { name: string; onClose()
             </Field>
           )}
           {d.versions.length > 1 && (
-            <Collapse title={`Versies (${d.versions.length})`}>
+            <Collapse title={t('Versies ({0})', d.versions.length)}>
               <ul className="space-y-0.5 text-sm">
                 {d.versions.map((v) => (
                   <li key={v.version}>

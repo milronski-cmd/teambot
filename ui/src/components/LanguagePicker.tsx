@@ -44,18 +44,6 @@ export function BotLanguageSelect({ value, onChange, inherit, className, ...p }:
 registerFormControl(LanguageSelect);
 registerFormControl(BotLanguageSelect);
 
-/** "Bots antwoorden in" for Instellingen › Algemeen. */
-export function BotLanguageField({ value, onChange }: { value: string | undefined; onChange(v: string): void }) {
-  return (
-    <Field
-      label="Bots antwoorden in"
-      hint="Standaard antwoordt een bot in de taal waarin je schrijft. Per bot is dit aan te passen."
-    >
-      <BotLanguageSelect value={value} onChange={onChange} />
-    </Field>
-  );
-}
-
 /** Compact picker for the welcome and sign-in screens: a language icon and the current language in its own name. */
 export function LanguageCorner({ className }: { className?: string }) {
   const cur = getLang();

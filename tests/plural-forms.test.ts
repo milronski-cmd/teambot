@@ -62,6 +62,8 @@ const BARE_COUNT_OK = new Set([
   'server/modules/browser/screen-tools.ts|${minutes} minuten', // a desktop task lasts 5–240 minutes
   'server/modules/browser/screen-tools.ts|${cfg.host_options.maxPerMinute} acties', // 5–240 per minute
   'server/modules/memory/lifecycle.ts|${g.length} items', // a merge proposal joins two or more
+  'server/modules/rooms/orchestration.ts|${turns} beurten', // twice STALL_REQUESTS: always 30
+  'server/modules/rooms/orchestration.ts|${Orchestrator.STALL_REQUESTS} verzoeken', // a fixed 15
 ]);
 const escRe = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 

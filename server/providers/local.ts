@@ -2,6 +2,7 @@
  * Finding local model servers on their default ports. Several servers share a port (llama.cpp and LocalAI on 8080,
  * vLLM and Lemonade on 8000), so each probe checks a fingerprint endpoint that only that server answers.
  */
+import { originOf } from './localmodels.js';
 
 export interface LocalProbe {
   /** OpenAI-compatible base URL TeamBot talks to. */
@@ -9,14 +10,6 @@ export interface LocalProbe {
   /** Fingerprint check; resolves with a version string when it is this server, null otherwise. */
   identify(base: string): Promise<{ version?: string } | null>;
 }
-
-const origin = (base: string) => {
-  try {
-    return new URL(base).origin;
-  } catch {
-    return base.replace(/\/v1\/?$/, '');
-  }
-};
 
 async function getJson(url: string, timeoutMs = 1500): Promise<{ status: number; json: any } | null> {
   try {
@@ -40,7 +33,7 @@ export const LOCAL_PROBES: Record<string, LocalProbe> = {
   ollama: {
     baseUrl: 'http://127.0.0.1:11434/v1',
     async identify(base) {
-      const v = await getJson(origin(base) + '/api/version');
+      const v = await getJson(originOf(base) + '/api/version');
       return v?.status === 200 && typeof v.json?.version === 'string' ? { version: v.json.version } : null;
     },
   },
@@ -49,7 +42,7 @@ export const LOCAL_PROBES: Record<string, LocalProbe> = {
     async identify(base) {
       // LM Studio's own REST API (/api/v1 since 0.4, /api/v0 before); fall back to the OpenAI list.
       for (const p of ['/api/v1/models', '/api/v0/models']) {
-        const v = await getJson(origin(base) + p);
+        const v = await getJson(originOf(base) + p);
         if (v?.status === 200 && (Array.isArray(v.json?.data) || Array.isArray(v.json?.models))) return {};
       }
       const m = await getJson(base + '/models');
@@ -59,7 +52,7 @@ export const LOCAL_PROBES: Record<string, LocalProbe> = {
   llamacpp: {
     baseUrl: 'http://127.0.0.1:9931/v1',
     async identify(base) {
-      const props = await getJson(origin(base) + '/props');
+      const props = await getJson(originOf(base) + '/props');
       if (props?.status === 200 && props.json && ('default_generation_settings' in props.json || 'build_info' in props.json || 'n_ctx' in props.json || 'model_path' in props.json))
         return { version: typeof props.json.build_info === 'string' ? props.json.build_info : undefined };
       const m = await getJson(base + '/models');
@@ -69,7 +62,7 @@ export const LOCAL_PROBES: Record<string, LocalProbe> = {
   localai: {
     baseUrl: 'http://127.0.0.1:8080/v1',
     async identify(base) {
-      const o = origin(base);
+      const o = originOf(base);
       const v = await getJson(o + '/version');
       if (v?.status === 200 && /localai/i.test(JSON.stringify(v.json || ''))) return { version: String(v.json?.version || '').replace(/^LocalAI\s*/i, '') || undefined };
       const sys = await getJson(o + '/system');
@@ -81,7 +74,7 @@ export const LOCAL_PROBES: Record<string, LocalProbe> = {
     async identify(base) {
       const m = await getJson(base + '/models');
       if (!modelsOk(m) || !ownedBy(m).includes('vllm')) return null;
-      const v = await getJson(origin(base) + '/version');
+      const v = await getJson(originOf(base) + '/version');
       return { version: typeof v?.json?.version === 'string' ? v.json.version : undefined };
     },
   },
@@ -105,7 +98,7 @@ export const LOCAL_PROBES: Record<string, LocalProbe> = {
   koboldcpp: {
     baseUrl: 'http://127.0.0.1:5001/v1',
     async identify(base) {
-      const v = await getJson(origin(base) + '/api/extra/version');
+      const v = await getJson(originOf(base) + '/api/extra/version');
       return v?.status === 200 && /kobold/i.test(String(v.json?.result || '')) ? { version: v.json.version } : null;
     },
   },

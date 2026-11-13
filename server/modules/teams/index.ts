@@ -3,12 +3,16 @@ import { addPathGuard, addRootFilter } from '../../tools/builtin/files.js';
 import { teamMigrations } from './schema.js';
 import { type TeamCopier, TeamsService, sitesOfProfile } from './service.js';
 import { teamRoutes } from './routes.js';
-import { profileContext, teamsPrompt } from './prompt.js';
+import { fromBotContext, profileContext, teamsPrompt } from './prompt.js';
 import { overview } from './overview.js';
 import { teamBudgetCheck, teamSpentToday } from './budget.js';
 import { StuckReporter } from './stuck.js';
 import { Briefing } from './briefing.js';
+import { checkinOf, setupCheckIn } from './proactive.js';
 import { ah, str, user } from '../../core/http.js';
+import { mainBotTools } from './maintools.js';
+import { manageTools, settingsNamed } from './manage.js';
+import { OWNER_ORDERS_PLACE, notOwnersTalk, selfTools } from './selftools.js';
 
 const instances = new WeakMap<Ctx, { svc: TeamsService; dispose: (() => void)[] }>();
 const stuckReporters = new WeakMap<Ctx, StuckReporter>();
@@ -21,11 +25,25 @@ const briefings = new WeakMap<Ctx, Briefing>();
  * (runner), the delegation checks (rooms), and `keyAllowed` for apps (MCP) and logins (Kluis). Other modules call the
  * helpers on `ctx.services.teams` (see docs/modules/teams.md).
  *
- * The organisation (0.4, package C): the owner may make one main bot (hoofdbot; table team_main) that directs every
- * team by default and only takes work from the owner; any other bot that directs more than one team is a leader; a
- * team lead is optional. `delegateError` keeps work flowing down: no bot can get around a team wall through a bot that
- * reaches further than itself. GET /teams/overview is the "Alle teams" overview.
+ * The organisation (0.4, package C): one main bot per owner (hoofdbot; table team_main). There is always one without
+ * anyone choosing: the owner's first bot (`autoMain`, also at start for data that exists); the owner can hand the role
+ * to another bot. It directs every team by default and only takes work from the owner. Only the main bot gets the tools
+ * that set up teams and bots (maintools.ts); any other bot that directs more than one team is a leader; a team lead
+ * is optional. `delegateError` keeps work flowing down: no bot can get around a team wall through a bot that reaches
+ * further than itself. GET /teams/overview is the "Alle teams" overview.
+ *
+ * Every bot can do what the owner can do in TeamBot's screens (manage.ts: teambot_find and teambot_do), with its own
+ * reach (reach.ts) and on the owner's own word (selftools.ts).
  */
+/**
+ * For every working bot: a new name is a setting of its own; what its owner tells it to do from now on is kept in its
+ * own working notes, under "Opdrachten van de eigenaar" (memory/pipeline.ts keeps it there at once when he says
+ * "voortaan …" or "vanaf nu …"; the background review catches the rest). my_settings names the same place.
+ */
+const SELF_PROMPT = `Wat je eigenaar je voortaan opdraagt, ook hoe je werkt of antwoordt, houd je meteen bij in ${OWNER_ORDERS_PLACE} (dossier_write).`;
+/** For every working bot but the main bot, which reads this in its own block (prompt.ts). A setting of the app itself is part of it. */
+const SCREENS_PROMPT = 'Wat je eigenaar in TeamBot kan, ook een instelling als het thema, doe jij voor hem met teambot_find en teambot_do, nooit via browser of bureaublad; vraag hem nooit om in te loggen of een koppelcode.';
+
 const mod: Module = {
   id: 'teams',
   label: 'Teams',
@@ -50,6 +68,8 @@ const mod: Module = {
     // The main bot's daily or weekly overview and the weekly top 3 opportunities (briefing.ts): no model call.
     const briefing = new Briefing(ctx, svc);
     briefings.set(ctx, briefing);
+    // The main bot comes to the owner by itself (proactive.ts): a check-in each working morning and when something needs him.
+    const checkin = setupCheckIn(ctx, svc, briefing);
     ctx.api.get('/proactive/briefing', ah(async (req) => briefing.last(user(req).id)));
     ctx.api.post('/proactive/briefing', ah(async (req) => (await briefing.send(user(req).id, { briefing: true, weekly: req.body?.weekly === true })) || { text: '', quiet: true }));
     ctx.api.post(
@@ -71,8 +91,29 @@ const mod: Module = {
       if (i >= 0) list.splice(i, 1);
     });
 
+    // Setting up teams and bots is the main bot's work: only the owner's main bot gets these tools (and each one
+    // refuses any other bot that would call it).
+    const mainTools = mainBotTools(ctx, svc);
+    ctx.tools.addProvider((agent) => (svc.mainOf(agent.user_id) === agent.id ? mainTools : []));
+    // Everything the owner can do in TeamBot's screens (manage.ts), for every bot of his, in his own conversations
+    // only. The main bot has the two tools in its list; every other bot reaches them through tools_find and tools_call
+    // (tools/selection.ts), so they cost its steps nothing until it needs them.
+    const manage = manageTools(ctx, svc);
+    const manageOnDemand = manage.map((t) => ({ ...t, onDemand: true }));
+    ctx.tools.addProvider((agent, thread) => (notOwnersTalk(ctx, agent, thread) ? [] : svc.mainOf(agent.user_id) === agent.id ? manage : manageOnDemand));
+    // A message of the owner that names a setting of the screens in its own words: that setting, for this turn only.
+    ctx.hooks.turnContext.push(({ agent, thread, input }) =>
+      input?.role === 'user' && input.author_type === 'user' && agent.access_mode !== 'chat' && agent.access_mode !== 'readonly' && !agent.settings?.sharedRun && !notOwnersTalk(ctx, agent, thread) ? settingsNamed(ctx, agent.user_id, input.content) : null,
+    );
+
+    // Every bot adjusts itself in the chat (selftools.ts): its instructions, model, skills, routines, notifications.
+    const self = selfTools(ctx);
+    ctx.tools.addProvider((agent) => (agent.settings?.sharedRun ? [] : self));
+    ctx.hooks.systemPrompt.push(({ agent }) => (agent.access_mode === 'chat' || agent.access_mode === 'readonly' || agent.settings?.sharedRun ? null : svc.mainOf(agent.user_id) === agent.id ? SELF_PROMPT : `${SELF_PROMPT} ${SCREENS_PROMPT}`));
+
     ctx.hooks.systemPrompt.push(({ agent }) => teamsPrompt(svc, agent));
     ctx.hooks.turnContext.push(({ agent, thread, input }) => profileContext(svc, agent, thread, input));
+    ctx.hooks.turnContext.push(({ agent, input }) => fromBotContext(svc, agent, input));
     ctx.hooks.agentDeleted.push(({ agentId, userId }) => svc.agentDeleted(agentId, userId));
 
     /**
@@ -139,8 +180,8 @@ const mod: Module = {
       // Making and changing teams for other modules (team templates, the OpenBot import): the same checks, audit lines
       // and events as the routes. `own` throws "Team niet gevonden" for a team of someone else.
       own: (userId: string, teamId: string) => svc.own(userId, teamId),
-      /** `{ name, profile?, … }` as POST /api/teams. */
-      create: (userId: string, data: any) => svc.create(userId, data),
+      /** `{ name, profile?, … }` as POST /api/teams. A new team gets the starting rules unless `o.starterRules` is false. */
+      create: (userId: string, data: any, o?: { starterRules?: boolean }) => svc.create(userId, data, o),
       /** `{ name?, leadAgentId?, profile?, … }` as PATCH /api/teams/:id. */
       update: (userId: string, teamId: string, data: any) => svc.update(userId, teamId, data),
       /** Move a bot to this home team. */
@@ -149,22 +190,36 @@ const mod: Module = {
       /** Make this bot the main bot (refused while another one is) → `{ notes }`; the main bot a normal bot again. */
       setMain: (userId: string, agentId: string) => svc.setMain(userId, agentId),
       clearMain: (userId: string) => svc.clearMain(userId),
+      /** The owner's main bot, made now ("Hoofdbot", on the given AI) when there is none yet → `{ id, created }`. */
+      ensureMain: (userId: string, o?: { provider_id?: string | null; model?: string; among?: string[] }) => svc.ensureMain(userId, o),
+      /** The main bot's own tools (team_templates, team_from_template, team_profile, team_add_bot, bot_settings, bot_rules). */
+      mainTools,
+      /** Every bot's teambot_find and teambot_do (manage.ts): whatever the owner can do in the screens. */
+      manageTools: manage,
+      /** Every bot's own my_settings and my_routines (selftools.ts). */
+      selfTools: self,
+      /** There is always a main bot: the owner's oldest bot when none is set → its id (or null without bots). */
+      autoMain: (userId: string) => svc.autoMain(userId),
       /** For tests and diagnostics only; other modules use the methods above. */
       _service: svc,
       /** Stuck work the main bot reports (stuck.ts); tests call `tick()` directly. */
       stuck: stuck,
       /** The overview the main bot sends (briefing.ts); tests call `tick()` or `send()` directly. */
       briefing,
+      /** The main bot's own check-in (proactive.ts): `settings(userId)`, and for tests `tick()` and `idle()`. */
+      checkin,
       exportUser: (userId: string) => svc.exportUser(userId),
     };
   },
   start(ctx: Ctx) {
     stuckReporters.get(ctx)?.start();
     briefings.get(ctx)?.start();
+    checkinOf(ctx)?.start();
   },
   stop(ctx: Ctx) {
     stuckReporters.get(ctx)?.stop();
     briefings.get(ctx)?.stop();
+    checkinOf(ctx)?.stop();
     const i = instances.get(ctx);
     if (!i) return;
     for (const d of i.dispose.splice(0)) d();

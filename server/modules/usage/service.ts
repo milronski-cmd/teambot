@@ -1,4 +1,5 @@
 import type { Agent, Ctx, ProviderConfig, Run, Thread } from '../../core/types.js';
+import { userTz } from '../../agent/prompt.js';
 import { now as isoNow } from '../../core/db.js';
 import { userLocale } from '../../core/i18n.js';
 import { historyFill } from '../../agent/compaction.js';
@@ -54,7 +55,6 @@ export interface AlertSettings {
   warnAt: number;
 }
 
-const READ_EVERY_MS = 2 * 60_000;
 /** A short rate limit (an API 429 for seconds or minutes) is shown, but not notified. */
 const QUIET_BLOCK_MS = 10 * 60_000;
 const rank = (l: LimitLevel | undefined) => (l === 'limit' ? 3 : l === 'warn' ? 2 : l === 'ok' ? 1 : 0);
@@ -111,10 +111,6 @@ export class UsageService {
     return next;
   }
 
-  private tz(userId: string) {
-    return this.ctx.store.getSetting<string>(userId, 'timezone', '') || Intl.DateTimeFormat().resolvedOptions().timeZone || 'Europe/Amsterdam';
-  }
-
   // ---------------- reports from the engines ----------------
 
   /** A report from a run (stream) or an explicit read. */
@@ -168,7 +164,7 @@ export class UsageService {
     const c = this.ctx.providers.config(providerId);
     if (!c) return;
     const st = this.state(c.id, userId);
-    const until = resetAt || (message ? parseLimitReset(message, Date.now(), this.tz(userId)) : null);
+    const until = resetAt || (message ? parseLimitReset(message, Date.now(), userTz(this.ctx, userId)) : null);
     this.block(st, c, until, undefined, { free: isFreeLimit(message || ''), link: o.link, retry: o.retry, estimated: true });
     this.save(st);
     this.emit(st);
@@ -182,7 +178,7 @@ export class UsageService {
     const worth = !st.blocked.until || st.blocked.until - now > QUIET_BLOCK_MS;
     if (!st.blocked.notified && worth) {
       st.blocked.notified = true;
-      const clock = (ms: number) => clockTime(ms, this.tz(c.user_id), userLocale(this.ctx.store, c.user_id));
+      const clock = (ms: number) => clockTime(ms, userTz(this.ctx, c.user_id), userLocale(this.ctx.store, c.user_id));
       const when = st.blocked.until ? clock(st.blocked.until) : null;
       // Unknown reset, and the bot of this chat tries again by itself: the time it does, as the chat says it.
       const retry = !when && o.retry ? `${o.retry.bot} probeert het rond ${clock(o.retry.at)} automatisch opnieuw.` : '';
@@ -218,7 +214,7 @@ export class UsageService {
         st.notified[w.id] = { level, resetsAt: w.resetsAt };
         // "Reached" is said once by block(); a window that only warns gets its own message.
         if (level === 'warn') {
-          const when = w.resetsAt ? clockTime(w.resetsAt, this.tz(c.user_id), userLocale(this.ctx.store, c.user_id)) : null;
+          const when = w.resetsAt ? clockTime(w.resetsAt, userTz(this.ctx, c.user_id), userLocale(this.ctx.store, c.user_id)) : null;
           this.notify(c, { title: `${c.name}: ${Math.round(w.usedPercent!)}% van je limiet gebruikt`, body: when ? `${w.label} · reset rond ${when}.` : `${w.label}.`, level: 'warn' });
         }
       } else if (level === 'ok' && before) delete st.notified[w.id];
@@ -271,6 +267,9 @@ export class UsageService {
     this.timers.clear();
     for (const p of this.soon.values()) clearTimeout(p.timer);
     this.soon.clear();
+    if (this.workTimer) clearInterval(this.workTimer);
+    this.workTimer = null;
+    this.workUsers.clear();
   }
 
   private emit(st: EngineState) {
@@ -283,16 +282,27 @@ export class UsageService {
     return READERS.has(c.kind) && !!this.ctx.services['cli-agents']?.readLimits;
   }
 
-  /** Ask the CLI for its limits (cached for two minutes unless forced; one read at a time per provider). */
+  /** How long a reading counts as fresh for whoever asks without force (the bar, the page): a minute … */
+  readEveryMs = 60_000;
+  /** … and 20 seconds while a bot is working on that engine (its numbers move then). */
+  busyReadEveryMs = 20_000;
+
+  /**
+   * Ask the CLI for its limits (cached for a minute, 20 seconds while a bot works on this engine, unless forced; one
+   * read at a time per provider).
+   */
   refresh(c: ProviderConfig, force = false): Promise<EngineState> {
     const st = this.state(c.id, c.user_id);
     if (!this.canRead(c)) return Promise.resolve(st);
-    if (!force && st.checkedAt && Date.now() - st.checkedAt < READ_EVERY_MS) return Promise.resolve(st);
+    if (!force && st.checkedAt) {
+      const age = Date.now() - st.checkedAt;
+      if (age < this.busyReadEveryMs || (age < this.readEveryMs && !this.workingOn(c.user_id).has(c.id))) return Promise.resolve(st);
+    }
     const busy = this.reading.get(c.id);
     if (busy) return busy;
     const p = (async () => {
       try {
-        const r = await this.ctx.services['cli-agents'].readLimits(c, this.tz(c.user_id));
+        const r = await this.ctx.services['cli-agents'].readLimits(c, userTz(this.ctx, c.user_id));
         const cur = this.state(c.id, c.user_id);
         cur.checkedAt = Date.now();
         cur.unsupported = r.unsupported;
@@ -378,17 +388,79 @@ export class UsageService {
   // ---------------- keeping the bar live after a run ----------------
 
   /** Wait after a run before asking the CLI: several runs that end close together share one read. */
-  afterRunDelayMs = 15_000;
-  /** Because of runs, at most one read per engine per minute (opening the page or "Vernieuwen" may ask sooner). */
-  minReadGapMs = 60_000;
+  afterRunDelayMs = 3_000;
+  /** Because of ended runs, at most one read per engine per 20 seconds (opening the page or "Vernieuwen" may ask sooner). */
+  minReadGapMs = 20_000;
+  /** The run's own report counts as the latest news only when it came this shortly before the run ended. */
+  streamFreshMs = 20_000;
+  /** While a bot is working on an engine, its limits are read again this often (a long run moves the numbers too). */
+  workReadMs = 60_000;
   private soon = new Map<string, { timer: NodeJS.Timeout; since: number; ended: number }>();
   private seenRuns = new Set<string>();
+  private workTimer: NodeJS.Timeout | null = null;
+  private workUsers = new Set<string>();
+
+  /** The engines (provider ids) this user's bots are working on right now. */
+  workingOn(userId: string): Set<string> {
+    const ids = new Set<string>();
+    let fallback: string | null | undefined;
+    for (const r of this.ctx.runs.activeRuns(userId)) {
+      if (r.status !== 'running') continue;
+      const id = r.meta?.engine?.provider_id || this.ctx.store.agent(r.agent_id)?.provider_id || (fallback ??= this.ctx.store.getSetting<string | null>(userId, 'defaultProvider', null));
+      if (id) ids.add(String(id));
+    }
+    return ids;
+  }
 
   /**
-   * A run ended (run.updated). Claude Code and Codex tell the window that matters during the run (stream); when that
-   * did not cover every window the bar shows (Claude names one window per request, Codex's live update often only
-   * the 5-hour one), the CLI is asked once, a little later, so the bar is right within a minute of new usage. Reading
-   * costs no quota (Claude: the local /usage command; Codex: the app-server), and never more than once a minute.
+   * Every run.updated: while a run is going, the engines being worked on are read once a minute (so the rings move
+   * during a long run, not only after it); when it ended, see runEnded.
+   */
+  runChanged(run: Run) {
+    if (!run?.id) return;
+    if (['queued', 'running', 'waiting'].includes(run.status)) {
+      this.workUsers.add(run.user_id);
+      if (!this.workTimer) {
+        this.workTimer = setInterval(() => this.workTick(), this.workReadMs);
+        this.workTimer.unref?.();
+      }
+      return;
+    }
+    this.runEnded(run);
+  }
+
+  private workTick() {
+    for (const userId of [...this.workUsers]) {
+      try {
+        if (!this.ctx.runs.activeRuns(userId).length) {
+          this.workUsers.delete(userId);
+          continue;
+        }
+        const now = Date.now();
+        for (const id of this.workingOn(userId)) {
+          const c = this.ctx.providers.config(id);
+          if (!c?.enabled || (c.kind !== 'claude-code' && c.kind !== 'codex-cli') || !this.canRead(c)) continue;
+          const st = this.state(c.id, c.user_id);
+          // Read a moment ago (a run that ended, the page): this round is not needed.
+          if (st.checkedAt && now - st.checkedAt < this.workReadMs / 2) continue;
+          void this.refresh(c, true).catch(() => {});
+        }
+      } catch {
+        /* the next round tries again */
+      }
+    }
+    if (!this.workUsers.size && this.workTimer) {
+      clearInterval(this.workTimer);
+      this.workTimer = null;
+    }
+  }
+
+  /**
+   * A run ended (run.updated). Claude Code and Codex tell the window that matters during the run (stream); unless that
+   * covered every window the bar shows in the run's last seconds (Claude names one window per request, Codex's live
+   * update often only the 5-hour one), the CLI is asked once, three seconds later, so the bar is right within seconds
+   * of new usage. Reading costs no quota (Claude: the local /usage command; Codex: the app-server), and because of
+   * ended runs never more than once per 20 seconds.
    */
   runEnded(run: Run) {
     if (!run?.id || !['done', 'error', 'cancelled', 'interrupted'].includes(run.status)) return;
@@ -429,7 +501,8 @@ export class UsageService {
       if (cur.checkedAt && cur.checkedAt >= entry.ended) return;
       // The run's own report covered every window the bar shows (known from a full read before: a first run on a
       // fresh install names only one window, and the others are learnt by reading).
-      if (cur.checkedAt && cur.streamAt && cur.streamAt >= entry.since && cur.windows.length && cur.windows.every((w) => cur.streamIds?.includes(w.id))) return;
+      // Only a report from the run's last seconds: a long run used more since an early one.
+      if (cur.checkedAt && cur.streamAt && cur.streamAt >= entry.since && cur.streamAt >= entry.ended - this.streamFreshMs && cur.windows.length && cur.windows.every((w) => cur.streamIds?.includes(w.id))) return;
       void this.refresh(cfg, true).catch(() => {});
     }, Math.max(this.afterRunDelayMs, gap));
     entry.timer.unref?.();

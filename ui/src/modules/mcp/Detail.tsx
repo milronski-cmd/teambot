@@ -1,13 +1,17 @@
 import { useEffect, useMemo, useState } from 'react';
-import { ChevronLeft, FlaskConical, LogIn, LogOut, Pencil, Power, RefreshCw, ScrollText, Square, TriangleAlert, Unplug } from 'lucide-react';
+import { Activity, Bot as BotIcon, ChevronLeft, FlaskConical, PackageCheck, Settings as SettingsIcon, Wrench, Zap, LogIn, LogOut, Pencil, Power, RefreshCw, ScrollText, Square, TriangleAlert, Unplug } from 'lucide-react';
 import { api, on, request } from '../../lib/api';
 import { navigate } from '../../lib/router';
+import { MoreOptions } from '../../components/MoreOptions';
+import { Menu } from '../../components/overview';
 import { t } from '../../lib/i18n';
 import { useApp } from '../../lib/store';
-import { Badge, Button, Card, EmptyState, Modal, Page, PageHeader, Select, Spinner, Toggle, toast, toastError, useAsync, cx, timeAgo } from '../../components/ui';
+import { Badge, Button, Card, CardHead, EmptyState, Modal, Page, PageHeader, Select, Spinner, Toggle, toast, toastError, useAsync, cx, timeAgo } from '../../components/ui';
 import type { Conn, PolicyView, Risk, SigView, ToolView } from './shared';
 import { RISK_HELP, RISK_TEXT, RiskBadge, SigBadge, StatusBadge, timeShort } from './shared';
 import { BotPicker, ConnForm, OAuthPanel, draftFromConn, draftPayload, useInfo, type ConnDraft } from './forms';
+import { PLACE } from '../../../../shared/places.js';
+import { tText } from '../../lib/format';
 
 const ORDER: Risk[] = ['read', 'write', 'exec', 'danger'];
 
@@ -27,7 +31,7 @@ function EditModal({ conn, onClose, onSaved }: { conn: Conn; onClose(): void; on
       open
       wide
       onClose={onClose}
-      title={`${conn.display} bewerken`}
+      title={tText('{0} bewerken', conn.display)}
       footer={
         <>
           <Button variant="ghost" onClick={onClose}>
@@ -74,7 +78,7 @@ function ToolRow({ conn, t, onChanged }: { conn: Conn; t: ToolView; onChanged(c:
         {t.changed && <Badge tone="warn">gewijzigd</Badge>}
         {!t.approved && !t.changed && t.present && <Badge tone="warn">nieuw</Badge>}
         {guess ? <Badge tone="ok">waarschijnlijk alleen lezen</Badge> : <RiskBadge risk={t.risk} />}
-        <Select value={t.user_risk || ''} onChange={(e) => changeRisk(e.target.value)} className="h-8 w-auto text-xs" aria-label={`Risico van ${t.name}`}>
+        <Select value={t.user_risk || ''} onChange={(e) => changeRisk(e.target.value)} className="h-8 w-auto text-xs" aria-label={tText('Risico van {0}', t.name)}>
           <option value="">standaard ({t.guessed ? 'waarschijnlijk alleen lezen' : RISK_TEXT[t.server_risk]})</option>
           {ORDER.map((r) => (
             <option key={r} value={r}>
@@ -249,9 +253,10 @@ export function DetailPage({ id }: { id: string }) {
     });
   const remove = () =>
     act.run(async () => {
+      const from = location.hash;
       const r = await api.del<any>(`/mcp/connections/${id}${deleteData ? '?deleteData=1' : ''}`);
       toast(conn.auth === 'oauth' ? r.detail : 'Ontkoppeld', 'ok');
-      navigate('/m/mcp');
+      navigate('/m/mcp', { from });
     });
   const approveAll = () => act.run(async () => setConn(await api.post<Conn>(`/mcp/connections/${id}/tools/approve`, {})));
 
@@ -270,7 +275,7 @@ export function DetailPage({ id }: { id: string }) {
             {conn.display} <StatusBadge c={conn} />
           </span>
         }
-        subtitle={conn.transport === 'builtin' ? 'Ingebouwd in TeamBot · rechtstreeks naar de dienst' : conn.transport === 'stdio' ? `Lokaal programma · ${conn.command}` : `${conn.transport === 'sse' ? 'SSE' : 'Streamable HTTP'} · ${conn.host}`}
+        subtitle={conn.transport === 'builtin' ? 'Ingebouwd in TeamBot · rechtstreeks naar de dienst' : undefined}
         actions={
           <>
             {needsLogin && (
@@ -278,26 +283,24 @@ export function DetailPage({ id }: { id: string }) {
                 Inloggen
               </Button>
             )}
-            <Button icon={<FlaskConical className="h-4 w-4" />} loading={act.busy} onClick={test}>
+            <Button variant={conn.verified_at || needsLogin ? 'secondary' : 'primary'} icon={<FlaskConical className="h-4 w-4" />} loading={act.busy} onClick={test}>
               Leestest
             </Button>
-            <Button icon={<RefreshCw className="h-4 w-4" />} onClick={restart} disabled={act.busy}>
-              Opnieuw verbinden
-            </Button>
-            {rt.state === 'ready' && (
-              <Button icon={<Square className="h-4 w-4" />} onClick={stop} disabled={act.busy}>
-                Stoppen
-              </Button>
-            )}
-            <Button variant="danger" icon={<Unplug className="h-4 w-4" />} onClick={() => setDel(true)}>
-              Ontkoppelen
-            </Button>
+            <Menu
+              label="Meer opties"
+              variant="secondary"
+              items={[
+                { label: 'Opnieuw verbinden', icon: <RefreshCw />, disabled: act.busy, onSelect: restart },
+                rt.state === 'ready' && { label: 'Stoppen', icon: <Square />, disabled: act.busy, onSelect: stop },
+                'sep',
+                { label: 'Ontkoppelen', icon: <Unplug />, danger: true, onSelect: () => setDel(true) },
+              ]}
+            />
           </>
         }
       />
       <div className="mx-auto max-w-4xl space-y-4 p-4 sm:p-6">
         {testMsg && <div className={cx('rounded-lg p-3 text-sm', testMsg.ok ? 'bg-ok-soft text-ok' : 'bg-danger-soft text-danger')}>{testMsg.text}</div>}
-        {conn.signature && <PackageCard conn={conn} onUpdated={setConn} />}
         {errorText && rt.state !== 'ready' && (
           <div className="flex gap-2 rounded-lg bg-danger-soft p-3 text-sm text-danger">
             <TriangleAlert className="mt-0.5 h-4 w-4 shrink-0" />
@@ -312,11 +315,43 @@ export function DetailPage({ id }: { id: string }) {
         )}
 
         <Card className="space-y-3 p-4">
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            <div className="font-semibold">Status</div>
-            <Toggle checked={conn.enabled} onChange={setEnabled} label="Koppeling aan" />
+          <CardHead icon={BotIcon} tone="teal" title="Bots" />
+          <BotPicker value={conn.agents} onChange={setBots} />
+          {conn.agents.some((a) => agents.find((x) => x.id === a)?.access_mode === 'chat') && <div className="text-xs text-muted">Bots in modus “alleen chat” gebruiken geen tools.</div>}
+        </Card>
+
+        <Card className="space-y-3 p-4">
+          <CardHead
+            icon={Zap}
+            tone="blue"
+            title="Acties"
+            hint="Uit = bots gebruiken alleen leestools van deze app."
+            action={<Toggle checked={conn.allow_actions} disabled={!conn.verified_at || act.busy} onChange={setActions} label={conn.allow_actions ? 'Acties toegestaan' : 'Alleen lezen'} />}
+          />
+          {conn.counts.total > 0 && (
+          <div className="flex flex-wrap gap-1.5 text-xs">
+            {ORDER.map((r) => (
+              <span key={r} className="inline-flex items-center gap-1">
+                <RiskBadge risk={r} /> {conn.counts[r]}
+              </span>
+            ))}
           </div>
+          )}
+        </Card>
+
+        {/* What you need is above: which bots use the app and whether they may change things. How it is connected, the
+            separate tools and the log are for when something is wrong: open by themselves then. */}
+        <MoreOptions defaultOpen={rt.state === 'error' || rt.state === 'backoff' || (conn.counts.pending > 0 && !!conn.verified_at)}>
+        {conn.signature && <PackageCard conn={conn} onUpdated={setConn} />}
+        <Card className="space-y-3 p-4">
+          <CardHead icon={Activity} tone="blue" title="Status" action={<Toggle checked={conn.enabled} onChange={setEnabled} label="Koppeling aan" />} />
           <dl className="grid gap-x-4 gap-y-1.5 text-sm sm:grid-cols-[10rem_1fr]">
+            {conn.transport !== 'builtin' && (
+              <>
+                <dt className="text-muted">Soort</dt>
+                <dd className="break-all">{conn.transport === 'stdio' ? `Lokaal programma · ${conn.command}` : `${conn.transport === 'sse' ? 'SSE' : 'Streamable HTTP'} · ${conn.host}`}</dd>
+              </>
+            )}
             <dt className="text-muted">Verbinding</dt>
             <dd>
               {
@@ -362,12 +397,16 @@ export function DetailPage({ id }: { id: string }) {
         </Card>
 
         <Card className={cx('space-y-3 p-4', conn.transport === 'builtin' && 'hidden')}>
-          <div className="flex items-center justify-between gap-2">
-            <div className="font-semibold">Instellingen</div>
-            <Button size="sm" icon={<Pencil className="h-4 w-4" />} onClick={() => setEdit(true)}>
-              Bewerken
-            </Button>
-          </div>
+          <CardHead
+            icon={SettingsIcon}
+            tone="blue"
+            title="Instellingen"
+            action={
+              <Button size="sm" icon={<Pencil className="h-4 w-4" />} onClick={() => setEdit(true)}>
+                Bewerken
+              </Button>
+            }
+          />
           <dl className="grid gap-x-4 gap-y-1.5 text-sm sm:grid-cols-[10rem_1fr]">
             {conn.transport === 'stdio' ? (
               <>
@@ -394,39 +433,23 @@ export function DetailPage({ id }: { id: string }) {
         </Card>
 
         <Card className="space-y-3 p-4">
-          <div className="font-semibold">Bots</div>
-          <BotPicker value={conn.agents} onChange={setBots} />
-          {conn.agents.some((a) => agents.find((x) => x.id === a)?.access_mode === 'chat') && <div className="text-xs text-muted">Bots in modus “alleen chat” gebruiken geen tools.</div>}
-        </Card>
-
-        <Card className="space-y-3 p-4">
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            <div>
-              <div className="font-semibold">Acties</div>
-              <div className="text-xs text-muted">Uit = bots gebruiken alleen leestools van deze app.</div>
-            </div>
-            <Toggle checked={conn.allow_actions} disabled={!conn.verified_at || act.busy} onChange={setActions} label={conn.allow_actions ? 'Acties toegestaan' : 'Alleen lezen'} />
-          </div>
-          <div className="flex flex-wrap gap-1.5 text-xs">
-            {ORDER.map((r) => (
-              <span key={r} className="inline-flex items-center gap-1">
-                <RiskBadge risk={r} /> {conn.counts[r]}
-              </span>
-            ))}
-          </div>
-        </Card>
-
-        <Card className="space-y-3 p-4">
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            <div className="font-semibold">
-              Tools <span className="text-sm font-normal text-muted">({conn.counts.usable} bruikbaar van {conn.counts.total})</span>
-            </div>
-            {conn.counts.pending > 0 && conn.verified_at && (
-              <Button size="sm" onClick={approveAll}>
-                Alles goedkeuren ({conn.counts.pending})
-              </Button>
-            )}
-          </div>
+          <CardHead
+            icon={Wrench}
+            tone="blue"
+            title={
+              <>
+                Tools <span className="text-sm font-normal text-muted">({conn.counts.usable} bruikbaar van {conn.counts.total})</span>
+              </>
+            }
+            action={
+              conn.counts.pending > 0 &&
+              conn.verified_at && (
+                <Button size="sm" onClick={approveAll}>
+                  Alles goedkeuren ({conn.counts.pending})
+                </Button>
+              )
+            }
+          />
           <div className="text-xs text-muted">Strenger maken kan altijd; minder streng vraagt bevestiging.</div>
           {tools.length ? (
             <div className="space-y-1.5">
@@ -440,16 +463,15 @@ export function DetailPage({ id }: { id: string }) {
         </Card>
 
         <Card className="space-y-3 p-4">
-          <div className="flex items-center gap-2 font-semibold">
-            <ScrollText className="h-4 w-4" /> Logboek
-          </div>
+          <CardHead icon={ScrollText} title="Logboek" />
           <CallLog conn={conn} />
         </Card>
+        </MoreOptions>
       </div>
 
       {edit && <EditModal conn={conn} onClose={() => setEdit(false)} onSaved={setConn} />}
       {oauth && (
-        <Modal open onClose={() => setOauth(false)} title={`Inloggen bij ${conn.display}`}>
+        <Modal open onClose={() => setOauth(false)} title={tText('Inloggen bij {0}', conn.display)}>
           <OAuthPanel
             conn={conn}
             onDone={() => {
@@ -463,7 +485,7 @@ export function DetailPage({ id }: { id: string }) {
         <Modal
           open
           onClose={() => setDel(false)}
-          title={`${conn.display} ontkoppelen?`}
+          title={tText('{0} ontkoppelen?', conn.display)}
           footer={
             <>
               <Button variant="ghost" onClick={() => setDel(false)}>
@@ -480,7 +502,7 @@ export function DetailPage({ id }: { id: string }) {
             {conn.auth === 'oauth' && <p>{conn.oauth?.can_revoke ? 'TeamBot trekt de toegang ook in bij de dienst.' : 'Deze dienst biedt geen automatische intrekking; trek de toegang zo nodig zelf in bij de dienst.'}</p>}
             {conn.catalog?.revokeHelp && <p className="text-muted">{conn.catalog.revokeHelp}</p>}
             {conn.dataDir && <Toggle checked={deleteData} onChange={setDeleteData} label="Ook de datamap van deze koppeling verwijderen" />}
-            <p className="text-muted">Het logboek in Instellingen › Beveiliging blijft bewaard.</p>
+            <p className="text-muted">{t('Het logboek in {0} blijft bewaard.', t(PLACE.security))}</p>
           </div>
         </Modal>
       )}
@@ -575,11 +597,17 @@ function PackageCard({ conn, onUpdated }: { conn: Conn; onUpdated(c: Conn): void
     });
   return (
     <Card className="space-y-2 p-4 text-sm">
-      <div className="flex flex-wrap items-center gap-2">
-        <span className="font-semibold">Herkomst</span>
-        <SigBadge sig={sig} />
-        {conn.package?.version && <Badge>v{conn.package.version}</Badge>}
-      </div>
+      <CardHead
+        icon={PackageCheck}
+        tone="blue"
+        title="Herkomst"
+        action={
+          <>
+            <SigBadge sig={sig} />
+            {conn.package?.version && <Badge>v{conn.package.version}</Badge>}
+          </>
+        }
+      />
       {conn.registry ? (
         <RegistryOrigin conn={conn} onUpdated={onUpdated} />
       ) : conn.package ? (

@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { Globe, Network, QrCode, RefreshCw, ShieldCheck, TriangleAlert } from 'lucide-react';
 import { api } from '../../lib/api';
 import { t } from '../../lib/i18n';
-import { Badge, Button, Field, Input, Modal, Spinner, Toggle, timeAgo, useAsync } from '../../components/ui';
+import { Badge, Button, CardHead, Field, Input, Modal, Spinner, Toggle, timeAgo, useAsync } from '../../components/ui';
 import { useAdvanced } from '../../shell/advanced';
 import { MoreInfo } from '../../components/MoreInfo';
 import { Dropdown, Segmented, SettingRow } from '../../components/SettingControls';
@@ -37,20 +37,23 @@ export function AddressPicker({ reach, pair }: { reach: Reach | null; pair: Pair
 
   return (
     <section className="space-y-2 rounded-lg border border-line p-3" aria-labelledby="tb-pair-address">
-      <div>
-        <h3 id="tb-pair-address" className="flex items-center gap-2 font-medium">
-          <QrCode className="h-4 w-4 text-accent" aria-hidden />
-          QR-code met een ander adres
-        </h3>
-        <p className="mt-0.5 text-xs text-muted">
-          TeamBot kiest zelf hoe je telefoon deze computer bereikt. <MoreInfo>Wil je een vast adres, zoals Tailscale? Kies het hier.</MoreInfo>
-        </p>
-      </div>
+      <CardHead
+        as="h3"
+        id="tb-pair-address"
+        icon={QrCode}
+        tone="blue"
+        title="QR-code met een ander adres"
+        hint={
+          <>
+            TeamBot kiest zelf hoe je telefoon deze computer bereikt. <MoreInfo>Wil je een vast adres, zoals Tailscale? Kies het hier.</MoreInfo>
+          </>
+        }
+      />
       {!reach ? (
         <Spinner />
       ) : (
         <>
-          <SettingRow label="Adres voor je telefoon">
+          <SettingRow setting="mobile.address">
             <Dropdown
               testId="pair-address"
               value={choice}
@@ -106,7 +109,7 @@ export function ReachSection({ reach, setReach, reload }: { reach: Reach | null;
 
   if (!reach)
     return (
-      <Section icon={<Network className="h-5 w-5" />} title="Bereikbaarheid">
+      <Section icon={Network} title="Bereikbaarheid">
         <Spinner />
       </Section>
     );
@@ -125,7 +128,7 @@ export function ReachSection({ reach, setReach, reload }: { reach: Reach | null;
 
   return (
     <Section
-      icon={<Network className="h-5 w-5" />}
+      icon={Network}
       title="Bereikbaarheid"
       subtitle="Je telefoon praat altijd met jóuw computer of server."
       actions={<Button size="sm" variant="ghost" onClick={reload} aria-label="Opnieuw controleren" icon={<RefreshCw className="h-3.5 w-3.5" />} />}
@@ -154,7 +157,7 @@ export function ReachSection({ reach, setReach, reload }: { reach: Reach | null;
           </p>
           <div className="divide-y divide-line">
             {/* While it is on, a change applies at once (the port restarts); while it is off, it is used when you turn it on. */}
-            <SettingRow label="Bereikbaar via">
+            <SettingRow setting="mobile.bind">
               <Segmented
                 value={bind}
                 disabled={busy}
@@ -166,7 +169,7 @@ export function ReachSection({ reach, setReach, reload }: { reach: Reach | null;
                 ]}
               />
             </SettingRow>
-            <SettingRow label="Poort" hint={`Leeg = ${gw.defaultPort || 'standaard'}`}>
+            <SettingRow setting="mobile.port" hint={gw.defaultPort ? `Leeg = ${gw.defaultPort}` : undefined}>
               <Input
                 inputMode="numeric"
                 value={port}
@@ -307,7 +310,7 @@ export function TailscaleQuick({ reach, setReach }: { reach: Reach | null; setRe
       setReach(await api.post<Reach>('/mobile/tailscale-https', { acknowledge: true }));
     }, 'Je telefoon kan TeamBot nu veilig bereiken');
   return (
-    <Section icon={<ShieldCheck className="h-5 w-5" />} title="Tailscale" subtitle="Gratis: een privé, versleutelde verbinding tussen jouw eigen apparaten. Ook voor de web-app en Android.">
+    <Section icon={ShieldCheck} title="Tailscale" subtitle="Gratis: een privé, versleutelde verbinding tussen jouw eigen apparaten. Ook voor de web-app en Android.">
       <ol className="space-y-2 text-sm">
         <li className="flex flex-wrap items-center gap-2">
           <Badge tone={ts?.running ? 'ok' : 'warn'}>{ts?.running ? 'Klaar' : 'Stap 1'}</Badge>

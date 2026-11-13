@@ -112,7 +112,7 @@ test('status: device, instance, addresses of this TeamBot (wifi, Tailscale, http
     assert.deepEqual(s.body.device, { id: deviceId, name: 'iPhone van Sanne' });
     assert.equal(s.body.instance, (await hello(t.app.url, deviceId)).body.instance);
     assert.equal(s.body.home, null);
-    assert.deepEqual(s.body.power, { available: false, keepAwake: false }); // no desktop shell in tests: honest "not available"
+    assert.deepEqual(s.body.power, { available: false, keepAwake: true }); // on by default; no desktop shell in tests: honest "not available"
     assert.equal(s.body.privacy.version, (await D('/mobile/privacy')).body.version);
     assert.ok(Array.isArray(s.body.addresses));
     assert.ok(!s.text.includes(token));

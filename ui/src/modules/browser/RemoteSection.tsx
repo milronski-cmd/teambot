@@ -2,7 +2,8 @@ import { useState } from 'react';
 import { AlertTriangle, KeyRound, PlugZap, Server, ShieldCheck } from 'lucide-react';
 import { Badge, Button, Field, Input, Textarea, Toggle, useAsync } from '../../components/ui';
 import { SelectBox as Select } from '../../components/Listbox';
-import { computers, type RemoteConfig, type RemoteTestResult } from './api';
+import { computers, type RemoteConfig } from './api';
+import type { RemoteTestResult } from '../../../../shared/computers.js';
 import { t } from '../../lib/i18n';
 import { MoreInfo } from '../../components/MoreInfo';
 

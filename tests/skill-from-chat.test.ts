@@ -37,7 +37,7 @@ test('from chat: the bot writes the draft from the conversation; nothing is save
     assert.match(md, /^---\nname: offerte-maken\ndescription: Offerte uit een klantvraag\./);
     assert.match(md, /Controleer de btw/);
     assert.ok((await t.api('GET', `/agents/${bot.id}`)).skills.includes(saved.skillId));
-    assert.ok(!(await t.api('GET', `/agents/${other.id}`)).skills.includes(saved.skillId), 'not on for another bot');
+    assert.ok((await t.api('GET', `/agents/${other.id}`)).skills.includes(saved.skillId), 'every bot of the team has an active skill (skills/defaults.ts)');
 
     // The same name again is refused (never overwrites an existing skill); "for the team" switches it on for every bot.
     await assert.rejects(t.api('POST', '/skills/from-chat/save', { threadId: th.id, agentId: bot.id, name: 'offerte-maken', description: 'x', instructions: 'y', scope: 'bot' }), /409/);

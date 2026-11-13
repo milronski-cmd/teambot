@@ -5,6 +5,7 @@ import type { Agent, Ctx, Migration } from '../../core/types.js';
 import { defineTable, newId, now } from '../../core/db.js';
 import { bytesText } from '../../core/i18n.js';
 import { agentRootList, isInside as inside, isProtectedPath } from '../../tools/builtin/files.js';
+import { documentsFor } from './index.js';
 
 /**
  * Prullenbak (trash) and run snapshots for files bots change in their folders.
@@ -269,11 +270,11 @@ export class Trash {
     return `Dit bestand is te groot voor de prullenbak (${bytesText(size)}, maximaal ${bytesText(this.limits.maxFile)}).`;
   }
 
-  /** Never write into TeamBot's own data or a key file when restoring. */
+  /** Never write into TeamBot's own data or a key file when restoring (the bots' folders in it are theirs). */
   private restorable(file: string): string | null {
     if (isProtectedPath(file)) return 'Dit pad is beschermd (geheimen/sleutels).';
     const data = path.resolve(this.ctx.config.dataDir);
-    if (inside(file, data) && !inside(file, path.join(data, 'workspaces'))) return 'Terugzetten in de gegevensmap van TeamBot kan niet.';
+    if (inside(file, data) && !inside(file, path.join(data, 'workspaces')) && !inside(file, documentsFor(this.ctx))) return 'Terugzetten in de gegevensmap van TeamBot kan niet.';
     return null;
   }
 

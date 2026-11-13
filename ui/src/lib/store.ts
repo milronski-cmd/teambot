@@ -29,6 +29,8 @@ interface State {
   messages: Record<string, Message[]>;
   /** live status line per message id */
   status: Record<string, string>;
+  /** The server's latest sign of life per busy run (`run.alive`, at most every 10 s); gone when the run ends. */
+  alive: Record<string, RunAlive>;
   /**
    * How each bot's most recent run ended (this session), for its face: error → "problem", done → "finished" for a
    * moment; budgetUntil: stopped by the daily budget until then → "daglimiet bereikt".
@@ -42,6 +44,16 @@ interface State {
   refreshShared(): Promise<void>;
   refreshProviders(): Promise<void>;
   refreshApprovals(): Promise<void>;
+}
+
+/** The server's sign of life of a busy run. Times are the server's clock, except `receivedAt` (this browser's). */
+export interface RunAlive {
+  lastActivityAt: number;
+  at: number;
+  receivedAt: number;
+  doing?: string;
+  /** CLI engines: whether the engine's process still exists. */
+  process?: 'alive' | 'gone';
 }
 
 /** Add or update by id (a bot that arrives both from an API answer and a live event must not appear twice). */
@@ -68,6 +80,7 @@ export const useApp = create<State>((set, get) => ({
   settings: {},
   messages: {},
   status: {},
+  alive: {},
   finished: {},
   online: false,
   async load() {
@@ -123,7 +136,7 @@ export function wireEvents() {
   on('message.created', (m: Message) =>
     s.setState((st) => {
       const list = st.messages[m.thread_id];
-      const threads = st.threads.map((t) => (t.id === m.thread_id ? { ...t, updated_at: m.created_at, last: m.role === 'tool' ? t.last : { content: m.content.slice(0, 140), author_name: m.author_name, created_at: m.created_at, role: m.role, status: m.status, budgetUntil: m.parts?.budget?.resetAt } } : t));
+      const threads = st.threads.map((t) => (t.id === m.thread_id ? { ...t, updated_at: m.created_at, last: m.role === 'tool' ? t.last : { content: m.content.slice(0, 140), author_name: m.author_name, created_at: m.created_at, role: m.role, status: m.status, budgetUntil: m.parts?.budget?.resetAt, note: m.role === 'system' ? m.parts?.note : undefined } } : t));
       threads.sort((a, b) => Number(b.pinned) - Number(a.pinned) || b.updated_at.localeCompare(a.updated_at));
       return { threads, messages: list ? { ...st.messages, [m.thread_id]: upsert(list, m) } : st.messages };
     }),
@@ -157,14 +170,22 @@ export function wireEvents() {
   );
   on('message.status', (d: { messageId: string; text: string }) => s.setState((st) => ({ status: { ...st.status, [d.messageId]: statusText(d.text) } })));
   on('tool.progress', (d: { messageId: string; text: string }) => s.setState((st) => ({ status: { ...st.status, [d.messageId]: d.text } })));
+  on('run.alive', (a: { runId: string; lastActivityAt: number; at: number; doing?: string; process?: 'alive' | 'gone' }) => {
+    if (!a?.runId || !Number.isFinite(a.lastActivityAt) || !Number.isFinite(a.at)) return;
+    s.setState((st) => ({ alive: { ...st.alive, [a.runId]: { lastActivityAt: a.lastActivityAt, at: a.at, receivedAt: Date.now(), doing: a.doing, process: a.process } } }));
+  });
   on('run.updated', (r: Run) =>
     s.setState((st) => {
       const active = ['queued', 'running', 'waiting'].includes(r.status);
       if (active) return { runs: upsert(st.runs, r) };
+      if (st.alive[r.id]) {
+        const { [r.id]: _over, ...alive } = st.alive;
+        st = { ...st, alive };
+      }
       const budgetUntil = r.status === 'error' ? Date.parse(r.meta?.budget?.resetAt || '') || undefined : undefined;
       // Important work that paused (package D2) did not fail: the pause card in the chat says when it goes on.
       const status = r.meta?.paused ? 'cancelled' : r.status;
-      return { runs: st.runs.filter((x) => x.id !== r.id), finished: { ...st.finished, [r.agent_id]: { status, at: Date.now(), threadId: r.thread_id, budgetUntil } } };
+      return { alive: st.alive, runs: st.runs.filter((x) => x.id !== r.id), finished: { ...st.finished, [r.agent_id]: { status, at: Date.now(), threadId: r.thread_id, budgetUntil } } };
     }),
   );
   on('thread.updated', (t: Thread) => s.setState((st) => ({ threads: upsert(st.threads, t, true) })));

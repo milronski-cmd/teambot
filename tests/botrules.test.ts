@@ -143,7 +143,7 @@ test('rules through the real gate: a refused delete says which rule, a question 
     // a team rule holds for the team's bots only
     const svc = t.app.ctx.services.botRules._service;
     const home = t.app.ctx.services.teams.teamOf(a.id);
-    const other = await t.api('POST', '/teams', { name: 'Webwinkel' });
+    const other = await t.api('POST', '/teams', { name: 'Webwinkel', starterRules: false });
     const c = await t.agent({ name: 'Winkelbot', access_mode: 'auto', settings: { homeTeam: other.id } });
     assert.equal(t.app.ctx.services.teams.teamOf(c.id), other.id);
     await t.api('POST', '/bot-rules', { teamId: other.id, text: 'Vraag altijd voordat je iets in Shopify verandert' });

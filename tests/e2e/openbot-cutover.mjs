@@ -33,7 +33,7 @@ process.env.TEAMBOT_OPENBOT_DIR = fx.dataDir;
 process.env.TEAMBOT_OPENBOT_HOME = fx.home;
 const before = fx.hashes();
 
-const { createApp } = await import('../../server/app.ts');
+const { createApp } = await import('./server.mjs');
 const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'tb-e2e-cutover-'));
 const app = await createApp({ dataDir: dir, port: 0, host: '127.0.0.1', mode: 'desktop', quiet: true });
 const token = app.ctx.auth.ensureLocalOwner();
@@ -57,6 +57,11 @@ const axe = async (page, label) => {
 };
 
 const stepCard = (page, n) => page.locator(`li[aria-label^="Stap ${n}:"]`);
+// Only the step that is due is open; any other step opens with a click on its row.
+const openStep = async (page, n) => {
+  const head = stepCard(page, n).locator('button[aria-expanded]').first();
+  if ((await head.getAttribute('aria-expanded')) !== 'true') await head.click();
+};
 const browser = await chromium.launch({ channel: process.env.TEAMBOT_E2E_BROWSER || (process.platform === 'win32' ? 'msedge' : 'chrome'), headless: true });
 const errors = [];
 try {
@@ -67,7 +72,7 @@ try {
   await page.goto(`${app.url}/#token=${token}`);
   await page.waitForTimeout(600);
   await page.evaluate(() => (location.hash = '#/settings/openbot-import-overstappen'));
-  await page.getByText('Overstappen van OpenBot, stap voor stap').waitFor({ timeout: 15000 });
+  await page.getByRole('heading', { name: 'Stap voor stap' }).waitFor({ timeout: 15000 });
   await page.locator('li[aria-label^="Stap "]').first().waitFor({ timeout: 10000 });
   const n = await page.locator('li[aria-label^="Stap "]').count();
   if (n !== 6) fail(`6 stappen verwacht, ${n} gezien`);
@@ -107,22 +112,25 @@ try {
   else step('import: kanalen en routines op pauze, niets verbonden');
 
   await page.reload();
-  await page.getByText('Overstappen van OpenBot, stap voor stap').waitFor({ timeout: 15000 });
+  await page.getByRole('heading', { name: 'Stap voor stap' }).waitFor({ timeout: 15000 });
   await stepCard(page, 2).getByText('Klaar', { exact: true }).waitFor({ timeout: 10000 });
   await page.getByRole('button', { name: 'OpenBot bekijken' }).click();
   await page.getByText(/OpenBot draait niet/).waitFor({ timeout: 10000 });
   step('OpenBot bekeken (alleen lezen): draait niet');
+  await openStep(page, 4);
   const tg = stepCard(page, 4).locator('li', { hasText: 'Telegram' });
   if (!(await tg.getByText('Nog in OpenBot').count())) fail('het Telegram-kanaal hoort "Nog in OpenBot" te tonen');
   else step('kanaal Telegram: nog in OpenBot, in TeamBot uit');
 
   // Step 3: the bots checked.
+  await openStep(page, 3);
   await stepCard(page, 3).getByRole('checkbox', { name: 'Mijn bots werken goed in TeamBot' }).click();
   await stepCard(page, 3).getByText('Klaar', { exact: true }).waitFor({ timeout: 5000 });
   step('naast elkaar gecontroleerd afgevinkt');
 
   // Step 5: routines on (OpenBot does not run): the ones that were on in OpenBot, never the customer routine.
-  await stepCard(page, 5).getByRole('button', { name: 'Zet de routines aan' }).click();
+  await openStep(page, 5);
+  await stepCard(page, 5).getByRole('button', { name: 'Zet de routines aan', exact: true }).click();
   await stepCard(page, 5).getByRole('status').waitFor({ timeout: 10000 });
   const on = app.ctx.store.all("SELECT name FROM routines WHERE status = 'active'").map((r) => r.name);
   if (!on.includes('Dagoverzicht')) fail('Dagoverzicht hoort aan te staan');

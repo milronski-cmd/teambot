@@ -1,27 +1,11 @@
+import os from 'node:os';
 import type { ChatMsg, ChatRequest, ChatResult, ModelInfo, ProviderAdapter, StreamEvent, ToolCall, ToolSpec } from '../core/types.js';
 import { CHARS_PER_TOKEN } from '../core/tokens.js';
+import { isLoopbackUrl } from '../core/util.js';
 import { ERROR_TEXT, categoryOf, errorFromResponse, networkError, ProviderError, providerErrorFrom } from './common.js';
 import { clampEffort, type Effort } from './capabilities.js';
 import { ThinkSplitter } from './openai-compat.js';
 import { repairTextToolCalls } from './toolcall-text.js';
-
-/**
- * Local models (C-01, C-11, C-13). Ollama: what each model can do comes from Ollama itself (/api/show: tools, vision,
- * thinking, context length, layer sizes), and chats go through its native /api/chat, which — unlike its OpenAI layer —
- * takes the context window (options.num_ctx) and switches thinking on or off (think). LM Studio fixes the context
- * window when it loads a model, so TeamBot (re)loads the model with the chosen window. llama.cpp fixes it when the
- * server starts: TeamBot shows what it is and how to change it.
- *
- * All three fit every request into the window the model runs with (fitChat), so the server never cuts it silently,
- * and all three turn a tool call that a model wrote as plain text back into a real tool call (toolCallsFromText).
- * Ollama keeps its OpenAI layer when nothing needs the native API: a live check (Ollama 0.40.15, 9 November 2026, a
- * qwen3.6 35B-A3B GGUF) gave the same real tool call over /v1 and /api/chat, twice each.
- */
-
-/** Context windows offered in the UI (tokens). */
-export const CONTEXT_STEPS = [4096, 8192, 16384, 32768, 65536, 131072, 262144];
-/** Below this a bot with tools and instructions runs out of room quickly. */
-export const RECOMMENDED_CONTEXT = 16384;
 
 export const originOf = (base: string) => {
   try {
@@ -37,10 +21,39 @@ async function json(url: string, init: RequestInit = {}, timeoutMs = 4000): Prom
   return r.json();
 }
 
-/** The context window chosen for a model on this provider (config.contextWindows), or undefined = the server's own. */
+/** The context window the owner chose for a model on this provider (config.contextWindows), or undefined = TeamBot picks. */
 export function chosenContext(config: Record<string, any> | undefined, model: string): number | undefined {
   const v = Number(config?.contextWindows?.[model]);
   return Number.isInteger(v) && v >= 1024 && v <= 4_194_304 ? v : undefined;
+}
+
+/** The window TeamBot plans a local model with: a bot's instructions and tools (±7K tokens) plus a conversation. */
+export const PLAN_WINDOW = 16384;
+const WINDOW_STEPS = [16384, 32768, 65536, 131072, 262144];
+/** Room kept for the conversation itself, next to the instructions, the tools, the question and the answer. */
+const CONVERSATION_ROOM = 4096;
+
+/**
+ * The window a local model runs with when the owner chose none ("Vanzelf"): the smallest step from 16K up in which the
+ * bot's instructions, tools and question fit with room for a conversation and the answer. A window the server already
+ * runs the model with (or its Modelfile sets) is kept when it is big enough: no reload, and the server's own bigger
+ * setting stays. Never above the model's maximum; above 16K only while the extra memory stays within a quarter of this
+ * computer's memory (`memory`, when the server runs here and the model's cache size per token is known).
+ */
+export function autoWindow(o: { tokens: number; max?: number; current?: number; kvPerToken?: number; memory?: number }): number {
+  const want = o.tokens + CONVERSATION_ROOM + answerRoom(PLAN_WINDOW);
+  const max = o.max && o.max >= 1024 ? o.max : Infinity;
+  if (o.current && o.current >= want && o.current <= max) return o.current;
+  let i = WINDOW_STEPS.findIndex((n) => n >= want);
+  if (i < 0) i = WINDOW_STEPS.length - 1;
+  if (o.kvPerToken && o.memory) while (i > 0 && o.kvPerToken * WINDOW_STEPS[i] > o.memory / 4) i--;
+  return Math.min(WINDOW_STEPS[i], max);
+}
+
+/** Tokens of what every call of a run carries: instructions, tools and the chat template, plus the question. */
+export function baseTokens(req: Pick<ChatRequest, 'system' | 'messages' | 'tools'>, o: { charsPerToken?: number; question?: boolean } = {}): number {
+  const q = o.question === false ? undefined : req.messages.findLast((m) => m.role === 'user');
+  return Math.ceil((req.system.length + JSON.stringify(req.tools).length + (q ? charsOf(q) : 0)) / (o.charsPerToken ?? CHARS_PER_TOKEN)) + TEMPLATE_TOKENS;
 }
 
 /** KV-cache bytes per token from Ollama's model_info (f16 cache): layers × kv-heads × (key + value length) × 2 bytes. */
@@ -169,6 +182,11 @@ export interface WindowFit {
   dropped: number;
   /** Apps whose tools were left out for this model call. */
   leftOut: string[];
+  /** The window it was fitted into, and TeamBot's estimate of its instructions, tools and question after fitting. */
+  window: number;
+  base: number;
+  /** Still more than the room before the answer, after everything that could go went: the instructions are the cause. */
+  over: boolean;
 }
 
 /**
@@ -195,8 +213,9 @@ export function fitToWindow(req: Pick<ChatRequest, 'system' | 'messages' | 'tool
   const fixed = () => tokensFor(req.system.length + JSON.stringify(tools).length) + TEMPLATE_TOKENS;
   const total = () => fixed() + msgs.reduce((n, m) => n + tokensFor(charsOf(m)), 0);
   const fits = () => total() <= budget;
-  const res = { messages: msgs, tools, cut: 0, dropped: 0, leftOut: [] as string[] };
-  if (fits()) return res;
+  const res = { messages: msgs, tools, cut: 0, dropped: 0, leftOut: [] as string[], window, base: 0, over: false };
+  const done = (): WindowFit => ({ ...res, messages: msgs, tools, base: baseTokens({ system: req.system, messages: msgs, tools }, { charsPerToken: cpt, question: false }), over: !fits() });
+  if (fits()) return done();
   msgs = msgs.slice();
   let question = msgs.findLastIndex((m) => m.role === 'user');
   for (let i = 0; i < question; i++) if (msgs[i].role === 'tool' && charsOf(msgs[i]) > MIN_TOOL_CHARS + 200) msgs[i] = cutTool(msgs[i], MIN_TOOL_CHARS);
@@ -230,12 +249,22 @@ export function fitToWindow(req: Pick<ChatRequest, 'system' | 'messages' | 'tool
     msgs[big] = cutTool(msgs[big], Math.max(MIN_TOOL_CHARS, charsOf(msgs[big]) - (total() - budget) * cpt - 300));
     cut.add(big);
   }
-  return { ...res, messages: msgs, tools, cut: cut.size };
+  res.cut = cut.size;
+  return done();
 }
 
-/** What the person reads about a fitted request (once per run): apps left out, tool output shortened. */
-export function fitNotice(f: WindowFit | null): string | undefined {
+/** "16K" for a window of 16384 tokens. */
+const kTokens = (n: number) => (n >= 1024 ? `${Math.round(n / 1024)}K` : String(n));
+
+/**
+ * What the person reads about a fitted request (once per run): the instructions do not leave room, apps left out,
+ * tool output shortened. `fix` says how to get a bigger window on this server.
+ */
+export function fitNotice(f: WindowFit | null, fix = 'Kies een groter contextvenster (Bot › Meer mogelijkheden › Over het model).'): string | undefined {
   if (!f) return undefined;
+  // The instructions and tools themselves leave no room: say that, not that the tool output was too long.
+  if (f.over && f.base * 2 > f.window)
+    return `De instructies en tools van deze bot (±${kTokens(f.base)} tokens) laten in het contextvenster van dit model (${kTokens(f.window)}) te weinig ruimte over voor het gesprek en het antwoord; het antwoord kan daardoor slecht of leeg zijn. ${fix}`;
   const out: string[] = [];
   if (f.leftOut.length === 1)
     out.push(`${f.leftOut[0]} past niet in het contextvenster van dit model; deze beurt kreeg de tools van die app niet. Noem de app in je vraag om hem toch te gebruiken, zet minder apps aan of kies een groter contextvenster.`);
@@ -253,16 +282,27 @@ export function requestTokens(req: Pick<ChatRequest, 'system' | 'messages' | 'to
 
 const sizeOf = (f: Pick<WindowFit, 'messages' | 'tools'>) => f.messages.reduce((n, m) => n + charsOf(m), 0) + JSON.stringify(f.tools).length;
 
-/** The window Ollama runs a model with: as loaded now (/api/ps), else the model's own num_ctx (Modelfile). */
-export async function ollamaWindow(base: string, model: string): Promise<number | undefined> {
+export interface OllamaFacts {
+  /** The window Ollama runs the model with now (/api/ps), else the num_ctx of its Modelfile. */
+  current?: number;
+  /** The longest context the model was trained for. */
+  max?: number;
+  kvPerToken?: number;
+}
+
+/** What Ollama says about one model's window: loaded now (/api/ps) and its own facts (/api/show). */
+export async function ollamaFacts(base: string, model: string): Promise<OllamaFacts> {
   const o = originOf(base);
   const full = model.includes(':') ? model : `${model}:latest`;
-  const ps = await json(`${o}/api/ps`, {}, 2000).catch(() => null);
+  const [ps, show] = await Promise.all([
+    json(`${o}/api/ps`, {}, 2000).catch(() => null),
+    json(`${o}/api/show`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ model }) }, 4000).catch(() => null),
+  ]);
   const hit = (ps?.models || []).find((m: any) => m.name === full || m.model === full || m.name === model);
-  if (Number(hit?.context_length) > 0) return Number(hit.context_length);
-  const show = await json(`${o}/api/show`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ model }) }, 4000).catch(() => null);
-  const n = Number(String(show?.parameters || '').match(/(?:^|\n)\s*num_ctx\s+(\d+)/)?.[1]);
-  return n > 0 ? n : undefined;
+  const own = Number(String(show?.parameters || '').match(/(?:^|\n)\s*num_ctx\s+(\d+)/)?.[1]);
+  const info = show?.model_info;
+  const max = Number(info?.[`${info?.['general.architecture']}.context_length`]);
+  return { current: Number(hit?.context_length) > 0 ? Number(hit.context_length) : own > 0 ? own : undefined, max: max > 0 ? max : undefined, kvPerToken: kvBytesPerToken(info) };
 }
 
 /**
@@ -369,8 +409,10 @@ export { repairTextToolCalls, toolCallsFromText } from './toolcall-text.js';
 export interface FitTarget {
   /** The server's name in a notice: "Ollama", "LM Studio", "llama.cpp". */
   server: string;
-  /** The window the model runs with now; `fresh` looks again (the server may have loaded the model for this call). */
-  windowOf(model: string, fresh?: boolean): Promise<number | undefined>;
+  /** The window this request runs with; `fresh` looks again (the server may have loaded the model for this call). */
+  windowOf(req: ChatRequest, fresh?: boolean): Promise<number | undefined>;
+  /** How to get a bigger window on this server, in the notice when the instructions do not leave room. */
+  fix?: string;
   send(req: ChatRequest, signal: AbortSignal, onEvent: (e: StreamEvent) => void): Promise<ChatResult>;
   /** The error that is left after the strict retry, in this server's words (Ollama: the question fell out). */
   explain?(err: any, req: ChatRequest): any;
@@ -404,15 +446,19 @@ export function fitChat(t: FitTarget): NonNullable<ProviderAdapter['chat']> {
     };
     const send = async (f: WindowFit | null) => {
       const r = f ? { ...req, messages: f.messages, tools: f.tools } : req;
-      return say(repairTextToolCalls(await t.send(r, signal, events), r.tools), fitNotice(f));
+      return say(repairTextToolCalls(await t.send(r, signal, events), r.tools), fitNotice(f, t.fix));
     };
-    const window = await t.windowOf(req.model);
+    const window = await t.windowOf(req);
     const fit = window ? fitToWindow(req, window) : null;
+    // The instructions and tools alone do not fit, even counted leniently: the server would cut the instructions
+    // themselves (Ollama keeps a part and the model answers nothing). Say so instead of sending it.
+    if (fit?.over && window && baseTokens({ system: req.system, messages: fit.messages, tools: fit.tools }, { charsPerToken: 4.5, question: false }) > window)
+      throw new ProviderError(`${t.server}: ${ERROR_TEXT.tools.title} — ±${kTokens(fit.base)} tokens nodig, het contextvenster van dit model is ${kTokens(window)}. ${t.fix || ''}`.trim(), 400, false, '', 'tools');
     try {
       const out = await send(fit);
       if (window || checked.has(req.model)) return out;
       checked.add(req.model);
-      const w = await t.windowOf(req.model, true);
+      const w = await t.windowOf(req, true);
       if (!w || requestTokens(req) <= w) return out;
       // Our count is an estimate: a server that evaluated clearly less than its window did not have to cut anything.
       const evaluated = Number(out.usage?.input) || 0;
@@ -423,7 +469,7 @@ export function fitChat(t: FitTarget): NonNullable<ProviderAdapter['chat']> {
       // because the server loaded the model for this call). Local servers refuse within a fraction of a second,
       // before they evaluate anything.
       let err = e;
-      const w = await t.windowOf(req.model, true);
+      const w = await t.windowOf(req, true);
       const tighter = w ? fitToWindow(req, Math.floor(w * 0.8), { charsPerToken: 2.5 }) : null;
       if (tighter && sizeOf(tighter) < sizeOf(fit || req)) {
         try {
@@ -462,20 +508,34 @@ export function ollamaAdapter(compat: ProviderAdapter, o: { base: string; label:
       return compat.listModels();
     }
   };
-  const loaded = windowCache((model) => ollamaWindow(o.base, model));
+  // The window per model for this run: the owner's choice, else one that fits the bot (autoWindow), decided once so
+  // Ollama does not reload the model between the calls of a run. Always sent along (num_ctx): Ollama's own default
+  // (4K on most computers) cuts TeamBot's instructions and tools, and the model then answers nothing.
+  const windows = new Map<string, Promise<number>>();
+  const windowFor = (req: ChatRequest) => {
+    const chosen = chosenContext(o.config, req.model);
+    if (chosen) return Promise.resolve(chosen);
+    if (!windows.has(req.model))
+      windows.set(
+        req.model,
+        ollamaFacts(o.base, req.model).then((f) => autoWindow({ tokens: baseTokens(req), max: f.max, current: f.current, kvPerToken: f.kvPerToken, memory: isLoopbackUrl(o.base) ? os.totalmem() : undefined })),
+      );
+    return windows.get(req.model)!;
+  };
   const chat = fitChat({
     server: 'Ollama',
-    windowOf: async (model, fresh) => chosenContext(o.config, model) ?? (await loaded(model, fresh)),
+    fix: 'Kies een groter contextvenster (Bot › Meer mogelijkheden › Over het model) of een model met meer context.',
+    windowOf: (req) => windowFor(req),
     async send(r, signal, events) {
-      const numCtx = chosenContext(o.config, r.model);
+      const numCtx = await windowFor(r);
       if (r.reasoning && !caps.has(r.model)) await listModels().catch(() => []);
       const think = ollamaThink(r.reasoning, caps.get(r.model)?.reasoningLevels);
-      // Ollama's OpenAI layer cannot carry a context window or switch thinking: only then the native API.
-      if (numCtx === undefined && think === undefined) return compat.chat!(r, signal, events);
       const native = (x: ChatRequest) => ollamaChat({ base: o.base, label: o.label }, x, signal, events, { numCtx, think });
       try {
         return await native(r);
       } catch (e: any) {
+        // An address that only offers the OpenAI layer (a proxy in front of Ollama): that layer, without a window.
+        if (!signal.aborted && e?.status === 404 && think === undefined && !/model/i.test(String(e?.message))) return compat.chat!(r, signal, events);
         // A model without tools in its template: Ollama refuses the tools (the OpenAI adapter does the same retry).
         if (signal.aborted || !r.tools.length || !/does not support tools/i.test(String(e?.message))) throw e;
         const out = await native({ ...r, tools: [] });
@@ -571,11 +631,13 @@ export async function ensureLmstudioContext(base: string, model: string, n: numb
  */
 export function lmstudioAdapter(compat: ProviderAdapter, o: { base: string; config?: Record<string, any> }): ProviderAdapter {
   const loaded = windowCache((model) => lmstudioWindow(o.base, model));
-  /** Models that could not be loaded with the chosen window (an old LM Studio): their window is the loaded one. */
-  const notSet = new Set<string>();
+  /** The window per model for this run: the owner's choice, else one that fits the bot (autoWindow). */
+  const set = new Map<string, number>();
+  const tried = new Set<string>();
   const fitted = fitChat({
     server: 'LM Studio',
-    windowOf: async (model, fresh) => (notSet.has(model) ? undefined : chosenContext(o.config, model)) ?? (await loaded(model, fresh)),
+    fix: 'Kies een groter contextvenster (Bot › Meer mogelijkheden › Over het model), of zet "Context Length" in LM Studio op 16384 of meer.',
+    windowOf: async (req, fresh) => set.get(req.model) ?? (await loaded(req.model, fresh)),
     send: (r, signal, events) => compat.chat!(r, signal, events),
   });
   return {
@@ -585,9 +647,19 @@ export function lmstudioAdapter(compat: ProviderAdapter, o: { base: string; conf
       return own?.length ? own : compat.listModels();
     },
     async chat(req, signal, onEvent) {
-      const n = chosenContext(o.config, req.model);
-      const note = n ? await ensureLmstudioContext(o.base, req.model, n) : undefined;
-      if (note) notSet.add(req.model);
+      const chosen = chosenContext(o.config, req.model);
+      let note: string | undefined;
+      if (!tried.has(req.model)) {
+        tried.add(req.model);
+        // LM Studio loads a model with its own default window (4K) on the first request: load it with one that fits
+        // the bot instead, unless it already runs with one that is big enough. An LM Studio that cannot load through
+        // TeamBot (before 0.4) keeps its own window; the fitting below then says what does not fit.
+        const m = chosen ? undefined : (await lmstudioModels(o.base).catch(() => null))?.find((x) => x.id === req.model);
+        const n = chosen ?? autoWindow({ tokens: baseTokens(req), max: m?.context, current: m?.loadedContext });
+        const failed = await ensureLmstudioContext(o.base, req.model, n);
+        if (!failed) set.set(req.model, n);
+        else if (chosen) note = failed;
+      }
       const r = await fitted(req, signal, onEvent);
       return note ? { ...r, notice: [r.notice, note].filter(Boolean).join(' ') } : r;
     },
@@ -602,9 +674,11 @@ const JINJA_NOTE = 'llama.cpp draait zonder --jinja en kan zo geen tools gebruik
  */
 export function llamacppAdapter(compat: ProviderAdapter, o: { base: string }): ProviderAdapter {
   const window = windowCache(() => llamacppWindow(o.base));
+  // The window is fixed when llama-server starts: TeamBot cannot choose it, only say when it is too small.
   const chat = fitChat({
     server: 'llama.cpp',
-    windowOf: (model, fresh) => window(model, fresh),
+    fix: 'Start llama-server met een groter venster, bijvoorbeeld -c 16384.',
+    windowOf: (req, fresh) => window(req.model, fresh),
     async send(r, signal, events) {
       try {
         return await compat.chat!(r, signal, events);

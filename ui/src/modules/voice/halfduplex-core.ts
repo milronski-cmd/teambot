@@ -507,13 +507,19 @@ export class HalfDuplexCore {
     this.interruptible = false;
     this.waitApproval = false;
     if (this.stopped || this.phase !== 'working') return;
+    if (!this.answered(r, t0)) return;
+    if (r.messageId && r.text) await this.speakFinished(r.messageId, t0);
+  }
+
+  /** The answer is in: how long it took, and its text (or why there is none) under the call. False = nothing to read aloud. */
+  private answered(r: AskResult, t0: number): boolean {
     this.o.cb.onTiming?.({ botMs: Math.round(this.d.now() - t0), ...(r.model ? { model: r.model } : {}) });
     if (r.status !== 'done') {
       this.o.cb.onCaption({ role: 'assistant', text: r.status === 'cancelled' ? '(gestopt)' : `(fout: ${r.error || 'onbekend'})`, final: true });
-      return;
+      return false;
     }
     if (r.text) this.o.cb.onCaption({ role: 'assistant', text: plainForSpeech(r.text), final: true });
-    if (r.messageId && r.text) await this.speakFinished(r.messageId, t0);
+    return true;
   }
 
   /** The bot is busy and silent: you may interrupt, unless it waits for your approval (that card is for your hands). */
@@ -614,12 +620,7 @@ export class HalfDuplexCore {
     if (this.phase !== 'working') return;
     const r = finished as AskResult | null;
     if (!r || this.stopped) return;
-    this.o.cb.onTiming?.({ botMs: Math.round(this.d.now() - t0), ...(r.model ? { model: r.model } : {}) });
-    if (r.status !== 'done') {
-      this.o.cb.onCaption({ role: 'assistant', text: r.status === 'cancelled' ? '(gestopt)' : `(fout: ${r.error || 'onbekend'})`, final: true });
-      return;
-    }
-    if (r.text) this.o.cb.onCaption({ role: 'assistant', text: plainForSpeech(r.text), final: true });
+    if (!this.answered(r, t0)) return;
     // Nothing came out of the live voice (e.g. it stopped early): read the finished answer the normal way.
     if (!played && r.messageId && r.text && this.phase === 'working') await this.speakFinished(r.messageId, t0);
   }

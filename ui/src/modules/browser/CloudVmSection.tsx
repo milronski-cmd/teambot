@@ -4,6 +4,7 @@ import { Badge, Button, cx, Field, Input, Modal, Spinner, Toggle, useAsync } fro
 import { SelectBox as Select } from '../../components/Listbox';
 import { MoreInfo } from '../../components/MoreInfo';
 import { cloud, fmtMoney, fmtTime, useLive, VM_STATUS, type CloudEstimate, type CloudOptions, type CloudProviderInfo, type CloudVm } from './api';
+import { t } from '../../lib/i18n';
 
 /** What differs per provider in the interface (the API supplies prices, types and regions). */
 const PROVIDER_TEXT: Record<string, { short: string; tokenHint: string; note?: string; gpuNote?: string }> = {
@@ -353,7 +354,7 @@ export function VmActions({ vm, onChange }: { vm: CloudVm; onChange(): void }) {
       <Modal
         open={del}
         onClose={() => setDel(false)}
-        title={`VM ${vm.name} verwijderen`}
+        title={t('VM {0} verwijderen', vm.name)}
         footer={
           <>
             <Button onClick={() => setDel(false)}>Annuleren</Button>

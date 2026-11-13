@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { startTestApp } from './helpers.js';
-import { DEFAULT_RULES, engineNote, engineRank, rankChoices, type EngineChoice } from '../ui/src/pages/newbot/choices.js';
+import { engineNote, engineRank, rankChoices, type EngineChoice } from '../ui/src/pages/newbot/choices.js';
 
 /** TeamBot 0.4, package A: a new bot is three questions, and a new installation starts empty. */
 
@@ -52,18 +52,23 @@ test('a fresh installation has no bots, teams, groups, skills, routines or tasks
 test('the three answers (name, one sentence, engine) make a bot that knows its task and answers', async () => {
   const t = await startTestApp();
   try {
-    // What the new-bot page sends: the three answers, the standard rules and the default tools, model '' (engine default).
-    const a = await t.api('POST', '/agents', { name: 'Mila', description: 'Helpt me met korte vragen over mijn webshop.', provider_id: t.providerId, model: '', instructions: DEFAULT_RULES, access_mode: 'ask', tool_groups: ['files', 'web', 'memory', 'team', 'skills', 'routines'] });
+    // What the new-bot page sends: the answers and the default tools, model '' (engine default). No instructions: those
+    // are the owner's own text, and a new bot starts with none.
+    const a = await t.api('POST', '/agents', { name: 'Mila', description: 'Helpt me met korte vragen over mijn webshop.', provider_id: t.providerId, model: '', access_mode: 'ask', tool_groups: ['files', 'web', 'memory', 'team', 'skills', 'routines'] });
     assert.equal(a.name, 'Mila');
+    assert.equal(a.instructions, '');
     const th = await t.api('POST', '/threads', { agentId: a.id });
     t.script.push({ text: 'Hoi! Ik help je met vragen over je webshop.' });
     const msgs = await t.say(th.id, 'Hoi Mila, wat kun je voor me doen?');
     const reply = msgs.filter((m: any) => m.role === 'assistant').pop();
     assert.equal(reply?.content, 'Hoi! Ik help je met vragen over je webshop.');
-    // The sentence is the bot's task in its instructions, with the honesty rule ("verzin geen resultaat").
+    // The sentence is the bot's task; how every bot works (honest, no made-up result, ask when a task is unclear) is
+    // TeamBot's own base prompt, not text in the owner's instructions.
     const sys = JSON.stringify(t.requests.at(-1)?.system ?? t.requests.at(-1));
     assert.match(sys, /Helpt me met korte vragen over mijn webshop/);
     assert.match(sys, /verzin geen resultaat/);
+    assert.match(sys, /Vraag door als een opdracht onduidelijk is/);
+    assert.doesNotMatch(sys, /## Jouw instructies/);
     // The engine default was used (mock-1), not an empty model.
     assert.equal(t.requests.at(-1)?.model, 'mock-1');
   } finally {

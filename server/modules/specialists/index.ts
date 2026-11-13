@@ -4,10 +4,10 @@ import { SpecialistService } from './service.js';
 import { specialistRoutes } from './routes.js';
 import { GROUP, factLine, knowledgeTools } from './tools.js';
 import { runRound } from './round.js';
-import { trackProcedure } from './skills.js';
 import { clip, ownWords } from './guard.js';
+import { plannerOf, type Planned } from '../routines/planner.js';
 
-const instances = new WeakMap<Ctx, { svc: SpecialistService; timers: NodeJS.Timeout[]; off: (() => void)[] }>();
+const instances = new WeakMap<Ctx, { svc: SpecialistService; off: (() => void)[] }>();
 
 /** Stable text for the system prompt of a specialist (changes only when its field or name changes). */
 function specialistPrompt(ctx: Ctx, svc: SpecialistService, agent: Agent): string | null {
@@ -42,7 +42,7 @@ function specialistPrompt(ctx: Ctx, svc: SpecialistService, agent: Agent): strin
 /**
  * Specialists that learn by themselves (0.4, package S): a field and sources per bot, a learning round run by the
  * routines engine (off until the owner turns it on), a knowledge base in the bot's memory dossier, learning goals
- * from "weet ik niet" and a self-test, a weekly report with undo, and skill proposals. See docs/modules/specialists.md.
+ * from "weet ik niet" and a self-test, and a weekly report with undo. See docs/modules/specialists.md.
  */
 const mod: Module = {
   id: 'specialists',
@@ -51,7 +51,7 @@ const mod: Module = {
   init(ctx) {
     const svc = new SpecialistService(ctx, { hostDelayMs: Number(process.env.TEAMBOT_SPECIALIST_HOST_DELAY_MS ?? 2000) });
     const off: (() => void)[] = [];
-    instances.set(ctx, { svc, timers: [], off });
+    instances.set(ctx, { svc, off });
 
     ctx.tools.registerGroup(GROUP);
     for (const t of knowledgeTools(svc)) ctx.tools.register(t);
@@ -71,11 +71,6 @@ const mod: Module = {
         svc.noteGap(agent, thread, run, finalText);
       } catch (e) {
         ctx.log.warn('[specialists] learning goal not noted', String(e));
-      }
-      try {
-        trackProcedure(svc, agent, thread, run);
-      } catch (e) {
-        ctx.log.warn('[specialists] procedure not counted', String(e));
       }
     });
     ctx.hooks.agentDeleted.push(({ agentId }) => {
@@ -132,28 +127,35 @@ const mod: Module = {
     try {
       i.svc.closeInterrupted();
       i.svc.syncAll();
+      i.svc.pruneUnfitSources();
     } catch (e) {
       ctx.log.warn('[specialists] bijwerken bij het starten mislukt', String(e));
     }
-    // Weekly learning reports: checked every hour (first check after 10 minutes, so short-lived processes never run it).
-    // … and the learning rounds themselves: whatever is due, every ten minutes.
-    const tick = () => {
-      i.svc.reportsDue();
-      void i.svc.roundsDue().catch((e) => ctx.log.warn('[specialists] leerrondes mislukt', String(e)));
-    };
-    const t0 = setTimeout(() => {
-      tick();
-      const t1 = setInterval(tick, 600_000);
-      t1.unref?.();
-      i.timers.push(t1);
-    }, 600_000);
-    t0.unref?.();
-    i.timers.push(t0);
+    // No clock of its own: the learning rounds and the weekly learning reports are a source of the one planner
+    // (routines/planner.ts). A look every ten minutes (the first after ten minutes, so a process that lives short
+    // never runs it) starts what is due, and only for a specialist whose learning round somebody switched on.
+    const planner = plannerOf(ctx);
+    if (!planner) return;
+    i.off.push(
+      planner.register({
+        id: 'specialists',
+        everyMs: 600_000,
+        look: (now) => {
+          i.svc.reportsDue();
+          return i.svc.roundsDue(now);
+        },
+        planned: (userId) =>
+          i.svc.store.find<any>('specialist_profiles', { user_id: userId, enabled: true, learn_on: true }).flatMap((p): Planned[] => {
+            const agent = i.svc.store.agent(p.agent_id);
+            const at = agent && !agent.archived ? i.svc.nextRoundAt(p) : null;
+            return at ? [{ kind: 'learning', id: `learn:${p.agent_id}`, userId, agentId: p.agent_id, title: `Leerronde van ${agent!.name}`, at, model: true, link: `#/m/specialists/${p.agent_id}` }] : [];
+          }),
+      }),
+    );
   },
   stop(ctx) {
     const i = instances.get(ctx);
     if (!i) return;
-    for (const t of i.timers.splice(0)) clearTimeout(t);
     for (const d of i.off.splice(0)) d();
   },
 };

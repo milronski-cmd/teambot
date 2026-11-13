@@ -5,6 +5,7 @@ import { GlobalWorkerOptions, getDocument, type PDFDocumentProxy, type RenderTas
 import workerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
 import { Button, Spinner } from './ui';
 import { t } from '../lib/i18n';
+import { tText } from '../lib/format';
 
 GlobalWorkerOptions.workerSrc = workerUrl;
 
@@ -80,7 +81,7 @@ export default function PdfView({ data, name }: { data: ArrayBuffer; name: strin
           </Button>
         </span>
       </div>
-      <div ref={box} data-testid="pdf-pages" className="scroll-thin min-h-0 flex-1 overflow-auto rounded-lg bg-surface-3 p-2" aria-label={`Pdf ${name}, ${doc.numPages} ${doc.numPages === 1 ? 'pagina' : "pagina's"}`} role="document">
+      <div ref={box} data-testid="pdf-pages" className="scroll-thin min-h-0 flex-1 overflow-auto rounded-lg bg-surface-3 p-2" aria-label={t("Pdf {0}, {1, plural, one {# pagina} other {# pagina's}}", name, doc.numPages)} role="document">
         {width > 0 && (
           <div className="flex flex-col items-center gap-3" style={{ minWidth: Math.round(width * zoom) }}>
             {Array.from({ length: pages }, (_, i) => (
@@ -166,7 +167,7 @@ function PdfPage({ doc, n, total, width, onSeen }: { doc: PDFDocumentProxy; n: n
 
   return (
     <div ref={wrap} className="relative shrink-0 bg-white shadow-sm ring-1 ring-black/10" style={{ width, height: Math.round(width * ratio) }}>
-      <canvas ref={canvas} role="img" aria-label={`Pagina ${n} van ${total}`} className="block h-full w-full" />
+      <canvas ref={canvas} role="img" aria-label={tText('Pagina {0} van {1}', n, total)} className="block h-full w-full" />
       {!drawn && (
         <div className="absolute inset-0 flex items-center justify-center">
           <Spinner />

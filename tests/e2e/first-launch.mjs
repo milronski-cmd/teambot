@@ -154,7 +154,10 @@ async function run(name, { installed }) {
     await new Promise((r) => watcher.on('exit', r));
     const lines = fs.readFileSync(log, 'utf8').split(/\r?\n/).filter((l) => l.startsWith('window|'));
     const strange = lines.filter((l) => {
-      const [, pid, proc, cls] = l.split('|');
+      const [, pid, proc, cls, ours] = l.split('|');
+      // Only windows of TeamBot and what it started count: Windows itself opens windows too while this runs (explorer's
+      // touch-edge window, another program the user has open).
+      if (Number(pid) !== child.pid && ours !== 'True') return false;
       return !(Number(pid) === child.pid && (cls === 'Chrome_WidgetWin_1' || cls === '#32770'));
     });
     check(strange.length === 0, `no other window appeared (console, dialog)${strange.length ? `: ${strange.map((l) => l.split('|').slice(2, 4).join(' ')).join(', ')}` : ''}`);

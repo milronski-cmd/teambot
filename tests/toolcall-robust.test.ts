@@ -191,6 +191,12 @@ test('OpenAI-compatible adapter (Ollama /v1 without a PARSER): the ads-roas answ
     rq.on('end', () => {
       if (rq.url === '/api/ps') return res.writeHead(200, { 'content-type': 'application/json' }), res.end('{"models":[]}');
       if (rq.url === '/api/show') return res.writeHead(200, { 'content-type': 'application/json' }), res.end('{}');
+      // Ollama's native chat (TeamBot sends it a window that fits): the same answer, as NDJSON.
+      if (rq.url === '/api/chat') {
+        res.writeHead(200, { 'content-type': 'application/x-ndjson' });
+        res.write(JSON.stringify({ message: { content: text }, done: false }) + '\n');
+        return res.end(JSON.stringify({ done: true, done_reason: 'stop', prompt_eval_count: 10, eval_count: 10 }) + '\n');
+      }
       res.writeHead(200, { 'content-type': 'text/event-stream' });
       res.write(`data: ${JSON.stringify({ choices: [{ index: 0, delta: { content: text } }] })}\n\n`);
       res.write(`data: ${JSON.stringify({ choices: [{ index: 0, delta: {}, finish_reason: 'stop' }] })}\n\n`);

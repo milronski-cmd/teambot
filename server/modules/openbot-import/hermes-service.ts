@@ -20,8 +20,6 @@ import type { Detector, EngineStatus } from './service.js';
 const TTL = 30 * 60_000;
 const SETTING = 'hermesImport';
 const PAUSE_REASON = 'Overgenomen uit Hermes Agent en uitgezet, zodat niets dubbel draait. Zet aan wanneer je Hermes stopt.';
-/** Hermes works with its terminal and files; in TeamBot every command and change asks first ("Vraagt toestemming"). */
-const TOOL_GROUPS = ['files', 'web', 'memory', 'team', 'skills', 'routines', 'shell', 'browser'];
 
 interface EngineView {
   from: string;
@@ -366,8 +364,6 @@ export class HermesImport {
           avatar: encodeFace(traitsFor('hermes:' + p.id)),
           provider_id: providerId,
           model: p.model,
-          access_mode: 'ask',
-          tool_groups: TOOL_GROUPS,
           skills: p.skills.map((n) => skillIdByName.get(n)).filter((x): x is string => !!x),
           settings: { importedFrom: { app: 'hermes', id: p.id, at: new Date().toISOString(), provider: p.provider, model: p.model, folder: p.dir } },
         });

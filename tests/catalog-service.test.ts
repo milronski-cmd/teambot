@@ -1,11 +1,10 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { CURATED_SOURCES } from '../server/modules/skills/curated.js';
-import { CURATED_SERVICE_SOURCES } from '../server/modules/skills/curated-service.js';
 import { CATALOG } from '../server/modules/mcp/catalog.js';
 import { CATALOG_SERVICE } from '../server/modules/mcp/catalog-service.js';
 
-// Pack “Klantenservice en verkoop”: every new skill and app carries a licence, a pin and a Dutch one-line note.
+// Pack “Klantenservice en verkoop”: every app carries a licence, a pin and a Dutch one-line note (the skills of the
+// catalogue: tests/skills-catalog-data.test.ts).
 
 const DUTCH = /\b(de|het|een|en|van|je|jouw|met|voor|naar|op|in|wat|niet|of|om|die|dat|als|ook|alleen|zonder|wordt|bijvoorbeeld|gekoppelde?|klant|klanten)\b/gi;
 const ENGLISH = /\b(the|and|with|your|from|this)\b/i;
@@ -15,27 +14,6 @@ function dutchLine(s: string | undefined, what: string) {
   const words = new Set((s!.match(DUTCH) || []).map((w) => w.toLowerCase()));
   assert.ok(words.size >= 2 && !ENGLISH.test(s!), `${what}: Dutch (“${s}”)`);
 }
-
-test('service skills: open licence, pinned commit, Dutch note, own pack, wired into the catalogue', () => {
-  assert.ok(CURATED_SERVICE_SOURCES.length > 0);
-  for (const s of CURATED_SERVICE_SOURCES) {
-    assert.ok(['MIT', 'Apache-2.0', 'BSD-2-Clause', 'BSD-3-Clause', 'ISC'].includes(s.license), `${s.id}: licence`);
-    assert.match(s.commit, /^[0-9a-f]{40}$/, `${s.id}: pinned commit`);
-    assert.match(s.commitDate, /^\d{4}-\d{2}-\d{2}$/, s.id);
-    assert.match(s.verifiedAt, /^\d{4}-\d{2}-\d{2}$/, s.id);
-    dutchLine(s.note, s.id);
-    assert.ok(CURATED_SOURCES.includes(s), `${s.id} is in CURATED_SOURCES`);
-    assert.ok(s.skills.length, s.id);
-    for (const k of s.skills) {
-      assert.equal(k.pack, 'Klantenservice en verkoop', `${s.id}/${k.path}: pack`);
-      assert.ok(k.path && !k.path.startsWith('/') && !k.path.includes('..'), `${s.id}/${k.path}: path`);
-      dutchLine(k.note, `${s.id}/${k.path}`);
-      if (k.needs) dutchLine(k.needs, `${s.id}/${k.path} needs`);
-    }
-  }
-  const ids = CURATED_SOURCES.map((s) => s.id);
-  assert.equal(new Set(ids).size, ids.length, 'unique source ids');
-});
 
 test('service apps: licence, pinned version or hosted endpoint, Dutch texts, wired into the catalogue', () => {
   assert.ok(CATALOG_SERVICE.length > 0);

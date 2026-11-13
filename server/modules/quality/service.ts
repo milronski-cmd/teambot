@@ -1,13 +1,15 @@
 import type { Agent, Ctx, User } from '../../core/types.js';
 import { newId, now } from '../../core/db.js';
 import { inspectEvidence, parseEvidence, runSteps, shortSteps } from './evidence.js';
-import { gaveUpText, limitNowText, secondLook } from './verify.js';
+import { gaveUpText, limitNowText, secondLook, UNCLEAR } from './verify.js';
 import { maybeSuggestSkill } from './skills.js';
 import { CHECK_LABEL, type CheckState, type EvidenceItem, type QualityRow, type QualityView, type StepItem, type TaskKind, type Verdict } from './types.js';
 
 const DONE_WHEN_MAX = 300;
 /** A second look that keeps meeting a usage limit is tried this often in all, then the owner checks it himself. */
 export const MAX_RECHECKS = 6;
+/** Where the owner sees a task of the board (the board opens it) or of the team database. */
+export const taskLink = (r: { kind: string; ref: string }) => (r.kind === 'room' ? `#/tasks?open=${encodeURIComponent(`b:${r.ref}`)}` : '#/tasks');
 
 /** "Kon niet: de site was offline" (also "Niet gelukt:", "Lukt niet —"): a delegated bot's honest "could not". */
 export const CANT_RE = /^\s*(?:\*\*)?(kon niet|kan niet|niet gelukt|lukt niet|mislukt|could not|couldn'?t|cannot|can'?t do)(?:\*\*)?\s*[:—–-]\s*([\s\S]*)$/i;
@@ -286,6 +288,29 @@ export class QualityService {
   }
   private rechecking = false;
 
+  /**
+   * Tasks that still wait for the owner only because the checker once gave no verdict (before TeamBot tried such a
+   * look again by itself): they get their second look now. Returns how many.
+   */
+  retryUnclear(): number {
+    return Number(this.ctx.store.exec("UPDATE quality_tasks SET recheck_at = ?, recheck_n = 0 WHERE check_state = 'review' AND open = 1 AND recheck_at IS NULL AND kind IN ('room','teamdata') AND check_reason = ?", now(), UNCLEAR).changes) || 0;
+  }
+
+  /**
+   * "Alles stoppen" (the planner's stop): the second looks of this owner that wait for a usage limit are not done by
+   * themselves later. The task says so and waits for him. Returns how many were waiting.
+   */
+  stopRechecks(userId: string): number {
+    const rows = this.ctx.store
+      .all<any>("SELECT * FROM quality_tasks WHERE user_id = ? AND recheck_at IS NOT NULL AND check_state = 'review' AND open = 1", userId)
+      .map((x) => this.ctx.store.decode<QualityRow>('quality_tasks', x));
+    for (const r of rows) {
+      this.patch(r, { recheck_at: null, check_reason: 'Niet automatisch gecontroleerd: je hebt alles gestopt. Kijk het zelf na.' });
+      this.emit(r.user_id, r.kind, r.ref);
+    }
+    return rows.length;
+  }
+
   private async recheck(r: QualityRow) {
     const agent = r.reported_by ? this.ctx.store.agent(r.reported_by) : null;
     // Taken off the list first: a failure below never makes it run again and again.
@@ -296,7 +321,9 @@ export class QualityService {
       return;
     }
     const n = (r.recheck_n || 0) + 1;
-    const input = r.recheck_input || {};
+    // What the bot reported: kept with the waiting look, else what the task on the board itself says.
+    const task = r.kind === 'room' && this.ctx.store.hasTable('room_tasks') ? this.ctx.store.one<{ result: string | null; description: string | null }>('SELECT result, description FROM room_tasks WHERE id = ?', r.ref) : null;
+    const input = { result: task?.result || '', description: task?.description || '', ...(r.recheck_input || {}) };
     const verdict = await secondLook(this.ctx, {
       userId: r.user_id,
       agent,
@@ -346,7 +373,7 @@ export class QualityService {
     this.ctx.events.emit(r.user_id, 'notification', {
       title: done ? `Gecontroleerd en klaar: ${title}` : verdict.state === 'cant' ? `${agent.name} kon “${title}” niet doen` : `Te controleren: ${title}`,
       body: verdict.reason.slice(0, 200),
-      link: r.kind === 'room' ? `#/tasks?open=${encodeURIComponent(`b:${r.ref}`)}` : '#/tasks',
+      link: taskLink(r),
       kind: 'task',
     });
     this.emit(r.user_id, r.kind, r.ref);

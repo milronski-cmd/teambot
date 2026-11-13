@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Ban, BookOpen, Brain, Check, ChevronRight, ExternalLink, GraduationCap, Lightbulb, Plus, RotateCcw, Settings2, Trash2, Wand2 } from 'lucide-react';
-import { askConfirm, Badge, Button, Card, EmptyState, Field, Input, Modal, Page, PageHeader, Tabs, Textarea, cx, toast, toastError, useAsync } from '../../components/ui';
+import { askConfirm, Badge, Button, Card, EmptyState, Field, Input, Modal, Page, PageHeader, Tabs, Textarea, cx, toast, toastError, useAsync, CardHead } from '../../components/ui';
 import { Fold, Menu, SkeletonRows } from '../../components/overview';
 import { MoreInfo } from '../../components/MoreInfo';
 import { BotAvatar } from '../../components/BotFace';
@@ -9,11 +9,11 @@ import { formatDate, formatDateTime } from '../../lib/format';
 import { t } from '../../lib/i18n';
 import { navigate } from '../../lib/router';
 import { useApp } from '../../lib/store';
-import { type Fact, type Goal, type Proposal, type Report, type Round, type RoundLine, spApi, useSpecialistData, useSpecialists } from './api';
+import { type Fact, type Goal, type Report, type Round, type RoundLine, spApi, useSpecialistData, useSpecialists } from './api';
 import { KIND_LABEL, sourceStatus } from './Card';
 
 /**
- * Three places: what the specialist knows, what waits for you (facts that clash and skill proposals), and how it
+ * Three places: what the specialist knows, what waits for you (facts that clash), and how it
  * learns (goals, reports, sources). Links of earlier versions to the six old tabs land on the place they moved to.
  */
 type Tab = 'feiten' | 'controleren' | 'leren';
@@ -109,7 +109,7 @@ function Kennisbank({ agentId, tab }: { agentId: string; tab: Tab }) {
         </div>
       </Page>
     );
-  const waiting = v.counts.review + v.counts.proposals;
+  const waiting = v.counts.review;
   const tabs: { id: Tab; label: React.ReactNode }[] = [
     { id: 'feiten', label: t('Feiten ({0})', v.counts.facts) },
     {
@@ -179,12 +179,7 @@ function Kennisbank({ agentId, tab }: { agentId: string; tab: Tab }) {
         <Tabs tabs={tabs} value={tab} onChange={(x) => navigate(`/m/specialists/${agentId}/${x}`)} />
         <div key={tab} className="tb-in space-y-4">
         {tab === 'feiten' && <FactsTab agentId={agentId} />}
-        {tab === 'controleren' && (
-          <>
-            <ReviewTab agentId={agentId} quiet={v.counts.proposals > 0} />
-            {(v.counts.proposals > 0 || !v.counts.review) && <ProposalsTab agentId={agentId} name={v.agentName} quiet />}
-          </>
-        )}
+        {tab === 'controleren' && <ReviewTab agentId={agentId} />}
         {tab === 'leren' && (
           <>
             {/* When it learns, in one line; the goals, the reports and the sources each open to their own list. */}
@@ -302,7 +297,7 @@ function FactsTab({ agentId }: { agentId: string }) {
       )}
       {(data.retired?.length || 0) > 0 && (
         <Card className="px-4">
-          <h3 className="pt-3 text-sm font-semibold">Niet meer doen</h3>
+          <CardHead as="h3" className="pt-3" icon={Ban} tone="rose" title="Niet meer doen" />
           <p className="text-xs text-muted">Wat vroeger klopte en nu niet meer. De bot krijgt dit te zien als “niet meer doen”.</p>
           <ul>
             {data.retired!.map((r) => (
@@ -363,14 +358,13 @@ function AddFact({ open, agentId, onClose, onDone }: { open: boolean; agentId: s
   );
 }
 
-function ReviewTab({ agentId, quiet }: { agentId: string; quiet?: boolean }) {
+function ReviewTab({ agentId }: { agentId: string }) {
   const { data, error, reload } = useSpecialistData(() => spApi.knowledge(agentId), agentId);
   const a = useAsync();
   if (error && !data) return <p className="text-sm text-danger">{error}</p>;
   if (!data) return <Spinner />;
   if (!data.review.length)
-    // With skill proposals waiting below, an empty "nothing to check" above them would only be noise.
-    return quiet ? null : (
+    return (
       <Card>
         <EmptyState icon={<Check />} title="Niets te controleren">
           Spreekt een nieuwe bron iets tegen wat de specialist al weet, dan kies jij hier wat klopt.
@@ -622,103 +616,5 @@ function ReportsTab({ agentId, name }: { agentId: string; name: string }) {
       <h3 className="text-[13px] font-semibold">Leerrondes</h3>
       {data.rounds.length === 0 ? <p className="text-sm text-muted">Nog geen leerronde gedraaid.</p> : data.rounds.map((r) => <RoundCard key={r.id} r={r} onChange={reload} />)}
     </div>
-  );
-}
-
-/** Skills the specialist proposes after doing the same kind of job well three times. `quiet`: nothing when there are none. */
-function ProposalsTab({ agentId, name, quiet }: { agentId: string; name: string; quiet?: boolean }) {
-  const { data, error, reload } = useSpecialistData(() => spApi.proposals(agentId), agentId);
-  const [open, setOpen] = useState<Proposal | null>(null);
-  if (error && !data) return <p className="text-sm text-danger">{error}</p>;
-  if (!data) return quiet ? null : <Spinner />;
-  if (!data.length)
-    return quiet ? null : (
-      <EmptyState icon={<Wand2 />} title="Nog geen voorstellen">
-        {t('Doet {0} drie keer met succes hetzelfde soort klus, dan stelt hij hier een skill voor.', name)}
-      </EmptyState>
-    );
-  return (
-    <div className="space-y-3">
-      <h2 className="text-sm font-semibold">
-        Voorgestelde skills <MoreInfo>{t('Doet {0} drie keer hetzelfde soort klus, dan stelt hij een skill voor.', name)}</MoreInfo>
-      </h2>
-      {data.map((p) => (
-        <Card key={p.id} className="space-y-2 p-4">
-          <div className="flex flex-wrap items-center gap-2">
-            <span className="min-w-0 flex-1 font-semibold">{p.title}</span>
-            <Badge tone={p.status === 'open' ? 'accent' : p.status === 'accepted' ? 'ok' : 'neutral'}>{p.status === 'open' ? 'voorstel' : p.status === 'accepted' ? 'geïnstalleerd' : 'niet nodig'}</Badge>
-          </div>
-          <p className="text-sm text-muted [overflow-wrap:anywhere]">{p.summary}</p>
-          {p.evidence.length > 0 && (
-            <ul className="list-disc ps-5 text-xs text-muted">
-              {p.evidence.slice(0, 3).map((e, i) => (
-                <li key={i} className="[overflow-wrap:anywhere]">
-                  {e.task || 'Taak'} · {formatDate(e.at, { dateStyle: 'medium' })}
-                </li>
-              ))}
-            </ul>
-          )}
-          {p.status === 'open' && (
-            <div className="flex flex-wrap gap-2">
-              <Button size="sm" variant="primary" onClick={() => setOpen(p)}>
-                Concept bekijken
-              </Button>
-              <Button size="sm" variant="ghost" onClick={() => spApi.decide(p.id, { status: 'dismissed' }).then(reload, toastError)}>
-                Niet nodig
-              </Button>
-            </div>
-          )}
-        </Card>
-      ))}
-      {open && <ProposalModal p={open} agentId={agentId} name={name} onClose={() => setOpen(null)} onDone={reload} />}
-    </div>
-  );
-}
-
-/** The draft, editable; installing goes through the skills module's own check (scan, permissions, publisher rules). */
-function ProposalModal({ p, agentId, name, onClose, onDone }: { p: Proposal; agentId: string; name: string; onClose(): void; onDone(): void }) {
-  const [md, setMd] = useState(p.skill_md);
-  const [note, setNote] = useState('');
-  const a = useAsync();
-  const install = () =>
-    a.run(async () => {
-      setNote('');
-      const st = await api.post<any>('/skills/import/preview', { kind: 'paste', text: md });
-      const res = await api.post<any>('/skills/import/commit', { stagingId: st.stagingId, keys: (st.candidates || []).map((c: any) => c.key), enableFor: [agentId] });
-      const results: any[] = Array.isArray(res) ? res : res?.results || [];
-      const ok = results.find((r) => ['created', 'updated', 'unchanged'].includes(r.status));
-      if (!ok) {
-        setNote(results[0]?.error || 'De skill kon niet worden geïnstalleerd. Bekijk hem eventueel onder Skills › Importeren.');
-        return;
-      }
-      await spApi.decide(p.id, { status: 'accepted', skillMd: md, skillId: ok.skillId });
-      toast(t('Skill geïnstalleerd en aangezet voor {0}', name), 'ok');
-      onDone();
-      onClose();
-    });
-  return (
-    <Modal
-      open
-      wide
-      onClose={onClose}
-      title={p.title}
-      footer={
-        <>
-          <Button onClick={onClose}>Sluiten</Button>
-          <Button variant="primary" loading={a.busy} onClick={install}>
-            {t('Installeren voor {0}', name)}
-          </Button>
-        </>
-      }
-    >
-      <div className="space-y-2">
-        <p className="text-sm text-muted">Lees en pas het concept aan. Installeren gaat via de gewone controle van Skills.</p>
-        <Textarea rows={16} className="font-mono text-xs" value={md} onChange={(e) => setMd(e.target.value)} aria-label="SKILL.md" />
-        {note && <p className="text-sm text-danger">{note}</p>}
-        <a className="inline-flex items-center gap-1 text-xs text-accent underline" href="#/m/skills">
-          <ExternalLink className="h-3.5 w-3.5" /> Naar Skills
-        </a>
-      </div>
-    </Modal>
   );
 }

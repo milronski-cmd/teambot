@@ -2,16 +2,19 @@ import type { Agent } from '../../../core/types.js';
 import type { Duty, DutyAction, DutySource, Measure } from './types.js';
 
 /**
- * Presets: duties that fit a kind of bot, so the owner configures nothing. A preset is plain data: words that
- * recognise the bot (in its role, name or description) and the duties it then gets. The built-in presets below are
- * examples of the same thing the owner can add himself (user setting `proactive.presets`, PUT /api/proactive/presets):
- * a preset for a law firm, a YouTube channel or a household works exactly like the one for SEO. Nothing in the code
- * depends on a preset's id or on a role name. A bot that fits no preset proposes its own duties (see service.ts).
+ * Presets: vaste taken that fit a kind of bot. A preset is plain data: words that recognise the bot (in its role, name
+ * or description) and the duties that go with it.
  *
- * Raise CATALOG_VERSION when built-in duties are added: existing bots then get the new ones (never a second copy of
- * one they have, and never one the owner deleted before: removed keys are remembered).
+ * Nothing here is given to a bot by itself. Live (10–11 Nov 2026) TeamBot seeded these per bot from words in the role:
+ * 32 routines the owner never asked for, on sources that were not connected, for the wrong bot too (a content writer
+ * whose role mentions "SEO-pagina's" got the SEO checks). None of them ever produced anything. Since then:
+ *  - the built-in presets below are a library of examples: the owner or a bot picks one deliberately (POST
+ *    /api/proactive/duties with `key`, or duty_set in a conversation);
+ *  - only presets the owner wrote himself (user setting `proactive.presets`) are applied to the bots they recognise:
+ *    that is his own instruction.
+ * A bot's work comes from what the owner said and from the team's tasks and projects (duties/work.ts), not from a list.
  */
-export const CATALOG_VERSION = 2;
+export const CATALOG_VERSION = 3;
 
 const EVERY_DAY = [0, 1, 2, 3, 4, 5, 6];
 const WORKDAYS = [1, 2, 3, 4, 5];
@@ -194,7 +197,11 @@ export const ROLE_DUTIES: RoleDuties[] = [
   },
 ];
 
-/** Every bot with a role keeps its own open tasks moving (measured by TeamBot: no open task, no model call). */
+/**
+ * Retired (kept so an existing install's routine with this key still runs until it is cleaned up, see
+ * DutyService.retire): the open tasks of a bot are now picked up by the work loop the moment they exist (work.ts),
+ * not at 09:30 and 14:30 by a routine every bot got.
+ */
 export const FINISH_WORK: CatalogDuty = {
   key: 'werk.afmaken',
   title: 'Open taken afmaken',
@@ -206,7 +213,7 @@ export const FINISH_WORK: CatalogDuty = {
   times: ['09:30', '14:30'],
 };
 
-/** The main bot scores what the researcher found (measured by TeamBot: nothing new, no model call). */
+/** Retired like FINISH_WORK: unscored opportunities are part of the main bot's work (work.ts). */
 export const SCORE_OPPORTUNITIES: CatalogDuty = {
   key: 'kansen.scoren',
   title: 'Kansen scoren',
@@ -217,6 +224,17 @@ export const SCORE_OPPORTUNITIES: CatalogDuty = {
   days: [0, 3],
   times: ['18:00'],
 };
+
+/** The retired one-off run in which a bot was told to think up duties for itself. */
+export const SETUP_KEY = 'vaste-taken.bedenken';
+
+/** Every key TeamBot once gave a bot by itself (the built-in presets and the three above). */
+export const BUILTIN_KEYS: ReadonlySet<string> = new Set([...ROLE_DUTIES.flatMap((r) => r.duties.map((d) => d.key)), FINISH_WORK.key, SCORE_OPPORTUNITIES.key, SETUP_KEY]);
+
+/** A built-in duty by its key (the library), or null. */
+export function builtinDuty(key: string): CatalogDuty | null {
+  return [...ROLE_DUTIES.flatMap((r) => r.duties), FINISH_WORK, SCORE_OPPORTUNITIES].find((d) => d.key === key) || null;
+}
 
 const esc = (w: string) => w.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 /** Does this text name the word? Whole words; a word ending in * also matches what begins with it. */
@@ -271,12 +289,12 @@ export function rolesFor(agent: Pick<Agent, 'role' | 'name' | 'description'>, pr
   return presets.filter((r) => r.words.some((w) => wordMatch(text, w)));
 }
 
-/** The default duties of a bot: those of every matching preset, plus "open taken afmaken" for every bot with a role. */
-export function defaultDuties(agent: Pick<Agent, 'role' | 'name' | 'description'>, o: { main?: boolean; presets?: Preset[] } = {}): CatalogDuty[] {
-  const out = rolesFor(agent, o.presets).flatMap((r) => r.duties);
-  if (o.main) out.push(SCORE_OPPORTUNITIES);
-  else if ((agent.role || '').trim()) out.push(FINISH_WORK);
-  return out;
+/**
+ * The duties a bot gets by itself: only those of the owner's OWN presets that recognise it (he wrote them, so that is
+ * his instruction). Never a built-in one, and nothing generic "for every bot".
+ */
+export function defaultDuties(agent: Pick<Agent, 'role' | 'name' | 'description'>, o: { presets?: Preset[] } = {}): CatalogDuty[] {
+  return o.presets?.length ? rolesFor(agent, o.presets).flatMap((r) => r.duties) : [];
 }
 
 export const toDuty = (c: CatalogDuty): Duty => ({ key: c.key, check: c.check, source: c.source, okWhen: c.okWhen, onProblem: c.onProblem, ...(c.measure ? { measure: c.measure } : {}) });

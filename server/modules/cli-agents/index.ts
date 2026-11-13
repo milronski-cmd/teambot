@@ -4,13 +4,15 @@ import type { AgentRunRequest, AgentEvent, Ctx, Module, ProviderAdapter, Provide
 import { ah, bad, forbidden, notFound, str, user } from '../../core/http.js';
 import { now } from '../../core/db.js';
 import { agentForThread } from '../../agent/shared.js';
-import { CLI_DEFS, checkCustomArgs, checkExtraArgs, defById, fileExists, installLines, type CliDef } from './catalog.js';
-import { findBinary, findBinarySource, parseVersion, runQuick, type Proc } from './proc.js';
+import { missedTurns } from '../../agent/prompt.js';
+import { CLI_DEFS, checkCustomArgs, checkExtraArgs, defById, fileExists, installLines, installPlan, type CliDef } from './catalog.js';
+import { findBinary, findBinarySource, parseVersion, runQuick, setBinEnv, type Proc } from './proc.js';
+import { ensure as ensureToolchain, find as findToolchain, status as toolchainStatus } from '../../core/runtimes.js';
 import { jobs } from './jobs.js';
 import { isRuntimeId, Runtimes } from './runtimes.js';
 import { DEVICE_LOGIN, DeviceLogins, loginCommand, openTerminal, PASTE_LOGIN } from './login.js';
 import { PermissionBridge } from './bridge.js';
-import { assertMayRun, makeScope, parseContextState, resumeNote, stoppedTaskNote, workdir, type ContextState, type SessionContext } from './context.js';
+import { assertMayRun, cliOptions, makeScope, parseContextState, resumeNote, stoppedTaskNote, workdir, type ContextState, type SessionContext } from './context.js';
 import { compactClaudeSession, readClaudeUsage, readCodexLimits, readOpencodeStats, type CompactResult } from './usage.js';
 import type { LimitReport } from '../usage/parse.js';
 import { runClaude } from './claude.js';
@@ -26,6 +28,9 @@ import { withCapabilities } from '../../providers/capabilities.js';
 import { prettyModel } from '../../../shared/modelLabel.js';
 import { EngineVersions, versionRoutes } from './versions.js';
 import { servedTools } from './toolhost.js';
+import { hardBlocksByLevel } from './permissions.js';
+import { appViews, appsOff, codexConfigApps, discoverClaudeApps, knownApps, opencodeConfigApps, type EngineAppView } from './engine-apps.js';
+import { PLACE } from '../../../shared/places.js';
 
 /**
  * CLI-agents: bots that run on the user's own official agent CLIs (Claude Code,
@@ -66,6 +71,11 @@ export class CliAgents {
   private help = new Map<string, string>();
   /** Every status read of a CLI's default binary (engine version pinning, versions.ts). */
   onStatus?: (def: CliDef, st: CliStatus) => void;
+
+  /** TeamBot's data folder (its own Node.js and other runtimes live there). */
+  get dataDir(): string {
+    return this.ctx.config.dataDir;
+  }
 
   constructor(private ctx: Ctx) {
     this.bridge = new PermissionBridge(ctx.config.dataDir);
@@ -134,6 +144,20 @@ export class CliAgents {
       if (!hit) continue;
       if (def.verify && !def.verify.test(await this.helpText(hit.path))) continue;
       return hit.app ? { bin: hit.path, source: 'andere-app', app: hit.app } : { bin: hit.path, source: 'gevonden' };
+    }
+    // Installed by TeamBot with its own Node.js ("Installeren" on a computer without npm): it runs with that Node.js.
+    for (const id of ['node', 'uv'] as const) {
+      const t = findToolchain(id, this.dataDir);
+      if (t?.source !== 'teambot') continue;
+      const env = t.env(process.env);
+      const dirs = [...t.pathDirs, ...(env.UV_TOOL_BIN_DIR ? [env.UV_TOOL_BIN_DIR] : [])];
+      for (const name of def.bins) {
+        const p = findBinary([name], dirs);
+        if (!p || !dirs.some((d) => path.resolve(p).toLowerCase().startsWith(path.resolve(d).toLowerCase()))) continue;
+        if (def.verify && !def.verify.test(await this.helpText(p))) continue;
+        setBinEnv(p, Object.fromEntries(Object.entries(env).filter(([k]) => k.toUpperCase() === 'PATH' || k.startsWith('npm_config_') || k.startsWith('UV_'))));
+        return { bin: p, source: 'teambot' };
+      }
     }
     return { bin: null };
   }
@@ -327,7 +351,7 @@ export class CliAgents {
           },
           async complete(req) {
             const { bin } = await self.resolveBin(def, cfg);
-            if (!bin) throw new Error(`${def.label} is niet gevonden op deze computer. Installeer de CLI of stel het pad in via Instellingen › Abonnementen, of kies een andere engine.`);
+            if (!bin) throw new Error(`${def.label} is niet gevonden op deze computer. Installeer de CLI of stel het pad in via ${PLACE.aiPrograms}, of kies een andere engine.`);
             return cliComplete(def, bin, req);
           },
         };
@@ -341,7 +365,25 @@ export class CliAgents {
   }
 
   sessionRow(threadId: string, agentId: string, providerId: string) {
-    return this.ctx.store.one<{ session_id: string; context_state: string | null }>('SELECT session_id, context_state FROM cli_sessions WHERE thread_id = ? AND agent_id = ? AND provider_id = ?', threadId, agentId, providerId);
+    return this.ctx.store.one<{ session_id: string; context_state: string | null; seen_seq: number | null }>('SELECT session_id, context_state, seen_seq FROM cli_sessions WHERE thread_id = ? AND agent_id = ? AND provider_id = ?', threadId, agentId, providerId);
+  }
+
+  /** After a turn that ended well: this engine's session has seen the chat up to this message. */
+  saveSeen(req: AgentRunRequest, cfg: ProviderConfig, seq: number) {
+    this.ctx.store.exec('UPDATE cli_sessions SET seen_seq = ? WHERE thread_id = ? AND agent_id = ? AND provider_id = ?', seq, req.threadId, req.agentId, cfg.id);
+  }
+
+  /**
+   * The turns of this chat that the engine's session did not see, because another engine answered for the bot in
+   * between (agent/prompt.ts missedTurns): they go in front of the next turn, so the session is kept.
+   */
+  private missed(req: AgentRunRequest, cfg: ProviderConfig, row: { seen_seq: number | null } | null | undefined, note: (item: any) => void): string {
+    const agent = this.ctx.store.agent(req.agentId);
+    const thread = this.ctx.store.thread(req.threadId);
+    if (!row || !agent || !thread) return '';
+    const m = missedTurns(this.ctx, agent, thread, this.ctx.store.message(this.ctx.store.run(req.runId)?.input_message_id), { seen: row.seen_seq, providerId: cfg.id });
+    if (m.count) note({ kind: 'session', title: 'Bijgepraat over wat een andere AI hier antwoordde', detail: m.count === 1 ? '1 bericht meegegeven dat deze sessie miste' : `${m.count} berichten meegegeven die deze sessie miste`, ts: now() });
+    return m.text;
   }
 
   /** A new session id forgets what the previous session knew of its instructions. */
@@ -350,7 +392,8 @@ export class CliAgents {
     this.ctx.store.exec(
       `INSERT INTO cli_sessions (thread_id, agent_id, provider_id, user_id, cli, session_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
        ON CONFLICT(thread_id, agent_id, provider_id) DO UPDATE SET session_id = excluded.session_id, updated_at = excluded.updated_at,
-         context_state = CASE WHEN cli_sessions.session_id = excluded.session_id THEN cli_sessions.context_state ELSE NULL END`,
+         context_state = CASE WHEN cli_sessions.session_id = excluded.session_id THEN cli_sessions.context_state ELSE NULL END,
+         seen_seq = CASE WHEN cli_sessions.session_id = excluded.session_id THEN cli_sessions.seen_seq ELSE NULL END`,
       req.threadId,
       req.agentId,
       cfg.id,
@@ -380,8 +423,16 @@ export class CliAgents {
     const stopped = stoppedTaskNote(ctx, req0);
     // "Hervatten": the session lost the answer that was cut off; give the bot what it already wrote.
     const resumed = stopped ? '' : resumeNote(ctx, req0);
-    const req: AgentRunRequest = { ...req0, sessionId: row?.session_id, prompt: stopped + resumed + req0.prompt };
-    if (stopped) onEvent0({ type: 'activity', item: { kind: 'session', title: 'Vorige taak was gestopt: begint bij je nieuwe bericht', ts: now() } });
+    // Another engine answered here for this bot since this session's last turn: it is told what it missed.
+    const missed = this.missed(req0, cfg, row, (item) => onEvent0({ type: 'activity', item }));
+    // What the chat holds now (the answer of this turn included): what this session has seen once the turn ends well.
+    const seenNow = ctx.store.one<{ n: number | null }>('SELECT MAX(seq) AS n FROM messages WHERE thread_id = ?', req0.threadId)?.n ?? 0;
+    // After a stop by the owner the stopped session is not resumed: a new one starts with the earlier chat as context.
+    // The engine itself writes a call that the stop cut off into its session as "[Tool call interrupted … its outcome
+    // is unknown]", and the bot believed that line over TeamBot's note that the work had arrived with the colleague
+    // (12 nov, Claude Code, twice: "ik weet niet zeker of hij is aangekomen"). A new session has no such line.
+    const req: AgentRunRequest = { ...req0, sessionId: stopped ? undefined : row?.session_id, prompt: stopped + resumed + missed + req0.prompt };
+    if (stopped) onEvent0({ type: 'activity', item: { kind: 'session', title: 'Vorige taak was gestopt: begint bij je nieuwe bericht', detail: row?.session_id ? 'Nieuwe sessie, met het eerdere gesprek als context' : undefined, ts: now() } });
     const context: SessionContext = { previous: parseContextState(row?.context_state), save: (sessionId, state) => this.saveContext(req, cfg, sessionId, state) };
     const onEvent = (e: AgentEvent) => {
       if (e.type === 'session' && e.sessionId) this.saveSession(req, cfg, e.sessionId);
@@ -389,17 +440,23 @@ export class CliAgents {
     };
     const s = makeScope(ctx, cfg, req, signal, onEvent);
     const { bin } = await this.resolveBin(def, cfg);
-    if (!bin) throw new Error(`${def.label} is niet gevonden op deze computer. Installeer de CLI of stel het pad in via Instellingen › Abonnementen.`);
+    if (!bin) throw new Error(`${def.label} is niet gevonden op deze computer. Installeer de CLI of stel het pad in via ${PLACE.aiPrograms}.`);
     const billing = async () => (await this.status(def, cfg)).billing;
     ctx.audit(req.userId, 'cli.run', { cli: def.id, mode: s.agent.access_mode, resume: !!req.sessionId }, s.agent.id);
     // The CLI goes into its Job Object right after it starts; only the very first run waits for the helper.
     await jobs.whenReady();
-    if (def.engine === 'claude') return runClaude(s, { def, bin, bridge: this.bridge, billing, track: this.track });
-    if (def.engine === 'codex') return runCodex(s, { def, bin, bridge: this.bridge, billing, track: this.track, context, readGuard: () => codexReadGuard(bin, ctx.config.dataDir) });
+    // Every engine gets its instructions the same way: in full when a session starts, and after that what changed since
+    // this session last saw it (`context`). A turn that ended well: the session has seen the chat up to here.
+    const done = <T extends { error?: string }>(r: T): T => {
+      if (!r.error) this.saveSeen(req, cfg, seenNow);
+      return r;
+    };
+    if (def.engine === 'claude') return done(await runClaude(s, { def, bin, bridge: this.bridge, billing, track: this.track, context }));
+    if (def.engine === 'codex') return done(await runCodex(s, { def, bin, bridge: this.bridge, billing, track: this.track, context, readGuard: () => codexReadGuard(bin, ctx.config.dataDir) }));
     if (def.engine === 'acp') {
       const args = [...(await this.acpLaunch(def, bin, cfg, req.model)), ...(def.custom ? [] : checkExtraArgs(def, s.opts.extraArgs))];
       const authMethod = typeof cfg.config?.authMethod === 'string' && /^[\w.:-]{1,60}$/.test(cfg.config.authMethod) ? cfg.config.authMethod : undefined;
-      return runAcp(s, { def, bin, args, env: acpModelEnv(def, req.model), bridge: this.bridge, authMethod, billing, track: this.track, unsafe: () => this.settings().unsafe[def.id] || null, markUnsafe: (info) => this.setUnsafe(def.id, info), context });
+      return done(await runAcp(s, { def, bin, args, env: acpModelEnv(def, req.model, appsOff(s.agent)), bridge: this.bridge, authMethod, billing, track: this.track, unsafe: () => this.settings().unsafe[def.id] || null, markUnsafe: (info) => this.setUnsafe(def.id, info), context }));
     }
     throw new Error(def.unsupported || `${def.label} wordt niet ondersteund`);
   }
@@ -465,7 +522,7 @@ export class CliAgents {
     const sessionId = this.sessionFor(o.threadId, o.agentId, cfg.id);
     if (!sessionId) return { compacted: false, fallback: true, reason: `er is nog geen ${def.label}-sessie in dit gesprek` };
     const { bin } = await this.resolveBin(def, cfg);
-    if (!bin) return { compacted: false, reason: `${def.label} is niet gevonden op deze computer. Installeer de CLI of stel het pad in via Instellingen › Abonnementen.` };
+    if (!bin) return { compacted: false, reason: `${def.label} is niet gevonden op deze computer. Installeer de CLI of stel het pad in via ${PLACE.aiPrograms}.` };
     if (def.engine === 'claude') return compactClaudeSession({ bin, cwd: workdir(agent), sessionId, model: agent.model });
     const r = await compactCodexSession({ bin, cwd: workdir(agent), threadId: sessionId, args: await codexIsolation(bin, false) });
     return r.unsupported ? { ...r, fallback: true } : r;
@@ -526,16 +583,19 @@ export async function cliModelList(bin: string, args: string[]) {
 }
 
 /** ACP agents that take the model from their inline config (OpenCode): put the bot's model there for this run. */
-export function acpModelEnv(def: CliDef, model?: string): Record<string, string> {
+export function acpModelEnv(def: CliDef, model?: string, appsOff: string[] = []): Record<string, string> {
   const key = def.acpModelConfigEnv;
-  if (!key || !model || model === 'default' || !/^[\w.:/@+-]{1,120}$/.test(model)) return {};
+  const withModel = !!model && model !== 'default' && /^[\w.:/@+-]{1,120}$/.test(model);
+  if (!key || (!withModel && !appsOff.length)) return {};
   let base: any = {};
   try {
     base = JSON.parse(def.acpEnv?.[key] || '{}');
   } catch {
     /* no base config */
   }
-  return { [key]: JSON.stringify({ ...base, model }) };
+  // An app of the engine's own (its `mcp` servers) that the owner switched off for this bot (engine-apps.ts).
+  const mcp = appsOff.length ? { mcp: Object.fromEntries(appsOff.map((id) => [id, { enabled: false }])) } : {};
+  return { [key]: JSON.stringify({ ...base, ...(withModel ? { model } : {}), ...mcp }) };
 }
 
 /** Validate and normalise provider config for CLI kinds (owner only, never shared). */
@@ -585,8 +645,9 @@ function publicStatus(s: CliStatus, def: CliDef) {
     unsupported: def.unsupported,
     experimental: !!def.experimental,
     custom: !!def.custom,
-    // TeamBot's own copy (runtimes.ts) replaces the global npm install for Claude Code, Codex and OpenCode.
-    canInstall: !s.installed && !!def.npmPackage && !isRuntimeId(def.id) && !!findBinary(['npm']),
+    // TeamBot's own copy (runtimes.ts) replaces the global install for Claude Code, Codex and OpenCode. Every other CLI
+    // that has an official way TeamBot can run itself (catalog.ts installPlan): also without npm or uv on this computer.
+    canInstall: !s.installed && !isRuntimeId(def.id) && canRun(installPlan(def)),
     managed: isRuntimeId(def.id),
     deviceLogin: !!DEVICE_LOGIN[def.id],
     pasteLogin: PASTE_LOGIN.has(def.id),
@@ -596,6 +657,16 @@ function publicStatus(s: CliStatus, def: CliDef) {
 
 let instance: CliAgents | null = null;
 let versions: EngineVersions | null = null;
+/** TeamBot can bring its own Node.js or uv here: on this computer already, a copy of TeamBot's, or one to download. */
+const toolchainHere = (id: 'node' | 'uv') => {
+  try {
+    const st = instance ? toolchainStatus(id, instance.dataDir) : null;
+    return !!st && (!!st.source || st.available);
+  } catch {
+    return false;
+  }
+};
+const canRun = (plan: ReturnType<typeof installPlan>) => !!plan && (plan.kind === 'npm' ? !!findBinary(['npm']) || toolchainHere('node') : plan.kind === 'uv' ? !!findBinary(['uv']) || toolchainHere('uv') : true);
 
 /** Ollama or LM Studio answers on this computer (the engines "Gratis starten" can connect as reserve by itself). */
 async function localEngineRunning(ctx: Ctx): Promise<boolean> {
@@ -623,8 +694,10 @@ const mod: Module = {
       );
       CREATE INDEX cli_sessions_user ON cli_sessions(user_id);`,
     },
-    // Per-section hashes of the instructions a Codex/ACP session has (null: unknown → the next resumed turn gets them in full).
+    // Per-section hashes of the instructions a session has (null: unknown → the next resumed turn gets them in full).
     { id: 'cli-agents-002', sql: 'ALTER TABLE cli_sessions ADD COLUMN context_state TEXT;' },
+    // Up to which message of the chat a session has seen it (null: unknown → up to the last answer this engine gave there).
+    { id: 'cli-agents-003', sql: 'ALTER TABLE cli_sessions ADD COLUMN seen_seq INTEGER;' },
   ],
   init(ctx) {
     const cli = new CliAgents(ctx);
@@ -719,6 +792,29 @@ const mod: Module = {
       }),
     );
 
+    /**
+     * Per level: do the hard blocks (key files, closed folders, TeamBot's data) hold for a bot on this AI, or not, in
+     * one sentence for the level choice (permissions.ts hardBlocks). Any provider; `agentId` for that bot's own folders.
+     */
+    ctx.api.get(
+      '/cli-agents/hard-blocks/:providerId',
+      ah(async (req) => {
+        const u = user(req);
+        const cfg = ctx.providers.list(u.id).find((p) => p.id === req.params.providerId);
+        if (!cfg) throw notFound('Provider niet gevonden');
+        const def = kinds.get(cfg.kind);
+        const own = req.query.agentId ? ctx.store.agent(String(req.query.agentId)) : null;
+        if (req.query.agentId && (!own || own.user_id !== u.id)) throw notFound('Bot niet gevonden');
+        const agent = own || ({ id: '', user_id: u.id, access_mode: 'full', settings: {} } as any);
+        let codex = null;
+        if (def?.engine === 'codex') {
+          const { bin } = await cli.resolveBin(def, ctx.providers.config(cfg.id)!);
+          codex = bin ? await codexReadGuard(bin, ctx.config.dataDir) : null;
+        }
+        return { engine: def?.engine || 'api', levels: hardBlocksByLevel({ engine: def?.engine || 'api', cli: def?.id, label: def?.label, codex, agent }) };
+      }),
+    );
+
     ctx.api.put(
       '/cli-agents/safety/:id',
       ah(async (req) => {
@@ -737,12 +833,32 @@ const mod: Module = {
       ah(async (req) => {
         const u = ownerOnly(req);
         const def = defById(req.params.id as string);
-        if (!def?.npmPackage) throw bad('Deze CLI kan TeamBot niet voor je installeren; gebruik de officiële opdracht.');
+        const plan = def && !def.custom && !isRuntimeId(def.id) ? installPlan(def) : null;
+        if (!def || !plan) throw bad('Deze CLI kan TeamBot niet voor je installeren; gebruik de officiële opdracht.');
         if (req.body?.confirm !== true) throw bad('Bevestig eerst dat TeamBot deze CLI mag installeren.');
-        const npm = findBinary(['npm']);
-        if (!npm) throw bad('npm (Node.js) is niet gevonden. Installeer Node.js of gebruik de officiële opdracht.');
-        ctx.audit(u.id, 'cli.install', { cli: def.id, pkg: def.npmPackage });
-        const r = await runQuick(npm, ['install', '-g', def.npmPackage], { timeoutMs: 10 * 60_000 });
+        // npm or uv of this computer, else TeamBot's own Node.js or uv (downloaded once, core/runtimes.ts): the program
+        // lands in TeamBot's own folder, where resolveBin finds it. Else the vendor's own install script.
+        let bin: string | null;
+        let args: string[];
+        let env: Record<string, string> | undefined;
+        if (plan.kind === 'script') {
+          bin = plan.shell === 'powershell' ? findBinary(['powershell', 'pwsh']) : findBinary(['sh', 'bash']);
+          args = plan.shell === 'powershell' ? ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-Command', plan.command] : ['-c', plan.command];
+        } else {
+          const tool = plan.kind === 'npm' ? 'npm' : 'uv';
+          bin = findBinary([tool]);
+          args = plan.args;
+          if (!bin) {
+            const t = await ensureToolchain(plan.kind === 'npm' ? 'node' : 'uv', ctx.config.dataDir).catch((e: any) => {
+              throw bad(`${plan.kind === 'npm' ? 'Node.js' : 'uv'} voor het installeren ophalen lukte niet: ${String(e?.message || e).slice(0, 300)} Gebruik anders de officiële opdracht.`);
+            });
+            env = t.env(process.env);
+            bin = findBinary([tool], t.pathDirs);
+          }
+        }
+        if (!bin) throw bad('Het programma om mee te installeren is niet gevonden. Gebruik de officiële opdracht.');
+        ctx.audit(u.id, 'cli.install', { cli: def.id, how: plan.kind, what: plan.kind === 'script' ? plan.command.slice(0, 200) : plan.args.join(' '), ...(env ? { toolchain: 'teambot' } : {}) });
+        const r = await runQuick(bin, args, { timeoutMs: 10 * 60_000, env });
         cli.clear();
         const st = await cli.status(def, null, true);
         if (!st.installed) throw bad(`Installeren lukte niet${r.error ? `: ${r.error}` : ''}. ${(r.stderr || r.stdout).trim().split(/\r?\n/).slice(-3).join(' ').slice(0, 400)}`);
@@ -1005,6 +1121,60 @@ const mod: Module = {
         /* ignore */
       }
     });
+
+    /**
+     * The engine's own apps of a bot (engine-apps.ts): what it has from the owner's claude.ai connectors and the MCP
+     * servers in the program's own settings, shown with the bot's apps, each with a switch for this bot (default on).
+     */
+    const engineAppsOf = async (a: { id: string; provider_id?: string | null; access_mode: string; settings?: any }): Promise<EngineAppView[]> => {
+      const cfg = a.provider_id ? ctx.providers.config(a.provider_id) : null;
+      const def = cfg ? kinds.get(cfg.kind) : undefined;
+      if (!cfg || !def || a.access_mode === 'chat') return [];
+      const off = appsOff(a);
+      // Claude Code and Codex load them only with "Je eigen apps van het programma gebruiken" (cli.useUserMcp); OpenCode always.
+      if (def.engine === 'claude') {
+        if (!cliOptions(a as any).useUserMcp) return [];
+        let known = knownApps(ctx.config.dataDir, cfg.id);
+        // Before any run: ask Claude Code itself which apps it has (once an hour at most when it has none).
+        if (!known.length) {
+          const { bin } = await cli.resolveBin(def, cfg);
+          if (bin) known = await discoverClaudeApps(ctx.config.dataDir, cfg.id, bin, workdir(ctx.store.agent(a.id)!)).catch(() => []);
+        }
+        return appViews(known, { engine: def.label, off, guarded: true });
+      }
+      if (def.engine === 'codex') return cliOptions(a as any).useUserMcp ? appViews(codexConfigApps(), { engine: def.label, off, guarded: false }) : [];
+      if (def.id === 'opencode') return appViews(opencodeConfigApps(), { engine: def.label, off, guarded: false });
+      return [];
+    };
+    const ownBot = (req: any) => {
+      const u = user(req);
+      const a = ctx.store.agent(String(req.params.id));
+      if (!a || a.user_id !== u.id) throw notFound('Bot niet gevonden');
+      return { u, a };
+    };
+    ctx.api.get(
+      '/cli-agents/agents/:id/apps',
+      ah(async (req) => ({ apps: await engineAppsOf(ownBot(req).a) })),
+    );
+    ctx.api.put(
+      '/cli-agents/agents/:id/apps/:app',
+      ah(async (req) => {
+        const { u, a } = ownBot(req);
+        const app = String(req.params.app || '');
+        if (!(await engineAppsOf(a)).some((x) => x.id === app)) throw notFound('App niet gevonden bij deze bot');
+        const on = !!req.body?.enabled;
+        const cliSet = { ...((a.settings?.cli as any) || {}) };
+        const off = new Set(appsOff(a));
+        if (on) off.delete(app);
+        else off.add(app);
+        cliSet.appsOff = [...off];
+        if (!cliSet.appsOff.length) delete cliSet.appsOff;
+        const upd = ctx.store.updateAgent(a.id, { settings: { ...(a.settings || {}), cli: cliSet } });
+        ctx.audit(u.id, on ? 'cli.app_on' : 'cli.app_off', { app }, a.id);
+        ctx.events.emit(u.id, 'agent.updated', upd);
+        return { apps: await engineAppsOf(ctx.store.agent(a.id)!) };
+      }),
+    );
 
     /** CLI sessions in a thread (for the inspector) — only the thread owner. */
     ctx.api.get(

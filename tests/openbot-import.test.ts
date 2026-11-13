@@ -190,7 +190,7 @@ test('preview → import: bots, engines, skills, team folder, memories and routi
     const names = (Array.isArray(lib) ? lib : lib.skills || []).map((s: any) => s.name).sort();
     assert.deepEqual(names, ['dossier-bijwerken', 'team-database', 'vrije-skill']);
     assert.equal(baas.skills.length, 3);
-    assert.equal(klant.skills.length, 2);
+    assert.equal(klant.skills.length, 3, 'every bot has the team’s active skills (skills/defaults.ts)');
     const dossier = t.app.ctx.services.skills.library.getByName(t.app.ctx.store.users()[0].id, 'dossier-bijwerken');
     assert.match(t.app.ctx.services.skills.library.readFiles(dossier).get('SKILL.md').toString(), /tijdlijn/, 'team copy imported');
 

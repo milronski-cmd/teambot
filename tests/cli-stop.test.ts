@@ -241,14 +241,16 @@ test('claude-code: "Hervatten" after a stop mid-answer hands the bot the text it
 });
 
 for (const engine of [
-  { kind: 'claude-code', config: { path: FAKE_CLAUDE }, prompts: (l: any) => (l.cli === 'claude' && typeof l.prompt === 'string' ? l.prompt : null) },
-  { kind: 'acp-custom', config: { command: FAKE_ACP, args: [] }, prompts: (l: any) => (l.cli === 'acp' && l.method === 'session/prompt' ? JSON.stringify(l.params) : null) },
+  { kind: 'claude-code', config: { path: FAKE_CLAUDE }, prompts: (l: any) => (l.cli === 'claude' && typeof l.prompt === 'string' ? l.prompt : null), session: (l: any) => (l.cli === 'claude' && typeof l.prompt === 'string' ? (l.argv.includes('--resume') ? 'verder' : 'nieuw') : null) },
+  { kind: 'acp-custom', config: { command: FAKE_ACP, args: [] }, prompts: (l: any) => (l.cli === 'acp' && l.method === 'session/prompt' ? JSON.stringify(l.params) : null), session: (l: any) => (l.cli === 'acp' && /^session\/(new|load|resume)$/.test(l.method) ? (l.method === 'session/new' ? 'nieuw' : 'verder') : null) },
 ]) {
   test(`${engine.kind}: after the owner pressed Stop, the next turn starts from the new message, not the stopped task`, async () => {
     const t = await startTestApp();
     const file = path.join(t.dir, 'fake-cli.log');
     process.env.FAKE_CLI_LOG = file;
     const prompts = () => (fs.existsSync(file) ? fs.readFileSync(file, 'utf8').trim().split('\n').map((l) => engine.prompts(JSON.parse(l))).filter(Boolean) as string[] : []);
+    /** Per turn: a new session of the engine ("nieuw") or the earlier one resumed ("verder"). */
+    const how = () => (fs.existsSync(file) ? fs.readFileSync(file, 'utf8').trim().split('\n').map((l) => engine.session(JSON.parse(l))).filter(Boolean) as string[] : []);
     try {
       const p = await t.api('POST', '/providers', { kind: engine.kind, config: engine.config });
       const a = await t.api('POST', '/agents', { name: 'Stopbot', provider_id: p.id, model: '', access_mode: 'ask' });
@@ -265,10 +267,14 @@ for (const engine of [
       assert.doesNotMatch(P.at(-1)!, /heel lang verhaal/, 'the stopped request is not sent again as a "new message"');
       const m = t.app.ctx.store.messages(th.id).filter((x) => x.role === 'assistant').at(-1)!;
       assert.ok(m.parts.activity?.some((x: any) => /Vorige taak was gestopt/.test(x.title)));
+      // Not the stopped session: the engine wrote the call the stop cut off into it as "outcome unknown", and the bot
+      // believed that over TeamBot's note (12 nov). A new session starts, with the earlier chat as context.
+      assert.equal(how().at(-1), 'nieuw', `after a stop: a new session (${how().join(', ')})`);
 
       await t.say(th.id, 'En 3 + 4?', 15_000);
       P = prompts();
       assert.doesNotMatch(P.at(-1)!, NOTE, 'only right after a stop');
+      assert.equal(how().at(-1), 'verder', 'the next turn goes on in that new session');
 
       // Interrupted by a new message (busy policy "interrupt") is not a stop: the owner steers, the work goes on.
       await t.api('PATCH', `/agents/${a.id}`, { busy_policy: 'interrupt' });

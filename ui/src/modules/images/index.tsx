@@ -119,7 +119,7 @@ function ImageSettings() {
             <Input value={model} onChange={(e) => setModel(e.target.value)} onBlur={() => model !== (s.chosen?.model || '') && save({ modelFor: s.chosen?.id, model })} />
           )}
         </Field>
-        <Field label="Hoogstens per dag" hint={t('{0, plural, one {Vandaag # gemaakt.} other {Vandaag # gemaakt.}}', s.madeToday)}>
+        <Field label="Hoogstens per dag" hint={`${t('{0, plural, one {Vandaag # gemaakt.} other {Vandaag # gemaakt.}}', s.madeToday)} ${t('0 = geen limiet.')}`}>
           <Input type="number" min={0} max={500} value={max} onChange={(e) => setMax(e.target.value)} onBlur={() => Number(max) !== s.settings.dailyMax && save({ dailyMax: Number(max) })} />
         </Field>
       </div>

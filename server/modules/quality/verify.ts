@@ -1,4 +1,5 @@
-import type { Agent, Ctx } from '../../core/types.js';
+import { headAndTail, type Agent, type Ctx } from '../../core/types.js';
+import { userTz } from '../../agent/prompt.js';
 import { redact } from '../../core/secrets.js';
 import { userLanguage } from '../../core/i18n.js';
 import { outputLanguage } from '../../agent/language.js';
@@ -68,7 +69,7 @@ export function checkPrompt(i: CheckInput): string {
         .map((e, n) => `${n + 1}. [${e.type}] ${cap(e.value, 300)} — TeamBot: ${e.ok === true ? 'klopt' : e.ok === false ? 'klopt niet' : 'niet te controleren'} (${e.note})${e.excerpt ? `\n   Inhoud (begin):\n   """${cap(e.excerpt, 1200).replace(/\n/g, '\n   ')}"""` : ''}`)
         .join('\n')
     : '(geen bewijs bijgevoegd)';
-  const steps = i.steps.length ? i.steps.slice(-15).map((s) => `- ${s.ok ? 'gelukt' : 'mislukt'}: ${cap(s.summary, 200)}${s.out ? ` → ${cap(s.out.replace(/\s+/g, ' '), 200)}` : ''}`).join('\n') : '(geen stappen)';
+  const steps = i.steps.length ? i.steps.slice(-15).map((s) => `- ${s.ok ? 'gelukt' : 'mislukt'}: ${cap(s.summary, 200)}${s.out ? ` → ${headAndTail(s.out.replace(/\s+/g, ' '), 300)}` : ''}`).join('\n') : '(geen stappen)';
   const body = [
     `Taak: ${cap(i.title, 300)}`,
     i.description ? `Beschrijving: ${cap(i.description, 1200)}` : '',
@@ -89,8 +90,11 @@ function readVerdict(text: string): Verdict {
   if (['klaar', 'done', 'pass', 'passed', 'ok'].includes(v)) return { state: 'passed', reason: reason || 'Het bewijs klopt met wat er gevraagd was.' };
   if (['kon_niet', 'cant', 'cannot', 'failed'].includes(v)) return { state: 'cant', reason: reason || 'De bot meldt dat het niet gelukt is.' };
   if (['te_controleren', 'review', 'check', 'fail'].includes(v)) return { state: 'review', reason: reason || 'De controle twijfelt.' };
-  return { state: 'review', reason: 'De controle gaf geen duidelijk antwoord; kijk het zelf na.' };
+  return { state: 'review', reason: UNCLEAR, unclear: true };
 }
+
+/** What the task said when the checker gave no verdict (also the tasks that still say so from before the retry). */
+export const UNCLEAR = 'De controle gaf geen duidelijk antwoord; kijk het zelf na.';
 
 /** A check that hit a limit waits at least this long before it tries again when the reset is unknown (it doubles). */
 export const RECHECK_WAIT_MS = 30 * 60_000;
@@ -139,7 +143,6 @@ function catalogueBack(ctx: Ctx, userId: string, providerId: string): number | n
   }
 }
 
-const tzOf = (ctx: Ctx, userId: string) => ctx.store.getSetting<string>(userId, 'timezone', '') || Intl.DateTimeFormat().resolvedOptions().timeZone || 'Europe/Amsterdam';
 
 /**
  * The check's engine hit its usage limit (OpenCode's free daily limit, a subscription's 5 hours): told to the free-model
@@ -164,7 +167,7 @@ async function onLimit(ctx: Ctx, i: CheckInput, agent: Agent, e: any, run: (engi
     }
   }
   const at = recheckAt(resetAt ?? (cfg ? catalogueBack(ctx, i.userId, cfg.id) : null), i.attempt || 0);
-  const clock = clockTime(at, tzOf(ctx, i.userId));
+  const clock = clockTime(at, userTz(ctx, i.userId));
   ctx.audit(i.userId, 'quality.check_wait', { task: cap(i.title, 120), engine: limit.engine, until: new Date(at).toISOString() }, agent.id);
   const reason = limit.free
     ? `Nog niet gecontroleerd: de gratis limiet van ${limit.engine} is bereikt. TeamBot controleert het vanzelf opnieuw rond ${clock}.`
@@ -174,13 +177,13 @@ async function onLimit(ctx: Ctx, i: CheckInput, agent: Agent, e: any, run: (engi
 
 /** A check at its limit that TeamBot will not try again (a delegated subtask): the owner checks it himself. */
 export function limitNowText(limit: Verdict['limit']): string {
-  if (!limit) return 'Niet automatisch gecontroleerd: de engine is aan zijn limiet. Kijk het zelf na.';
+  if (!limit) return 'Niet automatisch gecontroleerd: de controle lukte niet. Kijk het zelf na.';
   return limit.free ? `Niet automatisch gecontroleerd: de gratis limiet van ${limit.engine} is bereikt. Kijk het zelf na.` : `Niet automatisch gecontroleerd: ${limit.engine} heeft zijn gebruikslimiet bereikt. Kijk het zelf na.`;
 }
 
 /** The last word after the last try of a check that kept meeting its limit: the owner checks it himself. */
 export function gaveUpText(limit: Verdict['limit']): string {
-  if (!limit) return 'Niet automatisch gecontroleerd: de engine bleef aan zijn limiet. Kijk het zelf na.';
+  if (!limit) return 'Niet automatisch gecontroleerd: de controle lukte steeds niet. Kijk het zelf na.';
   return limit.free ? `Niet automatisch gecontroleerd: de gratis limiet van ${limit.engine} bleef bereikt. Kijk het zelf na.` : `Niet automatisch gecontroleerd: ${limit.engine} bleef aan zijn gebruikslimiet. Kijk het zelf na.`;
 }
 
@@ -197,12 +200,20 @@ export async function secondLook(ctx: Ctx, i: CheckInput): Promise<Verdict> {
     ctx.audit(i.userId, 'quality.check', { state: v.state, task: cap(i.title, 120), reason: v.reason, engine: r.engine }, agent.id);
     return { ...v, engine: r.engine, tokens: r.tokens };
   };
+  // A look that did not come to a verdict (no clear answer, an error, too slow) is not the owner's job: TeamBot does it
+  // again by itself, like a look that met a limit (`retryAt`, QualityService.recheckDue).
+  const later = (why: string): Verdict => {
+    const at = recheckAt(null, i.attempt || 0);
+    return { state: 'review', reason: `Nog niet gecontroleerd: ${why}. TeamBot controleert het vanzelf opnieuw rond ${clockTime(at, userTz(ctx, i.userId))}.`, retryAt: at };
+  };
   try {
-    return await run();
+    let v = await run();
+    if (v.unclear) v = await run();
+    return v.unclear ? later('de controle gaf geen duidelijk antwoord') : v;
   } catch (e: any) {
-    if (!(e instanceof NoEngine) && classifyEngineError(e) === 'limit') return onLimit(ctx, i, agent, e, run);
+    if (e instanceof NoEngine) return { state: 'review', reason: `Niet automatisch gecontroleerd: ${e.message}. Kijk het zelf na.` };
+    if (classifyEngineError(e) === 'limit') return onLimit(ctx, i, agent, e, run);
     const timeout = e?.name === 'TimeoutError' || e?.name === 'AbortError' || /timed? ?out|aborted/i.test(String(e?.message || ''));
-    const why = e instanceof NoEngine ? e.message : timeout ? 'de controle duurde te lang' : `de controle lukte niet (${String(e?.message || e).slice(0, 80)})`;
-    return { state: 'review', reason: `Niet automatisch gecontroleerd: ${why}. Kijk het zelf na.` };
+    return later(timeout ? 'de controle duurde te lang' : `de controle lukte niet (${String(e?.message || e).slice(0, 80)})`);
   }
 }

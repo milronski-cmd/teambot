@@ -1,8 +1,8 @@
 import React, { useEffect } from 'react';
-import { Download, Sparkles, Trash2 } from 'lucide-react';
+import { Download, Sparkles, Trash2, Search } from 'lucide-react';
 import { api } from '../../lib/api';
 import { t } from '../../lib/i18n';
-import { Button, Card, Field, Select, Toggle, useAsync } from '../../components/ui';
+import { Button, Card, Field, Select, Toggle, useAsync, CardHead } from '../../components/ui';
 import { MoreInfo } from '../../components/MoreInfo';
 import { ErrorBox, Loading, Meter } from './parts';
 import { useMem } from './lib';
@@ -10,39 +10,6 @@ import { useMem } from './lib';
 /** The built-in model (granite-embedding since 0.4.4; ids start with "builtin:"). */
 const isBuiltin = (m: string | null | undefined) => /^builtin:/.test(String(m || ''));
 const modelLabel = (m: string) => (isBuiltin(m) ? `Ingebouwd zoekmodel (${m.slice('builtin:'.length)})` : m);
-
-/**
- * "Slim zoeken": the one-time offer, as one quiet line under the search field of the overview. One click downloads the
- * built-in model (± 125 MB, once, then everything stays on this computer); "Niet nu" hides it (Opslag keeps the switch).
- */
-export function SemanticOffer() {
-  const r = useMem<any>('/memory/semantic');
-  const { run, busy } = useAsync();
-  const d = r.data;
-  if (!d?.offer || !d.builtin?.mayEnable) return null;
-  const choose = (action: 'enable' | 'later') =>
-    run(async () => {
-      await api.post('/memory/semantic/builtin', { action });
-      r.reload();
-    }, action === 'enable' ? 'Het zoekmodel wordt gedownload; je krijgt een melding als het klaar is' : undefined);
-  return (
-    <div className="tb-in flex flex-wrap items-center gap-x-3 gap-y-1 px-1 text-[13px] text-muted">
-      <Sparkles className="hidden h-3.5 w-3.5 shrink-0 sm:block" aria-hidden />
-      <span className="min-w-0 flex-1 basis-64">
-        {t('Slim zoeken vindt ook andere woorden (± {0} MB, blijft op je pc).', d.builtin.mb)}{' '}
-        <MoreInfo>Wie naar je “wagen” vraagt, vindt je “auto”. Draait op je eigen computer.</MoreInfo>
-      </span>
-      <span className="ms-auto flex gap-1">
-        <Button size="sm" variant="ghost" loading={busy} onClick={() => choose('later')}>
-          Niet nu
-        </Button>
-        <Button size="sm" icon={<Download className="h-3.5 w-3.5" />} loading={busy} onClick={() => choose('enable')}>
-          Aanzetten
-        </Button>
-      </span>
-    </div>
-  );
-}
 
 /**
  * Opslag › Zoeken op betekenis: on/off, which model (the built-in one, or one in Ollama on this computer), how much is
@@ -70,7 +37,7 @@ export function SemanticCard({ settings, save }: { settings: any; save(patch: an
     }, action === 'enable' ? 'Het zoekmodel wordt gedownload' : 'Het ingebouwde zoekmodel is verwijderd');
   return (
     <Card className="space-y-3 p-4">
-      <h2 className="text-sm font-semibold">Zoeken op betekenis</h2>
+      <CardHead icon={Search} tone="violet" title="Zoeken op betekenis" />
       <p className="text-xs text-muted">Vindt ook herinneringen in andere woorden. Je geheugen gaat daarvoor niet naar internet.</p>
       <Toggle checked={on} onChange={(v) => save({ semantic: v ? 'auto' : 'off' })} label="Ook zoeken op betekenis" />
       {on && r.error && <ErrorBox error={r.error} retry={r.reload} />}

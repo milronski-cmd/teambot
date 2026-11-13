@@ -315,6 +315,11 @@ test('ask_agent bridge posts into the real bot thread and returns the answer; co
     const expected = realtimeUsageCost('gpt-realtime-2.1-mini', { input_token_details: { text_tokens: 1000, audio_tokens: 600, cached_tokens_details: { text_tokens: 500 } }, output_token_details: { text_tokens: 100, audio_tokens: 1200 } });
     assert.ok(Math.abs(ev.json.cost - expected) < 1e-6);
     assert.equal(ev.json.overCap, false);
+    // No built-in price cap: by default nothing ends the call. A cap exists once the owner sets one.
+    const free = await s.A('POST', `/voice/calls/${callId}/events`, { usage: [{ output_token_details: { audio_tokens: 60_000 } }] });
+    assert.equal(free.json.overCap, false, 'no cap by default');
+    assert.equal(free.json.overTime, false, 'no maximum length by default');
+    await s.A('PUT', '/voice/settings', { priceCapUsd: 1 });
     const huge = await s.A('POST', `/voice/calls/${callId}/events`, { usage: [{ output_token_details: { audio_tokens: 60_000 } }] });
     assert.equal(huge.json.overCap, true, 'price cap reached');
 
@@ -369,6 +374,8 @@ test('half-duplex call: turn waits for approval through the normal broker', asyn
   try {
     const a = await s.t.agent({ access_mode: 'ask', tool_groups: ['files'] });
     const th = await threadFor(s.t, a.id);
+    // A call starts only when it can hear you: here the (fake) OpenAI speech service.
+    await s.A('PUT', '/voice/settings', { stt: { engine: 'provider' } });
     const call = await s.A('POST', '/voice/calls', { agentId: a.id, threadId: th.id });
     assert.equal(call.json.kind, 'halfduplex');
     s.t.script.push({ toolCalls: [{ name: 'write_file', args: { path: 'notitie.txt', content: 'hoi' } }] }, { text: 'Opgeslagen.' });
@@ -412,7 +419,7 @@ test('settings are validated; realtime provider must be OpenAI; own providers on
     await s.t.api('PUT', '/settings', { voice: { tts: { engine: 'rm -rf' }, maxMinutes: -5 } });
     const after = await s.A('GET', '/voice/settings');
     assert.equal(after.json.settings.tts.engine, 'local', 'default = free local voice');
-    assert.equal(after.json.settings.maxMinutes, 1);
+    assert.equal(after.json.settings.maxMinutes, 0, 'junk below zero: no maximum (0)');
   } finally {
     await s.close();
   }

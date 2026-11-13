@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import type { Request, Response } from 'express';
 import type { Agent, Ctx } from '../../core/types.js';
-import { ah, bad, notFound, own, str, user } from '../../core/http.js';
+import { ah, bad, notFound, own, sendOwnFile, str, user } from '../../core/http.js';
 import { checkUrl } from './policy.js';
 import { VIEWPORT } from './browser.js';
 import { startMjpeg } from './mjpeg.js';
@@ -306,7 +306,7 @@ export function computerRoutes(ctx: Ctx, svc: ComputerService) {
       const file = path.join(svc.framesDir(a.id), path.basename(row.frame));
       if (!fs.existsSync(file)) throw notFound('Beeld is opgeruimd');
       res.setHeader('cache-control', 'private, max-age=3600');
-      res.type(file.endsWith('.png') ? 'png' : 'jpeg').sendFile(file);
+      await sendOwnFile(res.type(file.endsWith('.png') ? 'png' : 'jpeg'), file);
     }),
   );
 
@@ -615,7 +615,7 @@ export function computerRoutes(ctx: Ctx, svc: ComputerService) {
       const snap = desktopSnapshots.get(String(req.params.sid));
       if (!snap || snap.agentId !== a.id || !snap.preview || !fs.existsSync(snap.preview)) throw notFound('Voorbeeld niet (meer) beschikbaar');
       res.setHeader('cache-control', 'private, max-age=600');
-      res.type('png').sendFile(snap.preview);
+      await sendOwnFile(res.type('png'), snap.preview);
     }),
   );
   api.get(

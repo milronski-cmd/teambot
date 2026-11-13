@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import type { Request, Response } from 'express';
 import type { Agent, Ctx } from '../../core/types.js';
-import { ah, notFound, own, str, user } from '../../core/http.js';
+import { ah, notFound, own, sendOwnFile, str, user } from '../../core/http.js';
 import { startMjpeg } from './mjpeg.js';
 import { LEVEL_LABEL } from './screen-policy.js';
 import { HttpLike, type ComputerService } from './service.js';
@@ -139,7 +139,7 @@ export function screenRoutes(ctx: Ctx, svc: ComputerService) {
       const p = sc.preview(String(req.params.callId), a.id);
       if (!p || !fs.existsSync(p.file)) throw notFound('Geen voorbeeld (meer)');
       res.setHeader('cache-control', 'private, max-age=600');
-      res.type('jpeg').sendFile(p.file);
+      await sendOwnFile(res.type('jpeg'), p.file);
     }),
   );
 

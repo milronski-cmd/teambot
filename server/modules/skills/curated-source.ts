@@ -1,7 +1,8 @@
 import path from 'node:path';
 import crypto from 'node:crypto';
+import AdmZip from 'adm-zip';
 import { HttpError } from '../../core/http.js';
-import { type FileMap, checksumOf, isSkillMd, safeRelPath } from './files.js';
+import { type FileMap, LIMITS, checksumOf, isSkillMd, safeRelPath } from './files.js';
 import { classifyId, classifyText } from './licenses.js';
 import { parseSkillMd } from './format.js';
 import { CURATED_LIMITS, type RuleResult, quoteDescription, ruleForContent, ruleForPath } from './import-rules.js';
@@ -14,6 +15,10 @@ import { type WebCache, WebError } from './webcache.js';
  * year: a commit never changes), then only the files of that skill from raw.githubusercontent.com, each checked
  * against the git blob hash in the tree. Updates compare blob hashes between two trees first, so an unchanged skill
  * costs no downloads. Nothing fetched here is ever executed.
+ *
+ * Without the API (GitHub allows 60 calls an hour without a token, shared by everything on the same address; a new
+ * user has no token): the same tree is read from the archive of that commit (codeload.github.com, no such limit), so
+ * installing a skill works right after installing TeamBot. The blob hashes are computed from the archive itself.
  */
 
 export interface TreeEntry {
@@ -25,7 +30,11 @@ export interface TreeEntry {
 }
 
 export interface RepoAccess {
-  tree(repo: string, commit: string): Promise<TreeEntry[]>;
+  /**
+   * The files of a commit. `archiveFirst`: read them from the archive of that commit instead of the API (for skills
+   * outside TeamBot's catalogue: the hourly API limit is left for searching; the archive is often in the cache already).
+   */
+  tree(repo: string, commit: string, archiveFirst?: boolean): Promise<TreeEntry[]>;
   blob(repo: string, commit: string, entry: TreeEntry): Promise<Buffer>;
   /** Latest commit of the default branch (for update checks). */
   head(repo: string, force?: boolean): Promise<{ commit: string | null; error: string | null }>;
@@ -42,19 +51,83 @@ export function gitBlobSha(buf: Buffer) {
   return crypto.createHash('sha1').update(`blob ${buf.length}\0`).update(buf).digest('hex');
 }
 
+/** The tree of a commit read from its archive: the same entries the API gives, with the file contents by blob hash. */
+export function treeFromZip(buf: Buffer): { tree: TreeEntry[]; blobs: Map<string, Buffer> } {
+  const entries = new AdmZip(buf).getEntries();
+  const first = entries[0]?.entryName.split('/')[0] || '';
+  // A GitHub archive has one top folder (<repo>-<commit>); it is not part of the paths.
+  const top = first && entries.every((e) => e.entryName.startsWith(first + '/')) ? first + '/' : '';
+  const tree: TreeEntry[] = [];
+  const blobs = new Map<string, Buffer>();
+  for (const e of entries) {
+    const p = e.entryName.slice(top.length).replace(/[/]+$/, '');
+    if (!p || e.isDirectory) continue;
+    const data = e.getData();
+    const unix = (e.header.attr >>> 16) & 0xffff;
+    const mode = (unix & 0o170000) === 0o120000 ? '120000' : unix & 0o111 ? '100755' : '100644';
+    const sha = gitBlobSha(data);
+    blobs.set(sha, data);
+    tree.push({ path: p, mode, type: 'blob', sha, size: data.length });
+  }
+  return { tree, blobs };
+}
+
 /** GitHub access through the marketplace cache (SSRF-safe fetcher, ETag, offline fallback). */
 export function githubAccess(cache: WebCache, o: { headers: () => Record<string, string>; head: (repo: string, force?: boolean) => Promise<{ commit: string | null; error: string | null }> }): RepoAccess {
+  /** Files of the last archives read (by blob hash), so `blob` needs no second download. */
+  const fromZip = new Map<string, Buffer>();
+  const archive = async (repo: string, commit: string): Promise<TreeEntry[]> => {
+    const hit = await cache.buffer(`zip:${repo}@${commit}`, `https://codeload.github.com/${repo}/zip/${commit}`, { ttlMs: 30 * 24 * 3600_000, maxBytes: LIMITS.maxZipBytes, timeoutMs: 60_000 });
+    const z = treeFromZip(hit.data);
+    if (fromZip.size > 5000) fromZip.clear();
+    for (const [sha, b] of z.blobs) if (b.length <= CURATED_LIMITS.maxFileBytes) fromZip.set(sha, b);
+    return z.tree;
+  };
   return {
-    async tree(repo, commit) {
+    async tree(repo, commit, archiveFirst) {
       if (!SHA_RE.test(commit)) throw new HttpError(400, 'Ongeldige commit.');
+      if (archiveFirst) {
+        try {
+          return await archive(repo, commit);
+        } catch (err) {
+          // Too large for an archive download: the API after all (only the files of the skill are fetched then).
+          if (!(err instanceof WebError) || err.code !== 'too-large') throw err;
+        }
+      }
+      let hit;
+      try {
+        hit = await apiTree(repo, commit);
+      } catch (err) {
+        // The API said no (its hourly limit, or it cannot be reached): the archive of the same commit has the same files.
+        if (!(err instanceof WebError) || !['rate-limited', 'network', 'bad-response'].includes(err.code)) throw err;
+        try {
+          return await archive(repo, commit);
+        } catch {
+          throw err;
+        }
+      }
+      return hit;
+    },
+    async blob(repo, commit, e) {
+      const have = fromZip.get(e.sha);
+      if (have) return have;
+      return apiBlob(repo, commit, e);
+    },
+    head: (repo, force) => o.head(repo, force),
+  };
+
+  async function apiTree(repo: string, commit: string): Promise<TreeEntry[]> {
+    {
       const hit = await cache.json<any>(`ctree:${repo}@${commit}`, `https://api.github.com/repos/${repo}/git/trees/${commit}?recursive=1`, { ttlMs: YEAR, headers: o.headers(), accept: 'application/vnd.github+json', timeoutMs: 15_000 });
       const list: any[] = Array.isArray(hit.data?.tree) ? hit.data.tree : [];
       if (hit.data?.truncated) throw new HttpError(502, `De bestandslijst van ${repo} is te groot om volledig op te halen.`);
       return list
         .filter((t) => t && typeof t.path === 'string' && typeof t.sha === 'string' && ['blob', 'tree', 'commit'].includes(t.type))
         .map((t) => ({ path: String(t.path), mode: String(t.mode || ''), type: t.type, sha: String(t.sha), size: typeof t.size === 'number' ? t.size : undefined }));
-    },
-    async blob(repo, commit, e) {
+    }
+  }
+  async function apiBlob(repo: string, commit: string, e: TreeEntry): Promise<Buffer> {
+    {
       // An empty file needs no download (and raw.githubusercontent.com sometimes answers 501 for one).
       if (e.sha === EMPTY_BLOB) return Buffer.alloc(0);
       const url = `https://raw.githubusercontent.com/${repo}/${commit}/${e.path.split('/').map(encodeURIComponent).join('/')}`;
@@ -67,8 +140,34 @@ export function githubAccess(cache: WebCache, o: { headers: () => Record<string,
         await new Promise((r) => setTimeout(r, 400));
         return (await get()).data;
       }
+    }
+  }
+}
+
+/**
+ * A skill hosted by ClawHub (`<owner>/<slug>`), read like a repository at a commit: its pin is a version, and the zip
+ * of that version gives the same list of files with their hashes (so the import rules, the stored `seen` hashes and
+ * the comparison with a newer version are the ones of a GitHub skill). `head` gives the latest version.
+ */
+export function clawhubAccess(cache: WebCache, o: { origin: string; head: (name: string, force?: boolean) => Promise<{ commit: string | null; error: string | null }> }): RepoAccess {
+  const fromZip = new Map<string, Buffer>();
+  return {
+    async tree(name, version) {
+      const [owner, slug] = name.split('/');
+      if (!/^[0-9A-Za-z][0-9A-Za-z.+_-]{0,63}$/.test(version) || !owner || !slug) throw new HttpError(400, 'Ongeldige versie.');
+      const url = `${o.origin}/api/v1/download?slug=${encodeURIComponent(slug)}&ownerHandle=${encodeURIComponent(owner)}&version=${encodeURIComponent(version)}`;
+      const hit = await cache.buffer(`clawhub-zip:${name}@${version}`, url, { ttlMs: YEAR, maxBytes: LIMITS.maxZipBytes, timeoutMs: 60_000 });
+      const z = treeFromZip(hit.data);
+      if (fromZip.size > 5000) fromZip.clear();
+      for (const [sha, b] of z.blobs) if (b.length <= CURATED_LIMITS.maxFileBytes) fromZip.set(sha, b);
+      return z.tree;
     },
-    head: (repo, force) => o.head(repo, force),
+    async blob(_name, _version, e) {
+      const have = fromZip.get(e.sha);
+      if (!have) throw new HttpError(502, `Bestand ${e.path} staat niet in het archief van deze versie.`);
+      return have;
+    },
+    head: (name, force) => o.head(name, force),
   };
 }
 
@@ -101,6 +200,10 @@ export interface Resolved {
   /** Files taken along from outside the skill folder (upstream paths). */
   sourceFiles: string[];
   description: { changed: boolean; repaired: boolean; error?: string };
+  /** SKILL.md as the source wrote it, when its description was rewritten (the safety scan reads this one). */
+  sourceMd: Buffer | null;
+  /** What the source itself warns about this skill (the moderation of a skill library), in its own words. */
+  sourceWarning?: string;
   checksum: string;
   /** Everything that blocks installing, in plain Dutch. */
   problems: string[];
@@ -119,9 +222,9 @@ export function parentLinks(text: string): string[] {
   return [...out];
 }
 
-export async function resolveSkill(access: RepoAccess, source: CuratedSource, skill: CuratedSkill, commit: string): Promise<Resolved> {
+export async function resolveSkill(access: RepoAccess, source: CuratedSource, skill: CuratedSkill, commit: string, o: { archiveFirst?: boolean } = {}): Promise<Resolved> {
   const repo = source.repo;
-  const tree = await access.tree(repo, commit);
+  const tree = await access.tree(repo, commit, o.archiveFirst);
   const byPath = new Map(tree.map((e) => [e.path, e]));
   const pre = skill.path ? skill.path + '/' : '';
   const mdEntry = tree.find((e) => e.type === 'blob' && e.path.startsWith(pre) && isSkillMd(e.path.slice(pre.length)) && !e.path.slice(pre.length).includes('/'));
@@ -254,10 +357,15 @@ export async function resolveSkill(access: RepoAccess, source: CuratedSource, sk
       break outer;
     }
   }
-  license.matches = license.status === 'open' && license.spdx === source.license;
+  // The catalogue names the licence TeamBot checked; a skill outside the catalogue has none to compare with: what is
+  // found is recorded and shown, and is no reason to refuse (as with a skill added by its address).
+  const expected = source.license;
+  license.matches = license.status === 'open' && (!expected || license.spdx === expected);
   const md = files.get('SKILL.md');
   const fmLicense = md ? classifyId(parseSkillMd(md.toString('utf8')).meta.license) : null;
-  if (license.status === 'unknown') license.problem = 'Geen licentiebestand gevonden voor deze map. Zonder licentie installeert TeamBot niets.';
+  if (!expected) {
+    if (license.status === 'unknown' && fmLicense && fmLicense.status !== 'unknown') Object.assign(license, { spdx: fmLicense.spdx, status: fmLicense.status, matches: fmLicense.status === 'open' });
+  } else if (license.status === 'unknown') license.problem = 'Geen licentiebestand gevonden voor deze map. Zonder licentie installeert TeamBot niets.';
   else if (license.status === 'restricted') license.problem = 'De licentie bij de bron staat hergebruik niet vrij toe.';
   else if (!license.matches) license.problem = `De licentie bij de bron (${license.spdx}) is niet meer die van de catalogus (${source.license}).`;
   else if (fmLicense && fmLicense.status !== 'unknown' && fmLicense.spdx !== source.license) license.problem = `SKILL.md noemt een andere licentie (${fmLicense.label}) dan het licentiebestand (${source.license}).`;
@@ -265,10 +373,14 @@ export async function resolveSkill(access: RepoAccess, source: CuratedSource, sk
 
   // The description as one quoted YAML string.
   let description: Resolved['description'] = { changed: false, repaired: false };
+  let sourceMd: Buffer | null = null;
   if (md) {
     const fix = quoteDescription(md.toString('utf8'));
     description = { changed: fix.changed && !fix.error, repaired: fix.repaired && !fix.error, ...(fix.error ? { error: fix.error } : {}) };
-    if (fix.changed && !fix.error) files.set('SKILL.md', Buffer.from(fix.text, 'utf8'));
+    if (fix.changed && !fix.error) {
+      files.set('SKILL.md', Buffer.from(fix.text, 'utf8'));
+      sourceMd = md;
+    }
   }
 
   let total = 0;
@@ -278,7 +390,7 @@ export async function resolveSkill(access: RepoAccess, source: CuratedSource, sk
   if (total > CURATED_LIMITS.maxSkillBytes) problems.push(`De skill is te groot (${total} bytes, maximaal ${CURATED_LIMITS.maxSkillBytes}).`);
   if (license.problem) problems.push(license.problem);
   if (description.error) problems.push(description.error);
-  return { commit, files, upstream, seen, dropped, refused, license, sourceFiles, description, checksum: checksumOf(files), problems };
+  return { commit, files, upstream, seen, dropped, refused, license, sourceFiles, description, sourceMd, checksum: checksumOf(files), problems };
 }
 
 /**

@@ -6,6 +6,7 @@ import { MOOD_LABELS, type FaceStyle, type Mood } from './botface';
 import { t } from './i18n';
 import { formatTime } from './format';
 import { DONE_MS, moodFrom, type MoodInputs } from './moodCore';
+import { PLACE } from '../../../shared/places.js';
 
 export { DONE_MS, moodFrom };
 
@@ -69,7 +70,8 @@ export function useLimitUntil(agentId: string | null | undefined): number {
  * where to raise it (acceptance round 6, B-70: it said "er ging iets mis").
  */
 export function limitLine(until: number): string {
-  return until ? t('Daglimiet bereikt. Om {0} werkt de bot weer; verhogen kan in Instellingen › Kosten.', formatTime(until)) : 'Daglimiet bereikt. Verhogen kan in Instellingen › Kosten.';
+  const where = t(PLACE.costs);
+  return until ? t('Daglimiet bereikt. Om {0} werkt de bot weer; verhogen kan in {1}.', formatTime(until), where) : t('Daglimiet bereikt. Verhogen kan in {0}.', where);
 }
 
 /** Short status text that always goes with a face (colour or face alone never carries the status). */

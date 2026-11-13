@@ -4,13 +4,13 @@ import { api, on } from '../../lib/api';
 import { t } from '../../lib/i18n';
 import { useApp } from '../../lib/store';
 import { navigate } from '../../lib/router';
-import { Badge, Button, Card, Field, Input, Modal, Select, Spinner, Toggle, cx } from '../../components/ui';
+import { Badge, Button, Card, Field, Input, Modal, Select, Spinner, Toggle, cx, copyText } from '../../components/ui';
 import { ConnectCard, ConnectResult, type ConnectState } from '../../components/ConnectCard';
 import { MoreInfo } from '../../components/MoreInfo';
 import { useIsPhoneSession } from '../../shell/computerOnly';
 import { Ext, GUIDES, type Guide, type Requirement } from './guides';
 import { ADAPTER_ORDER, MORE_ADAPTERS, PICK_BADGE, QR_RISK, needsRiskAck, pickerOrder } from './picker';
-import { ConfigForm, copy } from './ConfigForm';
+import { ConfigForm } from './ConfigForm';
 import { PhoneLink } from './HealthCard';
 import { ADAPTER_ICON, randomSecret, type AdaptersInfo, type BindingDetail, type BindingView } from './shared';
 import { WhatsAppHonestNote, WhatsAppLink } from './WhatsAppLink';
@@ -37,7 +37,7 @@ export function TargetSelect({ value, onChange, rooms }: { value: string; onChan
       <option value="">Kies een bot…</option>
       <optgroup label="Bots">
         {active.map((a) => (
-          <option key={a.id} value={`agent:${a.id}`}>
+          <option key={a.id} value={`agent:${a.id}`} translate="no">
             {a.name}
           </option>
         ))}
@@ -45,7 +45,7 @@ export function TargetSelect({ value, onChange, rooms }: { value: string; onChan
       {rooms.length > 0 && (
         <optgroup label="Groepen">
           {rooms.map((r) => (
-            <option key={r.id} value={`room:${r.id}`}>
+            <option key={r.id} value={`room:${r.id}`} translate="no">
               {r.name}
             </option>
           ))}
@@ -80,7 +80,7 @@ function SlackManifest({ mode, name }: { mode: string; name: string }) {
   return (
     <div className="relative">
       <pre className="scroll-thin max-h-32 overflow-auto rounded-lg border border-line bg-canvas p-3 font-mono text-xs">{text || '…'}</pre>
-      <Button size="sm" variant="secondary" className="absolute end-2 top-2" icon={<Copy className="h-3.5 w-3.5" />} onClick={() => copy(text, 'Manifest gekopieerd')} disabled={!text}>
+      <Button size="sm" variant="secondary" className="absolute end-2 top-2" icon={<Copy className="h-3.5 w-3.5" />} onClick={() => copyText(text, 'Manifest gekopieerd')} disabled={!text}>
         Kopieer
       </Button>
     </div>
@@ -162,7 +162,7 @@ function CopyLine({ label, value }: { label: string; value: string }) {
         <code translate="no" className="min-w-0 flex-1 break-all rounded-lg bg-surface-2 px-2 py-1.5 font-mono text-xs">
           {value}
         </code>
-        <Button size="sm" variant="secondary" icon={<Copy className="h-3.5 w-3.5" />} onClick={() => copy(value)}>
+        <Button size="sm" variant="secondary" icon={<Copy className="h-3.5 w-3.5" />} onClick={() => copyText(value)}>
           Kopieer
         </Button>
       </div>
@@ -359,6 +359,7 @@ export function AddChannel({ open, onClose, info, initialAgentId, onCreated }: {
       const conf: Record<string, any> = { ...config, ...(needsRiskAck(adapter) ? { riskAccepted: true } : {}) };
       for (const f of guide.fields) if (f.kind === 'secret') delete conf[f.key];
       setBusy(true);
+      const from = location.hash;
       const b = await api.post<BindingView & { tested?: { ok: boolean; detail: string } }>('/channels/bindings', { adapter, name, ...targetBody(target), config: conf, secrets, verify: VERIFY.has(adapter) });
       const mine = adapter === 'email' ? own.trim().toLowerCase() : '';
       if (mine) await api.post(`/channels/bindings/${b.id}/senders`, { external_id: mine, label: 'Dit ben ik', is_owner: true }).catch(() => undefined);
@@ -366,7 +367,7 @@ export function AddChannel({ open, onClose, info, initialAgentId, onCreated }: {
       // WhatsApp Business ends at Meta (webhook address, verify token): its own page shows those.
       if (!guide.quick) {
         onClose();
-        navigate(`/m/channels/${b.id}`);
+        navigate(`/m/channels/${b.id}`, { from });
         return;
       }
       setDone({ b, tested: b.tested, secret: adapter === 'webhook' ? secrets.signingSecret : undefined, own: mine });

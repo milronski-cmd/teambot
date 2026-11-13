@@ -14,6 +14,7 @@ import { addressed, confirmAnswer, matchSpokenName } from './names';
 import { type GroupPhase, groupIndicator } from './indicator';
 import { PRESS_PRE_ROLL_MS, RELEASE_TAIL_MS, type TalkMode, talkMode, touchDevice } from './talk';
 import { TalkButton, TalkFace, useTalkKey } from './TalkUI';
+import { LocalSetupModal, sttDownload } from './LocalModels';
 
 type State = GroupPhase;
 
@@ -186,21 +187,21 @@ function GroupCallDialog({ threadId, onClose }: { threadId: string; onClose(): v
     return addressed(name, c.rest, c.original);
   };
 
-  /** A tap on one of the confirm buttons (instead of saying "ja" or "nee"). */
-  const choose = async (name: string | null) => {
+  /**
+   * One turn of yours: listening pauses while `work` runs (with the turn's number), an error shows in the call, and
+   * afterwards listening starts again.
+   */
+  const turn = async (work: (gen: number) => Promise<unknown>) => {
     const s = r.current;
-    const c = confirmRef.current;
-    if (!c || s.busy) return;
     s.busy = true;
     const gen = ++s.gen;
     if (s.vad) s.vad.paused = true;
-    s.rec?.cancel();
-    s.rec = null;
     try {
-      await send(resolveConfirm(c, name), gen);
+      await work(gen);
     } catch (e: any) {
       setErr(e?.message || String(e));
     } finally {
+      // A cut-in (you pressed while the group spoke) already started your next turn: leave it alone.
       if (s.gen === gen) {
         s.busy = false;
         if (!s.stopped) listen();
@@ -208,14 +209,24 @@ function GroupCallDialog({ threadId, onClose }: { threadId: string; onClose(): v
     }
   };
 
+  /** A tap on one of the confirm buttons (instead of saying "ja" or "nee"). */
+  const choose = async (name: string | null) => {
+    const s = r.current;
+    const c = confirmRef.current;
+    if (!c || s.busy) return;
+    await turn(async (gen) => {
+      s.rec?.cancel();
+      s.rec = null;
+      await send(resolveConfirm(c, name), gen);
+    });
+  };
+
   const onSpeechEnd = async () => {
     const s = r.current;
     if (s.busy || !s.rec || s.stopped) return;
-    s.busy = true;
-    const gen = ++s.gen;
-    if (s.vad) s.vad.paused = true;
-    try {
-      const { blob, durationMs } = await s.rec.stop();
+    const rec = s.rec;
+    await turn(async (gen) => {
+      const { blob, durationMs } = await rec.stop();
       s.rec = null;
       if (durationMs < 500 || blob.size < 1500) return;
       setState('transcribing');
@@ -235,15 +246,7 @@ function GroupCallDialog({ threadId, onClose }: { threadId: string; onClose(): v
         return setConfirm(ask);
       }
       await send(content, gen);
-    } catch (e: any) {
-      setErr(e?.message || String(e));
-    } finally {
-      // A cut-in (you pressed while the group spoke) already started your next turn: leave it alone.
-      if (s.gen === gen) {
-        s.busy = false;
-        if (!s.stopped) listen();
-      }
-    }
+    });
   };
 
   /**
@@ -324,7 +327,7 @@ function GroupCallDialog({ threadId, onClose }: { threadId: string; onClose(): v
         s.vad = new EnergyVad(s.meter, { onStart: () => !s.busy && s.talk === 'handsfree' && setState('user'), onEnd: () => s.talk === 'handsfree' && void onSpeechEnd(), onLevel: setLevel, silenceMs: 1100 });
         s.vad.start();
         listen();
-        // A record for Instellingen › Spraak › Gespreksgeschiedenis (duration and turns), like a call with one bot.
+        // A record for the call history (Instellingen › Meer mogelijkheden › Spraakgesprekken: duration and turns), like a call with one bot.
         if (!s.stopped) s.callId = (await api.post<{ id: string }>('/voice/calls', { threadId, group: true }).catch(() => null))?.id || null;
         if (s.stopped && s.callId) void api.post(`/voice/calls/${s.callId}/end`, { turns: s.turns }).catch(() => {});
       } catch (e: any) {
@@ -361,9 +364,9 @@ function GroupCallDialog({ threadId, onClose }: { threadId: string; onClose(): v
   const ind = groupIndicator({ state, bots: bots.map((b) => ({ id: b.agentId, name: b.name })), speaking: speaker, working, keyboard: !touch, t });
   const sttReady = info?.status.stt.ready;
   return (
-    <Modal open onClose={onClose} title={`Groepsgesprek · ${thread?.title || 'groep'}`}>
+    <Modal open onClose={onClose} title={thread?.title ? t('Groepsgesprek · {0}', thread.title) : 'Groepsgesprek · groep'}>
       <div className="space-y-4 text-sm">
-        {!sttReady && info && <p className="text-warn">Spraak-naar-tekst is niet ingesteld (Instellingen → Spraak). {info.status.stt.missing}</p>}
+        {!sttReady && info && <p className="text-warn">{info.status.stt.missing || 'Spraak-naar-tekst is nog niet ingesteld (Instellingen › Meer mogelijkheden › Spraak).'}</p>}
         {micProblem() && <p className="text-danger">{micProblem()}</p>}
         <div className="flex flex-wrap justify-center gap-3" aria-label="Wie luistert, denkt na of spreekt">
           {bots.map((b) => {
@@ -450,13 +453,26 @@ function GroupCallDialog({ threadId, onClose }: { threadId: string; onClose(): v
 
 export function GroupCallButton({ threadId }: { threadId: string; agentId: string | null }) {
   const kind = useApp((s) => s.threads.find((t) => t.id === threadId)?.kind);
+  const { info } = useVoice();
   const [open, setOpen] = useState(false);
+  // The free speech recognition is not on this computer yet: first its download ("Downloaden en bellen"), then the call.
+  const [setup, setSetup] = useState(false);
   if (kind !== 'room') return null;
   return (
     <>
-      <Button variant="ghost" size="icon" aria-label="Groepsgesprek (spraak)" title="Groepsgesprek met spraak" onClick={() => setOpen(true)}>
+      <Button variant="ghost" size="icon" aria-label="Groepsgesprek (spraak)" title="Groepsgesprek met spraak" onClick={() => (sttDownload(info) ? setSetup(true) : setOpen(true))}>
         <Mic className="h-4 w-4" />
       </Button>
+      {setup && (
+        <LocalSetupModal
+          need={['stt']}
+          onClose={() => setSetup(false)}
+          onReady={() => {
+            setSetup(false);
+            setOpen(true);
+          }}
+        />
+      )}
       {open && <GroupCallDialog threadId={threadId} onClose={() => setOpen(false)} />}
     </>
   );

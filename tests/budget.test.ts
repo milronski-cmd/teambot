@@ -48,7 +48,7 @@ test('a long run stops between steps once the next step would not fit the daily 
     assert.ok(Math.abs(stop.parts.budget.estimate - 0.1) < 1e-9);
     assert.match(stop.parts.error, /^Daglimiet van US\$\s?0,25 bereikt: vandaag is US\$\s?0,20 gebruikt en de volgende stap kost naar schatting US\$\s?0,10 \(zoveel kostte de vorige\)\./);
     assert.match(stop.parts.error, /Om 00:00 begint een nieuwe dag en werkt de bot weer\./);
-    assert.match(stop.parts.error, /verhoog de limiet dan in Instellingen › Kosten\./);
+    assert.match(stop.parts.error, /verhoog de limiet dan in Instellingen › Meer mogelijkheden › Kosten\./);
     assert.ok(!/er ging iets mis/i.test(stop.parts.error));
     // The run says it was the budget (the face and notifications read it), not a failure in the server log's sense.
     const run = runsOf(t, th.id).at(-1)!;
@@ -89,9 +89,9 @@ test('the next message does not start when its estimate does not fit; a used-up 
     // A budget that is used up (other features, another bot): the plain sentence, without an estimate.
     t.app.ctx.store.insert('usage_log', { user_id: owner(t), agent_id: null, provider_id: null, model: 'stem', input: 0, output: 0, cost: 0.05, created_at: new Date().toISOString() });
     const used = (await t.say(th.id, 'Bericht 3')).at(-1)!;
-    assert.match(used.parts.error, /^Daglimiet van US\$\s?0,15 bereikt \(vandaag US\$\s?0,15 gebruikt\)\. Om 00:00 begint een nieuwe dag en werkt de bot weer\. Wil je vandaag verder, verhoog de limiet dan in Instellingen › Kosten\.$/);
+    assert.match(used.parts.error, /^Daglimiet van US\$\s?0,15 bereikt \(vandaag US\$\s?0,15 gebruikt\)\. Om 00:00 begint een nieuwe dag en werkt de bot weer\. Wil je vandaag verder, verhoog de limiet dan in Instellingen › Meer mogelijkheden › Kosten\.$/);
     assert.equal(used.parts.budget.estimate, undefined);
-    // Instellingen › Kosten: today against the budget that applies, from the same sum the runner checks.
+    // Instellingen › Meer mogelijkheden › Kosten: today against the budget that applies, from the same sum the runner checks.
     const u = await t.api('GET', '/usage?days=7');
     assert.ok(Math.abs(u.today.spent - 0.15) < 1e-9);
     assert.equal(u.today.limit, 0.15);
@@ -113,11 +113,11 @@ test('a member whose budget is the admin cap is told to ask the admin; the stop 
     t.app.ctx.store.insert('usage_log', { user_id: m.id, agent_id: null, provider_id: null, model: 'x', input: 0, output: 0, cost: 0.3, created_at: new Date().toISOString() });
     assert.throws(
       () => assertBudget(t.app.ctx, m.id),
-      (e: any) => isBudgetError(e) && e.budget.byAdmin === true && /vraag de beheerder dan om een hoger dagbudget\./.test(e.message) && !/Instellingen › Kosten/.test(e.message),
+      (e: any) => isBudgetError(e) && e.budget.byAdmin === true && /vraag de beheerder dan om een hoger dagbudget\./.test(e.message) && !/Instellingen › Meer mogelijkheden › Kosten/.test(e.message),
     );
     // A member with a lower budget of his own can raise that himself (up to the cap).
     t.app.ctx.store.setSetting(m.id, 'dailyBudgetUsd', 0.2);
-    assert.throws(() => assertBudget(t.app.ctx, m.id), (e: any) => isBudgetError(e) && !e.budget.byAdmin && /Instellingen › Kosten/.test(e.message));
+    assert.throws(() => assertBudget(t.app.ctx, m.id), (e: any) => isBudgetError(e) && !e.budget.byAdmin && /Instellingen › Meer mogelijkheden › Kosten/.test(e.message));
 
     // The owner's paid bot stops at the budget: the notification says "heeft de daglimiet bereikt", not "liep vast".
     const { th } = await pricedBot(t);
@@ -139,7 +139,7 @@ test('a member whose budget is the admin cap is told to ask the admin; the stop 
 
 test('budget texts: whole sentences with the reset time; routines see our own budget, not an engine limit', () => {
   const resetAt = new Date(2026, 10, 9, 0, 0, 0).toISOString();
-  assert.equal(budgetText({ limit: 2, spent: 2.1, resetAt }), `Daglimiet van ${usdText(2)} bereikt (vandaag ${usdText(2.1)} gebruikt). Om 00:00 begint een nieuwe dag en werkt de bot weer. Wil je vandaag verder, verhoog de limiet dan in Instellingen › Kosten.`);
+  assert.equal(budgetText({ limit: 2, spent: 2.1, resetAt }), `Daglimiet van ${usdText(2)} bereikt (vandaag ${usdText(2.1)} gebruikt). Om 00:00 begint een nieuwe dag en werkt de bot weer. Wil je vandaag verder, verhoog de limiet dan in Instellingen › Meer mogelijkheden › Kosten.`);
   const text = budgetText({ limit: 0.3, spent: 0.2, estimate: 0.2, resetAt, byAdmin: true });
   assert.match(text, /naar schatting/);
   assert.match(text, /vraag de beheerder/);

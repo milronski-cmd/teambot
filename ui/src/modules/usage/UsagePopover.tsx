@@ -9,7 +9,7 @@ import { Segmented } from '../../components/SettingControls';
 import { engineChipNote } from '../../lib/costLabel';
 import { botModelText, isDefaultModel, prettyModel } from '../../lib/modelLabel';
 import { t, translate } from '../../lib/i18n';
-import { Button, Spinner, cx, toast, toastError } from '../../components/ui';
+import { Button, Spinner, cx, toast, toastError, useAsync } from '../../components/ui';
 import { Pop } from '../../components/Menu';
 import { BILLING_TEXT, fmtPct, fmtTokens, toneOf, useChatContext, useUsage, type ContextView, type EngineView } from './api';
 import { EngineCard, Ring } from './parts';
@@ -22,19 +22,13 @@ function ctxLabel(c: ContextView | null) {
 
 /** Context section: ring, numbers, and "Nu samenvatten" (TeamBot's compaction, or the CLI's own). */
 function ContextSection({ c, threadId, agent, onDone }: { c: ContextView | null; threadId: string; agent: Agent; onDone(): void }) {
-  const [busy, setBusy] = useState(false);
-  const compact = async () => {
-    setBusy(true);
-    try {
+  const { busy, run } = useAsync();
+  const compact = () =>
+    run(async () => {
       const r = await api.post<{ compacted: boolean; reason?: string }>(`/threads/${threadId}/compact`, { agentId: agent.id });
       toast(r.compacted ? 'Gesprek samengevat' : `Niet samengevat: ${r.reason}`, r.compacted ? 'ok' : 'neutral');
       onDone();
-    } catch (e) {
-      toastError(e);
-    } finally {
-      setBusy(false);
-    }
-  };
+    });
   const known = !!c && typeof c.percent === 'number';
   const tone = toneOf(c?.percent ?? null);
   return (

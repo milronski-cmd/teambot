@@ -1,12 +1,13 @@
-import { RotateCcw, Sparkles } from 'lucide-react';
+import { RefreshCw, RotateCcw, Sparkles } from 'lucide-react';
 import { t } from '../../lib/i18n';
 import { formatBytes, formatDateTime } from '../../lib/format';
-import { askConfirm, Badge, Button, Card, toast, useAsync } from '../../components/ui';
+import { askConfirm, Badge, Button, Card, CardHead, toast, useAsync } from '../../components/ui';
+import { MoreInfo } from '../../components/MoreInfo';
 import { desktopBridge, type UpdatesView } from './types';
 import { AppUpdateSection } from './AppUpdate';
 
 /**
- * Updates of TeamBot itself: which version runs, (with `live`) what happens with new versions and the setting
+ * Updates of TeamBot itself, a calm card (the fine print is behind "Meer informatie"): which version runs, (with `live`) what happens with new versions and the setting
  * Automatisch bijwerken, the last update (with the backup made right before it), and in the Windows app "Terug naar
  * versie x" (reinstall the previous version and put that backup back).
  */
@@ -34,20 +35,28 @@ export function UpdatesCard({ v, onChanged, showNewsLink, live }: { v: UpdatesVi
   };
   return (
     <Card className="space-y-3 p-5">
-      <h2 className="text-[15px] font-bold tracking-tight">Updates van TeamBot</h2>
-      <p className="text-sm">
-        {t('Je gebruikt TeamBot {0}.', v.version)}{' '}
-        {last?.kind === 'update' && <span className="text-muted">{t('Bijgewerkt van {0} op {1}.', last.from, formatDateTime(last.at))}</span>}
-        {last?.kind === 'rollback' && <span className="text-muted">{t('Teruggezet van {0} op {1}.', last.from, formatDateTime(last.at))}</span>}
-      </p>
+      <CardHead
+        icon={RefreshCw}
+        tone="orange"
+        title="Updates van TeamBot"
+        hint={
+          <>
+            {t('Je gebruikt TeamBot {0}.', v.version)} {last?.kind === 'update' && t('Bijgewerkt van {0} op {1}.', last.from, formatDateTime(last.at))}
+            {last?.kind === 'rollback' && t('Teruggezet van {0} op {1}.', last.from, formatDateTime(last.at))}{' '}
+            <MoreInfo>
+              <span className="block">Vóór elke update maakt TeamBot een back-up, zodat je terug kunt.</span>
+              {last?.kind === 'update' && last.backup && <span className="mt-1 block">Vlak voor de update is een back-up gemaakt van je database en instellingen. Die staat bij je back-ups.</span>}
+              {canClick && rb?.installer && <span className="mt-1 block">{t('Installatiebestand van versie {0} staat klaar ({1}).', rb.installer.version, formatBytes(rb.installer.size))}</span>}
+            </MoreInfo>
+          </>
+        }
+      />
       {live && <AppUpdateSection />}
-      {last?.kind === 'update' && last.backup && <p className="text-sm text-muted">Vlak voor de update is een back-up gemaakt van je database en instellingen. Die staat bij je back-ups.</p>}
       {v.failed && (
         <p className="rounded-lg bg-warn-soft px-3 py-2 text-sm text-warn">
           {v.failed.kind === 'update' ? t('De update naar versie {0} is niet geïnstalleerd; er is niets veranderd.', v.failed.to) : t('Terug naar versie {0} is niet gelukt. Je gegevens van vlak voor de update zijn wel teruggezet.', v.failed.to)}
         </p>
       )}
-      <p className="text-xs text-muted">Vóór elke update maakt TeamBot een back-up, zodat je terug kunt.</p>
       <div className="flex flex-wrap gap-2">
         {showNewsLink && v.whatsNew.length > 0 && (
           <a href="#/m/backups/nieuw">
@@ -66,7 +75,6 @@ export function UpdatesCard({ v, onChanged, showNewsLink, live }: { v: UpdatesVi
       {rb?.to && last?.kind === 'update' && !canClick && (
         <p className="text-sm text-muted">{rb.available ? 'Terug naar de vorige versie kan alleen in de TeamBot-app op deze computer.' : rb.reason}</p>
       )}
-      {canClick && rb?.installer && <p className="text-xs text-muted">{t('Installatiebestand van versie {0} staat klaar ({1}).', rb.installer.version, formatBytes(rb.installer.size))}</p>}
     </Card>
   );
 }

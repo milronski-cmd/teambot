@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Copy, LayoutTemplate, Plus, Trash2, Users } from 'lucide-react';
-import { askConfirm, Badge, Button, Card, EmptyState, Field, Input, Modal, Page, PageHeader, Select, Spinner, Textarea, cx, toast, toastError, useAsync } from '../../components/ui';
+import { Copy, LayoutTemplate, Plus, Trash2, Users, Bot } from 'lucide-react';
+import { askConfirm, Badge, Button, Card, EmptyState, Field, Input, Modal, Page, PageHeader, Select, Spinner, Textarea, cx, toast, toastError, useAsync, CardHead } from '../../components/ui';
 import { BotAvatar } from '../../components/BotFace';
 import { on } from '../../lib/api';
 import { t } from '../../lib/i18n';
@@ -35,11 +35,12 @@ export function TeamsPage({ params }: { params: string[] }) {
 }
 
 /** Instellingen › Teams. With one team only that team's settings; team choices appear from the second team on. */
-export function TeamsSettings() {
-  return <TeamsManager />;
+export function TeamsSettings({ simple }: { simple?: boolean } = {}) {
+  return <TeamsManager simple={simple} />;
 }
 
-function TeamsManager({ initial }: { initial?: string }) {
+/** `simple` (Instellingen › Bots en teams › Teams): choose a team, its name, a new team. The rest is under Geavanceerd. */
+function TeamsManager({ initial, simple }: { initial?: string; simple?: boolean }) {
   const { teams, err, reload } = useTeams();
   const [sel, setSel] = useState<string | null>(initial || null);
   const [creating, setCreating] = useState(false);
@@ -115,7 +116,7 @@ function TeamsManager({ initial }: { initial?: string }) {
               </div>
             )}
             <div className="ms-auto flex items-center gap-2">
-              <Menu
+              {!simple && <Menu
                 label="Meer opties"
                 items={[
                   { label: 'Team uit een sjabloon', icon: <LayoutTemplate />, onSelect: () => setFromTemplate(true) },
@@ -124,13 +125,13 @@ function TeamsManager({ initial }: { initial?: string }) {
                   { label: t('{0} dupliceren', team.name), icon: <Copy />, disabled: copy.busy, onSelect: () => void duplicate(team) },
                   multi && { label: t('{0} verwijderen', team.name), icon: <Trash2 />, danger: true, onSelect: () => void remove(team) },
                 ]}
-              />
+              />}
               <Button variant="primary" icon={<Plus className="h-4 w-4" />} onClick={() => setCreating(true)}>
                 Nieuw team
               </Button>
             </div>
           </div>
-          <TeamEditor key={team.id} team={team} teams={teams} reload={reload} />
+          <TeamEditor key={team.id} team={team} teams={teams} reload={reload} simple={simple} />
         </>
       )}
       <Modal open={fromTemplate} onClose={() => setFromTemplate(false)} title="Team uit een sjabloon" wide>
@@ -179,7 +180,7 @@ export function NewTeamModal({ open, count, onClose, onCreated }: { open: boolea
       }
     >
       <div className="space-y-3">
-        <Field label="Naam" hint="Een team begint leeg en staat los van je andere teams.">
+        <Field label="Naam" hint="Een team begint zonder bots. Je hoofdbot kan er meteen werk geven; andere bots alleen als je ze toegang geeft.">
           <Input value={name} onChange={(e) => setName(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && name.trim() && create()} autoFocus maxLength={60} placeholder="Bijvoorbeeld een bedrijf of afdeling" />
         </Field>
       </div>
@@ -191,7 +192,7 @@ export function NewTeamModal({ open, count, onClose, onCreated }: { open: boolea
 const BARE = '[&>div]:rounded-none [&>div]:border-0 [&>div]:bg-transparent [&>div]:p-0';
 const GROW = '[field-sizing:content] max-h-80';
 
-function TeamEditor({ team, teams, reload }: { team: Team; teams: Team[]; reload(): void }) {
+function TeamEditor({ team, teams, reload, simple }: { team: Team; teams: Team[]; reload(): void; simple?: boolean }) {
   const multi = teams.length > 1;
   const [name, setName] = useState(team.name);
   const [color, setColor] = useState(team.color);
@@ -208,12 +209,13 @@ function TeamEditor({ team, teams, reload }: { team: Team; teams: Team[]; reload
     }, 'Team opgeslagen');
   const filled = (Object.keys(team.profile) as (keyof TeamProfile)[]).filter((k) => team.profile[k]).length;
   return (
-    <div className="tb-in space-y-3">
+    <div className="tb-in space-y-4">
       <Card className="space-y-4 p-5">
         <div className="grid gap-3 sm:grid-cols-2">
           <Field label="Naam">
             <Input value={name} onChange={(e) => setName(e.target.value)} maxLength={60} />
           </Field>
+          {!simple && (
           <Field
             label="Teamleider"
             hint={
@@ -232,7 +234,10 @@ function TeamEditor({ team, teams, reload }: { team: Team; teams: Team[]; reload
               ))}
             </Select>
           </Field>
+          )}
         </div>
+        {!simple && (
+          <>
         <fieldset>
           <legend className="mb-1.5 text-[13px] font-semibold">Kleur</legend>
           <div className="flex flex-wrap gap-2">
@@ -263,6 +268,8 @@ function TeamEditor({ team, teams, reload }: { team: Team; teams: Team[]; reload
             <Textarea rows={2} className={GROW} value={profile.rules} onChange={(e) => setP('rules', e.target.value)} maxLength={4000} placeholder="Bijvoorbeeld: noem nooit prijzen zonder overleg" />
           </Field>
         </Fold>
+          </>
+        )}
         <div className="flex flex-wrap gap-2">
           <Button variant="primary" loading={save.busy} disabled={!dirty || !name.trim()} onClick={submit}>
             Opslaan
@@ -283,6 +290,8 @@ function TeamEditor({ team, teams, reload }: { team: Team; teams: Team[]; reload
         </div>
       </Card>
 
+      {!simple && (
+        <>
       <TeamBots team={team} multi={multi} reload={reload} />
       {/* What a person rarely sets: one line each, opened when needed. */}
       <Fold title="Eigen regels" testId="team-fold-rules">
@@ -314,6 +323,8 @@ function TeamEditor({ team, teams, reload }: { team: Team; teams: Team[]; reload
         <Fold title="Sleutels en logins">
           <TeamKeys team={team} teams={teams} />
         </Fold>
+      )}
+        </>
       )}
     </div>
   );
@@ -363,7 +374,7 @@ function TeamBots({ team, multi, reload }: { team: Team; multi: boolean; reload(
   const move = useAsync();
   return (
     <Card className="space-y-3 p-5">
-      <h2 className="text-sm font-semibold">Bots van dit team</h2>
+      <CardHead icon={Bot} tone="teal" title="Bots van dit team" />
       {team.bots.length ? (
         <ul className="-mx-2 grid gap-x-2 sm:grid-cols-2">
           {team.bots.map((b) => (
@@ -372,7 +383,11 @@ function TeamBots({ team, multi, reload }: { team: Team; multi: boolean; reload(
                 <BotAvatar bot={b} size={28} />
                 <span className="min-w-0 flex-1">
                   <span className="block font-medium [overflow-wrap:anywhere]">{b.name}</span>
-                  {b.role && <span className="block text-[13px] text-muted [overflow-wrap:anywhere]">{b.role}</span>}
+                  {b.role && (
+                    <span className="block text-[13px] text-muted [overflow-wrap:anywhere]" translate="no">
+                      {b.role}
+                    </span>
+                  )}
                 </span>
                 {b.main ? <Badge tone="accent">hoofdbot</Badge> : b.lead ? <Badge tone="accent">teamleider</Badge> : null}
               </a>

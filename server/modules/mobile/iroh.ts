@@ -5,7 +5,7 @@ import type { Ctx } from '../../core/types.js';
 import { bad } from '../../core/http.js';
 import { now } from '../../core/db.js';
 import { Gateway } from './gateway.js';
-import { isLoopbackHost } from './reach.js';
+import { isLoopbackHost } from '../../core/util.js';
 
 /**
  * "TeamBot-verbinding": the phone reaches this computer from anywhere without Tailscale, an account or port
@@ -98,6 +98,12 @@ export class IrohLink {
   private watches: any[] = [];
   private state = { running: false, id: null as string | null, home: null as string | null, online: false, error: null as string | null, last: null as IrohStatus['last'] };
   private starting: Promise<void> | null = null;
+  private guard: ReturnType<typeof setInterval> | null = null;
+  private guardTick = 0;
+  private offlineSince = 0;
+  /** How often the guard looks, and how long the connection may be away before it is started again (tests shorten these). */
+  guardEveryMs = 30_000;
+  guardOfflineMs = 90_000;
 
   constructor(private ctx: Ctx) {
     this.gateway = new Gateway(ctx, { peerAddress: (s) => (s.remotePort ? this.peerByPort.get(s.remotePort) : undefined) });
@@ -147,6 +153,48 @@ export class IrohLink {
     } finally {
       this.starting = null;
     }
+    this.watchOver();
+  }
+
+  /**
+   * Keeps the connection up without anyone looking: it starts again when it could not start (the computer was just
+   * switched on and had no network yet), when it stays offline (the relay or the network went away and did not come
+   * back by itself), and after the computer slept. The key stays the same, so paired phones find it again.
+   */
+  private watchOver() {
+    const on = this.settings().enabled && this.preset !== 'offline' && !!irohLib();
+    if (!on) {
+      if (this.guard) clearInterval(this.guard);
+      this.guard = null;
+      return;
+    }
+    if (this.guard) return;
+    this.guardTick = Date.now();
+    this.offlineSince = 0;
+    this.guard = setInterval(() => void this.check().catch(() => undefined), this.guardEveryMs);
+    this.guard.unref?.();
+  }
+
+  /** One look of the guard (public for tests). Returns why it started the connection again, or null. */
+  async check(): Promise<'not-running' | 'offline' | 'slept' | null> {
+    const t = Date.now();
+    const slept = t - this.guardTick > this.guardEveryMs * 3;
+    this.guardTick = t;
+    if (this.starting || !this.settings().enabled) return null;
+    let why: 'not-running' | 'offline' | 'slept' | null = null;
+    if (!this.state.running) why = 'not-running';
+    else if (this.state.online) this.offlineSince = 0;
+    else {
+      if (!this.offlineSince) this.offlineSince = t;
+      // After sleep the sockets are stale: do not wait out the full time.
+      if (t - this.offlineSince >= this.guardOfflineMs || slept) why = slept ? 'slept' : 'offline';
+    }
+    // A phone that is connected right now is proof that it works (directly, without the relay).
+    if (!why || (why !== 'not-running' && this.conns.size > 0)) return null;
+    this.offlineSince = 0;
+    this.ctx.log.info(`[mobile] TeamBot-verbinding opnieuw gestart (${why === 'not-running' ? 'was niet gestart' : why === 'slept' ? 'na slaapstand' : 'was offline'})`);
+    await this.apply();
+    return why;
   }
 
   /** Resolves once the relay is reachable (or after `ms`): a QR code made right after turning it on then works. */
@@ -351,6 +399,8 @@ export class IrohLink {
   }
 
   async stop() {
+    if (this.guard) clearInterval(this.guard);
+    this.guard = null;
     if (this.starting) await this.starting.catch(() => undefined);
     await this.shutdown();
   }

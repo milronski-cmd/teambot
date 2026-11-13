@@ -9,7 +9,7 @@ import routines from '../server/modules/routines/index.js';
 
 const iso = (ms: number) => new Date(ms).toISOString();
 
-test('off by default, honest without a desktop shell, holds the blocker only while something runs or is about to', async () => {
+test('on by default, honest without a desktop shell, holds the blocker only while something runs or is about to', async () => {
   const power = createPowerModule({ tickMs: 60_000 });
   const t = await startTestApp({ modules: [routines, power] });
   try {
@@ -17,7 +17,7 @@ test('off by default, honest without a desktop shell, holds the blocker only whi
     const owner = t.app.ctx.auth.owner()!;
     // No desktop shell (server, browser): shown, not switchable to "on".
     let s = await t.api('GET', '/power');
-    assert.deepEqual(s, { available: false, enabled: false, active: false, reason: null });
+    assert.deepEqual(s, { available: false, enabled: true, active: false, reason: null });
 
     const calls: [boolean, string | null][] = [];
     const events: any[] = [];
@@ -25,7 +25,9 @@ test('off by default, honest without a desktop shell, holds the blocker only whi
     const detach = t.app.ctx.services.power.attach({ set: (a: boolean, r: string | null) => calls.push([a, r]) });
     s = await t.api('GET', '/power');
     assert.equal(s.available, true);
-    assert.equal(s.enabled, false, 'off by default');
+    assert.equal(s.enabled, true, 'on by default: a routine must not stall because the pc sleeps');
+    s = await t.api('PUT', '/power', { enabled: false });
+    assert.equal(s.enabled, false, 'the owner can switch it off');
 
     // Something is about to run, but the option is off: the computer may sleep.
     const a = await t.agent({ name: 'Nachtwacht' });

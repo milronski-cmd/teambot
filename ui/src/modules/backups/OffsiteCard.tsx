@@ -3,14 +3,17 @@ import { HardDriveDownload, KeyRound, RotateCcw } from 'lucide-react';
 import { api } from '../../lib/api';
 import { t } from '../../lib/i18n';
 import { formatBytes, formatDateTime } from '../../lib/format';
-import { askConfirm, Button, Card, Field, Input, Modal, Toggle, toast, toastError, useAsync } from '../../components/ui';
+import { askConfirm, Button, Card, CardHead, Field, Input, Modal, Toggle, toast, toastError, useAsync } from '../../components/ui';
 import type { BackupItem, OffsiteView } from './types';
 import { MoreInfo } from '../../components/MoreInfo';
+import { MoreOptions } from '../../components/MoreOptions';
 
 /**
  * Back-ups › "Kopie op een tweede plek": an encrypted copy of every backup in a folder elsewhere (a USB drive, a NAS,
  * another disk), with a password the owner picks (server/modules/backups/offsite.ts). From a copy TeamBot can take a
  * backup back and restore it with the normal restore.
+ * Calm: not set up yet, the card is its head with "Instellen"; set up, it shows the last copy, "Nu een kopie maken",
+ * the switch and the copies, with the folder, the password and "Stoppen" behind "Meer opties".
  */
 export function OffsiteCard({ v, onChanged, onRestore }: { v: OffsiteView; onChanged(v?: OffsiteView): void; onRestore(b: BackupItem): void }) {
   const [folder, setFolder] = useState(v.folder);
@@ -21,6 +24,8 @@ export function OffsiteCard({ v, onChanged, onRestore }: { v: OffsiteView; onCha
   const [openPw, setOpenPw] = useState('');
   const a = useAsync();
   const set = !!v.folder && v.hasPassword;
+  // Not set up: the form opens with "Instellen" (at once when a folder was saved without a password).
+  const [setup, setSetup] = useState(!!v.folder && !v.hasPassword);
   const askPw = !v.hasPassword || changePw;
   const pwProblem = askPw && pw ? (pw.length < 12 ? 'Minstens 12 tekens.' : pw2 && pw !== pw2 ? 'De twee wachtwoorden zijn niet gelijk.' : '') : '';
   const canSave = folder.trim() && (!askPw || (pw.length >= 12 && pw === pw2)) && (folder.trim() !== v.folder || (askPw && pw));
@@ -44,18 +49,8 @@ export function OffsiteCard({ v, onChanged, onRestore }: { v: OffsiteView; onCha
       onRestore(r.backup);
     });
 
-  return (
-    <Card className="space-y-4 p-5" aria-labelledby="offsite-title">
-      <div className="flex items-center gap-2">
-        <HardDriveDownload className="h-4 w-4" aria-hidden />
-        <h2 id="offsite-title" className="text-[15px] font-bold tracking-tight">
-          Kopie op een tweede plek
-        </h2>
-      </div>
-      <p className="-mt-3 text-xs text-muted">
-        Een versleutelde kopie op een USB-schijf, een NAS of een andere schijf.{' '}
-        <MoreInfo>Een versleutelde kopie van je back-ups op een tweede plek, voor als de schijf kapot gaat.</MoreInfo>
-      </p>
+  const form = (
+    <>
       <Field label="Map voor de kopieën" hint="Het volledige pad, bijvoorbeeld E:\Back-ups. TeamBot maakt daarin de map TeamBot-backups.">
         <Input value={folder} onChange={(e) => setFolder(e.target.value)} placeholder="E:\Back-ups" spellCheck={false} />
       </Field>
@@ -83,20 +78,6 @@ export function OffsiteCard({ v, onChanged, onRestore }: { v: OffsiteView; onCha
         <Button variant="primary" disabled={!canSave} loading={a.busy} onClick={save}>
           Opslaan
         </Button>
-        {set && (
-          <Button
-            loading={a.busy}
-            onClick={() =>
-              a.run(async () => {
-                const r = await api.post<{ file: string; view: OffsiteView }>('/backups/offsite/copy', {});
-                toast('Versleutelde kopie gemaakt', 'ok');
-                onChanged(r.view);
-              })
-            }
-          >
-            Nu een kopie maken
-          </Button>
-        )}
         {v.folder && (
           <Button
             size="sm"
@@ -110,6 +91,41 @@ export function OffsiteCard({ v, onChanged, onRestore }: { v: OffsiteView; onCha
           </Button>
         )}
       </div>
+    </>
+  );
+
+  return (
+    <Card className="space-y-4 p-5" aria-labelledby="offsite-title">
+      <CardHead
+        id="offsite-title"
+        icon={HardDriveDownload}
+        tone="amber"
+        title="Kopie op een tweede plek"
+        hint={
+          <>
+            Een versleutelde kopie op een USB-schijf, een NAS of een andere schijf.{' '}
+            <MoreInfo>Een versleutelde kopie van je back-ups op een tweede plek, voor als de schijf kapot gaat.</MoreInfo>
+          </>
+        }
+        action={!set && !setup ? <Button className="max-sm:w-full max-sm:justify-center" onClick={() => setSetup(true)}>Instellen</Button> : undefined}
+      />
+      {!set && setup && form}
+      {set && (
+        <div className="flex flex-wrap items-center gap-3">
+          <Button
+            loading={a.busy}
+            onClick={() =>
+              a.run(async () => {
+                const r = await api.post<{ file: string; view: OffsiteView }>('/backups/offsite/copy', {});
+                toast('Versleutelde kopie gemaakt', 'ok');
+                onChanged(r.view);
+              })
+            }
+          >
+            Nu een kopie maken
+          </Button>
+        </div>
+      )}
       {set && <Toggle checked={v.auto} onChange={(auto) => api.put<OffsiteView>('/backups/offsite', { auto }).then((r) => onChanged(r), toastError)} label="Na elke back-up ook een versleutelde kopie maken" />}
       {v.folder && !v.reachable && (
         <p className="text-sm text-warn" role="status">
@@ -139,6 +155,7 @@ export function OffsiteCard({ v, onChanged, onRestore }: { v: OffsiteView; onCha
           </ul>
         </div>
       )}
+      {set && <MoreOptions>{form}</MoreOptions>}
       <Modal
         open={!!open}
         onClose={() => setOpen(null)}

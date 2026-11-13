@@ -3,7 +3,7 @@ import { useEffect, useState } from 'react';
 import { BookCheck, Clock, Headset } from 'lucide-react';
 import { api } from '../../lib/api';
 import { t, uiLocale } from '../../lib/i18n';
-import { Button, Card, Field, Input, Textarea, Toggle, cx, useAsync } from '../../components/ui';
+import { Button, Card, Field, IconTile, Input, Textarea, Toggle, cx, useAsync } from '../../components/ui';
 import type { BindingDetail } from './shared';
 
 export interface CustomerSettings {
@@ -70,7 +70,7 @@ export function CustomerTab({ b, reload }: { b: BindingDetail; reload(): void })
   return (
     <Card className="space-y-5 p-4">
       <div className="flex items-start gap-3">
-        <Headset className="mt-0.5 h-5 w-5 shrink-0 text-accent" aria-hidden />
+        <IconTile icon={Headset} tone="teal" />
         <div className="min-w-0 space-y-1">
           <Toggle checked={c.enabled} onChange={(v) => set({ enabled: v })} label="Klantenservice: deze bot praat met klanten" />
           <p className="text-sm text-muted">

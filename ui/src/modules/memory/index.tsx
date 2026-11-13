@@ -3,7 +3,7 @@ import { on } from '../../lib/api';
 import { useApp } from '../../lib/store';
 import { toast } from '../../components/ui';
 import type { UIModule } from '../types';
-import { AboutYouPage, BotsPage, ItemPage, OverviewPage, SharedPage } from './pages';
+import { AboutYouPage, BotsPage, ItemPage, RecentPage, SharedPage } from './pages';
 import { DossiersPage } from './dossiers';
 import { HistoryPage, ReviewPage, StoragePage } from './review';
 import { MemoryAgentSection, MemoryInspector, MemoryMessageExtra, MemoryToolCard } from './chat';
@@ -14,11 +14,13 @@ const mod: UIModule = {
   id: 'memory',
   label: 'Geheugen & dossiers',
   pages: [
-    { path: '', title: 'Geheugen & dossiers', icon: Brain, nav: true, component: OverviewPage },
+    // The page opens on what TeamBot knows about you; 'over-jou' is the same view under its own (older) address.
+    { path: '', title: 'Geheugen & dossiers', icon: Brain, nav: true, component: AboutYouPage },
     { path: 'over-jou', title: 'Over jou', component: AboutYouPage },
     { path: 'bots', title: 'Bots', component: BotsPage },
     { path: 'dossiers', title: 'Dossiers', component: DossiersPage },
     { path: 'gedeeld', title: 'Gedeeld', component: SharedPage },
+    { path: 'pas-geleerd', title: 'Pas geleerd', component: RecentPage },
     { path: 'beoordelen', title: 'Te beoordelen', component: ReviewPage },
     { path: 'geschiedenis', title: 'Geschiedenis', component: HistoryPage },
     { path: 'opslag', title: 'Opslag', component: StoragePage },
@@ -48,7 +50,7 @@ const mod: UIModule = {
       // Automatically learned items are summarised once per batch (above), not one toast per item.
       if (d?.actor !== 'agent' || !['create', 'propose'].includes(d?.op) || ['auto', 'model'].includes(d?.origin)) return;
       const name = useApp.getState().agents.find((a) => a.id === d.actorId)?.name || 'Een bot';
-      toast(d.op === 'propose' ? `${name} stelt een herinnering voor (Geheugen › Te beoordelen)` : `${name} heeft iets onthouden — ongedaan maken kan in Geheugen › Geschiedenis`);
+      toast(d.op === 'propose' ? `${name} stelt een herinnering voor (bovenaan in Geheugen)` : `${name} heeft iets onthouden — ongedaan maken kan in Geheugen › Pas geleerd`);
     });
   },
 };

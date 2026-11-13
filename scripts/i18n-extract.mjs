@@ -33,6 +33,24 @@ const hasVocab = (t) => (t.toLowerCase().match(/\p{L}{4,}/gu) || []).some((w) =>
 /** Separators around a text fragment (" · weer beschikbaar", "— nog downloaden", ". Bots met …"): not part of the text. */
 const EDGE = /^[\s·•—–|,;:.)]+|[\s·•—–|,;:(]+$/g;
 
+/** One CSS class: a utility with a known prefix ("px-2", "min-w-[12.5rem]", "tb-in"), a plain one ("relative"), an
+ * arbitrary property ("[overflow-wrap:anywhere]"), each optionally behind variants ("hover:", "desk:", "coarse:"). */
+const CSS_VARIANT = /^(?:(?:hover|focus|focus-visible|focus-within|active|disabled|desk|coarse|fine|sm|md|lg|xl|2xl|dark|group-hover|group-focus|peer-[a-z-]+|first|last|odd|even|rtl|ltr|print|motion-safe|motion-reduce|aria-[a-z-]+|placeholder|before|after|open|empty):)+/;
+const CSS_UTILITY = /^!?-?(?:p|px|py|pt|pb|pl|pr|ps|pe|m|mx|my|mt|mb|ml|mr|ms|me|w|h|min-w|max-w|min-h|max-h|size|gap|gap-x|gap-y|space-x|space-y|text|bg|border|border-[trblxyse]|rounded|rounded-[a-z]+|z|duration|ease|delay|items|justify|self|place-items|place-content|content|flex|grid-cols|grid-rows|col-span|row-span|inset|inset-[xy]|top|left|right|bottom|start|end|leading|tracking|font|opacity|shadow|ring|ring-offset|outline|overflow|overflow-[xy]|whitespace|break|line-clamp|translate-[xy]|scale|rotate|order|basis|grow|shrink|aspect|object|cursor|select|pointer-events|fill|stroke|decoration|underline-offset|divide|divide-[xy]|transition|animate|tb)-[\w./%()[\],+#-]+$/;
+const CSS_WORDS = new Set(['relative', 'absolute', 'fixed', 'sticky', 'static', 'flex', 'grid', 'block', 'inline', 'inline-block', 'inline-flex', 'hidden', 'contents', 'border', 'underline', 'truncate', 'italic', 'uppercase', 'lowercase', 'capitalize', 'transition', 'shadow', 'rounded', 'grow', 'shrink', 'outline', 'ring', 'invisible', 'visible', 'isolate', 'antialiased', 'sr-only', 'not-sr-only', 'container', '@container', 'group', 'peer']);
+function cssClass(w) {
+  const core = w.replace(CSS_VARIANT, '');
+  return CSS_WORDS.has(core) || CSS_UTILITY.test(core) || /^\[[^\]\s]+\]$/.test(core) || (core !== w && /^-?[a-z][\w-]*$/.test(core));
+}
+export function isStyleCode(t) {
+  return (
+    /^<(?:path|ellipse|circle|rect|line|polyline|polygon|g|svg|stop|radialGradient|linearGradient|defs|filter|fe[A-Z]\w*|mask|clipPath|use)\b[^]*>$/.test(t) ||
+    /^(?:calc|min|max|clamp|var)\(.*\)$/.test(t) ||
+    /^\((?:pointer|hover|any-pointer|any-hover|prefers-[a-z-]+|orientation|display-mode)\s*:[^()]*\)$/.test(t) ||
+    t.split(' ').every(cssClass)
+  );
+}
+
 function looksUser(s) {
   const t = s.trim();
   if (t.length < 2 || t.length > 800) return false;
@@ -66,12 +84,24 @@ function looksUser(s) {
   if (/^[\w.+-]+@[\w-]+\.[\w.]+$/.test(t) || /^--?[a-z][\w-]*\.?$/.test(t) || /^\/[\w{}/.?=&-]+$/.test(t)) return false;
   // TypeScript fragments that a quote-to-quote match picked up ("React.ReactNode[]; fields: …", "T | undefined, ):").
   if (/\w\[\];|\|\s*undefined\b|\bstatic async\b|\.toLocale\w+\(|\(\(\w+\)|: Promise\b/.test(t)) return false;
+  // A condition between two JSX branches ("NAMED.has(p.kind) ?"): a method call followed by the "?" of a choice.
+  if (/^[\w.]+\.\w+\([\w.,\s]*\)\s*\?$/.test(t)) return false;
   // Class fields ("null = null; private stream: MediaStream | null = null; …") and type helpers ("ReturnType").
   if (/\b(private|protected|readonly) \w+\??: |\| null = null\b|\bReturnType\b/.test(t)) return false;
+  // Drawing and styling code: SVG markup ("<ellipse cx=\"{0}\" …/>"), CSS values ("calc(100vw - 700px)"), media
+  // features ("(pointer: coarse)") and class lists with variants or arbitrary values ("@container flex h-[60px] …",
+  // "coarse:-my-3", "[overflow-wrap:anywhere]"). Never interface text, and no language can "translate" them.
+  if (isStyleCode(t)) return false;
+  // An API route on its own ("PATCH /skills/:id", "GET /folders/browse"): a key in a route table, never shown.
+  if (/^(?:GET|POST|PUT|PATCH|DELETE|HEAD|OPTIONS) \/[\w/:{}.*-]*$/.test(t)) return false;
+  // A shell line that starts with an environment variable ("ELECTRON_RUN_AS_NODE=1 exec {0}{1} \"$@\""): a script.
+  if (/^[A-Z][A-Z0-9_]*=\S+ \S/.test(t)) return false;
   // Tailwind class lists ("mx-auto flex min-h-full …") and paths/URLs with a file name ("{0}/de/de_DE/….onnx").
   const words = t.split(' ');
   if (words.length > 1 && words.every((w) => /^[a-z0-9:[\]/.%#_()!-]+$/.test(w)) && words.filter((w) => w.includes('-')).length >= 2 && !DUTCH.test(t.replace(/[\w:/[\].%#()!]+-[\w:/[\].%#()!-]+/g, ''))) return false;
   if (!/\s/.test(t) && /\//.test(t) && /\.[a-z]{2,5}(\?\w+)?$/.test(t)) return false;
+  // A thing and what is done to it ("{0} heropenen", "{0} later starten"): a placeholder and a Dutch infinitive.
+  if (/^\{\d+\}(?: [a-zà-ÿ]+){1,3}$/.test(t) && /[a-zà-ÿ]{2,}en$/.test(t)) return true;
   // must look Dutch: a common Dutch word, Dutch diacritics, a word only Dutch texts use, or a capitalised phrase
   return DUTCH.test(t) || hasVocab(t) || (/\s/.test(t) && /^[A-Z]/.test(t) && !/^[A-Z][a-z]+[A-Z]/.test(t));
 }
@@ -259,10 +289,21 @@ function extractOnce(root) {
     if (out.has(t) || !/^[A-Za-zÀ-ÿ’'][A-Za-zÀ-ÿ’'-]{1,39}[.:!?…]?$/.test(t)) return;
     if (jsx || /^[A-ZÀ-Ý][a-zà-ÿ’'-]+[.:!?…]?$/.test(t)) put(t);
   };
-  // Explicit translation calls: t('…', …) in the UI and tr(lang, '…', …) / trUser(store, id, '…', …) on the server.
+  // Explicit translation calls: t('…', …) in the UI, tr(lang, '…', …) / trUser(store, id, '…', …) on the server, and
+  // TeamBot's words with someone's words in them (words('Taak aan {0}: {1}', …), tOwn / ownText('…', …) and
+  // <Words text="was: {0}" …/>), also lower case and also when no word in them looks Dutch.
   const addCalls = (src) => {
-    for (const m of src.matchAll(/(?<![\w.$])(?:t\(|tr\(\s*[^,()]+,|trUser\(\s*[^,()]+,\s*[^,()]+,)\s*(['"])((?:\\.|(?!\1)[^\\\n])*)\1/g)) {
+    // A file with its own local `words` (a word list helper, voice/textlang.ts) does not call TeamBot's words().
+    const ownWords = /\b(?:const|let|var|function)\s+words\b/.test(src) && !/\bimport\b[^;]*\bwords\b[^;]*\bfrom\b/.test(src);
+    const calls = ownWords
+      ? /(?<![\w.$])(?:t\(|tOwn\(|ownText\(|tr\(\s*[^,()]+,|trUser\(\s*[^,()]+,\s*[^,()]+,)\s*(['"])((?:\\.|(?!\1)[^\\\n])*)\1/g
+      : /(?<![\w.$])(?:t\(|words\(|tOwn\(|ownText\(|tr\(\s*[^,()]+,|trUser\(\s*[^,()]+,\s*[^,()]+,)\s*(['"])((?:\\.|(?!\1)[^\\\n])*)\1/g;
+    for (const m of src.matchAll(calls)) {
       const t = m[2].replace(/\\(['"])/g, '$1').replace(/\s+/g, ' ').trim();
+      if (t && /[A-Za-zÀ-ÿ]{2}/.test(t)) put(t);
+    }
+    for (const m of src.matchAll(/<Words\b[^<>]*?\btext=(['"])((?:\\.|(?!\1)[^\\\n])*)\1/g)) {
+      const t = m[2].replace(/\s+/g, ' ').trim();
       if (t && /[A-Za-zÀ-ÿ]{2}/.test(t)) put(t);
     }
   };
@@ -312,10 +353,11 @@ function extractOnce(root) {
     }
     // Texts the server sends to the UI as data: provider/template descriptions, capability details, labels.
     // (Template literals as values: see the template loop below, which also reads nested ones.)
-    for (const m of src.matchAll(/\b[A-Za-z_]\w*\s*:\s*(['"])((?:\\.|(?!\1)[^\\])*)\1/g)) {
-      if (m[2].length > 400) continue; // long texts (bot instructions) are prompts, not interface
+    // (Also under a quoted key: `'run-after': '{0} later starten'` in a table of actions.)
+    for (const m of src.matchAll(/(?:\b[A-Za-z_]\w*|(['"])[\w-]+\1)\s*:\s*(['"])((?:\\.|(?!\2)[^\\])*)\2/g)) {
+      if (m[3].length > 400) continue; // long texts (bot instructions) are prompts, not interface
       let i = 0;
-      const pat = m[2].replace(/\$\{(?:[^{}]|\{[^{}]*\})*\}/g, () => `{${i++}}`).replace(/\\(['"`])/g, '$1');
+      const pat = m[3].replace(/\$\{(?:[^{}]|\{[^{}]*\})*\}/g, () => `{${i++}}`).replace(/\\(['"`])/g, '$1');
       add(pat);
       addWord(pat, false);
     }

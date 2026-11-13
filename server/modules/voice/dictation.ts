@@ -10,6 +10,7 @@ import { getSettings } from './settings.js';
 import { transcribe } from './stt.js';
 import { localVoice } from './local/service.js';
 import { STT_RATE } from './local/pcm.js';
+import { PLACE } from '../../../shared/places.js';
 
 export interface HotkeyDictation {
   engine: 'local' | 'provider';
@@ -53,7 +54,7 @@ export function openDictation(ctx: Ctx, userId: string): HotkeyDictation {
       },
     };
   }
-  if (s.stt.engine === 'browser') throw new Error('Dicteren met de sneltoets werkt met de gratis lokale spraakherkenning of een spraakprovider (Instellingen › Spraak).');
+  if (s.stt.engine === 'browser') throw new Error(`Dicteren met de sneltoets werkt met de gratis lokale spraakherkenning of een spraakprovider (${PLACE.voice}).`);
   const parts: Buffer[] = [];
   let bytes = 0;
   let closed = false;

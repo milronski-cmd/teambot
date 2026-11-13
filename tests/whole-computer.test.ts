@@ -81,7 +81,10 @@ test('whole computer: keys, TeamBot\'s own data and the folders the owner closed
     assert.throws(() => resolveInWorkspace(agent, path.join(data, 'teambot.db')), /dicht voor bots/);
     assert.throws(() => resolveInWorkspace(agent, path.join(data, 'master.key')), /beschermd/);
     assert.throws(() => resolveInWorkspace(agent, path.join(base, '.ssh', 'id_rsa')), /beschermd/);
-    assert.throws(() => resolveInWorkspace(agent, path.join(base, 'project', '.env'), { write: true }), /beschermd/);
+    // a project's .env is ordinary work on "Volledige toegang" (a bot builds apps); other levels keep refusing it
+    assert.ok(resolveInWorkspace(agent, path.join(base, 'project', '.env'), { write: true }));
+    assert.ok(resolveInWorkspace(agent, path.join(a.workspace, 'app', '.env.local'), { write: true }));
+    assert.throws(() => resolveInWorkspace({ ...agent, access_mode: 'auto' } as Agent, path.join(a.workspace, 'app', '.env')), /beschermd/);
     assert.throws(() => resolveInWorkspace(agent, path.join(base, 'Chrome', 'Login Data')), /beschermd/);
     // its own work folder lies in TeamBot's data and stays its own
     assert.ok(resolveInWorkspace(agent, path.join(a.workspace, 'x.txt'), { write: true }));
@@ -123,18 +126,20 @@ test('owner rules: the reviewer only checks the rules, not whether the step fits
   const t = await startTestApp();
   try {
     const a = await t.agent({ access_mode: 'full', tool_groups: ['files'] });
-    const r = await t.api('POST', '/bot-rules', { agentId: a.id, text: 'Vraag altijd eerst voordat je geld uitgeeft of een advertentiebudget verhoogt' });
+    // A rule that is about neither money nor messages is checked on every changing step (a money or message rule only on
+    // a step that can pay or send: tests/full-means-full.test.ts).
+    const r = await t.api('POST', '/bot-rules', { agentId: a.id, text: 'Vraag eerst bij twijfel over de huisstijl' });
     assert.equal(r.review, true);
     const th = await t.api('POST', '/threads', { agentId: a.id });
     // a greeting as last message, ongoing work: the step runs (first answer unreadable, second says allow)
-    t.script.push({ toolCalls: [{ name: 'write_file', args: { path: 'notities.md', content: 'verder met het plan' } }] }, { text: '' }, { text: '{"verdict":"allow","reason":"Geen geld mee gemoeid"}' }, { text: 'Klaar.' });
+    t.script.push({ toolCalls: [{ name: 'write_file', args: { path: 'notities.md', content: 'verder met het plan' } }] }, { text: '' }, { text: '{"verdict":"allow","reason":"Niets met de huisstijl"}' }, { text: 'Klaar.' });
     await t.say(th.id, 'Yo');
     assert.equal((await t.api('GET', '/approvals')).length, 0, 'no card for a file that has nothing to do with the rule');
     assert.equal(fs.readFileSync(path.resolve(a.workspace, 'notities.md'), 'utf8'), 'verder met het plan');
     const reviews = t.requests.filter((q: any) => /regels van de eigenaar/.test(String(q.system)));
     assert.equal(reviews.length, 2, 'asked again after an unreadable answer');
     assert.doesNotMatch(String(reviews[0].system), /volgt niet duidelijk uit de opdracht/);
-    assert.match(JSON.stringify(reviews[0].messages), /geld uitgeeft/);
+    assert.match(JSON.stringify(reviews[0].messages), /huisstijl/);
     assert.doesNotMatch(JSON.stringify(reviews[0].messages), /Opdracht van de gebruiker/);
     assert.equal(reviews[0].reasoning, 'low');
     assert.ok((reviews[0].maxTokens || 0) >= 1000, 'room for the answer next to the thinking');

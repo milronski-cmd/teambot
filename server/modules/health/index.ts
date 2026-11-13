@@ -7,13 +7,13 @@ import { HeartbeatWriter, markStopped, readFinding, WATCH_SETTING, watchNotify }
 import { watchdogTask } from './task.js';
 
 /**
- * Hoe gaat het met TeamBot? (0.4.3, parity 17.1). The stall meter (meter.ts) runs inside the server from the start;
+ * Status van TeamBot (0.4.3, parity 17.1). The stall meter (meter.ts) runs inside the server from the start;
  * this module shows it:
  *  GET /api/health           the colour of the line and its reasons, now / last hour / since the start (owner, admin)
  *  GET /api/health/history   the samples (one a minute, two days), for the soak test and support
  *  ctx.services.health       snapshot(), history(), diagnostics() — the diagnostics file includes the last day
  *  PUT /api/health/watchdog  { notify } — the watchdog outside the app (heartbeat.ts, build/watchdog.ps1) tells you or not
- * Instellingen › Algemeen › Hoe gaat het met TeamBot? is ui/src/modules/health.
+ * Instellingen › Algemeen › Status van TeamBot is ui/src/modules/health.
  */
 
 export function healthSnapshot(ctx: Ctx, m: StallMeter) {
@@ -40,7 +40,7 @@ export function createHealthModule(o: MeterOptions & { persist?: boolean } = {})
   const meterOf = (ctx: Ctx): StallMeter | null => ctx.services.health?.meter?.() ?? null;
   return {
     id: 'health',
-    label: 'Hoe gaat het met TeamBot?',
+    label: 'Status van TeamBot',
     init(ctx) {
       const heart = new HeartbeatWriter(ctx);
       const meter = new StallMeter({

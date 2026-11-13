@@ -21,7 +21,7 @@ const ok = (name, cond, detail = '') => {
 const home = fs.mkdtempSync(path.join(os.tmpdir(), 'tb-offsite-home-'));
 Object.assign(process.env, { APPDATA: path.join(home, 'AppData', 'Roaming'), LOCALAPPDATA: path.join(home, 'AppData', 'Local') });
 delete process.env.TEAMBOT_DATA;
-const { createApp } = await import('../../server/app.ts');
+const { createApp } = await import('./server.mjs');
 const browser = await chromium.launch({ channel: process.env.TEAMBOT_E2E_BROWSER || (process.platform === 'win32' ? 'msedge' : 'chrome'), headless: true });
 const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'tb-offsite-'));
 const usb = fs.mkdtempSync(path.join(os.tmpdir(), 'tb-offsite-usb-'));
@@ -49,6 +49,7 @@ try {
   ok('de kaart staat op de bestaande Back-ups-pagina', true);
 
   // Set up: folder and password (too short first).
+  await page.locator('[aria-labelledby="offsite-title"]').getByRole('button', { name: 'Instellen', exact: true }).click();
   await page.getByLabel('Map voor de kopieën').fill(usb);
   await page.getByLabel('Wachtwoord (minstens 12 tekens)').fill('kort');
   ok('te kort wachtwoord: uitleg, Opslaan uit', (await page.getByText('Minstens 12 tekens.').count()) === 1 && (await page.getByRole('button', { name: 'Opslaan' }).isDisabled()));

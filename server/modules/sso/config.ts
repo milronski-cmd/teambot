@@ -163,23 +163,3 @@ export function cookie(req: Request, name: string): string | null {
   return null;
 }
 
-/** Fixed-window counters per key (per process). */
-export class Limiter {
-  private hits = new Map<string, { n: number; reset: number }>();
-  constructor(private max: number, private windowMs: number) {}
-  hit(key: string): boolean {
-    const t = Date.now();
-    let h = this.hits.get(key);
-    if (!h || h.reset <= t) {
-      h = { n: 0, reset: t + this.windowMs };
-      this.hits.set(key, h);
-      if (this.hits.size > 5000) for (const [k, v] of this.hits) if (v.reset <= t) this.hits.delete(k);
-    }
-    h.n++;
-    return h.n <= this.max;
-  }
-  blocked(key: string): boolean {
-    const h = this.hits.get(key);
-    return !!h && h.reset > Date.now() && h.n >= this.max;
-  }
-}

@@ -1,4 +1,5 @@
 import type { ObAgent, ObRoutine, ObSkill } from './reader.js';
+import { listText } from '../../core/i18n.js';
 
 /**
  * Proposals for the 0.4 team model, from what the owner built in OpenBot: which bot is the boss (main bot or team
@@ -74,7 +75,7 @@ export function pickBoss(agents: ObAgent[]): BossPick {
   const [best, second] = scored;
   if (!best || best.score < 3) return { key: null, reason: 'Geen bot is duidelijk de baas van het team.' };
   if (second && second.score === best.score) return { key: null, reason: `${best.a.name} en ${second.a.name} lijken allebei de baas; kies zelf.` };
-  return { key: best.a.id, reason: `Voorgesteld vanwege ${best.why.join(' en ')}.` };
+  return { key: best.a.id, reason: `Voorgesteld vanwege ${listText(best.why)}.` };
 }
 
 // ---------------------------------------------------------------- specialists

@@ -21,6 +21,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import type { Ctx } from '../../core/types.js';
 import { now, purgeDeleted } from '../../core/db.js';
+import { isInside } from '../../tools/builtin/files.js';
 
 export interface PurgeScope {
   /** Owner of the conversations (whose attachments and bots are involved). */
@@ -125,6 +126,15 @@ export function previewPurge(ctx: Ctx, s: PurgeScope): PurgeCounts {
 /** Thread meta that belongs to the conversation itself (summaries, compaction marks): cleared when it is emptied. */
 const CONVERSATION_META = ['summary', 'summaryUpTo', 'summaryAt', 'cliCompactedAt', 'contextFromSeq', 'queuePaused', 'queuePausedReason'];
 
+
+/**
+ * May this file be deleted from disk with its conversation? Only a file INSIDE TeamBot's own data folder: resolved
+ * paths compared on a folder boundary (`data` is not `data-oud`), on Windows whatever the letter case; never the data
+ * folder itself, never a path that climbs out with `..`.
+ */
+export function insideDataDir(dataDir: string, p: string | null | undefined): boolean {
+  return !!p && !!dataDir && isInside(p, dataDir) && !isInside(dataDir, p);
+}
 /**
  * Delete the conversations. Queued messages go first (nothing starts anew), running work is stopped and given up to
  * five seconds to stop, so no answer lands in a conversation that is being deleted. `audience`: who gets the live
@@ -143,8 +153,7 @@ export async function purgeConversations(ctx: Ctx, s: PurgeScope, audience: stri
   }
 
   const files = attachmentsToDelete(ctx, s);
-  const root = path.resolve(ctx.config.dataDir) + path.sep;
-  const inside = (p: string) => !!p && path.resolve(p).startsWith(root);
+  const inside = (p: string) => insideDataDir(ctx.config.dataDir, p);
   const workspaces = ctx.store.agents(s.ownerId, { archived: true }).map((a) => a.workspace).filter(Boolean);
   const tts = allIn<{ id: string; path: string }>(ctx, 'SELECT v.id, v.path FROM voice_tts v JOIN messages m ON m.id = v.message_id WHERE m.thread_id IN (#) AND m.created_at <= ?', ids, until(s));
 

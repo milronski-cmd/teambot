@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useState, type ReactNode } from 'react';
 import { ExternalLink, Receipt, RefreshCw, Square } from 'lucide-react';
 import { api, on } from '../../lib/api';
-import { t } from '../../lib/i18n';
+import { t, translate } from '../../lib/i18n';
+import { formatList } from '../../lib/format';
 import { Badge, Button, Card, EmptyState, Modal, Select, Spinner, useAsync } from '../../components/ui';
 import { Fold, Skeleton, SkeletonRows } from '../../components/overview';
 import { Markdown } from '../../shell/Markdown';
@@ -10,11 +11,18 @@ import { RunChanges } from '../folders/Trash';
 
 const PROOF_KIND: Record<string, string> = { file: 'Bestand', message: 'Bericht', task: 'Taak', action: 'Actie' };
 
+/** The claims of a bot that TeamBot did not see happen ("een opgeslagen bestand en een verstuurd bericht"), as one list. */
+const claimList = (p: RunProof) => formatList((p.claims || []).map((c) => translate(c)));
+
+/** Why a run has no result. With claims, from the claims: the stored reason joined them with a Dutch "en". */
+const noResult = (p: RunProof) => (p.claims?.length ? t('De bot meldde {0}, maar TeamBot zag dat niet gebeuren: geen bestand, bericht of taak.', claimList(p)) : p.reason);
+
 /** "Bewijs: notulen.md geschreven" or why there is no result, in one line under the receipt. */
 function ProofLine({ proof }: { proof?: RunProof }) {
   if (!proof) return null;
-  if (proof.result === 'none') return <p className="text-xs text-warn">{proof.reason}</p>;
-  if (proof.result === 'answer') return <p className="text-xs text-muted">Resultaat: het antwoord van de bot.</p>;
+  if (proof.result === 'none') return <p className="text-xs text-warn">{noResult(proof)}</p>;
+  // The answer itself is right above this line: nothing to add.
+  if (proof.result === 'answer') return null;
   const first = proof.items[0];
   return (
     <p className="text-xs text-ok">
@@ -48,7 +56,6 @@ function RunLinks({ rr }: { rr: RunView }) {
 
 export function RunReceipt({ rr, tz, onOpen, onCancel, busy }: { rr: RunView; tz: string; onOpen(): void; onCancel(): void; busy?: boolean }) {
   const st = runStatus(rr);
-  const tokens = (rr.usage?.input || 0) + (rr.usage?.output || 0);
   const waiting = rr.status === 'retrying' && rr.meta?.limitWait;
   return (
     <Card className="space-y-2 p-3 sm:p-4">
@@ -72,8 +79,8 @@ export function RunReceipt({ rr, tz, onOpen, onCancel, busy }: { rr: RunView; tz
       <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted">
         {rr.scheduled_for && <span>Gepland: {fmtDate(rr.scheduled_for, tz)}</span>}
         <span>Duur: {fmtDuration(rr.duration_ms)}</span>
-        <span>Tokens: {tokens ? `${rr.usage.input || 0} in / ${rr.usage.output || 0} uit` : '—'}</span>
-        <span>Kosten: {fmtCost(rr.usage?.cost)}</span>
+        {/* Tokens and the rest of the numbers are on the receipt ("Bonnetje"). */}
+        {!!rr.usage?.cost && <span>Kosten: {fmtCost(rr.usage?.cost)}</span>}
       </div>
       <div className="flex flex-wrap gap-2 pt-1">
         <Button size="sm" variant="ghost" icon={<Receipt className="h-4 w-4" />} onClick={onOpen}>
@@ -158,7 +165,7 @@ export function ReceiptModal({ id, tz, onClose }: { id: string | null; tz: strin
             <div>
               <div className="mb-1 text-sm font-medium">Resultaat</div>
               {rr.meta.proof.result === 'none' ? (
-                <p className="rounded-control bg-warn-soft px-3 py-2.5 text-sm text-warn">{rr.meta.proof.reason}</p>
+                <p className="rounded-control bg-warn-soft px-3 py-2.5 text-sm text-warn">{noResult(rr.meta.proof)}</p>
               ) : rr.meta.proof.result === 'answer' ? (
                 <p className="text-sm text-muted">Het antwoord van de bot, hieronder.</p>
               ) : (
@@ -171,7 +178,7 @@ export function ReceiptModal({ id, tz, onClose }: { id: string | null; tz: strin
                   ))}
                 </ul>
               )}
-              {rr.meta.proof.result !== 'none' && rr.meta.proof.claims?.length > 0 && <p className="mt-1 text-xs text-warn">De bot noemde ook {rr.meta.proof.claims.join(' en ')}, maar TeamBot zag dat niet gebeuren.</p>}
+              {rr.meta.proof.result !== 'none' && rr.meta.proof.claims?.length > 0 && <p className="mt-1 text-xs text-warn">{t('De bot noemde ook {0}, maar TeamBot zag dat niet gebeuren.', claimList(rr.meta.proof))}</p>}
             </div>
           )}
           {(rr.meta?.runIds?.length || rr.run_id) && <RunChanges runIds={rr.meta?.runIds?.length ? rr.meta.runIds : [rr.run_id!]} />}

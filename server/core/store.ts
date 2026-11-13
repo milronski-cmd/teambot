@@ -35,6 +35,10 @@ export class Store {
   tx<T>(fn: () => T): T {
     return tx(this.db, fn);
   }
+  /** Is there a table with this name (a module that is off has none)? */
+  hasTable(name: string): boolean {
+    return !!this.one("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?", name);
+  }
   decode<T = any>(table: string, row: any): T {
     return decodeRow<T>(table, row);
   }
@@ -87,7 +91,15 @@ export class Store {
   defaultWorkspace(agentId: string) {
     return path.join(this.dataDir, 'workspaces', agentId);
   }
-  createAgent(userId: string, data: Partial<Agent>): Agent {
+  /**
+   * What a new bot gets where the caller leaves it out (access, parts): set by app.ts to agent/new-bot.ts, the one
+   * place for those defaults. Without it (a bare Store in a unit test) the careful fallback below applies.
+   */
+  agentDefaults: ((userId: string, data: Partial<Agent>) => Partial<Agent>) | null = null;
+  /** Called once a bot is stored, with what the caller asked for (app.ts logs a start at "Volledige toegang"). */
+  agentCreated: ((agent: Agent, asked: Partial<Agent>) => void) | null = null;
+  createAgent(userId: string, input: Partial<Agent>): Agent {
+    const data = this.agentDefaults ? this.agentDefaults(userId, input) : input;
     const id = data.id || newId('ag_');
     const ts = now();
     const a: Agent = {
@@ -104,7 +116,8 @@ export class Store {
       reasoning: data.reasoning || '',
       access_mode: data.access_mode || 'ask',
       workspace: data.workspace || this.defaultWorkspace(id),
-      tool_groups: data.tool_groups || ['files', 'web', 'memory', 'team', 'skills', 'routines'],
+      // 'browser': every new bot has its own browser, so the owner can watch along from the first chat (the globe in the chat header).
+      tool_groups: data.tool_groups || ['files', 'web', 'browser', 'memory', 'team', 'skills', 'routines'],
       tool_policy: data.tool_policy || {},
       skills: data.skills || [],
       fallback: data.fallback ?? null,
@@ -118,6 +131,7 @@ export class Store {
     };
     fs.mkdirSync(a.workspace, { recursive: true });
     this.insert('agents', a);
+    this.agentCreated?.(a, input);
     return a;
   }
   updateAgent(id: string, patch: Partial<Agent>): Agent {

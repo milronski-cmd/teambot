@@ -12,14 +12,16 @@ struct TeamBotApp: App {
         WindowGroup {
             RootView()
                 .environmentObject(model)
-                // The orange of TeamBot (the same as the website and the pc app) on buttons, links and switches.
-                .tint(Color(red: 1.0, green: 0.58, blue: 0.25))
+                // The orange of TeamBot (the same as the website and the pc app) on links and switches; every
+                // colour of the native screens comes from Theme.
+                .tint(Theme.accentText)
                 // The native screens are Dutch (the web app follows the language set on the pc).
                 .environment(\.locale, Locale(identifier: "nl_NL"))
                 .onAppear { appDelegate.model = model }
                 .onChange(of: scenePhase) { _, phase in
                     // Back in the app: check every link again (also picks up consent withdrawn in iOS Settings).
-                    if phase == .active { Task { await model.refresh() } }
+                    if phase == .background { model.wentToBackground() }
+                    if phase == .active { Task { await model.cameBack() } }
                 }
         }
     }

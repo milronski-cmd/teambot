@@ -11,19 +11,19 @@ export const MODE_LABEL: Record<RoomMode, string> = {
 };
 
 export interface Limits {
-  /** Bot turns one human message may cause (incl. sequential turns, mentions, delegations, follow-ups). */
+  /** Bot turns one human message may cause (incl. sequential turns, mentions, delegations, follow-ups). 0 = no cap. */
   maxTurnsPerMessage: number;
-  /** Maximum delegation hops (A→B→C = 2). 0 disables delegation. */
+  /** Maximum delegation hops (A→B→C = 2). 0 = no cap; -1 = bots may not give work to each other at all. */
   maxDelegationDepth: number;
-  /** Ownership transfers per message chain. */
+  /** Ownership transfers per message chain. 0 = no cap; -1 = no transfers at all. */
   maxHandoffs: number;
-  /** Bots one broadcast may address. */
+  /** Bots one broadcast may address. 0 = no cap. */
   maxBroadcastTargets: number;
-  /** Model calls (steps) one bot turn may take inside this room. */
+  /** Model calls (steps) one bot turn may take inside this room (0 = no cap). */
   maxStepsPerTurn: number;
-  /** A bot turn that runs longer than this (excluding time waiting for a human) is stopped. */
+  /** A bot turn that runs longer than this (excluding time waiting for a human) is stopped (0 = never). */
   turnTimeoutSec: number;
-  /** A delegated subtask that runs longer than this is stopped. */
+  /** A delegated subtask that runs longer than this is stopped (0 = never: real work takes as long as it takes). */
   delegationTimeoutSec: number;
   /** Total spend cap for the room in USD (0 = no cap). Only models with known prices count. */
   maxCostUsd: number;
@@ -31,11 +31,11 @@ export interface Limits {
   maxTokens: number;
   /** Bots may wake other bots with @name in their answer. */
   allowBotMentions: boolean;
-  /** Bot turns one chain with asynchronous bot messages (ask_bot + answers that wake the sender) may cause. */
+  /** Bot turns one chain with asynchronous bot messages (ask_bot, board tasks + answers that wake the sender) may cause. 0 = no cap. */
   maxAskTurns: number;
-  /** Asynchronous messages one bot may send per hour (all recipients together). */
+  /** Asynchronous messages one bot may send per hour (all recipients together). 0 = no cap. */
   maxAsksPerHour: number;
-  /** Asynchronous messages from one bot to the same other bot per hour (ping-pong guard). */
+  /** Asynchronous messages from one bot to the same other bot per hour. 0 = no cap. */
   maxAsksPerPairPerHour: number;
   /** Spend cap for one chain of asynchronous bot messages in USD (0 = no cap; models with known prices). */
   maxChainCostUsd: number;
@@ -44,36 +44,39 @@ export interface Limits {
 }
 
 export const DEFAULT_LIMITS: Limits = {
-  maxTurnsPerMessage: 8,
-  maxDelegationDepth: 3,
-  maxHandoffs: 3,
-  maxBroadcastTargets: 6,
-  maxStepsPerTurn: 25,
-  turnTimeoutSec: 600,
-  delegationTimeoutSec: 900,
-  maxCostUsd: 5,
-  maxTokens: 2_000_000,
+  // Owner rule: no built-in brakes. Every limit is a setting that is off (0) until the owner sets it: counts of turns,
+  // hops and messages stop a busy team as easily as a loop. What protects against a real loop is not a count but the
+  // loop rule of the work between bots (orchestration.ts loopError): the same request again, with nothing changed.
+  maxTurnsPerMessage: 0,
+  maxDelegationDepth: 0,
+  maxHandoffs: 0,
+  maxBroadcastTargets: 0,
+  maxStepsPerTurn: 0,
+  turnTimeoutSec: 0,
+  delegationTimeoutSec: 0,
+  maxCostUsd: 0,
+  maxTokens: 0,
   allowBotMentions: true,
-  maxAskTurns: 40,
-  maxAsksPerHour: 60,
-  maxAsksPerPairPerHour: 20,
-  maxChainCostUsd: 3,
-  maxChainTokens: 3_000_000,
+  maxAskTurns: 0,
+  maxAsksPerHour: 0,
+  maxAsksPerPairPerHour: 0,
+  maxChainCostUsd: 0,
+  maxChainTokens: 0,
 };
 
 const RANGES: Record<Exclude<keyof Limits, 'allowBotMentions'>, [number, number]> = {
-  maxTurnsPerMessage: [1, 50],
-  maxDelegationDepth: [0, 6],
-  maxHandoffs: [0, 10],
-  maxBroadcastTargets: [1, 20],
-  maxStepsPerTurn: [1, 100],
-  turnTimeoutSec: [1, 7200],
-  delegationTimeoutSec: [1, 14_400],
+  maxTurnsPerMessage: [0, 100_000],
+  maxDelegationDepth: [-1, 50],
+  maxHandoffs: [-1, 1000],
+  maxBroadcastTargets: [0, 200],
+  maxStepsPerTurn: [0, 100_000],
+  turnTimeoutSec: [0, 604_800],
+  delegationTimeoutSec: [0, 604_800],
   maxCostUsd: [0, 10_000],
   maxTokens: [0, 1_000_000_000],
-  maxAskTurns: [1, 300],
-  maxAsksPerHour: [1, 1000],
-  maxAsksPerPairPerHour: [1, 500],
+  maxAskTurns: [0, 100_000],
+  maxAsksPerHour: [0, 100_000],
+  maxAsksPerPairPerHour: [0, 10_000],
   maxChainCostUsd: [0, 10_000],
   maxChainTokens: [0, 1_000_000_000],
 };
@@ -171,6 +174,3 @@ export function findMentions(text: string, people: Named[], opts: { leading?: bo
   }
   return { ids, all };
 }
-
-/** Rank of access modes; a higher rank means more autonomy. */
-export const ACCESS_RANK: Record<string, number> = { chat: 0, readonly: 1, ask: 2, auto: 3 };

@@ -119,8 +119,8 @@ test('the board and the team database together: one list, newest first, each car
     assert.deepEqual(p.todo.map((x) => x.title), ['Mijn eigen taak']);
 
     // The notification for a task for you opens the one board.
-    const inbox = t.app.ctx.store.one<{ link: string }>("SELECT link FROM room_inbox WHERE user_id = ? AND kind = 'task'", owner.id);
-    assert.equal(inbox?.link, '#/tasks');
+    const told = t.app.ctx.store.one<{ link: string }>("SELECT link FROM notifications WHERE user_id = ? AND title LIKE '%aak voor jou: %'", owner.id);
+    assert.equal(told?.link, '#/tasks');
 
     // Moving a team-database card writes its own word for the column; the card stays where it was put.
     const row = team[0];

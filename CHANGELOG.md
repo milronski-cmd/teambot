@@ -1,9 +1,301 @@
 # Changelog
 
+## [2.2.0] — 2026-11-13
+
+Het team wacht niet meer op jou, en een bot werkt door terwijl een vraag bij je openstaat.
+
+### Doorwerken
+- **Een bot staat niet stil voor een vraag aan jou.** Geef je binnen twee minuten geen antwoord op een vraag om
+  toestemming of een vraag van een bot, dan gaat hij door met zijn andere werk. De vraag blijft staan onder
+  "Wacht op jou"; zodra je beslist krijgt de bot bericht en maakt hij het af. Dezelfde vraag komt geen tweede keer.
+- **Een taak op "te controleren" is werk voor de bot, niet alleen voor jou.** De hoofdbot pakt zijn eigen taken
+  die de controle niet goedkeurde zelf weer op, maximaal drie keer; pas daarna wacht het op jou.
+- **Een controle die geen oordeel gaf doet TeamBot zelf opnieuw**, meteen en daarna later nog eens. Taken die nog op
+  "De controle gaf geen duidelijk antwoord" stonden worden bij de eerste start opnieuw gecontroleerd.
+
+### Toestemming en controle
+- **Volledige toegang vraagt niet meer bij het woord "mail" in een opdracht.** Alleen een opdracht die echt iemand
+  mailt telt als bericht naar anderen.
+- **De controle via Claude Code geeft weer een oordeel**, en ziet wat een opdracht van de bot heeft uitgevoerd.
+- **Een open vraag vervalt als het werk eromheen klaar is**, behalve als de bot er intussen op doorwerkt.
+- Een routine krijgt geen "zonder resultaat" meer omdat het antwoord zegt wat er niet is gedaan.
+- Meldingen over dezelfde taak zijn één regel met een teller.
+
+### Scherm
+- De gezichtjes van bots in de zijbalk zijn groter.
+
 ## [0.4.4] — 2026-11-09
 
 De final: simpel en overzichtelijk, en direct na de installer werkend, zoals OpenBot maar beter. De controles staan in
 `docs/RELEASE_0.4.4_GATES.md`.
+
+### Eindcontrole (12 nov, nacht)
+- **Beelden en audio ook als de gegevens onder een map met een punt staan** (Linux: `~/.local/share/teambot`).
+  Daar gaf elk beeld van de browser van een bot, elk voorbeeld en alle spraakaudio "niet gevonden".
+- **De check-in verdwijnt niet als je hem aanzet voordat er een bot is.** Hij blijft in "Wat start vanzelf" staan
+  ("begint zodra er een hoofdbot met AI is"), met Uitzetten.
+- **Routines uit een kant-en-klaar team hebben geen eigen limiet meer** (was 1 run per dag en 20 minuten per run).
+- **Kaarten en stappen van de browser van een bot zijn hele zinnen**, zodat elke taal ze kan vertalen; lijsten in
+  toestemmingsvragen lezen als "A, B en C".
+- Het voorbeeld bij "Antwoord van de andere assistent" noemt geen stad meer.
+
+### Afbeeldingen en hulpmiddelen bij kleine modellen (12 nov, avond)
+- **Een afbeelding bij een model dat geen beeld kan lezen loopt niet meer vast.** Zo'n model (bijvoorbeeld een klein
+  lokaal model in Ollama) weigerde de hele vraag. Nu krijgt het de tekst op de afbeelding, gelezen met de
+  tekstherkenning van TeamBot, of de melding dat er een afbeelding is die het niet kan zien. Een model dat wel beeld
+  leest krijgt de afbeelding zoals voorheen. Wat een model kan, haalt TeamBot van dezelfde plek als de botpagina.
+- **Een bot heeft bij de hand waarvoor hij is ingericht.** Noemen zijn instructies de browser, dan staan alle
+  browserhulpmiddelen in zijn lijst; noemt een bericht een hulpmiddel bij naam, dan staat dat er voor die beurt bij.
+  Een bot zonder eigen instructies houdt dezelfde korte lijst.
+
+### Eerste scherm en eerste bot (12 nov, avond)
+- **Eén hoofdknop op het eerste scherm, wat er ook op de pc staat.** Een OpenBot-installatie gaat voor
+  ("Bekijken wat er overkomt": het hele team gaat mee, met zijn AI); "Niet nu" geeft de hoofdknop aan de beste AI.
+  Daarna een abonnement, OpenCode, een lokaal model, een sleutel; is er niets, dan "Gratis starten". Alle andere
+  manieren blijven als rustige keuze met hun eigen knop, ook "Gebruik voor nieuwe bots" bij de lokale modellen.
+- **Geen doodlopende keuze.** Staat Ollama niet op de pc, dan staat het onder "Gratis beginnen" met "Installeren":
+  TeamBot installeert Ollama zelf, stil en met voortgang ter plekke (het controleert de handtekening van Ollama),
+  koppelt het en haalt een model dat bij de pc past; daarna wordt de keuze vanzelf "Ollama gebruiken".
+- **Op het eerste scherm** zegt "Meer informatie" niet meer dat bots altijd toestemming vragen: ze doen het werk zelf
+  en vragen het je bij geld en belangrijke berichten naar anderen, zoals de eerste bot begint.
+- **De eerste bot begint leeg.** Alleen de naam Assistent, zodat één klik een werkende bot geeft; geen vaste rol,
+  taak of instructies. Naam en rol staan meteen in beeld en worden bewaard zodra je verder gaat, zonder extra stap.
+  Instructies zijn de eigen tekst van de eigenaar, ook bij een nieuwe bot zonder voorbeeld. Hoe elke bot werkt
+  (eerlijk, geen verzonnen resultaat, doorvragen bij een onduidelijke opdracht) staat in de basis van TeamBot.
+- **De regel bij de werkplek volgt het niveau.** Op Volledige toegang staat er dat de bot ook daarbuiten werkt, op
+  de hele computer, zonder te vragen; op Automatisch dat hij daarbuiten eerst vraagt; op Vraagt toestemming, Alleen
+  lezen en Alleen chat wat daar geldt. Op de botpagina volgt hij het niveau dat je kiest.
+- **Alles wat een bot moet doen op één plek:** onder Instructies op de botpagina staan nu ook de opdrachten die je
+  hem in een gesprek gaf (uit zijn Werknotities), om te lezen, met "Aanpassen in Geheugen".
+- **Geheugen:** het tabblad Notities van een dossier toont alle notities van dat dossier, ook de lessen in "Lessen",
+  zoveel als het dossier telt.
+
+### Marktplaats: alles wat openbaar is, met sorteren (12 nov)
+- **Naast "Gecontroleerd" staat nu "Open":** zoeken in alle openbare skills op GitHub en in de open bibliotheken
+  skills.sh en ClawHub, voor iedereen aan. Onder de schakelaar staat wat open betekent: niet door TeamBot
+  gecontroleerd, de controle gebeurt op het moment dat je iets toevoegt. Sorteren op meeste sterren, trending,
+  nieuwste en laatst bijgewerkt. Het scherm zegt wat een volgorde betekent: trending is de meeste sterren onder
+  repositories van de laatste 30 dagen (GitHub geeft geen sterren per dag), met daarbij de skills die de laatste
+  24 uur het meest geïnstalleerd zijn.
+- **Elke kaart zegt waar hij vandaan komt.** Sterren en downloads van ClawHub telt ClawHub zelf, en dat staat erbij;
+  ze staan in een eigen lijst. Op datum (nieuwste, laatst bijgewerkt) staan GitHub en ClawHub door elkaar.
+- **Een skill van ClawHub wordt vastgelegd op zijn versie,** zoals een skill van GitHub op zijn commit: een nieuwere
+  versie zie je als verschil en beslis jij. Waarschuwt ClawHub zelf voor een skill, dan vraagt TeamBot eerst.
+- **"Wat verlaat je pc?" noemt het nu:** als jij of een bot onder Open zoekt, gaan alleen de zoekwoorden naar GitHub,
+  skills.sh en ClawHub.
+- **Per resultaat:** naam, één regel uitleg, repository, sterren of installaties, licentie als die bekend is, wanneer
+  het laatst is bijgewerkt, en of TeamBot het gecontroleerd heeft. Zoek je op woorden, dan staan de gecontroleerde
+  skills en die uit je eigen catalogi er ook bij.
+- **Toevoegen is één klik en werkt meteen voor het hele team,** langs dezelfde weg als de gecontroleerde catalogus:
+  importregels en veiligheidsscan op dat moment, scripts uit tot jij de skill vertrouwt. Je krijgt de versie van dat
+  moment; verandert de bron later, dan zie je dat als verschil en beslis jij.
+- **Vindt de scan iets ernstigs,** of lijkt de naam van de uitgever op een bekende, dan wordt de klik een bevestiging
+  die laat zien wat er gevonden is. De scan leest de skill nu zoals de bron hem schreef (een opdracht in de
+  beschrijving telde na het importeren als citaat en dus lichter).
+- **Zonder GitHub-token** mag je 10 keer per minuut zoeken. Resultaten worden een uur bewaard; bij de limiet zegt
+  TeamBot rustig wanneer het weer kan, en blijft alles wat je al zag, de gecontroleerde skills en toevoegen werken.
+- **Bots zoeken mee:** `skill_find` noemt na de skills van het team en de gecontroleerde catalogus ook wat openbaar
+  is (gemarkeerd als niet gecontroleerd), en `skill_install` voegt daaruit toe met dezelfde controles.
+- De schakelaar `TEAMBOT_SKILL_COLLECTIONS` en de open collecties die daarbij hoorden zijn weg.
+
+### Skills staan waar de AI ze zelf zoekt (12 nov)
+- **Een skill die je installeert staat meteen in de werkmap van elke bot van het team,** als gewone skillmap
+  (`.claude/skills` en `.agents/skills`). Claude Code pakt een skill er zelf bij: eerst alleen naam en beschrijving,
+  de tekst pas als een taak erom vraagt. Zo'n bot krijgt geen lijst met skills meer in zijn instructies en hoeft de
+  tekst niet meer via TeamBot op te halen. Bots op een model met een sleutel, een lokaal model, Codex of OpenCode
+  werken als voorheen, met de lijst.
+- **Een skill weghalen bij één bot werkt nu echt,** ook als het zijn laatste is: hij staat dan niet meer in zijn
+  instructies, zijn menu of zijn werkmap, en zijn collega's houden hem. Een lege lijst betekende eerst "alles".
+- **TeamBot schrijft alleen in een werkmap die het zelf voor de bot maakte.** Werkt een bot in jouw eigen projectmap
+  of in de map van een ander programma, dan komt daar niets bij; de bot heeft zijn skills dan nog steeds.
+- **Wat je zelf in een skillmap zet of aanpast, blijft staan.** TeamBot schrijft er niet overheen en zegt het je één keer.
+- **Scripts van een skill die je niet vertrouwt staan niet in de werkmap.** Een script draait altijd de versie die jij
+  vertrouwt, ook als iemand het bestand in de werkmap heeft aangepast.
+
+### Elke bot kan wat jij in de schermen kunt (12 nov)
+- **Elke bot bedient TeamBot voor je.** Een routine maken of pauzeren, een collega een andere naam geven, een kanaal
+  uitzetten, een instelling aanpassen: tot nu toe kon alleen de hoofdbot dat (`teambot_find` en `teambot_do`). De
+  hoofdbot heeft die twee in zijn lijst; elke andere bot vindt ze op afroep, dus ze kosten zijn stappen niets.
+- **Op jouw woord meteen, anders één kaart.** Vraag je het zelf in het gesprek, dan gebeurt het direct, ook als je bot
+  het werk doorgeeft aan een collega en die het weer doorgeeft, en ook in de beurt waarin het antwoord van een collega
+  terugkomt: het begon met jouw bericht. Begon het werk met iets anders (een routine, een webhook, een bericht van
+  iemand anders, een beurt die TeamBot zelf startte), dan komt een wijziging eerst als één kaart bij jou. Dat geldt
+  voor elke bot, ook voor de hoofdbot: tekst die een bot leest in werk dat jij niet begon, kan niets aan TeamBot
+  veranderen zonder dat jij het ziet. Kijken kan altijd.
+- **Met het bereik van de bot zelf, niet met het jouwe.** Een bot ziet en verandert alleen wat bij zijn eigen team
+  hoort, en bij een team waar hij mag meekijken (alleen kijken) of dat hij mag aansturen. Een sleutel die alleen voor
+  een ander team is, ziet en gebruikt hij niet. In een gesprek met iemand anders dan jij (een klant via een kanaal)
+  bestaan de schermen voor een bot niet, ook niet voor de hoofdbot en ook niet om iets op te zoeken.
+- **Wat het ene team weet, weet een ander team niet.** Zodra je twee teams hebt, geldt dat voor elke bot behalve de
+  hoofdbot, ook voor een bot die alle teams mag aansturen. Het geheugen van een team (dossiers, kennis) schrijft alleen
+  een bot van dat team, net als met zijn eigen geheugentools. Een bot die een bot maakt, zet hem in zijn eigen team.
+  Noemt een bot geen team, dan is het zijn eigen team en niet het standaardteam. Totalen over alle teams (verbruik,
+  aantallen, het overzicht van de hoofdbot) krijgt een bot alleen over de teams waar hij in mag kijken. Een bot bij
+  zijn naam of rol noemen helpt niet om langs een muur te komen. Een lijst met wie een app, vaardigheid of gedeeld
+  browserprofiel mag gebruiken, haalt een bot niet leeg voor teams die hij niet ziet. Het hele geheugen in één keer
+  (alles wissen, prullenbak legen, opruimen) doe je zelf.
+- **Jouw bericht in een groep met alleen jou telt als jouw woord**, zoals in je eigen chat. Een routine die opnieuw
+  probeert (na een limiet of met Opnieuw) is nog steeds de routine: een wijziging is dan een kaart.
+- **Meer toegang gaat altijd naar jou.** Een hoger toegangsniveau (ook van *Vraagt toestemming* naar *Automatisch*),
+  een onderdeel erbij of versturen zonder vragen komt als kaart, via welke tool een bot het ook probeert. Minder kan
+  een bot altijd zelf.
+- **Eén weg naar de bot zelf.** Wat een bot aan zichzelf of aan een collega verandert, gaat langs het opslaan van de
+  botpagina: dezelfde controles, en de bot zoals hij was staat onder Geschiedenis. Een onderdeel dat een bot aanvroeg
+  bewaarde die versie eerst niet.
+- **Een bot komt in het team waarvoor hij is gemaakt**, ook als een ander onderdeel van TeamBot er eerder naar vraagt,
+  en een bot die wordt verwijderd blijft niet in zijn team achter (een leeg team kon daardoor niet weg).
+
+### Instellingen en de botpagina: eerst wat je nodig hebt, de rest op één plek (12 nov)
+- **Instellingen is één lijst waarin elke regel één ding opent.** Eerst wat je zelf kiest: AI-diensten, Telefoon, Taal
+  en uiterlijk, Regels, Back-ups en Vergrendeling. Dan, onder *Van je bots*: Bots, Teams, Geheugen, Kanalen, Apps en
+  Bestanden. De tussenpagina's *Bots en teams* en *Apps en bestanden* zijn weg.
+- **Alles wat je erbij kunt aanzetten staat op één plek: Meer mogelijkheden.** Elke functie is één regel met één zin
+  die zegt wat het is. Er is niets weggehaald: ook de extra AI-programma's, gratis modellen, Computers, Websites,
+  Organisatie, Kant-en-klare teams en Overstappen staan erin. *Geavanceerd* heette het eerst.
+- **Je eigen regels hebben een eigen pagina.** Per team, met de regels die voor één bot gelden erbij.
+- **Taal en uiterlijk is één pagina:** je naam, de taal, het thema, de kleur en de stijl van de figuurtjes. Het thema
+  stond op twee pagina's.
+- **De botpagina begint met wat een bot is:** gezicht en naam, rol, AI en model, instructies en één keuze *Wat mag de
+  bot?*. Bij AI en model staat *Als deze AI op is, ga verder op*, voor elke soort AI hetzelfde. Al het andere staat
+  onder *Meer mogelijkheden*, elk als één regel met één zin.
+- **AI toevoegen heeft een regel voor elke soort AI:** een abonnement, een sleutel, gratis, of een model op deze
+  computer.
+- **Wat start vanzelf.** Eén lijst van alles wat uit zichzelf begint, met wanneer en of het AI gebruikt, en per regel
+  één actie. Eronder wat uit staat, met *Aanzetten*. Te vinden onder Taken › Automatisch › Werk en onder Meer
+  mogelijkheden.
+- Oude links naar pagina's die zijn samengevoegd of hernoemd openen de pagina die het nu heeft.
+
+### Model wisselen bovenin de chat (12 nov)
+- **Bovenin een gesprek met een bot staat op welke AI en welk model hij draait.** Bijvoorbeeld *Claude Code · Sonnet*,
+  of *Automatisch* als de AI zelf kiest. Eén klik opent de lijst met alle modellen van alle AI's die je hebt
+  gekoppeld: Claude Code, Codex, OpenCode, diensten met een sleutel en lokale modellen (Ollama, LM Studio). Per AI
+  gegroepeerd, met erbij wat het kost (abonnement, gratis, lokaal, betaald) en een zoekveld als de lijst lang is. Een
+  AI die uit staat, niet geïnstalleerd of niet ingelogd is, staat er niet in.
+- **Kiezen is meteen bewaard.** De AI en het model samen, op de bot zelf. Het geldt vanaf je volgende bericht; een
+  antwoord dat nog loopt, maakt de bot af op het oude model. Kent het nieuwe model het denkniveau van de bot niet,
+  dan kiest TeamBot het dichtstbijzijnde.
+- **De bot weet nog waar het gesprek over ging.** Op een andere AI krijgt hij het gesprek tot dan toe mee. Zet je hem
+  terug op Claude Code, Codex of OpenCode nadat hij op een andere AI heeft geantwoord, dan begint die met een nieuwe
+  sessie en het gesprek erbij. Eerder ging hij verder in zijn oude sessie en miste hij wat er tussendoor was gezegd.
+- **Ook op je telefoon.** Daar opent de lijst als blad van onderaf. In een groepschat staat de knop niet: daar noemt
+  de kop de bots niet bij naam, en het model stel je per bot in.
+
+### Eén poort voor toestemming (12 nov)
+- **Dezelfde stap krijgt overal hetzelfde antwoord.** Of een bot iets mag, werd op twee plekken beslist: één keer voor
+  de hulpmiddelen van TeamBot en nog een keer voor de eigen hulpmiddelen van Claude Code, Codex en OpenCode. Die twee
+  waren uit elkaar gegroeid. Nu is er één poort, voor elke soort AI: uitvoeren, weigeren, jou vragen op een kaart, of
+  eerst laten nalezen.
+- **Wat jij per hulpmiddel kiest, geldt voor alles wat dat hulpmiddel doet.** *Nooit* of *eerst vragen* voor de
+  terminal van Claude Code gold niet voor een opdracht die iets wist of naar buiten gaat. Nu wel.
+- **Automatische controle doet wat de schakelaar zegt.** Ze leest nu ook de eigen stappen van Claude Code, Codex en
+  OpenCode na, en alleen op het niveau *Automatisch*, waar je de schakelaar ziet. Stond ze nog aan op een bot die je
+  daarna *Volledige toegang* gaf, dan las ze ongemerkt elke stap na; dat is voorbij.
+- **Geen kaart meer voor iets wat toch geweigerd wordt.** Een opdracht die de hele schijf wist, wordt meteen geweigerd.
+  Een bot die bij zijn eigen mappen moet blijven, vraagt het je als een opdracht daarbuiten komt, ook als hij zonder
+  vragen berichten mag versturen.
+- **Een sleutelbestand, de gegevens van TeamBot of een map die je dicht zette lezen, wordt meteen geweigerd,** ook als
+  je de regel "vraag eerst voordat je iets leest" hebt: geen kaart meer voor iets wat toch niet mag.
+- **Een hulpmiddel dat een regel van jou verbiedt, geeft bij elke soort AI dezelfde weigering,** met jouw regel erin,
+  ook als Claude Code, Codex of OpenCode het bij naam aanroept. Op *Alleen lezen* ook: wat dat niveau niet toestaat,
+  wordt meteen geweigerd met de reden, in plaats van "onbekend hulpmiddel" na een kaart voor iets wat toch niet mocht.
+- **Een app die OpenCode of een andere ACP-engine zelf gekoppeld heeft** (bijvoorbeeld Gmail) gaat als app naar de
+  poort: versturen en betalen vraagt het je, en jouw regels kennen hem bij naam. Een eigen hulpmiddel van een engine
+  dat TeamBot nog niet kent, is bij elke engine een gewone stap op deze pc: het vraagt op *Vragen*, en loopt vanaf
+  *Automatisch*.
+- **Codex houdt sleutelbestanden, de mappen die je dicht zette en de gegevens van TeamBot dicht op elk niveau, of de
+  pagina van de bot zegt dat het niet zo is.** Wat de sandbox van Codex dichthoudt, komt nu uit dezelfde lijst als wat
+  de poort weigert. Je dichte mappen gaan nu mee (dat deden ze niet), en ook de werkmappen van andere bots. Met
+  *Volledige toegang* draait Codex in zijn sandbox met de hele schijf schrijfbaar, als TeamBot op deze pc heeft gezien
+  dat dat houdt; anders draait hij zonder sandbox, zoals voorheen, en dan staat dat op de pagina en in de instructies
+  van de bot. Dat geldt voor elke soort AI: per niveau zegt TeamBot "bewaakt" of "niet bewaakt", met wat niet
+  (`GET /api/cli-agents/hard-blocks/:provider`). Een andere ACP-engine dan OpenCode vraagt niet voor elke stap; daar
+  staat "niet bewaakt" en gaan de blokkades mee in zijn instructies. Niet bewezen met Codex zelf.
+- **Meer sleutelbestanden dicht voor elke bot:** `~/.terraform.d`, `.vault-token`, `.pgpass`, Bitwarden en 1Password,
+  en de opgeslagen logins van Chrome-profielen en Firefox (`Login Data For Account`, `signons.sqlite`).
+- **Een opdracht die een pad buiten de mappen van de bot noemt, krijgt bij elke soort AI een kaart zonder "Altijd
+  toestaan".** Bij Claude Code, Codex en OpenCode stond die knop er wel, maar de volgende opdracht daarbuiten vroeg het
+  toch opnieuw. De terminal van TeamBot controleert een opdracht niet meer een tweede keer als hij draait: de poort
+  weigert of vraagt het daarvoor al.
+- **Schrijft OpenCode of een andere ACP-engine zelf een bestand via TeamBot, dan gaat dat op elk niveau langs de
+  poort.** Op *Automatisch* en *Volledige toegang* gold jouw regel over een map daar niet voor; nu wel.
+- **Een document lezen, een bestand uploaden, importeren of meesturen** (`read_document`, `browser_upload`,
+  `team_import_file`, `remote_upload`, de bestanden van `channel_send`): een sleutelbestand, de gegevens van TeamBot of
+  een dichte map wordt meteen geweigerd, zonder eerst een kaart.
+- **Een script van een skill die je vertrouwt, is een opdracht als elke andere.** Het vraagt op *Vragen* en loopt vanaf
+  *Automatisch*; noemt een regel van jou opdrachten of scripts, dan vraagt het. Eerder vroeg het altijd, behalve op
+  *Volledige toegang*. De kaart zegt welke sleutels voor scripts het script krijgt.
+
+### Eén planner, en niets start vanzelf (12 nov)
+- **Een nieuwe installatie doet niets uit zichzelf.** De dagelijkse check-in van de hoofdbot en zijn overzicht stonden
+  aan zonder dat je erom vroeg. Ze staan nu uit tot jij ze aanzet: zeg het tegen je hoofdbot ("meld je elke werkdag om
+  9 uur"), of kies bij Werk hoe vaak je het overzicht wilt. Had je TeamBot al, dan blijft alles zoals het was.
+- **Eén klok in plaats van zeven.** Routines, herinneringen, wachtpunten, vaste taken, workflows op een schema, werk dat
+  klaarligt, de check-in, het overzicht en de leerrondes van specialisten lopen via één planner. Wat er vanzelf start
+  en wanneer staat in één lijst (`GET /api/routines/planned`), met per regel of het AI kost.
+- **Alles stoppen is ook echt stoppen.** Na *Alles stoppen* begint er geen werk meer vanzelf, ook niet bij een bot die
+  op dat moment niet bezig was. Het gaat verder zodra jij weer iets vraagt of *Hervatten* kiest, of wanneer iets wat je
+  zelf hebt ingepland op zijn tijd komt.
+- **Eén tijdstip voor je hoofdbot.** Het overzicht had een eigen tijdstip dat je nergens kon instellen; het komt nu op
+  hetzelfde uur als waarop je hoofdbot zich meldt.
+
+### Lichter per stap (12 nov)
+- **Elke stap van een bot sleept veel minder mee.** TeamBot stuurde bij elke stap van elke bot de beschrijving van al
+  zijn ruim honderd hulpmiddelen mee (ongeveer 18.600 tokens) en een lange vaste uitleg. Nu krijgt een bot een korte
+  lijst met wat hij dagelijks gebruikt (16 hulpmiddelen, ongeveer 3.400 tokens). Alle andere staan er bij naam in en
+  pakt hij erbij wanneer hij ze nodig heeft, in dezelfde beurt. Er is niets weggehaald: elk hulpmiddel werkt nog, met
+  dezelfde toestemming en hetzelfde logboek. Dit geldt voor Claude Code, Codex, OpenCode en API-modellen. Je hoeft
+  niets in te stellen.
+- **Eén keer zoeken is genoeg.** Gebruikt een bot één hulpmiddel van de browser, het bureaublad, de teamdatabase of
+  een gekoppelde app, dan krijgt hij de rest van dat onderdeel er meteen bij.
+- **Kortere vaste uitleg.** De lijst met skills stond twee keer in de instructies van elke bot; dat is één keer. Uitleg
+  over de browser, het bureaublad en de teamdatabase krijgt een bot pas als hij die gebruikt. Op een verse installatie
+  gaat de vaste uitleg van een gewone bot van ongeveer 4.600 naar 2.500 tokens. Je eigen instructies en de dossiers
+  blijven zoals ze zijn.
+
+### Vanzelf het goede werk (12 nov)
+- **Geen automatische routines per bot meer.** TeamBot gaf elke bot vaste taken op grond van woorden in zijn rol en
+  liet bots zelf vaste taken verzinnen: 49 routines in één nacht, 64 runs die allemaal *niets nieuws* meldden. Dat is
+  weg. Een bot houdt alleen iets in de gaten als jij erom vraagt (bij Werk of in de chat).
+- **Opgeruimd, niets weg.** Bij de eerste start na de update archiveert TeamBot de routines die het zelf aanmaakte en
+  die nooit iets opleverden. Je krijgt één melding en vindt ze bij Werk onder *Opgeruimd*, met *Terugzetten*. Wat jij
+  maakte of aanpaste, wat een bot in een gesprek instelde en alles wat ooit iets vond, blijft staan.
+- **Werk dat er ligt, wordt nu gedaan.** Een taak op het takenbord of in de teamdatabase, of de volgende stap van een
+  project, wordt meteen opgepakt door de bot van wie het is, op zijn eigen model met al zijn tools. De hoofdbot geeft
+  taken zonder eigenaar aan de juiste bot en kijkt na wat terugkomt. Voor dezelfde lijst start geen tweede beurt, en
+  zonder werk start er niets.
+- **Toestemming één keer.** Voor geld, een eerste bericht aan een nieuw contact en mail aan klanten vraagt een bot het
+  één keer met een concreet voorstel en gaat hij door met de rest. De hoofdbot wacht niet meer op je antwoord voor werk
+  dat hij zelf kan doen of uitzetten, en zet geen wachtpunt om werk uit te stellen.
+- **Een vaste taak zonder bron draait niet voor niets.** Is de app of website er niet, dan staat erbij wat er nodig is
+  en wacht hij; zodra het er is, gaat hij vanzelf aan.
+- **Specialisten leren alleen over hun eigen vak.** Een bot wordt alleen specialist om wat hij is, niet om een woord
+  ergens in zijn rol. Een bron die een bot zelf vindt, moet over zijn vak gaan; een officiële pagina over iets anders
+  telt niet. Bronnen die daar niet aan voldoen zijn uitgezet (niet weggehaald).
+### Geheugen: dossiers die je bots zelf bijhouden (12 nov)
+- **Eén gedeeld geheugen, zonder instellen.** Je bots houden samen dossiers bij: *Eigenaar* (wie je bent en hoe je het
+  wilt), *Overzicht* (waar je mee bezig bent), *Lessen* en per bot eigen *Werknotities*. Die staan in elke beurt bij
+  elke bot in beeld, ook bij Claude Code en Codex. Wat de ene bot opschrijft, weet de andere meteen. Over één project,
+  klant of onderwerp maakt een bot zelf een dossier; dat leest een bot zodra het ter sprake komt. De dossiers beginnen
+  leeg en vullen zich door wat je vertelt.
+- **Bijwerken in plaats van stapelen.** Een bot vervangt wat veranderd is en haalt weg wat niet meer geldt
+  (`dossier_write`). Elk dossier heeft een maximum; is het vol, dan schrijft de bot het korter. Wat eruit gaat, staat
+  in het archief van het dossier en blijft vindbaar. Elke vorige versie kun je terugzetten in Geheugen › Geschiedenis.
+- **Geen stortvloed van losse zinnen meer.** Wat een bot onthoudt, is voor zijn hele team en geldt meteen (geen
+  voorstel dat op jou wacht, tenzij je dat zo hebt ingesteld). TeamBot zelf vangt alleen nog op wat duidelijk blijvend
+  is; zo'n losse notitie blijft in beeld tot een bot haar in een dossier zet.
+- **Ook via WhatsApp en andere kanalen.** Schrijf je zelf met je bot via een kanaal, dan weet hij daar wat hij in de
+  app weet, en houdt hij de dossiers ook daar bij.
+- **Specialisten leren alleen over hun vak.** Een pagina die een zoekopdracht oplevert, wordt alleen een bron als de
+  titel over het werk van de bot gaat, ook als de site officieel is. Gaat een bron toch ergens anders over, dan leert
+  de bot er niets van, en zet TeamBot een zelf gevonden bron uit. Per stuk tekst hoogstens 5 feiten.
+- **Minder tools.** Dagelijks zes: zoeken, onthouden, bijwerken, vergeten, dossier lezen en dossier schrijven.
+  `dossier_search` en `dossier_create` zijn weg (`dossier_get` zonder naam geeft de lijst, `dossier_write` maakt een
+  dossier aan).
+- **Bij de update**, één keer en zonder AI: losse notities van vroeger gaan onder een paar kopjes in de dossiers, en
+  een bron die TeamBot ooit zelf vond en die niet over het vak van de bot gaat, wordt uitgezet (de feiten eruit gaan
+  naar het archief). Er wordt niets gewist; in Geheugen › Geschiedenis zet je het met één klik terug. Bij twijfel
+  blijft alles zoals het was.
+- **In Geheugen › Dossiers** zie en bewerk je de tekst van elk dossier.
 
 ### Minder vragen, hele computer (10 nov)
 - **Volledige toegang = je hele computer.** Een bot op *Volledige toegang* leest, schrijft en draait opdrachten overal,

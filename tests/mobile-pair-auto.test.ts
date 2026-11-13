@@ -57,7 +57,7 @@ test('pairing auto: with Tailscale https ready the code carries that address plu
     m.serveTargets = async () => [`http://127.0.0.1:${m.gateway.state.port}`];
     const reach = await t.api('GET', '/mobile/reachability');
     assert.ok(reach.candidates.find((c: any) => c.kind === 'tailscale-https')?.ready, JSON.stringify(reach.candidates));
-    assert.deepEqual(reach.app, { ios: null }, 'no public app link set: the card points to TestFlight');
+    assert.deepEqual(reach.app, { ios: null }, 'no public app link set: the card says the app is not public yet');
 
     const tk = await t.api('POST', '/mobile/pair', { baseUrl: 'auto' });
     assert.ok(tk.url.startsWith('https://sanne-pc.tail1234.ts.net/api/public/mobile/pair#t='), tk.url);

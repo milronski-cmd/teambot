@@ -3,6 +3,7 @@ import { Plus, Trash2 } from 'lucide-react';
 import { api, on } from '../../lib/api';
 import { useApp } from '../../lib/store';
 import { t } from '../../lib/i18n';
+import { tKnown } from '../../lib/format';
 import type { Agent } from '../../lib/types';
 import { Badge, Button, Input, Spinner, cx, toast, toastError } from '../../components/ui';
 import { MoreInfo } from '../../components/MoreInfo';
@@ -93,7 +94,7 @@ function RuleExplain({ r, mode }: { r: Omit<OwnRule, 'id' | 'text'>; mode?: Agen
   );
 }
 
-function RuleRow({ r, mode, device, onRemoved }: { r: OwnRule; mode?: Agent['access_mode']; device: boolean; onRemoved?(): void }) {
+export function RuleRow({ r, mode, device, onRemoved }: { r: OwnRule; mode?: Agent['access_mode']; device: boolean; onRemoved?(): void }) {
   const [busy, setBusy] = useState(false);
   // Removing an "ask"/"never" rule lets the bot do more: computer only.
   const loosens = r.effect !== 'allow';
@@ -109,20 +110,23 @@ function RuleRow({ r, mode, device, onRemoved }: { r: OwnRule; mode?: Agent['acc
       setBusy(false);
     }
   };
+  // The owner's own words stay as written; a rule in TeamBot's words (a new team's starting rules, an example he
+  // picked) is shown in the reader's language.
+  const text = tKnown(r.text);
   return (
     <li className="flex items-start gap-3 rounded-xl border border-line p-3" data-testid="own-rule">
       <div className="min-w-0 flex-1 space-y-1">
         <div className="flex flex-wrap items-center gap-2">
           <Badge tone={EFFECT[r.effect].tone}>{EFFECT[r.effect].label}</Badge>
           <span className="min-w-0 break-words text-sm font-medium" translate="no">
-            “{r.text}”
+            “{text}”
           </span>
         </div>
         <RuleExplain r={r} mode={mode} />
         {onRemoved && loosens && device && <p className="text-xs text-muted">Weghalen doe je op je computer: dan mag de bot meer.</p>}
       </div>
       {onRemoved && !(loosens && device) && (
-        <Button size="sm" variant="ghost" loading={busy} icon={<Trash2 className="h-4 w-4" />} onClick={remove} aria-label={t('Regel weghalen: {0}', r.text)}>
+        <Button size="sm" variant="ghost" loading={busy} icon={<Trash2 className="h-4 w-4" />} onClick={remove} aria-label={t('Regel weghalen: {0}', text)}>
           <span className="sr-only sm:not-sr-only">Weghalen</span>
         </Button>
       )}

@@ -6,4 +6,4 @@
  */
 export { LocalModelsCard, hardwareSummary } from './LocalModelsCard';
 export { localModelsApi } from './api';
-export type { LocalModelsView } from './api';
+export type { LocalModelsView } from '../../../../shared/localModels.js';

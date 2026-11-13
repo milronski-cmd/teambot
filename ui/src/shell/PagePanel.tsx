@@ -3,7 +3,7 @@ import { create } from 'zustand';
 import { AppWindow, ArrowLeft, Download, Maximize2, Minimize2, Quote, X } from 'lucide-react';
 import { api, fileUrl, on } from '../lib/api';
 import { useIsDesktop, useMedia } from '../lib/media';
-import { isRtl } from '../lib/i18n';
+import { isRtl, t } from '../lib/i18n';
 import { Button, cx } from '../components/ui';
 
 /**
@@ -307,13 +307,13 @@ export function PagePanel({ threadId, canDock = true }: { threadId: string; canD
                     {x.name}
                   </span>
                 </button>
-                <button type="button" aria-label={`${x.name} sluiten`} title="Tabblad sluiten" onClick={() => st.close(threadId, x.id)} className="me-1 flex h-6 w-6 shrink-0 items-center justify-center rounded-md hover:bg-surface-2 coarse:h-9 coarse:w-9">
+                <button type="button" aria-label={t('{0} sluiten', x.name)} title="Tabblad sluiten" onClick={() => st.close(threadId, x.id)} className="me-1 flex h-6 w-6 shrink-0 items-center justify-center rounded-md hover:bg-surface-2 coarse:h-9 coarse:w-9">
                   <X className="h-3.5 w-3.5" />
                 </button>
               </div>
             ))}
           </div>
-          <a className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-control text-muted hover:bg-surface-2 hover:text-fg coarse:h-11 coarse:w-11" href={fileUrl(active.id, true)} aria-label={`${active.name} downloaden`} title="Downloaden">
+          <a className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-control text-muted hover:bg-surface-2 hover:text-fg coarse:h-11 coarse:w-11" href={fileUrl(active.id, true)} aria-label={t('{0} downloaden', active.name)} title="Downloaden">
             <Download className="h-4 w-4" />
           </a>
           {desktop && (

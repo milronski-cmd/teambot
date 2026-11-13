@@ -69,7 +69,7 @@ export function AlwaysPhone({ push, busy, setPref }: { push: PushState; busy: bo
   const line = presenceLine(info);
   return (
     <div data-presence={info.presence?.where || 'unknown'}>
-      <SwitchRow checked={!!info.prefs.alwaysPhone} disabled={busy} onChange={(v) => setPref('alwaysPhone', v)} label="Altijd ook op de telefoon" hint={line.hint} info={line.more} />
+      <SwitchRow checked={!!info.prefs.alwaysPhone} disabled={busy} onChange={(v) => setPref('alwaysPhone', v)} setting="push.alwaysPhone" hint={line.hint} info={line.more} />
     </div>
   );
 }
@@ -168,10 +168,10 @@ export function PushDetails({ push, act, isDevice }: { push: PushState; act: Pus
           <SavedNote shown={act.savedPrefs} />
         </div>
         <div className="divide-y divide-line">
-          <SwitchRow checked={info.prefs.approvals} disabled={act.busy} onChange={(v) => act.setPref('approvals', v)} label="Vragen en goedkeuringen (altijd)" />
-          <SwitchRow checked={info.prefs.agent} disabled={act.busy} onChange={(v) => act.setPref('agent', v)} label="Meldingen van bots (als TeamBot niet open staat)" />
-          <SwitchRow checked={info.prefs.runDone} disabled={act.busy} onChange={(v) => act.setPref('runDone', v)} label="Taak klaar of mislukt (als TeamBot niet open staat)" />
-          <SwitchRow checked={info.prefs.preview} disabled={act.busy} onChange={(v) => act.setPref('preview', v)} label="Inhoud tonen op het vergrendelscherm" />
+          <SwitchRow checked={info.prefs.approvals} disabled={act.busy} onChange={(v) => act.setPref('approvals', v)} setting="push.approvals" />
+          <SwitchRow checked={info.prefs.agent} disabled={act.busy} onChange={(v) => act.setPref('agent', v)} setting="push.agent" />
+          <SwitchRow checked={info.prefs.runDone} disabled={act.busy} onChange={(v) => act.setPref('runDone', v)} setting="push.runDone" />
+          <SwitchRow checked={info.prefs.preview} disabled={act.busy} onChange={(v) => act.setPref('preview', v)} setting="push.preview" />
         </div>
       </div>
       {!isDevice && info.subscriptions.length > 0 && (
@@ -200,7 +200,7 @@ export const pushSubtitle = (
 export function PushSection({ push, isDevice }: { push: PushState; isDevice: boolean }) {
   const act = usePushActions(push);
   return (
-    <Section icon={<Bell className="h-5 w-5" />} title="Pushmeldingen" subtitle={pushSubtitle} actions={<SavedNote shown={act.savedAlways} />}>
+    <Section icon={Bell} tone="orange" title="Pushmeldingen" subtitle={pushSubtitle} actions={<SavedNote shown={act.savedAlways} />}>
       {push.err && <Note tone="danger">{push.err}</Note>}
       {!push.info && !push.err && <Spinner />}
       {push.info && (

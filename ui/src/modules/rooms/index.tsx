@@ -119,11 +119,11 @@ function useRooms() {
 
 /** Default limits for bot-to-bot work (also outside groups): depth, turns, and the asynchronous messages of ask_bot. */
 const LIMIT_FIELDS: { key: string; label: string; hint: string; step?: number }[] = [
-  { key: 'maxDelegationDepth', label: 'Max. ketendiepte', hint: 'A → B → C = 2. 0 zet delegeren en bot-berichten uit.' },
-  { key: 'maxTurnsPerMessage', label: 'Botbeurten per bericht', hint: 'Voor groepen, delegaties en vermeldingen.' },
-  { key: 'maxAskTurns', label: 'Botbeurten per keten met bot-berichten', hint: 'Een lead die vijf bots iets vraagt gebruikt ±11 beurten (vragen + antwoorden).' },
-  { key: 'maxAsksPerHour', label: 'Berichten per bot per uur', hint: 'Alle ontvangers samen.' },
-  { key: 'maxAsksPerPairPerHour', label: 'Berichten aan dezelfde bot per uur', hint: 'Voorkomt heen-en-weer tussen twee bots.' },
+  { key: 'maxDelegationDepth', label: 'Max. ketendiepte', hint: 'A → B → C = 2. 0 = geen grens; -1 = bots geven elkaar geen werk.' },
+  { key: 'maxTurnsPerMessage', label: 'Botbeurten per bericht', hint: 'Voor groepen, delegaties en vermeldingen. 0 = geen grens.' },
+  { key: 'maxAskTurns', label: 'Botbeurten per keten met bot-berichten', hint: 'Eén keten met bot-berichten of bordtaken. 0 = geen grens.' },
+  { key: 'maxAsksPerHour', label: 'Berichten per bot per uur', hint: 'Alle ontvangers samen. 0 = geen grens.' },
+  { key: 'maxAsksPerPairPerHour', label: 'Berichten aan dezelfde bot per uur', hint: '0 = geen grens. Een echte lus zonder voortgang stopt TeamBot zelf.' },
   { key: 'maxChainCostUsd', label: 'Budget per keten (USD)', hint: 'Geschatte kosten; 0 = geen grens.', step: 0.5 },
   { key: 'maxChainTokens', label: 'Tokens per keten', hint: 'Telt ook abonnementen (Claude Code, Codex); 0 = geen grens.' },
 ];
@@ -153,7 +153,7 @@ function TeamLimitsModal({ open, onClose }: { open: boolean; onClose(): void }) 
           <div className="grid gap-3 sm:grid-cols-2">
             {LIMIT_FIELDS.map((f) => (
               <Field key={f.key} label={f.label} hint={f.hint}>
-                <Input type="number" inputMode="decimal" min={0} step={f.step || 1} value={v[f.key] ?? ''} onChange={(e) => setV({ ...v, [f.key]: e.target.value === '' ? '' : Number(e.target.value) })} />
+                <Input type="number" inputMode="decimal" min={f.key === 'maxDelegationDepth' ? -1 : 0} step={f.step || 1} value={v[f.key] ?? ''} onChange={(e) => setV({ ...v, [f.key]: e.target.value === '' ? '' : Number(e.target.value) })} />
               </Field>
             ))}
           </div>
@@ -350,9 +350,11 @@ function RoomSettingsPage({ params }: { params: string[] }) {
                   label: 'Groepschat verwijderen',
                   icon: <Trash2 />,
                   danger: true,
-                  onSelect: async () =>
-                    (await askConfirm('Deze groepschat verwijderen? De bots zelf blijven bestaan.', { ok: 'Verwijderen', danger: true })) &&
-                    api.del(`/rooms/${id}`).then(() => (useApp.getState().refreshThreads(), navigate('/m/rooms/'))).catch(toastError),
+                  onSelect: async () => {
+                    const from = location.hash;
+                    if (!(await askConfirm('Deze groepschat verwijderen? De bots zelf blijven bestaan.', { ok: 'Verwijderen', danger: true }))) return;
+                    await api.del(`/rooms/${id}`).then(() => (useApp.getState().refreshThreads(), navigate('/m/rooms/', { from }))).catch(toastError);
+                  },
                 },
               ]}
             />
@@ -713,7 +715,11 @@ function TeamInspectorTab({ threadId }: { threadId: string }) {
                   </span>
                   <Badge tone={d.status === 'done' ? 'ok' : d.status === 'error' || d.status === 'cancelled' ? 'danger' : 'accent'}>{d.statusLabel}</Badge>
                 </div>
-                {d.task && <div className="mt-1 line-clamp-2 text-xs text-muted">{d.task}</div>}
+                {d.task && (
+                  <div className="mt-1 line-clamp-2 text-xs text-muted" translate="no">
+                    {d.task}
+                  </div>
+                )}
                 <div className="mt-0.5 flex items-center gap-3 text-xs">
                   {d.threadExists && (
                     <a className="text-accent underline" href={`#/t/${d.thread_id}`}>
@@ -765,7 +771,8 @@ function DelegationCard({ call }: { call: { id: string; name: string; args: any 
           <div className="flex items-center gap-2 text-xs">
             <GitFork className="h-3.5 w-3.5 text-muted" />
             <span className="min-w-0 flex-1 truncate">
-              {x.kind === 'ask' ? `${x.fromName} vroeg ${x.toName}` : `${x.fromName} → ${x.toName}`}: {x.task}
+              {/* What one bot asked another is that bot's words: never translated, also not in part ("Read alle oude berichten na"). */}
+              {x.kind === 'ask' ? t('{0} vroeg {1}', x.fromName, x.toName) : `${x.fromName} → ${x.toName}`}: <span translate="no">{x.task}</span>
             </span>
             {x.check && (x.check.state === 'review' || x.check.state === 'cant') ? <CheckBadge state={x.check.state} /> : <Badge tone={x.status === 'done' ? 'ok' : x.status === 'error' || x.status === 'cancelled' || x.status === 'timeout' ? 'danger' : 'accent'}>{x.statusLabel}</Badge>}
             <CancelDelegation d={x} />
@@ -777,7 +784,7 @@ function DelegationCard({ call }: { call: { id: string; name: string; args: any 
           </div>
           {x.kind === 'ask' && x.status === 'done' && x.result && (
             <div className="line-clamp-2 ps-5 text-xs text-muted">
-              {x.toName} antwoordde: {x.result}
+              {x.toName} antwoordde: <span translate="no">{x.result}</span>
             </div>
           )}
         </div>

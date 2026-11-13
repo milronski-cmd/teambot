@@ -114,7 +114,7 @@ function useAgentPrivacy(agentId: string | null): AgentPrivacy | null {
 /**
  * Chat header: the privacy label of this bot's main engine; a click shows it per engine (also its reserves). Only with
  * "Geavanceerd tonen" on: the simple chat header stays empty, and the same label sits in the bot editor and under
- * Instellingen › Waar staat mijn data?.
+ * Instellingen › Privacy en gegevens.
  */
 export function ChatPrivacyChip({ agentId }: { threadId: string; agentId: string | null }) {
   const p = useAgentPrivacy(agentId);
@@ -195,7 +195,7 @@ export function AgentPrivacyLine({ agent }: { agent: Partial<Agent> }) {
   if (!main) return null;
   const order: PrivacyLevel[] = ['local', 'lan', 'no-store', 'no-train', 'unknown', 'may-train'];
   const worse = (list || []).slice(1).find((e) => e && order.indexOf(e.privacy.level) > order.indexOf(main.privacy.level));
-  // Nothing known about this engine's privacy: no line here (hide what is unknown; "Waar staat mijn data?" lists it).
+  // Nothing known about this engine's privacy: no line here (hide what is unknown; "Privacy en gegevens" lists it).
   if (main.privacy.level === 'unknown' && !worse) return null;
   return (
     <div className="space-y-1" data-testid="agent-privacy">

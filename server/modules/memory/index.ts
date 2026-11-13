@@ -4,14 +4,17 @@ import type { Ctx, Module } from '../../core/types.js';
 import { memoryMigrations } from './schema.js';
 import { MemoryService } from './service.js';
 import { buildTurnContext, currentRule, systemPromptText } from './context.js';
-import { captureExplicit, writeCandidate } from './pipeline.js';
+import { captureExplicit, keepOrder, writeCandidate } from './pipeline.js';
 import { captureConfirmation } from './confirm.js';
 import { captureDone, closeFromRun } from './consolidate.js';
-import { Rereader } from './reread.js';
+import { REREAD_DEBOUNCE_MS, Rereader } from './reread.js';
+import { plannerOf, type Planned, type Planner, type PlannerSource } from '../routines/planner.js';
+import { excerpt } from './text.js';
 import { deleteAllForUser, forgetRecord } from './forget.js';
 import { deleteEpisodeForThread, episodeFor, updateEpisode } from './episodes.js';
 import { reconcileAll } from './lifecycle.js';
-import { Learner } from './learn.js';
+import { Learner, type LearnJob } from './learn.js';
+import { pickEngine } from './engine.js';
 import { nightlyDue, runMaintenance } from './maintenance.js';
 import { exportJson } from './io.js';
 import { memoryTools } from './tools.js';
@@ -30,6 +33,8 @@ import { lessonFromReopenedTask } from './lessons.js';
 import { doubleReply } from './crosschannel.js';
 import { overTarget, targetOf } from './cleanup.js';
 import { nextReview } from './types.js';
+import { coreContext, coreDossiers, writeBody } from './living.js';
+import { moveLooseNotes, moveOnce } from './move.js';
 
 
 /**
@@ -75,6 +80,56 @@ function reapplyRestoreTombstones(ctx: Ctx): boolean {
   return true;
 }
 
+/** Memory's source of the one planner, and how to take it away again (per app). */
+const SOURCE = 'memory';
+const stops = new WeakMap<Ctx, () => void>();
+const MODEL_SOURCE = 'memory-model';
+
+/**
+ * Does this server fetch the search model (±124 MB) by itself? Not in a test run, and every kind skips it the same
+ * way: the unit-test runner (node --test sets NODE_TEST_CONTEXT) and every e2e or trial server started with
+ * TEAMBOT_NO_AUTO_DOWNLOAD=1. Switching slim zoeken on by hand still downloads it.
+ */
+export const fetchesModelBySelf = (env: NodeJS.ProcessEnv = process.env) => !env.NODE_TEST_CONTEXT && env.TEAMBOT_NO_AUTO_DOWNLOAD !== '1';
+
+/**
+ * The one download of the built-in search model, as a source of the one planner: the first look two minutes after
+ * start, then every hour until it could start. It is in "Wat start vanzelf" (what, how big, when) until then. Not
+ * when the owner said "niet nu" or switched slim zoeken off, and only once: a download that started is not repeated.
+ */
+export function searchModelSource(ctx: Ctx, svc: MemoryService, planner: Planner): PlannerSource {
+  const due = (userId?: string) => {
+    const owner = ctx.auth.owner();
+    const sem = ctx.services.memory?.semantic;
+    if (!owner || !sem || (userId && userId !== owner.id)) return null;
+    if (ctx.store.getSetting<any>(owner.id, 'memory.builtinOffer', null)) return null;
+    if (svc.userSettings(owner.id).semantic === 'off') return null;
+    const st = sem.builtinStatus();
+    return st.state === 'absent' || st.state === 'error' ? { owner, sem, mb: Math.round((Number(st.bytes) || 0) / 1e6) } : null;
+  };
+  return {
+    id: MODEL_SOURCE,
+    everyMs: 3600_000,
+    firstMs: 120_000,
+    look() {
+      try {
+        const d = due();
+        if (!d) return;
+        ctx.store.setSetting(d.owner.id, 'memory.builtinOffer', { at: new Date().toISOString(), action: 'auto' });
+        d.sem.enableBuiltin(d.owner.id, (ok: boolean) => ok && svc.emit(d.owner.id, { op: 'semantic' }));
+      } catch (e) {
+        ctx.log.error('[memory] slim zoeken vanzelf aanzetten mislukt', e);
+      }
+    },
+    planned(userId) {
+      const d = due(userId);
+      const at = planner.lookAt(MODEL_SOURCE);
+      if (!d || at === null) return [];
+      return [{ kind: 'download', id: MODEL_SOURCE, userId, agentId: null, title: `Zoekmodel voor slim zoeken downloaden (eenmalig${d.mb ? `, ± ${d.mb} MB` : ''})`, at: new Date(at).toISOString(), model: false, link: '#/m/memory/opslag' }];
+    },
+  };
+}
+
 const mod: Module = {
   id: 'memory',
   label: 'Geheugen & dossiers',
@@ -109,7 +164,7 @@ const mod: Module = {
     ctx.hooks.messageCreated.push(({ message, thread }) => {
       try {
         // "Ja, doe maar" on the bot's memory proposal first; "gedaan" right after the bot named an open task closes
-        // it (0.4.4); otherwise "onthoud dat …" / "niet onthouden" / "vergeet …".
+        // it; otherwise "onthoud dat …" / "niet onthouden" / "vergeet …".
         if (!captureConfirmation(svc, message, thread) && !captureDone(svc, message, thread)) captureExplicit(svc, message, thread);
       } catch (e) {
         ctx.log.error('[memory] explicit capture failed', e);
@@ -130,9 +185,9 @@ const mod: Module = {
       if (!eff.enabled) return;
       // 0.4.5: a customer conversation is learned from the customer's own words (customer-learn.ts), after it goes quiet.
       if (eff.learn !== 'off' && svc.audience(thread, thread.user_id) === 'customer') learner.touch(agent, thread);
-      // Smart learning is batched after the conversation goes quiet (learn.ts); without a free engine the
-      // high-precision patterns run right away. The episode is kept up to date cheaply after every run.
-      const proposals = await learner.afterRun(agent, thread, run);
+      // The conversation is queued for the one background review (learn.ts): no model call now. The episode is kept
+      // up to date cheaply after every run.
+      learner.afterRun(agent, thread, run);
       if (eff.episodes) updateEpisode(svc, agent, thread);
       // 0.4.4: a bot or routine that reports work as done (with evidence: it used a tool, or the routine finished)
       // closes the open task or dossier action about it.
@@ -141,7 +196,6 @@ const mod: Module = {
       } catch (e: any) {
         ctx.log.warn('[memory] afgerond werk verwerken mislukt', e?.message || e);
       }
-      if (proposals) notifyProposals(agent.user_id, agent.name, proposals);
       // The same customer answered on two channels: a mistake the team learns from (crosschannel.ts).
       if (thread.kind === 'channel' && finalText) {
         try {
@@ -154,10 +208,18 @@ const mod: Module = {
     ctx.hooks.agentDeleted.push(({ agentId, userId }) => {
       try {
         ctx.store.tx(() => {
+          // The bot's own working notes go with it: the dossier and the notes in it, to the bin (restorable for a while).
+          const own = ctx.store.all<any>("SELECT id FROM memory_dossiers WHERE user_id = ? AND core = 'notes' AND created_by_agent = ? AND status IN ('active','closed')", userId, agentId).map((d) => d.id);
           for (const r of ctx.store.all<any>("SELECT id FROM memory_items WHERE user_id = ? AND scope = 'agent' AND agent_id = ? AND status IN ('active','proposed','archived')", userId, agentId)) {
             const before = svc.snapshot('item', r.id);
             svc.patchItem(r.id, { status: 'trashed', trashed_at: new Date().toISOString(), pinned: false });
             svc.recordChange({ userId, kind: 'item', recordId: r.id, op: 'trash', before, after: svc.snapshot('item', r.id), summary: `Naar prullenbak (bot verwijderd): ${svc.label(before)}`, actor: 'system' });
+          }
+          for (const id of own) {
+            const before = svc.snapshot('dossier', id);
+            ctx.store.update('memory_dossiers', id, { status: 'trashed', trashed_at: new Date().toISOString(), updated_at: new Date().toISOString() });
+            svc.syncIndex('dossier', id);
+            svc.recordChange({ userId, kind: 'dossier', recordId: id, dossierId: id, op: 'trash', before, after: svc.snapshot('dossier', id), summary: `Naar prullenbak (bot verwijderd): “${before?.title || 'Werknotities'}”`, actor: 'system' });
           }
           for (const t of ctx.store.all<any>('SELECT id FROM threads WHERE agent_id = ? AND room_id IS NULL', agentId)) {
             deleteEpisodeForThread(svc, t.id);
@@ -199,10 +261,6 @@ const mod: Module = {
         ctx.log.error('[memory] geheugen bij een team zetten mislukt', err);
       }
     });
-
-    function notifyProposals(userId: string, agentName: string, n: number) {
-      ctx.events.emit(userId, 'notification', { title: 'Nieuwe geheugenvoorstellen', body: n === 1 ? `${agentName} stelt 1 herinnering voor. Bekijk en keur goed of weiger.` : `${agentName} stelt ${n} herinneringen voor. Bekijk en keur goed of weiger.`, link: '#/m/memory/beoordelen', kind: 'memory' });
-    }
 
     // Memory from ChatGPT, Claude or Gemini: preview, import as proposals, undo (0.4.4; before the general routes).
     assistantImportRoutes(ctx, svc);
@@ -264,6 +322,14 @@ const mod: Module = {
           flags: c.flags,
         });
       },
+      /**
+       * What the owner told one bot (a correction of its work, an order): in that bot's working notes under "Opdrachten
+       * van de eigenaar", its one place (pipeline.ts keepOrder). Null: no such bot of this owner.
+       */
+      ownOrder(userId: string, agentId: string, content: string, o: { threadId: string; messageId: string; excerpt?: string; idemKey: string }) {
+        const a = ctx.store.agent(agentId);
+        return a && a.user_id === userId ? keepOrder(svc, a, content, o) : null;
+      },
       forget(userId: string, ref: string, o: { alsoSource?: boolean; actorId?: string } = {}) {
         return forgetRecord(svc, userId, ref, { actor: 'system', actorId: o.actorId || 'service', alsoSource: o.alsoSource });
       },
@@ -314,6 +380,19 @@ const mod: Module = {
       teamOfItem: (id: string) => {
         const r = svc.itemRow(id);
         return r ? svc.itemTeam(r) : null;
+      },
+      /** Living dossiers (living.ts): what a bot always reads, and writing a dossier's text on behalf of a module. */
+      living: {
+        context: (agentId: string, threadId?: string | null) => {
+          const a = ctx.store.agent(agentId);
+          return a ? coreContext(svc, a, threadId ? ctx.store.thread(threadId) : null) : null;
+        },
+        core: (agentId: string) => {
+          const a = ctx.store.agent(agentId);
+          return a ? coreDossiers(svc, a) : [];
+        },
+        write: (dossierId: string, body: string, actor: { type: 'user' | 'agent' | 'system'; id: string }) => writeBody(svc, dossierId, body, actor),
+        move: (userId: string) => moveLooseNotes(svc, userId),
       },
       /** Included in the full account export (GET /api/export). */
       exportUser: (userId: string) => ({ memory: exportJson(svc, userId) }),
@@ -378,11 +457,8 @@ const mod: Module = {
       dossierProposals: (userId: string) => subjectProposals(svc, userId),
       acceptDossierProposal: (userId: string, id: string) => acceptSubject(svc, userId, id, { type: 'user', id: userId }),
     };
-    // Nightly maintenance: checked every 10 minutes (first check after 10 minutes, so short-lived processes never run it).
-    let nightTimer: NodeJS.Timeout | null = null;
-    let firstTimer: NodeJS.Timeout | null = null;
     /**
-     * One look at who needs maintenance (every ten minutes): at night as always, and during the day as soon as a part
+     * One look at who needs maintenance (the planner's look, every ten minutes): at night as always, and during the day as soon as a part
      * is clearly over its budget (at most one run per six hours), so memory stays bounded however much comes in.
      * Returns the users a run was started for.
      */
@@ -391,6 +467,8 @@ const mod: Module = {
       reconcileAll(svc);
       const users = svc.store.all<any>("SELECT DISTINCT user_id FROM memory_items WHERE status = 'active' UNION SELECT DISTINCT user_id FROM memory_episodes").map((r) => r.user_id);
       for (const u of users) {
+        // After "Alles stoppen" it waits for his next turn (routines/planner.ts: held); then it comes at the next look.
+        if (plannerOf(ctx)?.held(u)) continue;
         const last = Date.parse(svc.meta(u).last_maintenance_at || '') || 0;
         const s = svc.userSettings(u);
         if (!nightlyDue(svc, u, new Date(nowMs)) && !(s.nightly && !s.paused && nowMs - last > 6 * 3600e3 && overTarget(svc, u))) continue;
@@ -398,24 +476,6 @@ const mod: Module = {
         void maintain(u, 'nightly').catch((e) => ctx.log.error('[memory] onderhoud mislukt', e));
       }
       return started;
-    };
-    ctx.services.memory.startNightly = () => {
-      // (Expired and orphaned items right after the start; the full look every ten minutes.)
-      firstTimer = setTimeout(() => reconcileAll(svc), 5_000);
-      firstTimer.unref?.();
-      nightTimer = setInterval(() => {
-        try {
-          ctx.services.memory.maintenanceTick();
-        } catch (e) {
-          ctx.log.error('[memory] onderhoudsplanner mislukt', e);
-        }
-      }, 10 * 60_000);
-      nightTimer.unref?.();
-    };
-    ctx.services.memory.stopNightly = () => {
-      if (firstTimer) clearTimeout(firstTimer);
-      if (nightTimer) clearInterval(nightTimer);
-      nightTimer = null;
     };
   },
 
@@ -431,41 +491,74 @@ const mod: Module = {
       } catch (e) {
         ctx.log.error('[memory] geheugen bij een team zetten mislukt', e);
       }
+      // One write path: notes that are not in a dossier yet move into one, once (no model; one undo brings them back).
+      moveOnce(svc);
       ctx.services.teams?.registerCopier?.('memory', (o: { userId: string; fromTeamId: string; toTeamId: string; knowledge?: boolean; agentMap?: Record<string, string> }) =>
         o.knowledge === true ? copyTeamKnowledge(svc, o.userId, o.fromTeamId, o.toTeamId, { agentMap: o.agentMap }) : null,
       );
     }
-    ctx.services.memory?.learner?.start();
-    ctx.services.memory?.rereader?.start();
-    ctx.services.memory?.startNightly?.();
+    // No clock of its own: memory is a source of the one planner (routines/planner.ts). What has a moment is an event
+    // that asks for a look — a turn that ended (its conversation is read when it has gone quiet), a dossier that
+    // changed (read again after a moment) — and the look every ten minutes does what only time brings: notes that
+    // expired, the bin, the nightly tidy-up. A look costs no model call unless something changed since the last one.
+    const mem = ctx.services.memory;
+    const planner = plannerOf(ctx);
+    if (svc && mem && planner) {
+      const wake = (afterMs: number) => planner.kick(SOURCE, afterMs);
+      mem.learner.wake = wake;
+      svc.onDossierChanged = () => wake(REREAD_DEBOUNCE_MS + 1000);
+      stops.set(
+        ctx,
+        planner.register({
+          id: SOURCE,
+          everyMs: 600_000,
+          async look(at) {
+            try {
+              mem.maintenanceTick(at);
+            } catch (e) {
+              ctx.log.error('[memory] onderhoudsplanner mislukt', e);
+            }
+            await mem.learner.runDue(false, at);
+            await mem.rereader.tick();
+            void mem.semantic.run();
+            const next = mem.learner.soonest();
+            if (next !== null) wake(Math.max(0, next - at));
+          },
+          // What will start by itself: the conversations that wait to be read, one model call each — listed only
+          // when there is an engine to read them with (without one nothing starts).
+          async planned(userId: string): Promise<Planned[]> {
+            const out: Planned[] = [];
+            for (const j of mem.learner.pendingFor(userId).filter((x: LearnJob) => x.status === 'pending') as LearnJob[]) {
+              const bot = j.agent_id ? ctx.store.agent(j.agent_id) : null;
+              const eff = bot ? svc.effective(bot) : null;
+              if (!bot || !eff || !eff.enabled || eff.learn !== 'auto' || eff.extractor === 'heuristic') continue;
+              if (!(await pickEngine(svc, userId, bot, eff.extractor === 'model' ? 'model' : 'free').catch(() => null))) continue;
+              // The chat's title is the owner's (or a bot's) words: a value, shown as written in every language.
+              const name = excerpt(ctx.store.thread(j.thread_id)?.title || '', 40);
+              const words = name ? { text: 'Gesprek “{0}” nalezen voor het geheugen', values: [name] } : { text: 'Gesprek zonder titel nalezen voor het geheugen' };
+              out.push({ kind: 'learning', id: `review:${j.thread_id}`, userId, agentId: j.agent_id, title: `Gesprek “${name || 'zonder titel'}” nalezen voor het geheugen`, words, at: j.due_at, model: true, link: '#/m/memory/pas-geleerd' });
+            }
+            return out;
+          },
+          // "Alles stoppen": the conversations that wait are not read by themselves (the next turn in one reads it).
+          stop: (userId) => mem.learner.stop(userId),
+        }),
+      );
+      mem.learner.start();
+    }
     ctx.services.memory?.semantic?.start();
     // Slim zoeken without a question (owner: "mensen moeten zelf niet te veel moeten instellen, liefst niks"): on a
-    // desktop install the built-in search model is fetched by itself, once, two minutes after start. Not when the owner
-    // said "niet nu" or switched it off before, not on a shared server, not in tests.
-    if (svc && ctx.config.mode === 'desktop' && !process.env.NODE_TEST_CONTEXT) {
-      const timer = setTimeout(() => {
-        try {
-          const owner = ctx.auth.owner();
-          const sem = ctx.services.memory?.semantic;
-          if (!owner || !sem) return;
-          if (ctx.store.getSetting<any>(owner.id, 'memory.builtinOffer', null)) return;
-          if (svc.userSettings(owner.id).semantic === 'off') return;
-          const st = sem.builtinStatus();
-          if (st.state !== 'absent' && st.state !== 'error') return;
-          ctx.store.setSetting(owner.id, 'memory.builtinOffer', { at: new Date().toISOString(), action: 'auto' });
-          sem.enableBuiltin(owner.id, (ok: boolean) => ok && svc.emit(owner.id, { op: 'semantic' }));
-        } catch (e) {
-          ctx.log.error('[memory] slim zoeken vanzelf aanzetten mislukt', e);
-        }
-      }, 120_000);
-      timer.unref?.();
+    // desktop install the built-in search model is fetched by itself, once. Not on a shared server, not in tests.
+    if (svc && planner && ctx.config.mode === 'desktop' && fetchesModelBySelf()) {
+      const off = planner.register(searchModelSource(ctx, svc, planner));
+      const before = stops.get(ctx);
+      stops.set(ctx, () => (before?.(), off()));
     }
   },
 
   stop(ctx) {
-    ctx.services.memory?.learner?.stop();
-    ctx.services.memory?.rereader?.stop();
-    ctx.services.memory?.stopNightly?.();
+    stops.get(ctx)?.();
+    stops.delete(ctx);
     ctx.services.memory?.semantic?.stop();
   },
 };

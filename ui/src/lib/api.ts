@@ -258,6 +258,7 @@ type Handler = (data: any, type: string) => void;
 const handlers = new Map<string, Set<Handler>>();
 let ws: WebSocket | null = null;
 let retry = 0;
+let retryTimer: ReturnType<typeof setTimeout> | null = null;
 let wsWanted = false;
 export let wsConnected = false;
 
@@ -280,7 +281,7 @@ export function connectWs() {
   if (!urlKey) {
     void ensureUrlKey().then(() => {
       if (wsWanted && urlKey) connectWs();
-      else if (wsWanted) setTimeout(connectWs, Math.min(15000, 500 * 2 ** retry++));
+      else if (wsWanted) retryLater();
     });
     return;
   }
@@ -309,9 +310,31 @@ export function connectWs() {
     if (!wsWanted) return;
     // Never got in: the URL key may be outdated (e.g. a restored data folder), so fetch it again before retrying.
     if (!opened) void ensureUrlKey();
-    const delay = Math.min(15000, 500 * 2 ** retry++);
-    setTimeout(connectWs, delay);
+    retryLater();
   };
+}
+
+function retryLater() {
+  if (retryTimer) clearTimeout(retryTimer);
+  retryTimer = setTimeout(() => {
+    retryTimer = null;
+    connectWs();
+  }, Math.min(15000, 500 * 2 ** retry++));
+}
+
+/** Back in the app, or the network is back: connect now instead of waiting out the back-off (up to 15 s). */
+function reconnectNow() {
+  if (!wsWanted || document.visibilityState === 'hidden') return;
+  if (ws && (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING)) return;
+  retry = 0;
+  if (retryTimer) clearTimeout(retryTimer);
+  retryTimer = null;
+  connectWs();
+}
+
+if (typeof document !== 'undefined' && typeof window !== 'undefined') {
+  document.addEventListener('visibilitychange', reconnectNow);
+  window.addEventListener('online', reconnectNow);
 }
 
 export function disconnectWs() {

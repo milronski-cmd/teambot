@@ -2,7 +2,7 @@ import type { Ctx, Module } from '../../core/types.js';
 import { ah, bad, requireRole, user } from '../../core/http.js';
 
 /**
- * "Houd de pc wakker terwijl routines of taken lopen" (A-76). Off by default. While it is on and something runs — a
+ * "Houd de pc wakker terwijl routines of taken lopen" (A-76). On by default (a routine must not stall because the pc fell asleep); the owner can switch it off. While it is on and something runs — a
  * task or chat turn, a routine run (also one waiting for its next attempt), or a routine that starts within the next
  * half hour — the desktop app keeps the computer out of sleep (Electron powerSaveBlocker "prevent-app-suspension";
  * the screen may still turn off). The server decides when and why; the desktop shell attaches the real blocker.
@@ -62,15 +62,15 @@ export function awakeReason(ctx: Ctx, now = Date.now()): string | null {
 
 export function createPowerModule(o: { tickMs?: number } = {}): Module {
   let blocker: PowerBlocker | null = null;
-  let timer: NodeJS.Timeout | null = null;
   let last: PowerState | null = null;
-  let offEvents: (() => void) | null = null;
-  let pending: NodeJS.Timeout | null = null;
+  // One module object serves every TeamBot in this process (tests start several): the clock and the listener belong
+  // to each TeamBot, so closing one never leaves its clock reading a closed database or stops another's.
+  const running = new Map<Ctx, { timer: NodeJS.Timeout; pending: NodeJS.Timeout | null; off: () => void }>();
 
   const ownerId = (ctx: Ctx) => ctx.auth.owner()?.id || null;
   const state = (ctx: Ctx): PowerState => {
     const owner = ownerId(ctx);
-    const enabled = !!owner && ctx.store.getSetting<boolean>(owner, KEY, false) === true;
+    const enabled = !!owner && ctx.store.getSetting<boolean>(owner, KEY, true) !== false;
     const reason = awakeReason(ctx);
     return { available: !!blocker, enabled, active: !!blocker && enabled && !!reason, reason };
   };
@@ -91,12 +91,13 @@ export function createPowerModule(o: { tickMs?: number } = {}): Module {
   };
   // Runs and routines change often: look again shortly after, at most a few times a second.
   const soon = (ctx: Ctx) => {
-    if (pending) return;
-    pending = setTimeout(() => {
-      pending = null;
+    const r = running.get(ctx);
+    if (!r || r.pending) return;
+    r.pending = setTimeout(() => {
+      r.pending = null;
       evaluate(ctx);
     }, 150);
-    pending.unref?.();
+    r.pending.unref?.();
   };
 
   return {
@@ -142,19 +143,22 @@ export function createPowerModule(o: { tickMs?: number } = {}): Module {
       );
     },
     start(ctx) {
-      offEvents = ctx.events.subscribe((e: any) => {
+      const off = ctx.events.subscribe((e: any) => {
         if (/^(run|routine)\./.test(String(e?.type || ''))) soon(ctx);
       });
-      timer = setInterval(() => evaluate(ctx), o.tickMs ?? TICK_MS);
+      const timer = setInterval(() => evaluate(ctx), o.tickMs ?? TICK_MS);
       timer.unref?.();
+      running.set(ctx, { timer, pending: null, off });
       evaluate(ctx);
     },
-    stop() {
-      if (timer) clearInterval(timer);
-      if (pending) clearTimeout(pending);
-      offEvents?.();
-      timer = null;
-      pending = null;
+    stop(ctx) {
+      const r = running.get(ctx);
+      if (r) {
+        clearInterval(r.timer);
+        if (r.pending) clearTimeout(r.pending);
+        r.off();
+        running.delete(ctx);
+      }
       try {
         blocker?.set(false, null);
       } catch {

@@ -1,4 +1,5 @@
 import YAML from 'yaml';
+import type { SkillMeta as SharedSkillMeta } from '../../../shared/skills.js';
 
 /**
  * SKILL.md parsing — compatible with the open Agent Skills layout:
@@ -11,18 +12,7 @@ export const NAME_RE = /^[a-z0-9]+(-[a-z0-9]+)*$/;
 export const MAX_NAME = 64;
 export const MAX_DESCRIPTION = 1024;
 
-export interface SkillMeta {
-  name: string;
-  description: string;
-  license: string;
-  version: string;
-  allowedTools: string[];
-  metadata: Record<string, string>;
-  compatibility: string;
-  author: string;
-  homepage: string;
-  dependencies: string[];
-  platforms: string[];
+export interface SkillMeta extends SharedSkillMeta {
   /** Frontmatter keys we do not interpret (kept verbatim). */
   extra: Record<string, any>;
 }
@@ -206,14 +196,4 @@ export function buildSkillMd(fm: Record<string, any>, body: string): string {
     clean[k] = v;
   }
   return `---\n${YAML.stringify(clean, { lineWidth: 0 }).trimEnd()}\n---\n\n${String(body || '').trim()}\n`;
-}
-
-/** Replace a single frontmatter key, keeping the rest of the file as-is. */
-export function setFrontmatterField(text: string, key: string, value: any): string {
-  const { fm, body } = splitFrontmatter(text);
-  const doc = YAML.parseDocument(fm ?? '');
-  if (doc.errors.length) throw new Error('Ongeldige YAML in de frontmatter');
-  if (value === undefined || value === null || value === '') doc.delete(key);
-  else doc.set(key, value);
-  return `---\n${String(doc).trimEnd()}\n---\n${body.startsWith('\n') ? '' : '\n'}${body}`;
 }

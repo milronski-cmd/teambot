@@ -8,7 +8,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { startTestApp, type TestApp } from './helpers.js';
 import { startFakeOllama } from './memory-fake-ollama.js';
-import { buildTurnContext, standingRules } from '../server/modules/memory/context.js';
+import { buildTurnContext, standingRules, systemPromptText } from '../server/modules/memory/context.js';
 
 const RULE = 'Vraag altijd eerst toestemming voordat je iets verwijdert';
 const ctxOf = (m: any): string => m?.parts?.context ?? '';
@@ -93,13 +93,14 @@ test('a local model with a small window: earlier turns are dropped to fit, the r
   try {
     await t.api('PUT', '/memory/settings', { extractor: 'heuristic' });
     const owner = t.app.ctx.auth.owner()!.id;
-    const p = t.app.ctx.providers.create(owner, { kind: 'ollama', base_url: `${o.url}/v1`, config: { contextWindows: { 'qwen-test:latest': 4096 } } });
+    // 16K: TeamBot's own instructions and tools alone are bigger than 4K (a 4K window is refused before it goes out).
+    const p = t.app.ctx.providers.create(owner, { kind: 'ollama', base_url: `${o.url}/v1`, config: { contextWindows: { 'qwen-test:latest': 16384 } } });
     await pinRule(t);
     const a = await t.api('POST', '/agents', { name: 'Lokaal', provider_id: p.id, model: 'qwen-test:latest', access_mode: 'auto' });
     const th = await t.api('POST', '/threads', { agentId: a.id });
     for (let i = 0; i < 5; i++) {
-      o.chat.push(`Antwoord ${i} ` + 'x'.repeat(2500));
-      await t.say(th.id, `Vraag ${i} ` + 'y'.repeat(2500), 20_000);
+      o.chat.push(`Antwoord ${i} ` + 'x'.repeat(6000));
+      await t.say(th.id, `Vraag ${i} ` + 'y'.repeat(6000), 20_000);
     }
     o.chat.push('Ik vraag het eerst: mag de map weg?');
     await t.say(th.id, 'Verwijder de map met oude offertes', 20_000);
@@ -140,13 +141,15 @@ test('which pinned instructions are rules: own, about you and shared ones; plain
     // With other people present (a channel): only plain rules (no personal ones).
     assert.deepEqual(ids(standingRules(svc, agent, { ...thread, kind: 'channel' } as any)), [rule.id, own.id].sort());
 
-    // An engine that keeps its own session (Codex, OpenCode …) also gets the rules in every turn.
+    // Every kind of AI gets the rules one way: a "## Vaste regels" block of the system prompt (never cut or
+    // summarised). An engine that keeps its own session (Codex, OpenCode …) gets that block again when it changed
+    // (cli-agents/context.ts; checked on the real routes in tests/memory-engines.test.ts) — no second copy per turn.
     const owner = t.app.ctx.auth.owner()!.id;
     const oc = t.app.ctx.providers.create(owner, { kind: 'opencode' });
-    const ctxApi = await buildTurnContext(svc, agent, thread, { id: '', content: 'Ruim de map op' } as any);
-    assert.doesNotMatch(String(ctxApi || ''), /Vaste regels van de eigenaar/);
-    const ctxCli = await buildTurnContext(svc, { ...agent, provider_id: oc.id }, thread, { id: '', content: 'Ruim de map op' } as any);
-    assert.match(String(ctxCli), new RegExp(`Vaste regels van de eigenaar \\(gelden altijd, ook na samenvatten\\):\\n- \\[m:${rule.ref}\\] ${RULE}`));
+    for (const ag of [agent, { ...agent, provider_id: oc.id }]) {
+      assert.doesNotMatch(String((await buildTurnContext(svc, ag, thread, { id: '', content: 'Ruim de map op' } as any)) || ''), /Vaste regels van de eigenaar/);
+      assert.match(String(systemPromptText(svc, ag, thread)), new RegExp(`## Vaste regels van de eigenaar\\n[^\\n]*\\n(?:- .*\\n)*- \\[m:${rule.ref}\\] ${RULE}`));
+    }
   } finally {
     await t.close();
   }

@@ -5,6 +5,7 @@ import { routineRoutes } from './routes.js';
 import { ROUTINE_SYSTEM_PROMPT, routineTools, RUN_GROUP, TOOL_GROUP } from './tools.js';
 import { DutyService } from './duties/service.js';
 import { dutyRoutes, dutyTools, REMINDER_GROUP } from './duties/tools.js';
+import { WorkLoop } from './duties/work.js';
 
 /**
  * Routines & triggers: scheduled and event-driven bot runs with idempotent claims,
@@ -13,6 +14,7 @@ import { dutyRoutes, dutyTools, REMINDER_GROUP } from './duties/tools.js';
  */
 export function createRoutinesModule(opts: EngineOptions = {}): Module {
   const engines = new WeakMap<Ctx, RoutineEngine>();
+  const loops = new WeakMap<Ctx, WorkLoop>();
   return {
     id: 'routines',
     label: 'Routines & triggers',
@@ -23,10 +25,17 @@ export function createRoutinesModule(opts: EngineOptions = {}): Module {
       // Vaste taken and reminders: the same engine, with a measurement before any model call (duties/).
       const duties = new DutyService(ctx, engine);
       engine.duties = duties;
+      // The work loop: open tasks and projects are picked up the moment they exist, by the bot they belong to.
+      const work = new WorkLoop(ctx, engine);
+      duties.work = work;
+      loops.set(ctx, work);
+      ctx.hooks.turnContext.push(({ agent, input }) => work.context(agent.id, input));
       ctx.services.routines = {
         engine,
         /** Vaste taken (standing duties), reminders and the owner's budget for proactive work. */
         duties,
+        /** The work loop (duties/work.ts). */
+        work,
         list: (userId: string, agentId?: string) => engine.routinesOf(userId, agentId),
         exportUser: (userId: string) => engine.exportUser(userId),
         /** A bot's routines for a bot or team template: name, task, schedule and safe options; no triggers, delivery or ids. */
@@ -66,14 +75,31 @@ export function createRoutinesModule(opts: EngineOptions = {}): Module {
       ctx.hooks.systemPrompt.push(({ thread }) => (thread.kind === 'routine' ? ROUTINE_SYSTEM_PROMPT : null));
       ctx.hooks.agentDeleted.push(({ agentId, userId }) => {
         for (const r of engine.routinesOf(userId, agentId)) engine.remove(r);
+        work.agentDeleted(userId, agentId);
       });
 
       routineRoutes(ctx, engine);
+      // "Alles stoppen", the one stop of everything that starts by itself: the routine runs that wait in the queue or for
+      // a retry, and through the planner what every source has queued (planner.ts: stop), so nothing of before the
+      // stop starts a few minutes later. The schedules themselves keep going (the noodrem "Alle routines pauzeren" is
+      // for that).
+      (ctx.hooks.stopAll ??= []).push(({ userId }) => {
+        engine.stopQueued(userId);
+        engine.planner.stop(userId);
+      });
     },
     start(ctx) {
-      engines.get(ctx)?.start();
+      const engine = engines.get(ctx);
+      if (!engine) return;
+      // The sources of this module register before the engine's first tick: maintenance of the vaste taken (no model)
+      // and the work loop. Other modules register theirs in their own start (teams, workflows, specialists).
+      const duties = engine.duties;
+      if (duties) engine.planner.register({ id: 'duties', everyMs: 60_000, firstMs: 0, look: () => duties.sweep() });
+      loops.get(ctx)?.start();
+      engine.start();
     },
     stop(ctx) {
+      loops.get(ctx)?.stop();
       engines.get(ctx)?.stop();
     },
   };

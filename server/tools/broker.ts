@@ -6,7 +6,7 @@ const RISKS = new Set<ToolRisk>(['read', 'write', 'exec', 'danger']);
 
 /**
  * Risk of one tool call: `tool.riskFor(args)` when the tool has it (per-target rules the owner set), else the
- * static `tool.risk`. Every caller of `Broker.decide` for a concrete call (runner, MCP bridge) should use this.
+ * static `tool.risk`. Every caller that decides about a concrete call of a TeamBot tool uses this.
  */
 export function callRisk(tool: Pick<ToolDef, 'risk' | 'riskFor'>, args: any, t: { agent: Agent; thread: Thread; userId: string }): ToolRisk {
   if (!tool.riskFor) return tool.risk;
@@ -27,7 +27,15 @@ export interface ApprovalResult {
   by?: string;
   /** The owner decided this before a restart; the resumed run gets the decision once without asking again. */
   carried?: boolean;
+  /** The owner has not answered yet: the request stays open for him and the bot goes on with its other work. */
+  parked?: boolean;
 }
+
+/** How long a bot waits for the owner before it goes on with its other work (the request stays open for him). */
+export const PARK_MS = 2 * 60_000;
+/** What a bot hears when its request was parked. */
+export const PARKED_TEXT =
+  'Je eigenaar heeft nog niet geantwoord. De vraag blijft voor hem klaarstaan onder “Wacht op jou”; stel hem niet opnieuw. Doe dit ene nu niet en ga door met al het andere werk. Zodra hij beslist krijg je daar bericht van en maak je dit af.';
 
 /** How long a decision made after a restart is reused for the identical request of the resumed run. */
 export const CARRY_OVER_MS = 15 * 60_000;
@@ -51,8 +59,9 @@ export function canonicalJson(v: any): string {
 }
 
 /**
- * The single permission gate for every tool call (API agents, CLI agents via the
- * MCP bridge, routines and channels). Deny-by-default for impactful actions:
+ * What a bot's access level, the owner's choice per tool and his own rules say about one step, and the approval
+ * cards. The permission gate (tools/gate.ts) asks this for every step of every bot, whichever way the step arrives;
+ * other parts ask it which tools a bot may see. Deny-by-default for impactful actions:
  *  - chat:     no tools
  *  - readonly: read tools only
  *  - ask:      read automatically, everything else asks the human — except team-internal tools (asking or giving
@@ -62,13 +71,15 @@ export function canonicalJson(v: any): string {
  *  - full:     "Volledige toegang" (owner's explicit opt-in): everything of the bot's own work runs without asking,
  *              also local danger (delete in the workspace, own desktop, sending to the owner himself). Sending or
  *              publishing to others still asks unless the owner allowed that too (settings.fullAccessExternal);
- *              payments always ask. Hard blocks (outside the workspace, password/payment fields, blocklisted
- *              commands, private URLs) stay in force: they live in the tools and the CLI gate, not here.
+ *              payments always ask. Hard blocks (key files, TeamBot's own data, closed folders, password/payment
+ *              fields, a command that wipes the disk) stay in force: they live in the gate and the tools, not here.
  * A per-agent tool policy can override (explicit user choice, audited). The owner's own rules (module botrules) come
  * last: they can make any level stricter, and "mag altijd" lifts only a question of the level "Vragen".
  */
 export class Broker {
   private pending = new Map<string, (r: ApprovalResult) => void>();
+  /** After this long without an answer a request that may be parked is (0: never; tests shorten it). */
+  parkMs = PARK_MS;
 
   constructor(private getCtx: () => Ctx) {}
 
@@ -131,11 +142,15 @@ export class Broker {
     risk: string;
     options?: string[];
     signal?: AbortSignal;
+    /** A bot's own turn may go on without the answer: after `parkMs` the request is parked instead of waited for. */
+    park?: boolean;
   }): Promise<ApprovalResult> {
     const ctx = this.getCtx();
     // The owner already decided this exact request after a restart (the run was interrupted while it waited).
     const carried = this.carryOver(o);
     if (carried) return carried;
+    // The very same request already waits for him, parked: no second card and no second wait.
+    if (o.park && o.agent && this.parkedSame(o)) return { approved: false, parked: true };
     const id = newId('apr_');
     const row = {
       id,
@@ -166,12 +181,25 @@ export class Broker {
       ctx.store.updateRun(o.run.id, { status: 'waiting' });
       ctx.events.emit(o.userId, 'run.updated', { ...ctx.store.run(o.run.id) });
     }
+    let parkTimer: ReturnType<typeof setTimeout> | undefined;
     try {
       return await new Promise<ApprovalResult>((resolve, reject) => {
         this.pending.set(id, resolve);
+        if (o.park && o.agent && o.run && this.parkMs > 0) {
+          parkTimer = setTimeout(() => {
+            if (!this.pending.delete(id)) return;
+            ctx.store.update('approvals', id, { parked_at: now() });
+            ctx.events.emit(o.userId, 'approval.updated', this.view(ctx.store.get('approvals', id)));
+            ctx.audit(o.userId, 'approval.parked', { id, tool: o.tool, summary: row.summary.slice(0, 300) }, o.agent!.id);
+            resolve({ approved: false, parked: true });
+          }, this.parkMs);
+          (parkTimer as any).unref?.();
+        }
         if (o.signal) {
           if (o.signal.aborted) return reject(new Error('Geannuleerd'));
           o.signal.addEventListener('abort', () => {
+            // Parked: the request is the owner's now and outlives the turn that asked it.
+            if (!this.pending.has(id)) return;
             this.pending.delete(id);
             ctx.store.update('approvals', id, { status: 'expired', decided_at: now() });
             ctx.events.emit(o.userId, 'approval.updated', this.view(ctx.store.get('approvals', id)));
@@ -180,6 +208,7 @@ export class Broker {
         }
       });
     } finally {
+      clearTimeout(parkTimer);
       if (o.run && ctx.store.run(o.run.id)?.status === 'waiting') {
         ctx.store.updateRun(o.run.id, { status: 'running' });
         ctx.events.emit(o.userId, 'run.updated', { ...ctx.store.run(o.run.id) });
@@ -195,13 +224,14 @@ export class Broker {
     if (!o.agent || !o.thread) return null;
     const ctx = this.getCtx();
     const since = new Date(Date.now() - CARRY_OVER_MS).toISOString();
+    // A parked request is taken up in the bot's own chat, which may be another conversation than the one it asked in.
     const rows = ctx.store.all<any>(
-      "SELECT * FROM approvals WHERE user_id = ? AND agent_id = ? AND thread_id = ? AND tool = ? AND kind = ? AND interrupted_at IS NOT NULL AND carried_at IS NULL AND status IN ('approved','denied') AND decided_at >= ? ORDER BY decided_at DESC LIMIT 5",
+      "SELECT * FROM approvals WHERE user_id = ? AND agent_id = ? AND tool = ? AND kind = ? AND ((interrupted_at IS NOT NULL AND thread_id = ?) OR parked_at IS NOT NULL) AND carried_at IS NULL AND status IN ('approved','denied') AND decided_at >= ? ORDER BY decided_at DESC LIMIT 5",
       o.userId,
       o.agent.id,
-      o.thread.id,
       o.tool,
       o.kind,
+      o.thread.id,
       since,
     );
     const want = canonicalJson(o.input ?? {});
@@ -216,6 +246,15 @@ export class Broker {
     return null;
   }
 
+  /** Does this exact request of this bot already wait for the owner, parked? */
+  private parkedSame(o: { userId: string; agent: Agent | null; kind: string; tool: string; input: any }): boolean {
+    const store = this.getCtx().store;
+    const want = canonicalJson(o.input ?? {});
+    return store
+      .all<any>("SELECT * FROM approvals WHERE user_id = ? AND agent_id = ? AND tool = ? AND kind = ? AND status = 'pending' AND parked_at IS NOT NULL ORDER BY created_at DESC LIMIT 20", o.userId, o.agent!.id, o.tool, o.kind)
+      .some((r) => canonicalJson(store.decode<any>('approvals', r).input ?? {}) === want);
+  }
+
   /** Called by the HTTP API when a human decides. */
   resolve(id: string, userId: string, decision: 'approve' | 'deny' | 'always', answer?: string) {
     const ctx = this.getCtx();
@@ -223,7 +262,7 @@ export class Broker {
     if (!a || a.user_id !== userId) throw new Error('Onbekend verzoek');
     if (a.status !== 'pending') throw new Error('Dit verzoek is al afgehandeld');
     // An approval that survived a restart never grants "always" (its card does not offer it either).
-    if (a.interrupted_at && decision === 'always') decision = 'approve';
+    if ((a.interrupted_at || a.parked_at) && decision === 'always') decision = 'approve';
     const approved = decision !== 'deny';
     ctx.store.update('approvals', id, { status: approved ? 'approved' : 'denied', answer: answer ?? null, decided_by: userId, decided_at: now() });
     if (decision === 'always' && a.agent_id && a.kind === 'tool' && a.risk !== 'danger') {
@@ -239,7 +278,7 @@ export class Broker {
     const r = this.pending.get(id);
     this.pending.delete(id);
     if (r) r({ approved, answer, always: decision === 'always', by: userId });
-    else if (a.interrupted_at) this.resumeAfterRestart(a, userId, approved, answer);
+    else if (a.interrupted_at || a.parked_at) this.resumeAfterRestart(a, userId, approved, answer);
     return view;
   }
 
@@ -251,13 +290,43 @@ export class Broker {
   private resumeAfterRestart(a: any, userId: string, approved: boolean, answer?: string) {
     const ctx = this.getCtx();
     try {
-      const t = a.thread_id ? ctx.store.thread(a.thread_id) : null;
+      const asked = a.thread_id ? ctx.store.thread(a.thread_id) : null;
       const agent = a.agent_id ? ctx.store.agent(a.agent_id) : null;
-      if (!t || !agent) return;
-      // Already working again (e.g. the owner clicked Hervatten): the decision is recorded, nothing is started twice.
-      if (ctx.store.one("SELECT id FROM runs WHERE thread_id = ? AND agent_id = ? AND status IN ('queued','running','waiting') LIMIT 1", t.id, agent.id)) return;
+      if (!agent) return;
       const owner = ctx.store.user(userId)?.name || 'De eigenaar';
       const what = String(a.summary || a.tool).replace(/\s+/g, ' ').slice(0, 400);
+      if (a.parked_at) {
+        // Parked: the bot went on with other work. It hears the decision in its own chat (the conversation it asked
+        // in may be a finished hand-over), after the turn it is busy with there.
+        const own = asked && asked.kind === 'chat' && !asked.room_id && asked.agent_id === agent.id ? asked : ctx.chat.threadForAgent(a.user_id, agent.id);
+        const ans = answer?.trim();
+        const said =
+          a.kind === 'question'
+            ? approved && ans
+              ? `${owner} beantwoordde je vraag van eerder (“${what}”): ${ans.slice(0, 4000)}\nMaak nu af wat hierop wachtte.`
+              : `${owner} sloeg je vraag van eerder over (“${what}”). Ga verder zonder antwoord.`
+            : approved
+              ? `${owner} gaf toestemming voor wat je eerder vroeg: ${what}\nVoer dit nu uit en maak af wat hierop wachtte. Controleer eerst wat al gedaan is, zodat niets dubbel gebeurt.`
+              : `${owner} weigerde wat je eerder vroeg: ${what}\nDoe dit niet. Maak het werk af zonder, of zeg wat er dan niet kan.`;
+        const go = () => {
+          const sys = ctx.store.createMessage({ thread_id: own.id, role: 'system', author_type: 'system', author_name: 'TeamBot', content: said, parts: { resumedFrom: { approvalId: a.id, runId: a.run_id } } });
+          ctx.chat.emitMessage(own, sys);
+          ctx.chat.startAgent(own, agent.id, sys.id, 'resume', { resumedApproval: a.id });
+        };
+        const busy = ctx.store.one<{ id: string }>("SELECT id FROM runs WHERE thread_id = ? AND agent_id = ? AND status IN ('queued','running','waiting') ORDER BY created_at DESC LIMIT 1", own.id, agent.id);
+        if (busy)
+          void ctx.runs
+            .waitFor(busy.id)
+            .catch(() => null)
+            .then(go)
+            .catch((e: any) => ctx.log.error('[broker] parked decision', e));
+        else go();
+        return;
+      }
+      const t = asked;
+      if (!t) return;
+      // Already working again (e.g. the owner clicked Hervatten): the decision is recorded, nothing is started twice.
+      if (ctx.store.one("SELECT id FROM runs WHERE thread_id = ? AND agent_id = ? AND status IN ('queued','running','waiting') LIMIT 1", t.id, agent.id)) return;
       let text: string;
       if (a.kind === 'question') {
         const ans = answer?.trim();
@@ -288,7 +357,8 @@ export class Broker {
     const kept = new Map<string, number>();
     const ts = now();
     const rows = ctx.store.all<any>(
-      "SELECT a.id, a.user_id, a.run_id, a.thread_id, a.agent_id, a.interrupted_at, r.status AS run_status FROM approvals a LEFT JOIN runs r ON r.id = a.run_id WHERE a.status = 'pending'",
+      // (a parked request is the owner's: it stays open as it is, whatever became of the run)
+      "SELECT a.id, a.user_id, a.run_id, a.thread_id, a.agent_id, a.interrupted_at, r.status AS run_status FROM approvals a LEFT JOIN runs r ON r.id = a.run_id WHERE a.status = 'pending' AND a.parked_at IS NULL",
     );
     for (const a of rows) {
       // Only the bot's latest turn in that thread can still be resumed.
@@ -326,6 +396,24 @@ export class Broker {
     const t = ctx.store.thread(threadId);
     const name = ctx.store.agent(agentId)?.name || 'De bot';
     if (t) ctx.chat.addEvent(t, `De open goedkeuring van vóór de herstart is vervallen: ${name} gaat verder met een nieuwe beurt en vraagt het opnieuw als het nog nodig is.`, { kind: 'approval_superseded', agentId });
+    return rows.length;
+  }
+
+  /**
+   * A run ended for good (done, error or cancelled) while it still had an open approval or question: nobody waits for
+   * the answer any more, so the card expires and leaves "Wacht op jou" (approval.updated). Never for an interrupted
+   * run: that approval stays open on purpose, deciding it resumes the work (expireStale / supersedeInterrupted).
+   */
+  expireForRun(runId: string): number {
+    const ctx = this.getCtx();
+    const run = ctx.store.run(runId);
+    if (!run || !['done', 'error', 'cancelled'].includes(run.status)) return 0;
+    const rows = ctx.store.all<any>("SELECT id, user_id FROM approvals WHERE status = 'pending' AND parked_at IS NULL AND run_id = ?", runId);
+    for (const r of rows) {
+      this.pending.delete(r.id);
+      ctx.store.update('approvals', r.id, { status: 'expired', decided_at: now() });
+      ctx.events.emit(r.user_id, 'approval.updated', this.view(ctx.store.get('approvals', r.id)));
+    }
     return rows.length;
   }
 

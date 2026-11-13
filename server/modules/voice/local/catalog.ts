@@ -100,7 +100,6 @@ const CLEAR: [number, number] = [0.333, 0.333];
 
 /** Dutch defaults (also what users who set up TeamBot before other languages existed have stored). */
 export const LOCAL_STT_DEFAULT = 'parakeet-tdt-0.6b-v3';
-export const LOCAL_VOICE_DEFAULT = 'nl_NL-alex-medium';
 export const LOCAL_VOICE_EN_DEFAULT = 'en_US-ljspeech-medium';
 export const PIPER_RUNTIME = 'piper-runtime';
 

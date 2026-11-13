@@ -362,6 +362,52 @@ test('live: after a Claude run the bar has every window within the wait (one rea
   }
 });
 
+test('live: while a bot works its engine is read again (short cache, a read every round); an early report of a long run does not replace the read after it', async () => {
+  const t = await startTestApp();
+  try {
+    const svc = t.app.ctx.services.usage;
+    const p = await t.api('POST', '/providers', { kind: 'claude-code', config: { path: FAKE_CLAUDE } });
+    const a = await t.api('POST', '/agents', { name: 'Claudia', provider_id: p.id, model: '', access_mode: 'ask' });
+    const cfg = t.app.ctx.providers.config(p.id)!;
+    await svc.refresh(cfg, true);
+    const st = svc.state(p.id);
+    assert.ok(st.checkedAt, 'a first reading');
+
+    // Nobody works: a reading of half a minute ago is fresh enough for the bar.
+    const halfMinute = (st.checkedAt = Date.now() - 30_000);
+    await svc.refresh(cfg);
+    assert.equal(svc.state(p.id).checkedAt, halfMinute, 'idle: cached for a minute');
+    assert.deepEqual([...svc.workingOn(cfg.user_id)], []);
+
+    // A bot is working on it: the same question reads again (20 seconds), and every round reads by itself.
+    const runs = t.app.ctx.runs;
+    const real = runs.activeRuns.bind(runs);
+    const run = { id: 'run_live', status: 'running', agent_id: a.id, user_id: cfg.user_id, meta: {}, created_at: new Date().toISOString(), started_at: new Date().toISOString() };
+    runs.activeRuns = () => [run] as any;
+    assert.deepEqual([...svc.workingOn(cfg.user_id)], [p.id]);
+    await svc.refresh(cfg);
+    assert.ok(svc.state(p.id).checkedAt! > halfMinute, 'working: read again');
+    const old = (svc.state(p.id).checkedAt = Date.now() - 30_000);
+    svc.workReadMs = 40;
+    svc.runChanged(run as any);
+    assert.ok(await until(() => svc.state(p.id).checkedAt! > old), 'a read during the run');
+
+    // The run ends; its only report came long before the end: the CLI is asked anyway.
+    runs.activeRuns = real;
+    svc.afterRunDelayMs = 30;
+    svc.minReadGapMs = 0;
+    const cur = svc.state(p.id);
+    cur.streamAt = Date.now() - 5 * 60_000;
+    cur.streamIds = cur.windows.map((w: LimitWindow) => w.id);
+    const before = (cur.checkedAt = Date.now() - 1000);
+    svc.runChanged({ ...run, status: 'done', started_at: new Date(Date.now() - 10 * 60_000).toISOString() } as any);
+    assert.ok(await until(() => svc.state(p.id).checkedAt! > before), 'read after the long run');
+    assert.ok(await until(() => (svc as any).workTimer === null), 'no rounds once nobody works');
+  } finally {
+    await t.close();
+  }
+});
+
 // ---------------------------------------------------------------- usage per bot
 
 test('usage per bot: today and this week, engines and who pays; work without a bot and a deleted bot; per team', async () => {

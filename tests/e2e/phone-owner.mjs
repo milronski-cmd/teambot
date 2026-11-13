@@ -63,7 +63,7 @@ delete process.env.TEAMBOT_DATA;
 delete process.env.HERMES_HOME;
 delete process.env.TEAMBOT_HERMES_HOME;
 
-const { createApp } = await import('../../server/app.ts');
+const { createApp } = await import('./server.mjs');
 const { mockAdapter } = await import('../helpers.ts');
 const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'tb-phone-owner-'));
 const app = await createApp({ dataDir: dir, port: Number(process.env.TEAMBOT_E2E_PORT) || 0, host: '127.0.0.1', mode: 'desktop', quiet: true });
@@ -458,6 +458,8 @@ try {
   step('toetsenbord open: het invoerveld staat direct boven het toetsenbord, ook als de app het beeld omhoog schuift (offsetTop)');
 
   // ================================================================ 4. an approval card, approved on the phone
+  // New bots start on Automatisch (they work on by themselves): for the card, this bot asks first, set on the computer.
+  await pc('PATCH', `/agents/${mila.id}`, { access_mode: 'ask' });
   script.push({ text: 'Ik zet het lijstje in een bestand.', toolCalls: [{ name: 'write_file', args: { path: 'boodschappen.txt', content: 'melk, brood, koffie' } }] });
   script.push({ text: 'Klaar: het lijstje staat in boodschappen.txt.' });
   await typeInto(box, 'Zet mijn boodschappenlijst in een bestand.');
@@ -618,7 +620,9 @@ try {
   await meer('Instellingen', /#\/settings/);
   await main.getByRole('heading', { name: 'Instellingen', exact: true }).waitFor({ timeout: 10000 });
   await screen('instellingen');
-  await tap(main.getByRole('link', { name: 'Algemeen', exact: true }));
+  // Your name is on the row "Taal en uiterlijk" (was Algemeen; Uiterlijk is part of it now). On the phone a row has
+  // its one line under the title ("Naam, taal, thema en kleur.").
+  await tap(main.getByRole('link', { name: /^Taal en uiterlijk\b/ }));
   await page.waitForURL(/#\/settings\/general/);
   const nameBox = main.getByRole('textbox', { name: 'Je naam' });
   await nameBox.waitFor();
@@ -628,8 +632,8 @@ try {
   await page.keyboard.press('Enter');
   await main.getByTestId('saved-note').filter({ hasText: 'Opgeslagen' }).first().waitFor({ timeout: 8000 }).catch(() => fail('Instellingen: geen "Opgeslagen" na het wijzigen van de naam'));
   await until(async () => (await call(phoneToken, 'GET', '/me')).body.user?.name === 'Sanne', 8000, 'Instellingen: naam niet opgeslagen');
-  // Theme (Instellingen › Uiterlijk): dark is the phone's default and shows as chosen; an explicit choice always wins
-  // (also after a restart).
+  // Theme (Instellingen › Taal en uiterlijk; the old link #/settings/appearance opens it): dark is the phone's default
+  // and shows as chosen; an explicit choice always wins (also after a restart).
   await go('#/settings/appearance');
   const themeGroup = main.getByRole('radiogroup', { name: 'Thema' });
   if ((await themeGroup.getByRole('radio', { name: 'Donker' }).getAttribute('aria-checked')) !== 'true') fail('thema: "Donker" staat niet aan als standaard op de telefoon');
@@ -721,9 +725,13 @@ try {
   // ================================================================ 8c. own rules in plain words (P6)
   // On the phone a stricter rule is added as on the computer; a looser one (and removing a strict one) says calmly
   // that it is done on the computer, and Toevoegen stays off.
+  // The bot page: ?tab=meer opens Meer mogelijkheden; the own rules are its row "Eigen regels en rechten, precies".
   await go(`#/agents/${mila.id}?tab=meer&meer=1`);
+  const rightsRow = main.locator('[data-section="core:rights"] h3 button');
+  await rightsRow.waitFor({ timeout: 10000 }).catch(() => fail('bot-editor op de telefoon: geen rij "Eigen regels en rechten, precies" onder Meer mogelijkheden'));
+  if ((await rightsRow.getAttribute('aria-expanded').catch(() => 'true')) !== 'true') await tap(rightsRow);
   const ownRules = main.getByTestId('own-rules');
-  await ownRules.waitFor({ timeout: 10000 }).catch(() => fail('bot-editor op de telefoon: geen Eigen regels onder Wat mag de bot?'));
+  await ownRules.waitFor({ timeout: 10000 }).catch(() => fail('bot-editor op de telefoon: geen Eigen regels onder Meer mogelijkheden › Eigen regels en rechten'));
   const ruleInput = ownRules.getByRole('textbox', { name: 'Nieuwe regel' });
   await typeInto(ruleInput, 'Mail nooit naar klanten zonder mij te vragen');
   await ownRules.getByTestId('rule-preview').getByText('Eerst vragen').waitFor({ timeout: 8000 }).catch(() => fail('regel op de telefoon: geen voorbeeld van wat TeamBot ervan maakt'));
@@ -779,7 +787,7 @@ try {
   if ((await call(phoneToken, 'GET', '/app-update')).body.auto !== 'notify') fail('Back-ups: "Alleen melden" vanaf de telefoon niet opgeslagen');
   await screen('instellingen-back-ups');
   await go('#/settings/data');
-  await main.getByRole('heading', { name: 'Waar staat mijn data?' }).first().waitFor({ timeout: 8000 });
+  await main.getByRole('heading', { name: 'Privacy en gegevens' }).first().waitFor({ timeout: 8000 });
   if (await main.getByText('Diagnosebestand downloaden').count()) fail('Gegevens: diagnosebestand downloaden op de telefoon (kan alleen op de computer)');
   if (await main.getByText('· Node', { exact: false }).count()) fail('Gegevens: lege regel Platform op de telefoon');
   await screen('instellingen-gegevens');
@@ -834,16 +842,18 @@ try {
   const settingsNav = main.getByRole('navigation', { name: 'Instellingen' });
   await settingsNav.waitFor({ timeout: 10000 });
   const mainRows = await settingsNav.locator('a[href^="#/"]').evaluateAll((as) => as.map((a) => a.getAttribute('href')));
-  if (mainRows.length > 6) fail(`Instellingen op de telefoon: ${mainRows.length} regels, doel hoogstens 6`);
-  // Everything else hangs under its row: "Meer" under the row's page, or the overview of Bots en teams and Apps en
-  // apparaten (all of it, since Geavanceerd tonen is on).
+  // One list, every row opens one thing: what you set yourself, then "Van je bots", then Meer mogelijkheden (the one
+  // place for everything optional). No overview pages in between.
+  const WANT_ROWS = ['#/settings/providers', '#/settings/telefoon', '#/settings/general', '#/settings/regels', '#/settings/veilig', '#/settings/slot', '#/agents', '#/settings/teams', '#/m/memory/', '#/m/channels/', '#/m/mcp/', '#/m/folders/', '#/settings/meer'];
+  if (mainRows.join(' ') !== WANT_ROWS.join(' ')) fail(`Instellingen op de telefoon: de regels zijn ${mainRows.join(', ')}; verwacht ${WANT_ROWS.join(', ')}`);
+  // Everything else hangs under its row: "Meer" under the row's page, or the overview of Meer mogelijkheden (all of it).
   const settingRows = [...mainRows];
   for (const row of mainRows) {
     await go(row);
     await page.waitForTimeout(500);
     settingRows.push(...(await main.locator('nav[aria-label="Meer"] a[href^="#/"], nav[aria-label="Onderdelen"] a[href^="#/"]').evaluateAll((as) => as.map((a) => a.getAttribute('href')))));
   }
-  if (!settingRows.includes('#/settings/network-proxy')) fail('Algemeen › Meer op de telefoon: Netwerk en proxy ontbreekt terwijl Geavanceerd tonen aan staat');
+  if (!settingRows.includes('#/settings/network-proxy')) fail('Meer mogelijkheden op de telefoon: Netwerk en proxy ontbreekt');
   // Module pages straight from the UI modules' sources (`{ path: 'x', title: … }`), so a new page is swept too.
   const modDir = fileURLToPath(new URL('../../ui/src/modules', import.meta.url));
   const modulePages = fs
@@ -893,7 +903,8 @@ try {
       return {
         text: m?.innerText || '',
         toasts: [...document.querySelectorAll('[aria-live="polite"].fixed > *')].filter(visible).map((e) => e.textContent.trim()).filter(Boolean),
-        danger: [...(m?.querySelectorAll('[class*="bg-danger-soft"], [role="alert"]') || [])].filter(visible).map((e) => e.textContent.trim()).filter(Boolean),
+        danger: [...(m?.querySelectorAll('[class*="bg-danger-soft"], [role="alert"]') || [])].filter(visible).map((e) => e.textContent.trim()).filter((x) => x && x !== 'Met gevolgen'),
+        // ("Met gevolgen" is the badge of a logbook line, e.g. a new bot that started on Volledige toegang: not an error.)
         // A download or link the server refuses for a phone (policy.ts COMPUTER_ONLY) is a dead button.
         deadLinks: [...(m?.querySelectorAll('a[href*="/api/"]') || [])].filter(visible).map((a) => new URL(a.href).pathname).filter((p) => /^\/api\/(admin|export|memory\/export|secrets|computers\/vault|sessions)(\/|$)/.test(p)),
       };

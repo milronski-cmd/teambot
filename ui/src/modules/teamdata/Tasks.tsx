@@ -2,7 +2,7 @@ import { type ReactNode, useEffect, useMemo, useState } from 'react';
 import { ListChecks } from 'lucide-react';
 import { query } from '../../lib/router';
 import { useIsDesktop } from '../../lib/media';
-import { Button, Card, EmptyState, Modal, Select, cx, toast, toastError } from '../../components/ui';
+import { Button, Card, EmptyState, Modal, Select, cx, toast, toastError, useAsync } from '../../components/ui';
 import { SkeletonCards } from '../../components/overview';
 import { Segmented } from '../../components/SettingControls';
 import { type Row, teamApi, useTeamChanged, teamTaskRef } from './api';
@@ -57,21 +57,16 @@ function TaskCard({ t, onOpen, showOwner = true }: { t: Row; onOpen(): void; sho
 
 function TaskModal({ t, onClose, onSaved }: { t: Row | null; onClose(): void; onSaved(r: Row): void }) {
   const [status, setStatus] = useState('');
-  const [busy, setBusy] = useState(false);
+  const { busy, run } = useAsync();
   useEffect(() => setStatus(String(t?.status ?? '')), [t?.id]);
   if (!t) return null;
   const choices = STATUS_CHOICES.some((c) => c.v === t.status) ? STATUS_CHOICES : [{ v: String(t.status), label: statusInfo(t.status).label }, ...STATUS_CHOICES];
   const save = async () => {
-    setBusy(true);
-    try {
+    await run(async () => {
       const r = await teamApi.setTaskStatus(t.id, status);
       toast('Status bijgewerkt', 'ok');
       onSaved(r);
-    } catch (e) {
-      toastError(e);
-    } finally {
-      setBusy(false);
-    }
+    });
   };
   return (
     <Modal open onClose={onClose} wide title={<span className="tabular-nums">Taak #{t.id}</span>}>

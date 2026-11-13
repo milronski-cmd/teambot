@@ -1,11 +1,11 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { ArrowDown, ArrowLeft, ArrowUp, Bot, CircleStop, Globe, Hand, History, Keyboard, MonitorUp, Pause, PictureInPicture2, Play, Power, RefreshCw, User } from 'lucide-react';
-import { api, authUrl } from '../../lib/api';
+import { authUrl } from '../../lib/api';
 import { useApp } from '../../lib/store';
 import { t } from '../../lib/i18n';
-import { Badge, Button, cx, EmptyState, Input, Modal, Spinner, toast, useAsync } from '../../components/ui';
-import { computers, fmtTime, openPip, patchStatus, useLive, type Action, type ComputerStatus } from './api';
-import { LiveImage, useScreenInput } from './LiveScreen';
+import { Badge, Button, cx, EmptyState, Input, Modal, Spinner, toast } from '../../components/ui';
+import { computers, fmtTime, openPip, useLive, type Action, type ComputerStatus } from './api';
+import { LiveImage, useComputerControl } from './LiveScreen';
 
 export function ControllerBadge({ status, meId }: { status: ComputerStatus; meId?: string }) {
   const c = status.controller;
@@ -15,36 +15,58 @@ export function ControllerBadge({ status, meId }: { status: ComputerStatus; meId
   return <Badge tone="ok">{c.name} bedient</Badge>;
 }
 
+/** The steps on a bot's computer, newest first: who did it, what, when, and the screen after a step when there is one. */
+export function StepList({ agentId, title, steps, compact }: { agentId: string; title: string; steps: Action[]; compact?: boolean }) {
+  const [frame, setFrame] = useState<Action | null>(null);
+  return (
+    <>
+      <div>
+        <div className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-muted">{title}</div>
+        {!steps.length ? (
+          <p className="text-sm text-muted">Nog geen stappen.</p>
+        ) : (
+          <ul className={cx('divide-y divide-line rounded-xl border border-line', compact && 'max-h-80 overflow-y-auto')}>
+            {steps.map((a) => (
+              <li key={a.id} className="flex items-start gap-2 px-3 py-2 text-sm">
+                {a.actor === 'user' ? <User className="mt-0.5 h-4 w-4 shrink-0 text-warn" aria-label="Gebruiker" /> : <Bot className="mt-0.5 h-4 w-4 shrink-0 text-muted" aria-label="Bot" />}
+                <div className="min-w-0 flex-1">
+                  <div className={cx('break-words', (a.status === 'error' || a.status === 'denied') && 'text-danger')}>{a.summary}</div>
+                  <div className="truncate text-xs text-muted">{fmtTime(a.created_at)}{a.url ? ` · ${a.url}` : ''}</div>
+                </div>
+                {a.frame && (
+                  <button className="shrink-0 overflow-hidden rounded border border-line" onClick={() => setFrame(a)} aria-label="Bekijk scherm bij deze stap">
+                    <img src={authUrl(`/computers/${agentId}/actions/${a.id}/frame`)} alt="" loading="lazy" className="h-9 w-14 object-cover" />
+                  </button>
+                )}
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+
+      <Modal open={!!frame} onClose={() => setFrame(null)} title={frame?.summary || 'Stap'} wide>
+        {frame && <img src={authUrl(`/computers/${agentId}/actions/${frame.id}/frame`)} alt={frame.summary} className="w-full rounded-lg border border-line" />}
+      </Modal>
+    </>
+  );
+}
+
 /** Live screen of a bot's browser with takeover, pause, emergency stop and the step log. */
 export function LivePanel({ agentId, compact = false }: { agentId: string; compact?: boolean }) {
-  const me = useApp((s) => s.me);
-  const { data, error, loading, reload } = useLive(() => computers.get(agentId), ['computer.status', 'computer.config'], [agentId], patchStatus(agentId));
+  const { data, error, loading, reload, me, status, iControl, sticky, scr, busy, run, post } = useComputerControl(agentId);
   const caps = useLive(() => computers.caps(), [], []);
   const actions = useLive(() => computers.actions(agentId, 60), ['computer.action'], [agentId]);
-  const { busy, run } = useAsync();
   const [streamKey, setStreamKey] = useState(0);
   const [typed, setTyped] = useState('');
   const [url, setUrl] = useState('');
   const [confirmStop, setConfirmStop] = useState(false);
-  const [frame, setFrame] = useState<Action | null>(null);
   const [rewind, setRewind] = useState<number | null>(null);
 
-  const status = data?.status;
   const running = !!status?.browser.running;
-  const iControl = !!(status?.controller && status.controller.kind === 'user' && me && status.controller.userId === me.id);
-  const sticky = !!status?.controller?.sticky;
-  // holding the browser = clicking and typing, also while the bot is paused (e.g. when it asked you to log in)
-  const scr = useScreenInput(agentId, iControl);
   // A window on the computer's screen is opened from the computer; a paired phone takes over in the live view.
   const phone = useApp((s) => s.device);
   const visibleOk = caps.data?.caps.find((c) => c.id === 'visible')?.status === 'available' && caps.data?.isOwner && !phone;
 
-  // keep a human lease alive while this panel is open
-  useEffect(() => {
-    if (!iControl || sticky) return;
-    const t = setInterval(() => api.post(`/computers/${agentId}/heartbeat`, {}).catch(() => {}), 15_000);
-    return () => clearInterval(t);
-  }, [iControl, sticky, agentId]);
 
   const framed = useMemo(() => (actions.data || []).filter((a) => a.frame).reverse(), [actions.data]);
 
@@ -52,7 +74,6 @@ export function LivePanel({ agentId, compact = false }: { agentId: string; compa
   if (error) return <EmptyState title="Kon de computer niet laden">{error}</EmptyState>;
   if (!status) return null;
 
-  const post = (p: string, body: any = {}, ok?: string) => run(() => api.post(`/computers/${agentId}${p}`, body), ok).then((r) => (reload(), r));
   const input = scr.send;
 
   const showing = rewind !== null && framed[rewind] ? framed[rewind] : null;
@@ -191,33 +212,7 @@ export function LivePanel({ agentId, compact = false }: { agentId: string; compa
       )}
 
       {/* step log */}
-      <div>
-        <div className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-muted">Stappen</div>
-        {!actions.data?.length ? (
-          <p className="text-sm text-muted">Nog geen stappen.</p>
-        ) : (
-          <ul className={cx('divide-y divide-line rounded-xl border border-line', compact && 'max-h-80 overflow-y-auto')}>
-            {actions.data.slice(0, compact ? 40 : 60).map((a) => (
-              <li key={a.id} className="flex items-start gap-2 px-3 py-2 text-sm">
-                {a.actor === 'user' ? <User className="mt-0.5 h-4 w-4 shrink-0 text-warn" aria-label="Gebruiker" /> : <Bot className="mt-0.5 h-4 w-4 shrink-0 text-muted" aria-label="Bot" />}
-                <div className="min-w-0 flex-1">
-                  <div className={cx('break-words', a.status === 'error' && 'text-danger')}>{a.summary}</div>
-                  <div className="truncate text-xs text-muted">{fmtTime(a.created_at)}{a.url ? ` · ${a.url}` : ''}</div>
-                </div>
-                {a.frame && (
-                  <button className="shrink-0 overflow-hidden rounded border border-line" onClick={() => setFrame(a)} aria-label="Bekijk scherm bij deze stap">
-                    <img src={authUrl(`/computers/${agentId}/actions/${a.id}/frame`)} alt="" loading="lazy" className="h-9 w-14 object-cover" />
-                  </button>
-                )}
-              </li>
-            ))}
-          </ul>
-        )}
-      </div>
-
-      <Modal open={!!frame} onClose={() => setFrame(null)} title={frame?.summary || 'Stap'} wide>
-        {frame && <img src={authUrl(`/computers/${agentId}/actions/${frame.id}/frame`)} alt={frame.summary} className="w-full rounded-lg border border-line" />}
-      </Modal>
+      <StepList agentId={agentId} title="Stappen" steps={(actions.data || []).slice(0, compact ? 40 : 60)} compact={compact} />
 
       <Modal
         open={confirmStop}

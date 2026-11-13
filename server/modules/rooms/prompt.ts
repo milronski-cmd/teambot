@@ -11,8 +11,66 @@ const MODE_TEXT: Record<string, string> = {
   mention: 'Alleen op vermelding: een bot antwoordt alleen als hij met @naam wordt aangesproken (of als iemand op zijn bericht reageert).',
 };
 
-/** Stable additions to the system prompt (no timestamps, no live states): room context or delegation brief. */
+/** At most this many colleagues by name in the prompt (the rest is counted). */
+const MAX_COLLEAGUES = 40;
+
+/** The bots this bot can give work to: the owner's other bots it may reach (teams: its own team and teams it directs). */
+export function colleagues(s: RoomService, agent: Agent): Agent[] {
+  return s.ctx.store
+    .agents(agent.user_id)
+    .filter((a) => a.id !== agent.id && !a.archived && !a.settings?.sharedRun && !s.orch.teamError(agent.id, a.id));
+}
+
+/**
+ * "Samenwerken met je team": who the colleagues are (with their role) and the plain rules for working together. For
+ * every bot that has colleagues and the team tools, in every conversation, so each bot knows who does what and uses
+ * them. delegate_task is always in a bot's list; ask_bot and the task board it finds on demand (tools/selection.ts).
+ * Stable: it changes only when the owner's bots change.
+ */
+export function teamworkPrompt(s: RoomService, agent: Agent, thread: Thread): string | null {
+  // Without tools (chat) or with reading only (readonly) a bot cannot give work: the prompt never names a tool it lacks.
+  if (agent.settings?.sharedRun || agent.access_mode === 'chat' || agent.access_mode === 'readonly') return null;
+  if (Array.isArray(agent.tool_groups) && !agent.tool_groups.includes('team')) return null;
+  const room = s.roomForThread(thread);
+  // A group with other people in it: its bots only reach each other (orchestration.ts resolveBot).
+  const inRoom = room && s.humanMembers(room).length ? new Set(s.botMembers(room).map((m) => m.ref_id)) : null;
+  const others = colleagues(s, agent).filter((a) => !inRoom || inRoom.has(a.id));
+  if (!others.length) return null;
+  const owner = s.userName(agent.user_id);
+  const main = !!s.ctx.services.teams?.isMain?.(agent.id);
+  const lines = ['## Samenwerken met je team'];
+  // The main bot already has its teams and bots listed (module teams); in a group the members are listed below.
+  if (main) lines.push('Je werkt met een team van bots; wie dat zijn staat hierboven.');
+  else {
+    lines.push(`Je bent niet alleen: je werkt in een team van bots voor ${owner}. Je collega's (met hun rol):`);
+    for (const a of others.slice(0, MAX_COLLEAGUES)) lines.push(`- ${a.name}${a.role ? ` — ${a.role.replace(/\s+/g, ' ').slice(0, 120)}` : ''}`);
+    if (others.length > MAX_COLLEAGUES) lines.push(`- en nog ${others.length - MAX_COLLEAGUES} andere bots.`);
+  }
+  lines.push(
+    'Zo werk je samen:',
+    '- Werk dat bij de rol van een collega hoort, geef je aan die collega met delegate_task (hij werkt in een eigen gesprek); doe het niet zelf en laat het niet liggen. Geen hulpagent of deeltaak van je eigen programma: alleen een collega heeft de rol, het geheugen en de toegang die erbij horen. Voor een losse vraag of melding in zijn eigen chat is er ask_bot.',
+  );
+  // What to give a colleague along and that the answer comes back by itself is in the definition of delegate_task; how
+  // the main bot follows work up and reports is in its own block (module teams). Neither is said twice.
+  if (!main)
+    lines.push(
+      '- Kijk het resultaat na als het terugkomt, en stuur het terug als het niet af is.',
+      `- Meld ${owner} wat er is gedaan en door wie, en wat nog openstaat. Zeg nooit dat iets loopt of klaar is als je het niet aan een collega hebt gegeven of zelf hebt gedaan.`,
+    );
+  lines.push(
+    `- Zet werk nooit als "te doen" bij jezelf of bij ${owner} als een collega het kan doen: een taak op het takenbord krijgt een eigenaar die hem kan doen. Alleen wat echt alleen ${owner} kan (inloggen, betalen, een besluit nemen) zet je bij ${owner}.`,
+  );
+  if (room && thread.id === room.thread_id) lines.push('In dit groepsgesprek kun je een collega die lid is ook met @naam aanspreken; hij antwoordt dan hier.');
+  return lines.join('\n');
+}
+
+/** Stable additions to the system prompt (no timestamps, no live states): room context or delegation brief, then teamwork. */
 export function systemPromptFor(s: RoomService, board: Board, agent: Agent, thread: Thread): string | null {
+  const parts = [contextPrompt(s, board, agent, thread), teamworkPrompt(s, agent, thread)].filter((x): x is string => !!x);
+  return parts.length ? parts.join('\n\n') : null;
+}
+
+function contextPrompt(s: RoomService, board: Board, agent: Agent, thread: Thread): string | null {
   const room = s.roomForThread(thread);
   if (thread.kind === 'delegation') {
     const d = thread.meta?.delegation || {};
@@ -22,10 +80,10 @@ export function systemPromptFor(s: RoomService, board: Board, agent: Agent, thre
     return [
       '## Gedelegeerde subtaak',
       `${from} heeft je een afgebakende subtaak gegeven. Je ziet het oorspronkelijke gesprek niet: werk met wat in de opdracht staat.`,
-      `Lever in je laatste antwoord het volledige resultaat in het gevraagde formaat; dat antwoord gaat automatisch terug naar ${from}.`,
+      `Neem de tijd die het werk vraagt en maak het af. Lever in je laatste antwoord het volledige resultaat in het gevraagde formaat: alleen dat laatste antwoord gaat automatisch terug naar ${from}, niet wat je onderweg schreef. Zet er dus alles in wat ${from} moet weten.`,
       'Noem bij het resultaat je bewijs (bestand, link, uitvoer van een opdracht). Een controle met een frisse blik kijkt je resultaat na voordat het terug gaat.',
       'Lukt het niet, begin je laatste antwoord dan met "Kon niet:" en zeg eerlijk waarom. Verzin nooit een resultaat.',
-      `Geef de taak niet terug aan ${from} en vraag de gebruiker alleen iets als het echt niet anders kan. Doe niets buiten de opdracht.`,
+      `Geef de taak niet terug aan ${from} en vraag de gebruiker alleen iets als het echt niet anders kan. Doe niets buiten de opdracht. Hoort een deel van het werk bij de rol van een andere collega, dan mag je dat deel aan die collega geven.`,
       room ? `Deze subtaak hoort bij de groep “${room.name}”; de leden van die groep kunnen meelezen.` : '',
     ]
       .filter(Boolean)
@@ -53,7 +111,7 @@ export function systemPromptFor(s: RoomService, board: Board, agent: Agent, thre
     );
   else if (me) lines.push('Als je werk beter bij een ander lid past, spreek die aan met @naam of draag het over met handoff. Doe alleen wat binnen jouw rol valt.');
   lines.push(
-    'Spreek een andere bot alleen met @naam aan als dat echt nodig is: elke vermelding kost een beurt en het aantal beurten per bericht is begrensd. Een bot die al in de keten zit, wordt niet opnieuw gewekt (geen lussen).',
+    'Heb je een andere bot nodig, spreek hem dan aan met @naam: hij krijgt een beurt en antwoordt hier. Noem een bot niet met @naam als je alleen over hem praat. Een bot die al in de keten zit, wordt niet opnieuw gewekt (geen lussen): bedank of bevestig dus niet met @naam.',
     'Privacy: alles hier is zichtbaar voor alle leden. Deel geen inhoud uit privégesprekken of uit je privégeheugen, tenzij iemand er hier uitdrukkelijk om vraagt en het passend is. Geheimen en sleutels deel je nooit.',
     'Goedkeuringen en vragen (ask_user) gaan altijd naar de eigenaar van de bots; een andere bot kan ze niet beantwoorden en jij kunt ze niet namens iemand beantwoorden.',
   );
@@ -71,10 +129,28 @@ const WHY: Record<string, string> = {
   mention: 'Een andere bot noemde je met @naam.',
   followup: 'Een gedelegeerde taak, bericht of broadcast is afgerond; verwerk het resultaat (of de resultaten).',
   ask: 'Een andere bot stuurde je een bericht; je antwoord gaat automatisch terug.',
+  delegation: 'Een andere bot gaf je een taak; je laatste antwoord gaat automatisch terug.',
   handoff: 'Het werk is aan jou overgedragen; jij bent nu taakeigenaar.',
   broadcast: 'Een andere bot vraagt meerdere bots tegelijk om een bijdrage.',
   resume: 'Je bent hervat na een pauze.',
 };
+
+/**
+ * The main bot, on a message of its owner: who its colleagues are and that their work goes to them, right next to the
+ * message. The same rule stands in its system prompt, but a small model then still does a small job itself (seen with
+ * a real model, 12 nov): said beside the request it gives the work to the colleague.
+ */
+export function routeReminder(s: RoomService, agent: Agent, thread: Thread, input: Message | null): string | null {
+  if (!input || input.role !== 'user' || input.parts?.kind) return null;
+  if (thread.kind === 'delegation' || thread.user_id !== agent.user_id) return null;
+  if (!s.ctx.services.teams?.isMain?.(agent.id)) return null;
+  if (agent.settings?.sharedRun || agent.access_mode === 'chat' || agent.access_mode === 'readonly') return null;
+  if (Array.isArray(agent.tool_groups) && !agent.tool_groups.includes('team')) return null;
+  const others = colleagues(s, agent);
+  if (!others.length) return null;
+  const names = others.slice(0, 12).map((a) => `${a.name}${a.role ? ` (${a.role.replace(/\s+/g, ' ').slice(0, 60)})` : ''}`);
+  return `Je collega's: ${names.join(', ')}${others.length > 12 ? ` en nog ${others.length - 12}` : ''}. Hoort deze opdracht bij de rol van een collega, geef haar dan nu door met delegate_task (met alle context, een “klaar als” en het bewijs dat je terug wilt) en doe haar niet zelf, ook niet als ze klein is. Een vraag aan jou zelf beantwoord je zelf.`;
+}
 
 /** Per-turn room status (frozen per bot into the input message, never shared with other bots). */
 export function turnContextFor(s: RoomService, agent: Agent, thread: Thread, input: Message | null): string | null {
@@ -82,9 +158,11 @@ export function turnContextFor(s: RoomService, agent: Agent, thread: Thread, inp
     // An asynchronous message from another bot (ask_bot), delivered in this bot's own chat.
     const from = s.agentName(input.parts.from);
     const owner = s.userName(thread.user_id);
+    if (input.parts.taskId)
+      return `Deze taak komt van de bot ${from}, niet van ${owner}. Begin er nu aan en maak hem af; neem de tijd die het werk vraagt. Alleen je laatste antwoord in deze beurt gaat automatisch terug naar ${from}, die daarmee wordt gewekt: zet daarin wat je deed, het bewijs en wat er nog openstaat. Stuur ${from} geen wedervraag via ask_bot (dat wordt geweigerd om lussen te voorkomen).`;
     return input.parts.reply
-      ? `Dit bericht komt van de bot ${from}, niet van ${owner}. Je antwoord in deze beurt gaat automatisch terug naar ${from}, die daarmee wordt gewekt. Antwoord concreet en volledig in één keer; stuur ${from} geen wedervraag via ask_bot (dat wordt geweigerd om lussen te voorkomen) maar noem in je antwoord wat je nog nodig hebt.`
-      : `Dit is een melding van de bot ${from}, niet van ${owner}; er gaat geen antwoord terug. Doe wat nodig is en houd je antwoord kort.`;
+      ? `Dit bericht komt van de bot ${from}, niet van ${owner}. Alleen je laatste antwoord in deze beurt gaat automatisch terug naar ${from}, die daarmee wordt gewekt; wat je onderweg schrijft niet. Doe eerst wat gevraagd is (neem de tijd die het vraagt) en antwoord dan concreet en volledig in één keer; stuur ${from} geen wedervraag via ask_bot (dat wordt geweigerd om lussen te voorkomen) maar noem in je antwoord wat je nog nodig hebt.`
+      : `Dit is een melding van de bot ${from}, niet van ${owner}. Doe wat nodig is. Je laatste antwoord komt als notitie bij ${from}: zeg daarin kort wat je deed, of eerlijk wat niet lukte.`;
   }
   const room = s.roomForThread(thread);
   if (!room || thread.id !== room.thread_id) return null;
@@ -99,8 +177,12 @@ export function turnContextFor(s: RoomService, agent: Agent, thread: Thread, inp
   const parts = [`Groepsstatus: ${owner ? `taakeigenaar ${s.agentName(owner)}` : 'geen taakeigenaar'}${states.length ? ' · ' + states.join(' · ') : ''}.`];
   if (team) {
     parts.push(WHY[team.kind] || '');
+    // The count only when the end is in sight: a bot that reads "3 van 200" every turn becomes careful for nothing.
     const used = s.turnsUsed(room.user_id, team);
-    parts.push(`Botbeurten voor dit bericht: ${used} van ${s.turnCap(l, team)} gebruikt.${team.path.length > 1 ? ` Keten: ${team.path.map((p) => s.agentName(p)).join(' → ')}.` : ''}`);
+    const cap = s.turnCap(l, team);
+    const chain = team.path.length > 1 ? `Keten: ${team.path.map((p) => s.agentName(p)).join(' → ')}.` : '';
+    if (cap > 0 && used >= cap * 0.8) parts.push(`Botbeurten voor dit bericht: ${used} van ${cap} gebruikt. ${chain}`.trim());
+    else if (chain) parts.push(chain);
   }
   return parts.filter(Boolean).join('\n');
 }

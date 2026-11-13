@@ -51,6 +51,52 @@ CREATE TABLE routine_events (
 CREATE INDEX routine_events_trigger ON routine_events(trigger_id, created_at);
 `,
   },
+  {
+    // The old built-in limits (100 runs and $2 a day per routine, 300 runs and $10 a day for all routines) are gone:
+    // a stored value that still equals the old default becomes "no limit" (0). A value the owner chose himself stays.
+    id: 'routines-002',
+    sql: `
+UPDATE routines SET options = json_set(options, '$.maxRunsPerDay', 0) WHERE json_valid(options) AND json_extract(options, '$.maxRunsPerDay') = 100;
+UPDATE routines SET options = json_set(options, '$.maxCostPerDayUsd', 0) WHERE json_valid(options) AND json_extract(options, '$.maxCostPerDayUsd') = 2;
+UPDATE settings SET value = json_set(value, '$.maxRunsPerDay', 0) WHERE key = 'routines' AND json_valid(value) AND json_extract(value, '$.maxRunsPerDay') = 300;
+UPDATE settings SET value = json_set(value, '$.maxCostPerDayUsd', 0) WHERE key = 'routines' AND json_valid(value) AND json_extract(value, '$.maxCostPerDayUsd') = 10;
+`,
+  },
+  {
+    // Nothing that nobody set up starts by itself any more: on a new install the main bot's check-in and its overview
+    // are off until the owner turns them on. An install that exists keeps what it had: what used to be the built-in
+    // default (check-in on at 09:00, overview every day) is written down for every user who never chose. The overview
+    // no longer has an hour of its own (it comes at the main bot's one hour): where the check-in was off and the
+    // overview on, that one hour becomes the hour the overview had (08:00 unless set). Nothing is removed.
+    id: 'routines-003',
+    sql: `
+INSERT INTO settings (user_id, key, value) SELECT u.id, 'proactive.checkin', '{"enabled":true,"time":"09:00"}' FROM users u WHERE NOT EXISTS (SELECT 1 FROM settings s WHERE s.user_id = u.id AND s.key = 'proactive.checkin');
+UPDATE settings SET value = json_set(value, '$.enabled', json('true')) WHERE key = 'proactive.checkin' AND json_valid(value) AND json_type(value, '$.enabled') IS NULL;
+INSERT INTO settings (user_id, key, value) SELECT u.id, 'proactive', '{"briefing":"dag"}' FROM users u WHERE NOT EXISTS (SELECT 1 FROM settings s WHERE s.user_id = u.id AND s.key = 'proactive');
+UPDATE settings SET value = json_set(value, '$.briefing', 'dag') WHERE key = 'proactive' AND json_valid(value) AND json_type(value, '$.briefing') IS NULL;
+UPDATE settings SET value = json_set(value, '$.time', COALESCE((SELECT json_extract(p.value, '$.briefingTime') FROM settings p WHERE p.user_id = settings.user_id AND p.key = 'proactive' AND json_valid(p.value)), '08:00'))
+  WHERE key = 'proactive.checkin' AND json_valid(value) AND json_extract(value, '$.enabled') = 0
+    AND COALESCE((SELECT json_extract(p.value, '$.briefing') FROM settings p WHERE p.user_id = settings.user_id AND p.key = 'proactive' AND json_valid(p.value)), 'dag') != 'uit';
+`,
+  },
+  {
+    // A reminder a bot set got at most 50 runs a day by itself. No built-in brake: a reminder that still has that old
+    // default gets "no limit" (0), like every other routine. The limit stays a setting of the routine.
+    id: 'routines-004',
+    sql: `
+UPDATE routines SET options = json_set(options, '$.maxRunsPerDay', 0) WHERE json_valid(options) AND json_type(options, '$.reminder') = 'object' AND json_extract(options, '$.maxRunsPerDay') = 50;
+`,
+  },
+  {
+    // No built-in brake: a routine run had at most 30 minutes, and at most 3 projects of a team were in the sprint at
+    // once. Both are settings that are off (0) by default now; a stored value that still equals the old default
+    // becomes "none". A value the owner chose himself stays.
+    id: 'routines-005',
+    sql: `
+UPDATE routines SET options = json_set(options, '$.timeoutMinutes', 0) WHERE json_valid(options) AND json_extract(options, '$.timeoutMinutes') = 30;
+UPDATE settings SET value = json_set(value, '$.maxSprint', 0) WHERE key = 'proactive' AND json_valid(value) AND json_extract(value, '$.maxSprint') = 3;
+`,
+  },
 ];
 
 export type RoutineStatus = 'draft' | 'active' | 'paused' | 'completed';
@@ -133,11 +179,15 @@ export interface RoutineDelivery {
 
 export const DEFAULT_OPTIONS: RoutineOptions = {
   missedPolicy: 'catchup',
-  maxRunsPerDay: 100,
-  maxCostPerDayUsd: 2,
+  // No built-in brake: 0 = no limit. A limit exists only when the owner sets one himself.
+  maxRunsPerDay: 0,
+  maxCostPerDayUsd: 0,
   retries: 2,
+  // A protection, not a brake: after this many failed runs in a row the routine pauses, so it does not keep using the
+  // owner's AI on something broken; he is told why and turns it back on with one Aanzetten.
   pauseAfterFailures: 3,
-  timeoutMinutes: 30,
+  // 0 = no time limit: a long job is not cut off. Alles stoppen stops a run that hangs; the screens show it as running.
+  timeoutMinutes: 0,
   lastRunContext: false,
   lastRunChars: 1500,
   hideSilentRuns: true,
@@ -153,9 +203,6 @@ export const DEFAULT_OPTIONS: RoutineOptions = {
 
 /** After rotating a webhook secret the old one can keep working this long at most (owner's choice, default 0 = never). */
 export const MAX_SECRET_GRACE_MINUTES = 60;
-
-/** Routine chains stop after this many hops (A → B → C …) and never revisit a routine. */
-export const MAX_CHAIN = 5;
 
 export interface Routine {
   id: string;
@@ -181,8 +228,6 @@ export interface Routine {
 
 export type RunTrigger = 'schedule' | 'catchup' | 'manual' | 'test' | 'webhook' | 'feed' | 'page' | 'folder' | 'email' | 'chat' | 'chain';
 export type RoutineRunStatus = 'pending' | 'running' | 'retrying' | 'done' | 'no_update' | 'error' | 'cancelled' | 'interrupted' | 'skipped' | 'missed' | 'limited';
-
-export const ACTIVE_RUN = ['pending', 'running', 'retrying'];
 /** Statuses that represent a real (started) execution for limit accounting. */
 export const STARTED_RUN = ['running', 'retrying', 'done', 'no_update', 'error', 'cancelled', 'interrupted'];
 
@@ -268,11 +313,27 @@ export interface Trigger {
 
 export type EventStatus = 'accepted' | 'filtered' | 'duplicate' | 'rejected' | 'limited' | 'paused' | 'baseline' | 'error';
 
+/**
+ * Standaarden voor routines (Instellingen › Meer mogelijkheden, and Limieten on the Routines page). No built-in brake:
+ * every limit is 0 = no limit until the owner sets one himself.
+ */
 export interface GlobalSettings {
   paused: boolean;
   maxRunsPerDay: number;
   maxCostPerDayUsd: number;
+  /** At most this many routines for the owner, reminders, vaste taken and wait points included. */
+  maxRoutines: number;
+  /** At most this many reminders waiting at one bot (reminder_set). */
+  maxRemindersPerBot: number;
+  /** At most this many triggers on one routine. */
+  maxTriggersPerRoutine: number;
+  /** At most this many runs of one routine waiting their turn; one more is skipped. */
+  maxQueuedRuns: number;
+  /** A chain ("Daarna starten", A → B → C …) stops after this many routines. It never comes back to a routine anyway. */
+  maxChain: number;
 }
-export const DEFAULT_GLOBAL: GlobalSettings = { paused: false, maxRunsPerDay: 300, maxCostPerDayUsd: 10 };
+export const DEFAULT_GLOBAL: GlobalSettings = { paused: false, maxRunsPerDay: 0, maxCostPerDayUsd: 0, maxRoutines: 0, maxRemindersPerBot: 0, maxTriggersPerRoutine: 0, maxQueuedRuns: 0, maxChain: 0 };
+/** The limits that count something (a whole number, 0 = no limit), as the settings take them. */
+export const COUNT_LIMITS = ['maxRoutines', 'maxRemindersPerBot', 'maxTriggersPerRoutine', 'maxQueuedRuns', 'maxChain'] as const;
 
 export const secretName = (triggerId: string, prev = false) => `routine-trigger:${triggerId}${prev ? ':prev' : ''}`;

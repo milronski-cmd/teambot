@@ -1,3 +1,4 @@
+import type React from 'react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Globe, MessageSquare, QrCode, SlidersHorizontal, Smartphone } from 'lucide-react';
 import { api } from '../../lib/api';
@@ -5,11 +6,11 @@ import { useApp } from '../../lib/store';
 import { navigate, query } from '../../lib/router';
 import { t, translate } from '../../lib/i18n';
 import type { Agent } from '../../lib/types';
-import { Button, Card, Page, Spinner, toast, useAsync } from '../../components/ui';
+import { Button, Card, Field, Input, Page, Spinner, toast, useAsync } from '../../components/ui';
 import { BotAvatar } from '../../components/BotFace';
 import { BotQuestions, useEngineChoices } from '../newbot/Questions';
 import { STARTERS } from '../newbot/starters';
-import { DEFAULT_RULES } from '../newbot/choices';
+import { startAccess } from '../newbot/choices';
 import { WerkplekLine } from '../../modules/folders/Werkplek';
 import { activeTeamId } from '../../modules/teams/scope';
 import { useIsPhoneSession } from '../../shell/computerOnly';
@@ -39,19 +40,19 @@ async function makeFirstBot(providerId: string, desktop: boolean): Promise<Agent
   if (p?.kind === 'opencode') await api.post('/providers/free-reserve').catch(() => null);
   const s = STARTERS[0];
   const team = activeTeamId();
+  // Only a name (so one click gives a working bot) and a face. Role, task and instructions start empty: the owner fills
+  // them in (name and role right on the next screen); how every bot works is TeamBot's own base prompt.
   const a = await api.post<Agent>('/agents', {
     name: translate('Assistent'),
     avatar: s.avatar,
     color: s.color,
-    role: translate(s.role),
-    description: translate(s.description),
-    instructions: DEFAULT_RULES,
-    // its own computer: the werkplek with files and a terminal (outside it asks first), and its own browser
-    tool_groups: [...new Set([...s.tool_groups, 'shell', 'browser'])],
+    role: '',
+    description: '',
+    // No tool_groups: the server gives every new bot the same start (server/agent/new-bot.ts), as the new-bot screen does.
     provider_id: providerId || undefined,
     model: '',
-    access_mode: 'ask',
-    settings: team ? { homeTeam: team } : {},
+    // "Volledige toegang": the bot does its work without asking; only paying still asks.
+    ...startAccess(st.me?.role, team ? { homeTeam: team } : {}),
   });
   // Its own browser inside TeamBot (or Edge/Chrome); without a browser on this device it keeps just the werkplek.
   await api.put(`/computers/${a.id}/config`, { mode: 'browser' }).catch(() => null);
@@ -91,7 +92,7 @@ export function FirstBotPage() {
         {view === 'making' && <Making />}
         {view === 'phone' && bot && <PhoneStep bot={bot} onLater={chat} />}
         {view === 'edit' && bot && <EditStep bot={bot} providerId={providerId} onDone={(a) => (setBot(a), setStep('ready'))} />}
-        {view === 'ready' && bot && <ReadyStep bot={bot} onTalk={() => (phone ? chat() : setStep('phone'))} onEdit={() => setStep('edit')} />}
+        {view === 'ready' && bot && <ReadyStep bot={bot} onSaved={setBot} onTalk={() => (phone ? chat() : setStep('phone'))} onEdit={() => setStep('edit')} />}
       </div>
     </Page>
   );
@@ -122,14 +123,68 @@ function NotMade({ err, providerId, onRetry }: { err: string; providerId: string
   );
 }
 
-function ReadyStep({ bot, onTalk, onEdit }: { bot: Agent; onTalk(): void; onEdit(): void }) {
+/** Save a change to the first bot; a new name takes the werkplek along while it is still empty (Teammap\Assistent → Teammap\Mila). */
+async function saveBot(bot: Agent, patch: Partial<Agent>): Promise<Agent> {
+  let a = await api.patch<Agent>(`/agents/${bot.id}`, patch);
+  if (a.name !== bot.name) {
+    const r = await api.post<{ workspace: string; moved: boolean }>(`/folders/werkplek/${bot.id}/follow-name`, {}).catch(() => null);
+    if (r?.moved) a = { ...a, workspace: r.workspace };
+  }
+  useApp.setState((x) => ({ agents: x.agents.map((y) => (y.id === a.id ? a : y)) }));
+  return a;
+}
+
+/**
+ * The ready bot, with its name and role right in view to change (saved when you leave the field or go on, no extra
+ * step); "Aanpassen" has the rest (what it does, which model).
+ */
+function ReadyStep({ bot, onSaved, onTalk, onEdit }: { bot: Agent; onSaved(a: Agent): void; onTalk(): void; onEdit(): void }) {
   const browser = (bot.tool_groups || []).includes('browser');
+  const [name, setName] = useState(bot.name);
+  const [role, setRole] = useState(bot.role || '');
+  const go = useAsync();
+  // One save at a time: leaving a field and clicking a button right after must not save twice.
+  const saving = useRef<Promise<Agent> | null>(null);
+  const current = useRef(bot);
+  current.current = bot;
+  const commit = async (): Promise<Agent> => {
+    if (saving.current) await saving.current.catch(() => null);
+    const was = current.current;
+    const patch: Partial<Agent> = {};
+    if (name.trim() !== was.name) patch.name = name.trim();
+    if (role.trim() !== (was.role || '')) patch.role = role.trim();
+    if (!Object.keys(patch).length) return was;
+    if (patch.name !== undefined && !patch.name) throw new Error(translate('Geef de bot een naam'));
+    saving.current = saveBot(was, patch);
+    try {
+      const a = await saving.current;
+      current.current = a;
+      onSaved(a);
+      return a;
+    } finally {
+      saving.current = null;
+    }
+  };
+  const leave = () => void commit().catch((e) => toast(e?.message || String(e), 'danger'));
+  const enter = (e: React.KeyboardEvent) => {
+    if (e.key !== 'Enter') return;
+    e.preventDefault();
+    leave();
+  };
   return (
     <div className="space-y-5" data-testid="first-bot-ready">
       <div className="flex flex-col items-center text-center">
         <BotAvatar bot={bot} size={88} />
         <h1 className="mt-4 text-[26px] font-extrabold leading-tight tracking-tight">{t('{0} staat klaar', bot.name)}</h1>
-        <p className="mt-1.5 max-w-sm text-[15px] leading-relaxed text-muted">{t('Je eerste bot. {0} vraagt toestemming voordat hij iets wijzigt.', bot.name)}</p>
+        <p className="mt-1.5 max-w-sm text-[15px] leading-relaxed text-muted">{bot.access_mode === 'full' ? t('Je eerste bot. {0} doet het werk zelf en vraagt het je alleen bij geld en belangrijke berichten.', bot.name) : t('Je eerste bot. {0} doet het gewone werk zelf en vraagt het je voordat hij iets verstuurt of betaalt.', bot.name)}</p>
+      </div>
+      <div className="grid gap-3 rounded-2xl border border-line bg-surface px-4 py-3 sm:grid-cols-2" data-testid="first-bot-name-role">
+        <Field label="Naam">
+          <Input value={name} onChange={(e) => setName(e.target.value)} onBlur={leave} onKeyDown={enter} maxLength={80} autoComplete="off" />
+        </Field>
+        <Field label="Rol (mag leeg blijven)">
+          <Input value={role} onChange={(e) => setRole(e.target.value)} onBlur={leave} onKeyDown={enter} maxLength={120} placeholder="Bijv. Onderzoeker" autoComplete="off" />
+        </Field>
       </div>
       <WerkplekLine agent={bot} />
       {browser && (
@@ -141,10 +196,10 @@ function ReadyStep({ bot, onTalk, onEdit }: { bot: Agent; onTalk(): void; onEdit
         </div>
       )}
       <div className="flex flex-col gap-2 sm:flex-row-reverse">
-        <Button variant="primary" size="lg" className="flex-1 justify-center" icon={<MessageSquare className="h-4 w-4" />} onClick={onTalk}>
+        <Button variant="primary" size="lg" className="flex-1 justify-center" icon={<MessageSquare className="h-4 w-4" />} loading={go.busy} onClick={() => go.run(async () => (await commit(), onTalk()))}>
           Begin met praten
         </Button>
-        <Button size="lg" className="justify-center" icon={<SlidersHorizontal className="h-4 w-4" />} onClick={onEdit}>
+        <Button size="lg" className="justify-center" icon={<SlidersHorizontal className="h-4 w-4" />} onClick={() => go.run(async () => (await commit(), onEdit()))}>
           Aanpassen
         </Button>
       </div>
@@ -164,13 +219,7 @@ function EditStep({ bot, providerId, onDone }: { bot: Agent; providerId: string;
       if (!d.name?.trim()) throw new Error(translate('Geef de bot een naam'));
       const s = STARTERS.find((x) => x.name === d.name && x.description === d.description);
       const patch: Partial<Agent> = { name: d.name.trim(), description: d.description || '', provider_id: d.provider_id ?? bot.provider_id, model: d.model ?? bot.model, ...(s ? { role: s.role, instructions: s.instructions, avatar: s.avatar, color: s.color } : {}) };
-      let a = await api.patch<Agent>(`/agents/${bot.id}`, patch);
-      // a new name: the werkplek, still empty, takes it along (Teammap\Assistent → Teammap\Mila)
-      if (a.name !== bot.name) {
-        const r = await api.post<{ workspace: string; moved: boolean }>(`/folders/werkplek/${bot.id}/follow-name`, {}).catch(() => null);
-        if (r?.moved) a = { ...a, workspace: r.workspace };
-      }
-      useApp.setState((x) => ({ agents: x.agents.map((y) => (y.id === a.id ? a : y)) }));
+      const a = await saveBot(bot, patch);
       toast(translate('Opgeslagen'), 'ok');
       onDone(a);
     });

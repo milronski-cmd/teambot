@@ -101,10 +101,6 @@ export function DiffView({ before, after }: { before: string | null; after: stri
 /** Where a memory lives, in words: about you, the bot it belongs to, the dossier, or shared. */
 const scopeLabel = (item: Pick<MemItem, 'scope' | 'agent_name' | 'dossier_title'>) => (item.scope === 'agent' ? item.agent_name || 'Bot' : item.scope === 'dossier' ? item.dossier_title || 'Dossier' : SCOPE_LABEL[item.scope]);
 
-export function ScopeBadge({ item }: { item: Pick<MemItem, 'scope' | 'agent_name' | 'dossier_title'> }) {
-  return <Badge tone={item.scope === 'shared' ? 'accent' : 'neutral'}>{scopeLabel(item)}</Badge>;
-}
-
 /** The team of an item or dossier (the server only sends it with two or more teams). */
 export function TeamBadge({ team }: { team?: { id: string; name: string } | null }) {
   if (!team) return null;
@@ -137,7 +133,8 @@ export function SourceLine({ item }: { item: MemItem }) {
 
 const ACTIONS: Record<string, string> = { pin: 'Vastgezet', unpin: 'Losgemaakt', archive: 'Gearchiveerd', trash: 'Naar prullenbak verplaatst', restore: 'Teruggezet', confirm: 'Bevestigd' };
 
-export function ItemCard({ item, onChanged, compact }: { item: MemItem; onChanged?(): void; compact?: boolean }) {
+/** `hideScope`: the list is already about one place (Over jou, one bot, Gedeeld, a dossier), so a card does not repeat it. */
+export function ItemCard({ item, onChanged, compact, hideScope }: { item: MemItem; onChanged?(): void; compact?: boolean; hideScope?: boolean }) {
   const [edit, setEdit] = useState(false);
   const [forget, setForget] = useState(false);
   const [detail, setDetail] = useState(false);
@@ -168,10 +165,10 @@ export function ItemCard({ item, onChanged, compact }: { item: MemItem; onChange
       <div className="flex items-start gap-2">
         <div className="min-w-0 flex-1">
           {/* What it says comes first; one quiet line says what kind it is, where it lives and where it came from. */}
-          <p className="whitespace-pre-wrap break-words text-sm leading-relaxed">{item.content || <span className="text-muted">(inhoud gewist)</span>}</p>
+          <p className="whitespace-pre-wrap break-words text-sm leading-relaxed">{item.content ? <span translate="no">{item.content}</span> : <span className="text-muted">(inhoud gewist)</span>}</p>
           <div className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted">
             <span>{TYPE_LABEL[item.type] || item.type}</span>
-            <span>· {scopeLabel(item)}</span>
+            {!hideScope && <span>· {scopeLabel(item)}</span>}
             {item.scope !== 'dossier' && item.team && <span>· {item.team.id === ALL_TEAMS ? 'Alle teams' : t('Team {0}', item.team.name)}</span>}
             {!compact && (
               <>
@@ -402,7 +399,7 @@ export function ItemEditor({ item, defaults, onClose, onSaved }: { item?: MemIte
 }
 
 /** Hard forget with an honest explanation and a receipt. */
-export function ForgetDialog({ item, title, endpoint, onClose, onDone }: { item?: MemItem; title?: string; endpoint?: string; onClose(): void; onDone(): void }) {
+export function ForgetDialog({ item, title, endpoint, onClose, onDone }: { item?: MemItem; title?: React.ReactNode; endpoint?: string; onClose(): void; onDone(): void }) {
   const [alsoSource, setAlsoSource] = useState(true);
   const [receipt, setReceipt] = useState<any>(null);
   const { run, busy } = useAsync();
@@ -443,7 +440,8 @@ export function ForgetDialog({ item, title, endpoint, onClose, onDone }: { item?
         </div>
       ) : (
         <div className="space-y-3 text-sm">
-          <p className="rounded-lg bg-surface-2 p-2">{item ? item.content : title}</p>
+          {/* What is forgotten: the memory as written, or TeamBot's words with its title in them (components/Words.tsx). */}
+          <p className="rounded-lg bg-surface-2 p-2">{item ? <span translate="no">{item.content}</span> : title}</p>
           <ul className="list-disc space-y-1 ps-5 text-muted">
             <li>Alle versies, de zoekindex, gesprekssamenvattingen en kopieën in eerdere beurten worden gewist.</li>
             <li>Bots kunnen dit daarna niet opnieuw opslaan (blokkade). Opheffen kan later in Geschiedenis.</li>
@@ -468,9 +466,9 @@ export function ChangeRow({ c, onUndone, showLink }: { c: Change; onUndone?(): v
           <div className="mt-0.5 text-xs text-muted">
             {OP_LABEL[c.op] || c.op} ·{' '}
             {c.actor === 'agent' ? <Bot className="me-1 inline h-3 w-3" /> : null}
-            {c.actor_name} · {timeAgo(c.created_at)}
-            {/* A bot writes its own reason, with memory codes ("eigen kopie in [m:izs8b5]"): the owner reads it plain. */}
-            {c.reason ? ` · ${REASON_LABEL[c.reason] || stripRefs(c.reason)}` : ''}
+            <bdi translate="no">{c.actor_name}</bdi> · {timeAgo(c.created_at)}
+            {/* A bot writes its own reason, with memory codes ("eigen kopie in [m:izs8b5]"): the owner reads it plain, as written. */}
+            {c.reason ? <> · {REASON_LABEL[c.reason] || <span translate="no">{stripRefs(c.reason)}</span>}</> : ''}
             {c.undone_at ? ' · ongedaan gemaakt' : ''}
           </div>
         </div>
@@ -481,15 +479,16 @@ export function ChangeRow({ c, onUndone, showLink }: { c: Change; onUndone?(): v
               variant="ghost"
               icon={<Undo2 className="h-3.5 w-3.5" />}
               loading={busy}
+              aria-label="Ongedaan maken"
+              title="Ongedaan maken"
+              className="text-muted"
               onClick={() =>
                 run(async () => {
                   await api.post(`/memory/changes/${c.id}/undo`, {});
                   onUndone?.();
                 }, 'Ongedaan gemaakt')
               }
-            >
-              Ongedaan maken
-            </Button>
+            />
           )}
           {(hasDiff || (showLink && c.record_kind === 'item' && c.op !== 'forget' && !c.redacted)) && (
             <Menu
@@ -547,7 +546,7 @@ export function ItemDetail({ id, onChanged }: { id: string; onChanged?(): void }
             <p className="text-muted">Het bronbericht is verwijderd.</p>
           ) : (
             <>
-              <p className="whitespace-pre-wrap">{d.source.excerpt}</p>
+              <p className="whitespace-pre-wrap" translate="no">{d.source.excerpt}</p>
               <a className="mt-1 inline-block text-xs text-accent hover:underline" href={`#/t/${d.source.threadId}`}>
                 Naar het gesprek ({d.source.author}, {fmtDate(d.source.at, true)})
               </a>
@@ -759,7 +758,7 @@ export function ItemList({ base, empty, addDefaults, hideScope }: { base: ListFi
         <>
           <div className="space-y-2">
             {r.data.items.map((i) => (
-              <ItemCard key={i.id} item={i} onChanged={r.reload} />
+              <ItemCard key={i.id} item={i} hideScope={!!base.scope} onChanged={r.reload} />
             ))}
           </div>
           {r.data.total > 50 && (

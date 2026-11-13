@@ -97,7 +97,7 @@ export function StopAllButton({ className, compact, always }: { className?: stri
       <button
         onClick={stopAll}
         className={cx('flex h-11 shrink-0 items-center gap-1.5 rounded-full bg-danger-soft px-3.5 text-[13px] font-bold text-danger', className)}
-        aria-label={`Alles stoppen (${runs === 1 ? '1 taak' : `${runs} taken`} bezig)`}
+        aria-label={t('Alles stoppen ({0, plural, one {# taak} other {# taken}} bezig)', runs)}
         title="Stopt alle lopende taken van je bots"
       >
         <Square className="h-3 w-3 fill-current" aria-hidden /> {runs}
@@ -221,7 +221,8 @@ export function Sidebar({ route, onNavigate }: { route: string[]; onNavigate?():
       </div>
 
       {/* One footer: the fixed places and the usage rings on the same grid, under one line. */}
-      <div className="border-t border-line px-2 py-1.5">
+      {/* relative: the usage popover (UsageMeter) opens above this whole footer. */}
+      <div className="relative border-t border-line px-2 py-1.5">
         <StopAllButton className="mb-2" />
         <AwakeIndicator className="mb-1" />
         {/* The fixed places as one row of named icons, so the list above keeps the height (the owner has 23 bots). */}

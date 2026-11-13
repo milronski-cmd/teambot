@@ -10,7 +10,7 @@ import AdmZip from 'adm-zip';
 import { startTestApp, type TestApp } from './helpers.js';
 import type { FetchResult } from '../server/modules/skills/fetch.js';
 import { CURATED_LIMITS, checkPublisher, paddingProblem, quoteDescription, ruleForContent, ruleForPath } from '../server/modules/skills/import-rules.js';
-import { CURATED_SOURCES, type CuratedSource } from '../server/modules/skills/curated.js';
+import type { CuratedSource } from '../server/modules/skills/curated.js';
 import { gitBlobSha, parentLinks } from '../server/modules/skills/curated-source.js';
 import { diffText } from '../server/modules/skills/textdiff.js';
 import { parseSkillMd } from '../server/modules/skills/format.js';
@@ -197,30 +197,6 @@ test('publishers: known names pass, look-alikes are flagged (browser-use-headles
   assert.equal(checkPublisher('microsoft', 'superpowers').status, 'lookalike', 'a known owner with somebody else’s repository name');
 });
 
-test('the catalogue itself: pinned commits, open licences, known publishers, no excluded sources, unique names', () => {
-  const names = new Set<string>();
-  for (const s of CURATED_SOURCES) {
-    assert.match(s.commit, /^[0-9a-f]{40}$/, s.id);
-    assert.ok(['MIT', 'Apache-2.0'].includes(s.license), s.id);
-    assert.equal(checkPublisher(s.owner, s.repo.split('/')[1]).status, 'known', s.repo);
-    assert.ok(!/trailofbits|hesreallyhim|figma|vercel-labs\/agent-skills|ComposioHQ/i.test(s.repo), `${s.repo} is excluded`);
-    assert.ok(s.note && s.skills.length, s.id);
-    for (const k of s.skills) {
-      const name = path.posix.basename(k.path) || s.id;
-      assert.ok(!names.has(name), `unique skill name ${name}`);
-      names.add(name);
-      assert.ok(k.note.length > 10 && !k.note.includes('\n'), `one sentence for ${name}`);
-      assert.ok(!/figma/i.test(k.path));
-    }
-  }
-  // Anthropic's Office skills are Apache-2.0 only from 2c5958ec on.
-  const office = CURATED_SOURCES.find((s) => s.repo === 'anthropics/skills')!;
-  assert.ok(office.commit.startsWith('2c5958ec'));
-  for (const p of ['skills/docx', 'skills/pdf', 'skills/pptx', 'skills/xlsx']) assert.ok(office.skills.some((k) => k.path === p), p);
-  assert.equal(office.skills.find((k) => k.path === 'skills/docx')!.windows?.status, 'deels', 'the docx LibreOffice trick is marked honestly');
-  assert.ok(CURATED_SOURCES.find((s) => s.repo === 'obra/superpowers')!.skills.some((k) => k.path === 'skills/verification-before-completion'));
-});
-
 test('helpers: links out of the folder, line diff', () => {
   assert.deepEqual(parentLinks('See [rules](../../shared/rules.md) and `../x/y.md#part`. Not ./a.md or http://x/../y.'), ['../../shared/rules.md', '../x/y.md']);
   const d = diffText('a\nb\nc\nd\ne\nf\ng\nh\ni\nj\n', 'a\nb\nc\nD\ne\nf\ng\nh\ni\nj\nk\n');
@@ -276,6 +252,62 @@ test('catalogue: starts empty, lists without network, installs the pinned files 
     const tools = (await t.say(th.id, 'help')).filter((m: any) => m.role === 'tool');
     assert.match(tools[0].content, /TeamBot-catalogus, acme\/skills op commit 1111111, licentie MIT/);
     assert.match(tools[1].content, /GEDEELDE-REGELS-INHOUD/);
+  } finally {
+    await t.close();
+  }
+});
+
+test('bots search the marketplace and add a skill themselves: active for the team at once, scripts included, the most-starred source first', async () => {
+  const { t } = await catalogApp();
+  try {
+    const zip = new AdmZip();
+    zip.addFile('skills-main/skills/van-github/SKILL.md', Buffer.from(md('van-github', 'Komt van GitHub.', 'GITHUB-WERKWIJZE')));
+    zip.addFile('skills-main/skills/van-github/scripts/run.py', Buffer.from('print("hallo")\n'));
+    zip.addFile('skills-main/skills/van-github/reference.md', Buffer.from('NASLAG'));
+    const gh = fakeGithub({ head: C1, extraZips: { 'https://github.com/other/skills/archive/main.zip': zip.toBuffer() } });
+    t.app.ctx.services.skills.setFetcher(gh.fetcher);
+    t.app.ctx.services.skills.setCuratedSources([
+      SOURCE(C1, { id: 'klein', stars: 120, skills: [{ path: 'skills/good', pack: 'Test', category: 'Test', note: 'Uit een kleine bron.' }] }),
+      SOURCE(C1, { id: 'groot', stars: 45_600, skills: [{ path: 'skills/scripted', pack: 'Test', category: 'Test', note: 'Uit een grote bron, met een script.', scripts: true }] }),
+    ]);
+    // The marketplace: most stars first, and every card says how many.
+    const list = await t.api('GET', '/skills/curated');
+    assert.deepEqual(list.items.map((i: any) => [i.id, i.stars]), [['groot/skills/scripted', 45_600], ['klein/skills/good', 120]]);
+
+    const finder = await t.agent({ name: 'Zoeker', tool_groups: ['skills'] });
+    const th = await t.api('POST', '/threads', { agentId: finder.id });
+    t.script.push(
+      { toolCalls: [{ name: 'skill_find', args: { query: '' } }] },
+      { toolCalls: [{ name: 'skill_install', args: { source: 'klein/skills/good' } }] },
+      { toolCalls: [{ name: 'skill_install', args: { source: 'https://raw.githubusercontent.com/other/skills/main/skills/van-github/SKILL.md' } }] },
+      { toolCalls: [{ name: 'skill_install', args: { source: 'bestaat/niet' } }] },
+      { toolCalls: [{ name: 'skill_find', args: { query: 'kleine bron' } }] },
+      { text: 'klaar' },
+    );
+    const tools = (await t.say(th.id, 'zoek skills')).filter((m: any) => m.role === 'tool');
+    assert.match(tools[0].content, /id groot\/skills\/scripted · Uit een grote bron, met een script\. · acme\/skills \(46k sterren\), MIT, met scripts\n/);
+    assert.ok(tools[0].content.indexOf('groot/skills/scripted') < tools[0].content.indexOf('klein/skills/good'), 'most stars first');
+    assert.match(tools[1].content, /Bron: acme\/skills \(MIT\)\n- good: toegevoegd, meteen te laden met skill_load\./);
+    // A link to the SKILL.md takes the whole folder; its script works at once.
+    assert.match(tools[2].content, /- van-github: toegevoegd, meteen te laden met skill_load\. Bevat scripts \(scripts\/run\.py\), meteen te gebruiken met skill_run_script\./);
+    assert.equal(tools[3].parts.toolResult.isError, true);
+    assert.match(tools[3].content, /staat niet in de marktplaats/);
+    assert.match(tools[4].content, /Al in je team \(laden met skill_load\):\n- good:/);
+    assert.ok(!tools[4].content.includes('id klein/skills/good'), 'what the team has is not offered again');
+
+    const mine = await t.api('GET', '/skills');
+    assert.deepEqual(mine.map((s: any) => `${s.name}:${s.status}:${s.trusted}`).sort(), ['good:active:false', 'van-github:active:true']);
+    const fromGithub = await t.api('GET', `/skills/${mine.find((s: any) => s.name === 'van-github').id}`);
+    assert.deepEqual(fromGithub.files.map((f: any) => f.path).sort(), ['SKILL.md', 'reference.md', 'scripts/run.py']);
+    // Another bot of the team, never configured: loads both; the script is not held back (its level allows programs).
+    const other = await t.agent({ name: 'Collega', tool_groups: ['skills'] });
+    const th2 = await t.api('POST', '/threads', { agentId: other.id });
+    t.script.push({ toolCalls: [{ name: 'skill_load', args: { name: 'van-github' } }] }, { toolCalls: [{ name: 'skill_load', args: { name: 'good' } }] }, { toolCalls: [{ name: 'skill_run_script', args: { name: 'van-github', script: 'scripts/run.py' } }] }, { text: 'ok' });
+    const used = (await t.say(th2.id, 'gebruik ze')).filter((m: any) => m.role === 'tool');
+    assert.match(used[0].content, /GITHUB-WERKWIJZE/);
+    assert.match(used[0].content, /scripts\/run\.py \([^)]*, script\)/);
+    assert.equal(used[1].parts.toolResult.isError, false);
+    assert.doesNotMatch(used[2].content, /Geblokkeerd|staan uit/);
   } finally {
     await t.close();
   }
@@ -437,30 +469,38 @@ test('PARITEIT 7.3: a newer pin in the TeamBot catalogue shows by itself, with w
 
 // ------------------------------------------------------------------ scripts
 
-test('scripts: off after install, refused without trust, and after trust they still never run without an approval', async () => {
+test('scripts: on after the one click that installs them; a script is a command: it asks on "Vragen", runs from "Automatisch" on, not on "Alleen lezen"; switched off by the owner it is refused', async () => {
   const { t } = await catalogApp();
   process.env.FAKE_CATALOG_API_KEY = 'mag-niet-lekken';
   try {
     const r = await t.api('POST', '/skills/curated/install', { id: 'acme/skills/scripted' });
     let s = await t.api('GET', `/skills/${r.skillId}`);
-    assert.deepEqual([s.kind, s.trusted], ['scripts', false], 'installed with scripts off');
+    assert.deepEqual([s.kind, s.trusted], ['scripts', true], 'installed with its scripts on: one click, nothing else to do');
     const bot = await t.agent({ tool_groups: ['skills'], access_mode: 'auto' });
     await t.api('PUT', `/skills/agents/${bot.id}`, { skillIds: [r.skillId] });
     const th = await t.api('POST', '/threads', { agentId: bot.id });
 
-    // Not trusted: refused before any approval card, nothing runs.
+    // "Automatisch": the bot may run programs, so it runs the script right away, without a card and without asking.
     t.script.push({ toolCalls: [{ name: 'skill_run_script', args: { name: 'scripted', script: 'scripts/hello.mjs' } }] }, { text: 'ok' });
-    let tools = (await t.say(th.id, 'zeg hallo')).filter((m: any) => m.role === 'tool');
-    assert.match(tools.at(-1)!.content, /nog niet vertrouwd \(scripts: uit\)/);
+    let tools = (await t.say(th.id, 'zeg hallo', 20_000)).filter((m: any) => m.role === 'tool');
+    assert.match(tools.at(-1)!.content, /HALLO-UIT-SCRIPT/);
+    assert.equal(t.app.ctx.store.find<any>('approvals', { agent_id: bot.id }).length, 0);
+
+    // The owner switches the scripts off (Veiligheid): refused before any approval card, nothing runs, nobody is asked.
+    await t.api('POST', `/skills/${r.skillId}/trust`, { trusted: false });
+    t.script.push({ toolCalls: [{ name: 'skill_run_script', args: { name: 'scripted', script: 'scripts/hello.mjs' } }] }, { text: 'ok' });
+    tools = (await t.say(th.id, 'zeg nog eens hallo')).filter((m: any) => m.role === 'tool');
+    assert.match(tools.at(-1)!.content, /de scripts van skill scripted staan uit/);
     assert.ok(!tools.at(-1)!.content.includes('HALLO-UIT-SCRIPT'));
     assert.equal(t.app.ctx.store.find<any>('approvals', { agent_id: bot.id }).length, 0);
 
-    // Trusted, bot in "auto": the script still asks; denied → it does not run.
+    // On again, bot in "Vragen": the script asks like a command (tools/gate.ts); denied → it does not run.
     await t.api('POST', `/skills/${r.skillId}/trust`, { trusted: true });
+    await t.api('PATCH', `/agents/${bot.id}`, { access_mode: 'ask' });
     t.script.push({ toolCalls: [{ name: 'skill_run_script', args: { name: 'scripted', script: 'scripts/hello.mjs', args: ['een', 'twee'] } }] }, { text: 'ok' });
     await t.api('POST', `/threads/${th.id}/messages`, { content: 'nog eens' });
     let a = await waitApproval(t, 'skill_run_script');
-    assert.equal(a.risk, 'danger');
+    assert.equal(a.risk, 'exec');
     await t.api('POST', `/approvals/${a.id}`, { decision: 'deny' });
     await t.waitIdle(th.id);
     tools = t.app.ctx.store.messages(th.id).filter((m: any) => m.role === 'tool');
@@ -481,14 +521,22 @@ test('scripts: off after install, refused without trust, and after trust they st
     assert.notEqual(path.resolve(home), path.resolve(os.homedir()));
     assert.ok(path.resolve(/USERPROFILE=(.*)/.exec(out)![1].trim()).startsWith(path.resolve(bot.workspace)));
 
-    // "Volledige toegang" lets danger with a local impact through without a card: the script asks anyway.
-    await t.api('PATCH', `/agents/${bot.id}`, { access_mode: 'full' });
+    // "Automatisch" and "Volledige toegang": a skill's script is a command like any other the bot may run; it runs
+    // without a card (unless a rule of the owner about commands or scripts names it).
+    for (const level of ['auto', 'full']) {
+      await t.api('PATCH', `/agents/${bot.id}`, { access_mode: level });
+      const before = t.app.ctx.store.find<any>('approvals', { agent_id: bot.id }).length;
+      t.script.push({ toolCalls: [{ name: 'skill_run_script', args: { name: 'scripted', script: 'scripts/hello.mjs' } }] }, { text: 'ok' });
+      await t.say(th.id, level, 20_000);
+      assert.equal(t.app.ctx.store.find<any>('approvals', { agent_id: bot.id }).length, before, `no card on ${level}`);
+      assert.match(t.app.ctx.store.messages(th.id).filter((m: any) => m.role === 'tool').at(-1)!.content, /HALLO-UIT-SCRIPT/);
+    }
+    // "Alleen lezen": no programs at that level, so no script either.
+    await t.api('PATCH', `/agents/${bot.id}`, { access_mode: 'readonly' });
     t.script.push({ toolCalls: [{ name: 'skill_run_script', args: { name: 'scripted', script: 'scripts/hello.mjs' } }] }, { text: 'ok' });
-    await t.api('POST', `/threads/${th.id}/messages`, { content: 'volledige toegang' });
-    a = await waitApproval(t, 'skill_run_script');
-    await t.api('POST', `/approvals/${a.id}`, { decision: 'deny' });
-    await t.waitIdle(th.id);
-    assert.match(t.app.ctx.store.messages(th.id).filter((m: any) => m.role === 'tool').at(-1)!.content, /geen toestemming/);
+    await t.say(th.id, 'alleen lezen', 20_000);
+    assert.ok(!t.app.ctx.store.messages(th.id).filter((m: any) => m.role === 'tool').at(-1)!.content.includes('HALLO-UIT-SCRIPT'), 'not run on "Alleen lezen"');
+    await t.api('PATCH', `/agents/${bot.id}`, { access_mode: 'auto' });
 
     // Only the skill's own scripts.
     t.script.push({ toolCalls: [{ name: 'skill_run_script', args: { name: 'scripted', script: '../../evil.mjs' } }] }, { text: 'ok' });

@@ -54,12 +54,6 @@ export function detectReviewKind(content: string, type?: string | null): ReviewK
   return null;
 }
 
-/** The learner's own answer for "changes over time", made safe (one of the known kinds). */
-export function cleanReviewKind(v: unknown): ReviewKind | null {
-  const k = String(v ?? '').trim().toLowerCase();
-  return (Object.keys(REVIEW_KINDS) as ReviewKind[]).includes(k as ReviewKind) ? (k as ReviewKind) : null;
-}
-
 /** Is this memory due for its check now? */
 export function isDue(row: Pick<MemoryItemRow, 'status' | 'review_at'>, at = now()): boolean {
   return row.status === 'active' && !!row.review_at && row.review_at <= at;
@@ -124,12 +118,6 @@ function relevantPart(text: string, fact: string, max = 6000): string {
   const paras = text.split(/\n{1,2}/).map((p, i) => ({ p, i, n: tokens(p).filter((t) => want.has(t)).length }));
   const keep = paras.sort((a, b) => b.n - a.n || a.i - b.i).slice(0, 12).sort((a, b) => a.i - b.i);
   return keep.map((k) => k.p).join('\n').slice(0, max);
-}
-
-export interface RefreshCounts {
-  confirmed: number;
-  refreshed: number;
-  check: number;
 }
 
 /**

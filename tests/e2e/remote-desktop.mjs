@@ -88,7 +88,7 @@ const dryRun = {
 const inputs = () => calls.filter((c) => INPUT.has(c.action));
 const shots = () => calls.filter((c) => c.action === 'shot');
 
-const { createApp } = await import('../../server/app.ts');
+const { createApp } = await import('./server.mjs');
 const { indicatorView } = await import('../../server/modules/remote-desktop/indicator.ts');
 const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'tb-remote-'));
 const app = await createApp({ dataDir: dir, port: Number(process.env.TEAMBOT_E2E_PORT) || 0, host: '127.0.0.1', mode: 'desktop', quiet: true });
@@ -189,7 +189,9 @@ try {
   await sw.click();
   const confirm = pcPage.getByRole('alertdialog');
   await confirm.waitFor({ timeout: 5000 });
-  if (!/balk met Stop/.test(await confirm.innerText())) fail('computer: de bevestiging zegt niet dat er een stopbalk komt');
+  // The question says what turning it on allows; the stop bar is in "Zo is het beveiligd" on the page itself.
+  if (!/hele bureaublad zien en bedienen/.test(await confirm.innerText())) fail('computer: de bevestiging zegt niet wat aanzetten toestaat');
+  if (!(await pcPage.getByText(/balk met Stop/).count())) fail('computer: de pagina zegt niet dat er een stopbalk komt');
   await confirm.getByRole('button', { name: 'Aanzetten' }).click();
   await pcPage.getByText('Staat aan', { exact: true }).waitFor({ timeout: 5000 });
   if (!(await call(pcToken, 'GET', '/remote-desktop')).body.enabled) fail('computer: aanzetten is niet opgeslagen');

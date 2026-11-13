@@ -65,33 +65,7 @@ export function ModelFacts({ m, provider, loading }: { m: ModelInfo | undefined;
         Modelgegevens laden…
       </div>
     );
-  // A CLI bot without its own model runs on the engine's default ("Standaard van Claude Code (nu Opus 5.5)"): say who
-  // picks the model, and which one it is now when the engine told us (acceptance round 5, C-01).
-  const engineDefault = provider.type === 'cli' && m?.id === 'default';
-  const nowModel = engineDefault ? /\(nu ([^()]+)\)\s*$/.exec(m?.label || '')?.[1] : undefined;
-  const engineName = provider.kindLabel || provider.name;
-  const chooser = !engineDefault ? '' : nowModel ? t('{0} kiest zelf het model; nu is dat {1}.', engineName, nowModel) : t('{0} kiest zelf welk model het gebruikt.', engineName);
-  // A price the owner set himself (Providers › Prijzen) is what TeamBot counts, also on a local engine or an own
-  // endpoint: show it with that source (acceptance round 5, C-12: "Prijs: onbekend" with an own price).
-  const own = m?.priceSource === 'eigen' && !!m.price;
-  const sub = !own && provider.type === 'cli' && provider.billing !== 'free' && m?.billing !== 'paid';
-  const local = !own && provider.billing === 'local';
-  // A free model (OpenCode's "big-pickle", ":free" models) says so in its list entry as billing "free".
-  const free = !own && (!!m?.free || m?.billing === 'free');
-  const ownSource = provider.own === false ? 'eigen prijs, ingesteld door de eigenaar van deze provider' : PRICE_SOURCE.eigen;
-  const sourceOf = (s?: string) => (s === 'eigen' ? ownSource : PRICE_SOURCE[s || ''] || '');
-  const price = free || local ? 'gratis' : sub ? 'via je abonnement' : m?.price ? `${fmtPrice(m.price[0])} in / ${fmtPrice(m.price[1])} uit per 1M tokens` : '';
-  const priceSrc = free || local ? (local ? 'draait op je eigen computer' : '') : sub ? '' : m?.price ? [sourceOf(m.priceSource) ? translate(sourceOf(m.priceSource)) : '', m.priceChecked ? t('stand {0}', fmtDate(m.priceChecked)) : ''].filter(Boolean).join(', ') : '';
-  const all: { icon: React.ReactNode; label: string; value: string; note?: string }[] = [
-    { icon: <Wrench className="h-3.5 w-3.5" />, label: 'Tools', value: yes(m?.tools) },
-    { icon: <Eye className="h-3.5 w-3.5" />, label: 'Afbeeldingen', value: yes(m?.vision) },
-    { icon: <Gauge className="h-3.5 w-3.5" />, label: 'Context', value: m?.context ? `${m.context.toLocaleString(uiLocale())} tokens` : '', note: m?.loadedContext ? `nu geladen met ${fmtTokens(m.loadedContext)}` : undefined },
-    { icon: <Brain className="h-3.5 w-3.5" />, label: 'Denkniveaus', value: !m || !Array.isArray(m.reasoningLevels) ? '' : m.reasoningLevels.length ? m.reasoningLevels.map((l) => translate(REASONING_LABELS[l] || l).replace(/ \(.*\)$/, '').toLocaleLowerCase(uiLocale())).join(', ') : 'geen' },
-    { icon: <Wallet className="h-3.5 w-3.5" />, label: 'Prijs', value: price, note: priceSrc || undefined },
-  ];
-  const from = m?.capSource ? (/^https?:/.test(m.capSource) ? translate('documentatie van de maker') : m.capSource) : '';
-  const source = m?.capSource ? (m.capChecked ? t('Gegevens: {0}, gecontroleerd {1}.', from, fmtDate(m.capChecked)) : t('Gegevens: {0}.', from)) : '';
-  const rows = all.filter((r) => r.value);
+  const { rows, chooser, source } = factsOf(m, provider);
   if (!rows.length && !chooser) return null;
   return (
     <div className="rounded-xl bg-surface-2 px-3 py-2.5 text-[13px]" data-testid="model-facts">
@@ -115,28 +89,64 @@ export function ModelFacts({ m, provider, loading }: { m: ModelInfo | undefined;
   );
 }
 
+/** Is anything known about this model on this AI (so the page has something to show under "Over het model")? */
+export function hasModelFacts(m: ModelInfo | undefined, provider: ProviderView | undefined): boolean {
+  if (!provider) return false;
+  const f = factsOf(m, provider);
+  return f.rows.length > 0 || !!f.chooser;
+}
+
+/** The facts ModelFacts shows: one row per thing that is known, who picks the model, and where the facts come from. */
+function factsOf(m: ModelInfo | undefined, provider: ProviderView) {
+  // A CLI bot without its own model runs on the engine's default ("Standaard van Claude Code (nu Opus 5.5)"): say who
+  // picks the model, and which one it is now when the engine told us (acceptance round 5, C-01).
+  const engineDefault = provider.type === 'cli' && m?.id === 'default';
+  const nowModel = engineDefault ? /\(nu ([^()]+)\)\s*$/.exec(m?.label || '')?.[1] : undefined;
+  const engineName = provider.kindLabel || provider.name;
+  const chooser = !engineDefault ? '' : nowModel ? t('{0} kiest zelf het model; nu is dat {1}.', engineName, nowModel) : t('{0} kiest zelf welk model het gebruikt.', engineName);
+  // A price the owner set himself (Providers › Prijzen) is what TeamBot counts, also on a local engine or an own
+  // endpoint: show it with that source (acceptance round 5, C-12: "Prijs: onbekend" with an own price).
+  const own = m?.priceSource === 'eigen' && !!m.price;
+  const sub = !own && provider.type === 'cli' && provider.billing !== 'free' && m?.billing !== 'paid';
+  const local = !own && provider.billing === 'local';
+  // A free model (OpenCode's "big-pickle", ":free" models) says so in its list entry as billing "free".
+  const free = !own && (!!m?.free || m?.billing === 'free');
+  const ownSource = provider.own === false ? 'eigen prijs, ingesteld door de eigenaar van deze provider' : PRICE_SOURCE.eigen;
+  const sourceOf = (s?: string) => (s === 'eigen' ? ownSource : PRICE_SOURCE[s || ''] || '');
+  const price = free || local ? 'gratis' : sub ? 'via je abonnement' : m?.price ? `${fmtPrice(m.price[0])} in / ${fmtPrice(m.price[1])} uit per 1M tokens` : '';
+  const priceSrc = free || local ? (local ? 'draait op je eigen computer' : '') : sub ? '' : m?.price ? [sourceOf(m.priceSource) ? translate(sourceOf(m.priceSource)) : '', m.priceChecked ? t('stand {0}', fmtDate(m.priceChecked)) : ''].filter(Boolean).join(', ') : '';
+  const all: { icon: React.ReactNode; label: string; value: string; note?: string }[] = [
+    { icon: <Wrench className="h-3.5 w-3.5" />, label: 'Tools', value: yes(m?.tools) },
+    { icon: <Eye className="h-3.5 w-3.5" />, label: 'Afbeeldingen', value: yes(m?.vision) },
+    {
+      icon: <Gauge className="h-3.5 w-3.5" />,
+      label: 'Context',
+      value: m?.context ? `${m.context.toLocaleString(uiLocale())} tokens` : '',
+      // A server that fixes its window at start (llama.cpp -c): TeamBot cannot make it bigger, so say when it is too small.
+      note: !m?.loadedContext ? undefined : m.contextFixed && m.loadedContext < RECOMMENDED ? t('nu geladen met {0}: te klein voor de instructies en tools van een bot. Start de server met -c {1}.', fmtTokens(m.loadedContext), RECOMMENDED) : `nu geladen met ${fmtTokens(m.loadedContext)}`,
+    },
+    { icon: <Brain className="h-3.5 w-3.5" />, label: 'Denkniveaus', value: !m || !Array.isArray(m.reasoningLevels) ? '' : m.reasoningLevels.length ? m.reasoningLevels.map((l) => translate(REASONING_LABELS[l] || l).replace(/ \(.*\)$/, '').toLocaleLowerCase(uiLocale())).join(', ') : '' },
+    { icon: <Wallet className="h-3.5 w-3.5" />, label: 'Prijs', value: price, note: priceSrc || undefined },
+  ];
+  const from = m?.capSource ? (/^https?:/.test(m.capSource) ? translate('documentatie van de maker') : m.capSource) : '';
+  const source = m?.capSource ? (m.capChecked ? t('Gegevens: {0}, gecontroleerd {1}.', from, fmtDate(m.capChecked)) : t('Gegevens: {0}.', from)) : '';
+  const rows = all.filter((r) => r.value);
+  return { rows, chooser, source };
+}
+
 const STEPS = [4096, 8192, 16384, 32768, 65536, 131072, 262144];
 const RECOMMENDED = 16384;
 const gb = (bytes: number) => (bytes / 1e9).toLocaleString(uiLocale(), { maximumFractionDigits: bytes < 1e9 ? 2 : 1 });
 
 /**
- * Context window for a local model (C-13): Ollama per chat, LM Studio when it loads the model; llama.cpp fixes it at
- * start. Saved right away for this model on this computer, with an estimate of the extra memory and a warning.
+ * Context window for a local model (C-13): Ollama per chat, LM Studio when it loads the model. Saved right away for
+ * this model on this computer, with an estimate of the extra memory and a warning. Only where TeamBot can set it: a
+ * server that fixes its window at start (llama.cpp) has no row here; the window it runs with is under the model facts.
  */
 export function ContextWindowField({ provider, m }: { provider: ProviderView; m: ModelInfo | undefined }) {
   const saved: number | undefined = m ? provider.config?.contextWindows?.[m.id] : undefined;
   const [value, setValue] = useState<number | ''>(saved ?? '');
   useEffect(() => setValue(saved ?? ''), [saved, m?.id]);
-  if (provider.kind === 'llamacpp') {
-    return (
-      <div className="rounded-xl border border-line px-3 py-2.5 text-[13px]" data-testid="context-window">
-        <div className="font-medium">Contextvenster</div>
-        <p className="mt-0.5 text-muted">
-          llama.cpp kiest het contextvenster bij het starten van de server{m?.loadedContext ? ` (nu ${m.loadedContext.toLocaleString(uiLocale())} tokens)` : ''}. Wil je een ander venster, start de server dan opnieuw met bijvoorbeeld <code translate="no">-c 32768</code>. Een groter venster gebruikt meer geheugen.
-        </p>
-      </div>
-    );
-  }
   if (provider.kind !== 'ollama' && provider.kind !== 'lmstudio') return null;
   const max = m?.context;
   const options = STEPS.filter((n) => !max || n <= max);
@@ -171,15 +181,15 @@ export function ContextWindowField({ provider, m }: { provider: ProviderView; m:
           onChange={(v) => save(v ? Number(v) : '')}
           aria-label="Contextvenster"
           options={[
-            { value: '', label: translate(provider.kind === 'ollama' ? 'Instelling van Ollama' : 'Instelling van LM Studio') + (m?.loadedContext ? ` (${t('nu {0}', fmtTokens(m.loadedContext))})` : '') },
-            ...options.map((n) => ({ value: String(n), label: `${fmtTokens(n)} tokens${n === RECOMMENDED ? ` ${translate('(aanbevolen)')}` : ''}${n === max ? ` ${translate('(maximum)')}` : ''}${extra(n)}` })),
+            { value: '', label: translate('Vanzelf (aanbevolen)') + (m?.loadedContext ? ` (${t('nu {0}', fmtTokens(m.loadedContext))})` : '') },
+            ...options.map((n) => ({ value: String(n), label: `${fmtTokens(n)} tokens${n === max ? ` ${translate('(maximum)')}` : ''}${extra(n)}` })),
           ]}
         />
       </div>
       <p className="text-[12px] text-muted">
         Hoeveel tekst het model tegelijk onthoudt.{' '}
         <MoreInfo>
-          Instructies, tools en gesprek samen. Voor bots met tools is {fmtTokens(RECOMMENDED)} een goed begin. Geldt voor dit model op deze computer{provider.kind === 'lmstudio' ? '; LM Studio laadt het model dan opnieuw' : ''}.
+          Instructies, tools en gesprek samen. Vanzelf kiest TeamBot een venster waar de instructies en tools van de bot in passen, met ruimte voor het gesprek (meestal {fmtTokens(RECOMMENDED)}), binnen wat het model aankan. Een eigen keuze geldt voor dit model op deze computer{provider.kind === 'lmstudio' ? '; LM Studio laadt het model dan opnieuw' : ''}.
         </MoreInfo>
       </p>
       {(big || small) && (

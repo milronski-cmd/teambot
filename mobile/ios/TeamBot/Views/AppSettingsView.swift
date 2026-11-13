@@ -20,13 +20,20 @@ struct AppSettingsView: View {
                         LabeledContent("Adres", value: HostAddress.display(p.baseURL))
                         if p.candidates.count > 1 {
                             ForEach(p.candidates.dropFirst(), id: \.self) { url in
-                                Text(HostAddress.display(url)).font(.footnote).foregroundStyle(.secondary)
+                                Text(HostAddress.display(url)).font(.footnote).foregroundStyle(Theme.muted)
                             }
                         }
                         Button {
                             Task { await model.refresh() }
                         } label: {
-                            if model.checking { ProgressView() } else { Text("Nu controleren") }
+                            if model.checking {
+                                HStack(spacing: 10) {
+                                    ProgressView()
+                                    Text("Verbinden met je pc…")
+                                }
+                            } else {
+                                Text("Nu controleren")
+                            }
                         }
                         .disabled(model.checking)
                     } header: {
@@ -62,6 +69,8 @@ struct AppSettingsView: View {
                     LabeledContent("Versie", value: Self.appVersion)
                 }
             }
+            .scrollContentBackground(.hidden)
+            .tbCanvas()
             .navigationTitle("Instellingen")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -129,10 +138,18 @@ struct PrivacyDetailsView: View {
                     Text("Je pc vertelt niet welke AI-diensten hij gebruikt (een oudere TeamBot), of is nu niet bereikbaar.")
                 }
             } else {
-                Section { ProgressView() }
+                Section {
+                    HStack(spacing: 10) {
+                        ProgressView()
+                        Text("Lijst ophalen van je pc…").foregroundStyle(Theme.muted)
+                    }
+                    .accessibilityElement(children: .combine)
+                }
             }
             PrivacyPromises()
         }
+        .scrollContentBackground(.hidden)
+        .tbCanvas()
         .navigationTitle("Wat gaat waarheen")
         .task {
             info = await model.loadPrivacy()

@@ -21,7 +21,7 @@ if (process.platform !== 'win32') {
 console.log('LET OP: over 5 seconden bedient deze test muis en toetsenbord in een eigen testvenster. Raak ze niet aan tot de test klaar is. Ctrl+C breekt af.');
 await new Promise((r) => setTimeout(r, 5000));
 
-const { createApp } = await import('../../server/app.ts');
+const { createApp } = await import('./server.mjs');
 const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'tb-desktop-'));
 const exe = path.join(dir, 'tbtestwin.exe');
 

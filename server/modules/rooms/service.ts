@@ -4,6 +4,8 @@ import type { Agent, Ctx, Message, MessageParts, Run, Thread } from '../../core/
 import { newId, now } from '../../core/db.js';
 import { bad, forbidden, notFound } from '../../core/http.js';
 import { usdText, userLocale } from '../../core/i18n.js';
+import { stoppedByOwner } from '../../agent/runs.js';
+import { plannerOf } from '../routines/planner.js';
 import { DEFAULT_LIMITS, MODES, cleanLimits, effectiveLimits, findMentions, type Limits, type Named, type RoomMode } from './routing.js';
 import {
   ACTIVE_RUN,
@@ -18,6 +20,7 @@ import {
   type TeamMeta,
 } from './types.js';
 import type { Orchestrator } from './orchestration.js';
+import type { Board } from './board.js';
 import { capPerms, crossTeamOn, guestLine, joinRefusal, memberRefusal, memberTeamView, roomTeam, roomTeamView, startTeam, wallPatch } from './walls.js';
 
 const SETTINGS_KEY = 'rooms:defaults';
@@ -53,6 +56,7 @@ export interface DispatchResult {
  */
 export class RoomService {
   orch!: Orchestrator;
+  board!: Board;
   private seenRun = new Seen<string>();
   private seenMsg = new Seen();
   private timers = new Map<string, NodeJS.Timeout>();
@@ -177,12 +181,11 @@ export class RoomService {
     });
   }
 
-  /** Team inbox entry + push notification for one person. */
+  /** A notification for one person (the bell, a pop-up, a push: modules/notifications keeps and shows it). */
   notify(userId: string, o: { roomId?: string | null; kind: string; title: string; body?: string; link?: string; refId?: string | null }) {
-    const id = newId('rin_');
-    this.ctx.store.insert('room_inbox', { id, user_id: userId, room_id: o.roomId ?? null, kind: o.kind, title: o.title.slice(0, 200), body: (o.body || '').slice(0, 500), link: o.link || '', ref_id: o.refId ?? null, read: false, created_at: now() });
-    this.ctx.events.emit(userId, 'notification', { title: o.title, body: (o.body || '').slice(0, 200), link: o.link || '#/m/rooms', kind: 'team' });
-    this.ctx.events.emit(userId, 'rooms.inbox', { id });
+    // About one thing (a task): one unread line that says the latest, with a count. A bot that reports the same task
+    // three times in a few minutes gave the owner three lines "Te controleren: …".
+    this.ctx.events.emit(userId, 'notification', { title: o.title, body: (o.body || '').slice(0, 200), link: o.link || '#/m/rooms', kind: 'team', ...(o.refId ? { ref: `${o.kind}:${o.refId}` } : {}) });
   }
 
   event(thread: Thread, text: string, parts: MessageParts = {}) {
@@ -510,7 +513,7 @@ export class RoomService {
   }
 
   /** Why a new bot turn may not start right now (null = allowed). */
-  gate(o: { room: Room | null; userId: string; agentId: string; chain: TeamMeta; needMember: boolean; extra?: number; turnCap?: number }): string | null {
+  gate(o: { room: Room | null; userId: string; agentId: string; chain: TeamMeta; needMember: boolean; extra?: number; turnCap?: number; noTurnCap?: boolean }): string | null {
     const { room } = o;
     const a = this.ctx.store.agent(o.agentId);
     if (!a || a.archived) return 'Deze bot bestaat niet (meer) of is gearchiveerd.';
@@ -523,16 +526,24 @@ export class RoomService {
       const b = this.overBudget(room);
       if (b) return b;
     }
+    // The way back (a result delivered to the bot that asked) is never refused by the turn cap: new requests are, so a
+    // runaway chain still ends, but no finished work is lost.
+    if (o.noTurnCap) return null;
     const l = this.limits(room, o.userId);
     const used = this.turnsUsed(o.userId, o.chain);
     const cap = this.turnCap(l, o.chain, o.turnCap);
-    if (used + (o.extra ?? 1) > cap) return `Maximum van ${cap} botbeurten voor dit bericht bereikt. Stuur een nieuw bericht om verder te gaan (of verhoog de limiet).`;
+    if (cap > 0 && used + (o.extra ?? 1) > cap) return `Maximum van ${cap} botbeurten voor dit bericht bereikt. Stuur een nieuw bericht om verder te gaan (of verhoog de limiet).`;
     return null;
   }
 
-  /** Turn cap of a chain: chains with asynchronous bot messages (ask_bot) get their own, larger cap. */
-  turnCap(l: Limits, chain: TeamMeta | undefined, explicit?: number): number {
-    return explicit ?? (chain?.async ? Math.max(l.maxAskTurns, l.maxTurnsPerMessage) : l.maxTurnsPerMessage);
+  /**
+   * Turn cap of a chain, 0 = none (the default: both are settings the owner may set). A chain with asynchronous bot
+   * messages (ask_bot, board tasks) goes by its own setting, and is never capped lower than an ordinary chain.
+   */
+  turnCap(l: Limits, chain: Pick<TeamMeta, 'async'> | undefined, explicit?: number): number {
+    if (explicit !== undefined) return explicit;
+    if (!chain?.async) return l.maxTurnsPerMessage;
+    return l.maxAskTurns > 0 ? Math.max(l.maxAskTurns, l.maxTurnsPerMessage) : 0;
   }
 
   /** Start one bot turn in a room thread (or subthread) after checking every limit. */
@@ -541,7 +552,7 @@ export class RoomService {
     // Teams (walls.ts): a member that may no longer be in this team's group sits out (not for delegation subthreads:
     // those see only their task, and giving that task already needed aansturen).
     const wall = room && thread.kind !== 'delegation' ? memberRefusal(this, room, agentId) : null;
-    const refused = wall || this.gate({ room, userId: thread.user_id, agentId, chain: o.meta, needMember });
+    const refused = wall || this.gate({ room, userId: thread.user_id, agentId, chain: o.meta, needMember, noTurnCap: o.meta.kind === 'followup' });
     if (refused) {
       if (!o.silent) this.event(thread, refused, { kind: 'room_limit', agentId });
       if (room) this.activity(room.id, { type: 'system' }, 'limit', refused, { agentId, chainId: o.meta.chainId });
@@ -731,6 +742,9 @@ export class RoomService {
     if (team?.kind === 'ask' && !room) return;
     const l = this.limits(room, run.user_id);
     const sec = team?.delegationId ? l.delegationTimeoutSec : l.turnTimeoutSec;
+    // 0 (the default) = no time limit: real work takes as long as it takes. A turn that is truly dead is found by its
+    // sign of life (watchDead), not by the clock.
+    if (!(sec > 0)) return;
     const fire = () => {
       const cur = this.ctx.store.run(run.id);
       if (!cur || TERMINAL_RUN.has(cur.status)) return void this.timers.delete(run.id);
@@ -746,10 +760,33 @@ export class RoomService {
     this.timers.set(run.id, setTimeout(fire, sec * 1000).unref());
   }
 
+  /** A CLI engine whose process is gone while its turn is still "busy" for this long is dead. */
+  static DEAD_AFTER_MS = 10 * 60_000;
+  private offDead: (() => void) | null = null;
+
+  /**
+   * Recovery for a turn that is truly dead: work a bot does for another bot (a subtask, a bot message, a follow-up
+   * turn) whose engine process ended without the turn ending. It is stopped, so the bot that asked hears "time-out"
+   * with the reason instead of waiting forever. A turn that is still working is never touched, however long it takes.
+   */
+  watchDead(at = Date.now()): number {
+    let n = 0;
+    for (const r of this.ctx.store.all<{ id: string; agent_id: string }>("SELECT id, agent_id FROM runs WHERE status = 'running' AND json_extract(meta, '$.team.chainId') IS NOT NULL")) {
+      const info = this.ctx.runs.pulse?.info(r.id);
+      if (!info || info.process !== 'gone' || at - info.lastActivityAt < RoomService.DEAD_AFTER_MS) continue;
+      this.timedOut.set(r.id, true);
+      if (this.ctx.runs.cancel(r.id, `Time-out: het programma van ${this.agentName(r.agent_id)} is gestopt zonder resultaat`)) n++;
+    }
+    return n;
+  }
+
   // ------------------------------------------------------------------ live event handlers
 
   subscribe() {
     const ev = this.ctx.events;
+    // No clock of its own: the one planner looks once a minute (routines/planner.ts, source `rooms-dead`). It plans
+    // nothing and starts no turn: a look only ends a turn whose engine process is gone.
+    this.offDead = plannerOf(this.ctx)?.register({ id: 'rooms-dead', everyMs: 60_000, look: () => this.safe(() => void this.watchDead()) }) ?? null;
     this.unsub.push(ev.on('run.updated', (e) => this.safe(() => this.onRunEvent(e.data as Run))));
     this.unsub.push(ev.on('message.created', (e) => this.safe(() => this.onMessageEvent(e.data as Message, 'created'))));
     this.unsub.push(ev.on('message.updated', (e) => this.safe(() => this.onMessageEvent(e.data as Message, 'updated'))));
@@ -759,6 +796,10 @@ export class RoomService {
   unsubscribe() {
     for (const u of this.unsub) u();
     this.unsub = [];
+    this.offDead?.();
+    this.offDead = null;
+    if (this.startTimer) clearTimeout(this.startTimer);
+    this.startTimer = null;
     for (const t of this.timers.values()) clearTimeout(t);
     this.timers.clear();
   }
@@ -826,6 +867,10 @@ export class RoomService {
     if (!thread) return;
     const room = this.roomForThread(thread);
     const team = run.meta?.team as TeamMeta | undefined;
+    // Stopped by the owner's own hand: nothing starts by itself because of it (orchestration.ts), and what this bot
+    // had on "Bezig" is "Te doen" again, still its own (before the note about it is written).
+    const byOwner = stoppedByOwner(run);
+    if (byOwner) this.board.parkStopped(run, this.orch.get(team?.delegationId)?.task_id);
     if (room) {
       this.refreshState(room, run.agent_id);
       const label = run.status === 'done' ? 'klaar' : run.status === 'cancelled' ? (this.timedOut.has(run.id) ? 'time-out' : 'gestopt') : 'fout';
@@ -847,7 +892,7 @@ export class RoomService {
         }
       }
     }
-    this.orch.onIdle(run.thread_id, run.agent_id);
+    this.orch.onIdle(run.thread_id, run.agent_id, byOwner);
   }
 
   private onMessageEvent(m: Message, type: 'created' | 'updated') {
@@ -860,8 +905,9 @@ export class RoomService {
     if (!room || !thread) return;
     if (type === 'created') {
       const l = this.limits(room);
-      const steps = this.ctx.store.one<{ n: number }>("SELECT COUNT(*) AS n FROM messages WHERE run_id = ? AND role = 'assistant'", m.run_id)?.n ?? 0;
-      if (steps > l.maxStepsPerTurn) {
+      // 0 (the default) = no cap on the steps of a turn.
+      const steps = l.maxStepsPerTurn > 0 ? (this.ctx.store.one<{ n: number }>("SELECT COUNT(*) AS n FROM messages WHERE run_id = ? AND role = 'assistant'", m.run_id)?.n ?? 0) : 0;
+      if (l.maxStepsPerTurn > 0 && steps > l.maxStepsPerTurn) {
         const run = this.ctx.store.run(m.run_id);
         if (run && ACTIVE_RUN.has(run.status)) {
           this.ctx.runs.cancel(run.id, l.maxStepsPerTurn === 1 ? 'Maximum van 1 stap per beurt in deze groep bereikt' : `Maximum van ${l.maxStepsPerTurn} stappen per beurt in deze groep bereikt`);
@@ -927,9 +973,11 @@ export class RoomService {
     this.activity(room.id, { type: 'user', id: byUserId }, 'room.resumed', 'Groep hervat');
     let started = 0;
     if (cont && stopped.length && !over) {
-      const sys = this.systemMessage(th, 'De groep is hervat. Ga verder waar je gebleven was; controleer eerst wat al gedaan is voordat je acties herhaalt.', { kind: 'room_resume' });
+      const sys = this.systemMessage(th, 'De groep is hervat. Ga verder waar je gebleven was; controleer eerst wat al gedaan is voordat je acties herhaalt.', { kind: 'room_resume', note: { text: 'De bots gaan verder waar ze gebleven waren.' } });
       for (const a of stopped) if (this.dispatch(fresh, th, a, { inputMessageId: sys.id, meta: { chainId: sys.id, path: [a], handoffs: 0, kind: 'resume', requestedBy: byUserId } }).run) started++;
     }
+    // Results that came in for a bot of this group while it was paused are delivered now.
+    this.orch.flushPending(fresh.id);
     for (const b of this.botMembers(fresh)) this.refreshState(fresh, b.ref_id);
     this.emitChanged(fresh);
     return { started };
@@ -961,21 +1009,33 @@ export class RoomService {
     this.activity(room.id, { type: 'user', id: byUserId }, 'member.resumed', `${this.agentName(agentId)} hervat`, { agentId });
     let run: Run | undefined;
     if (cont) {
-      const sys = this.systemMessage(th, `${this.agentName(agentId)}, je bent hervat. Ga verder waar je gebleven was; controleer eerst wat al gedaan is.`, { kind: 'member_resume', agentId });
+      const sys = this.systemMessage(th, `${this.agentName(agentId)}, je bent hervat. Ga verder waar je gebleven was; controleer eerst wat al gedaan is.`, { kind: 'member_resume', agentId, note: { text: '{0} gaat verder waar hij gebleven was.', values: [this.agentName(agentId)] } });
       run = this.dispatch(this.room(room.id)!, th, agentId, { inputMessageId: sys.id, meta: { chainId: sys.id, path: [agentId], handoffs: 0, kind: 'resume', requestedBy: byUserId } }).run;
     }
+    if (!run) this.orch.flushPending(room.id);
     this.refreshState(this.room(room.id)!, agentId);
     this.emitChanged(room);
     return { run };
   }
 
-  /** After a restart: member states and open delegations are reconciled with the durable run table. */
+  /** Work between bots is picked up again this long after the start (engines and connections are ready by then). */
+  static START_DELAY_MS = Number(process.env.TEAMBOT_ROOMS_START_MS || 1500);
+  private startTimer: NodeJS.Timeout | null = null;
+
+  /**
+   * After a restart: member states are reconciled with the durable run table at once; open work between bots (cut-off
+   * subtasks, results not delivered yet, waiting bot messages) is picked up again shortly after.
+   */
   reconcile() {
     for (const r of this.ctx.store.all<any>("SELECT * FROM rooms WHERE archived = 0")) {
       const room = this.ctx.store.decode<Room>('rooms', r);
       for (const b of this.botMembers(room)) this.refreshState(room, b.ref_id);
     }
-    this.orch.reconcile();
+    this.startTimer = setTimeout(() => {
+      this.startTimer = null;
+      this.safe(() => this.orch.reconcile());
+    }, RoomService.START_DELAY_MS);
+    this.startTimer.unref?.();
   }
 
   // ------------------------------------------------------------------ teams helper used by rooms

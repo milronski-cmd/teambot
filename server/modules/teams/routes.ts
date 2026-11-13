@@ -22,7 +22,8 @@ export function teamRoutes(ctx: Ctx, svc: TeamsService) {
     '/teams',
     ah(async (req) => {
       const u = user(req);
-      return svc.view(svc.create(u.id, req.body || {}), u.id);
+      // `starterRules: false`: a team without the starting rules (the owner adds his own).
+      return svc.view(svc.create(u.id, req.body || {}, { starterRules: req.body?.starterRules !== false }), u.id);
     }),
   );
 
@@ -36,7 +37,7 @@ export function teamRoutes(ctx: Ctx, svc: TeamsService) {
   api.get('/teams/main', ah(async (req) => mainView(user(req).id)));
   /** The new-bot flow chose "Hoofdbot": a single-use token for `settings.mainBot` of the bot it creates next. */
   api.post('/teams/main/intent', ah(async (req) => ({ token: svc.intent(user(req).id) })));
-  /** Make an existing bot the main bot (refused while there is another one). */
+  /** Make an existing bot the main bot; the main bot there was becomes a normal bot. */
   api.put(
     '/teams/main/:agentId',
     ah(async (req) => {
@@ -46,12 +47,14 @@ export function teamRoutes(ctx: Ctx, svc: TeamsService) {
       return { ...mainView(u.id), notes: r.notes };
     }),
   );
-  /** The main bot becomes a normal bot. */
+  /** The main bot becomes a normal bot; there is always one, so the oldest other bot takes over (if there is one). */
   api.delete(
     '/teams/main',
     ah(async (req) => {
       const u = user(req);
+      const was = svc.mainOf(u.id);
       svc.clearMain(u.id);
+      svc.autoMain(u.id, { skip: was || undefined, orSkip: true });
       return mainView(u.id);
     }),
   );

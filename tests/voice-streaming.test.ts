@@ -90,6 +90,8 @@ function slowBot(t: TestApp, steps: SlowStep[], o: { ttftMs: number; cps: number
 async function setup(steps: SlowStep[], o = { ttftMs: 300, cps: 120 }) {
   const t = await startTestApp();
   markInstalled(t.dir, 'nl_NL-alex-medium');
+  // A call starts only when it can hear you (the turns below are already text).
+  markInstalled(t.dir, 'parakeet-tdt-0.6b-v3');
   slowBot(t, steps, o);
   const prov = await t.api('POST', '/providers', { kind: 'slowmock' });
   const bot = await t.api('POST', '/agents', { name: 'Sam', provider_id: prov.id, model: 'slow-1', access_mode: 'auto' });

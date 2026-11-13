@@ -27,7 +27,7 @@ export const PACKAGE_KINDS = ['skill', 'bot', 'connector'] as const;
 export type PackageKind = (typeof PACKAGE_KINDS)[number];
 /** The file every package of a kind must contain. */
 export const MAIN_FILE: Record<PackageKind, string> = { skill: 'SKILL.md', bot: 'bot.json', connector: 'connector.json' };
-export const DEFAULT_COMPAT_RANGE = '>=0.1.0 <1.0.0';
+export const DEFAULT_COMPAT_RANGE = '>=0.1.0 <3.0.0';
 
 export interface Publisher {
   /** Self-chosen identifier (e.g. reverse domain). Informational: trust is bound to the key, never to the id or name. */

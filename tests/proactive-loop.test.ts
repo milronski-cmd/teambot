@@ -3,10 +3,14 @@
 // with reminders that arrive on the owner's phone and chat app.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { setup, teamWithSite, page, healthySite, type Env } from './proactive-helpers.js';
+import { setup, teamWithSite, page, healthySite, type Env, give } from './proactive-helpers.js';
 import { parseDate, cleanSources, scoreOf } from '../server/modules/teamdata/kansen.js';
 import { isoWeek } from '../server/modules/teams/briefing.js';
 import type { AdapterContext, AdapterDef, Outbound } from '../server/modules/channels/types.js';
+
+// These tests are about bots that are not the main bot: without this the first bot would be it (teams `autoMain`,
+// covered in works-right-away.test.ts).
+process.env.TEAMBOT_TEST_NO_AUTO_MAIN = '1';
 
 const tool = async (env: Env, agent: any, name: string, args: any) => {
   const th = await env.t.api('POST', '/threads', { agentId: agent.id });
@@ -27,6 +31,7 @@ test('a project goes inspectie → diagnose → plan → uitvoeren → meten →
     const sem = await env.t.agent({ name: 'Sem', role: 'Technische SEO', tool_groups: ['team'] });
     const [team] = await env.t.api('GET', '/teams');
     await teamWithSite(env);
+    await give(env, sem, ['seo.techniek']);
     await env.at('2026-11-09T04:01:00Z');
     const projects = env.t.app.ctx.services.projects;
     projects.clock = () => env.clock.now;
@@ -73,7 +78,7 @@ test('a project goes inspectie → diagnose → plan → uitvoeren → meten →
     assert.match(await tool(env, sem, 'project_stap', { project: 1, meting: 'Search Console 12 nov: 1.310 klikken' }), /Nog niet tip-top\. TeamBot sitecontrole .*fouten: 1/);
     env.site.pages['https://raamwinkel.test'] = { body: page() };
     const tiptop = await tool(env, sem, 'project_stap', { project: 1, meting: 'Search Console 12 nov: 1.310 klikken per week, positie 12,9' });
-    assert.match(tiptop, /Project “Raamwinkel tip-top” is tip-top\. De vaste taken “Websites: technische fouten en indexeerbaarheid”, “Posities en klikken in Google”, “Indexering in Google” blijven als bewaker achter \(goedkoop model\)\./);
+    assert.match(tiptop, /Project “Raamwinkel tip-top” is tip-top\. De vaste taak “Websites: technische fouten en indexeerbaarheid” blijft als bewaker achter \(goedkoop model\)\./);
     assert.equal(env.duty(sem.id, 'seo.techniek').options.duty.guard, true, 'the duty stays behind as the guard');
     assert.equal(env.duty(sem.id, 'seo.techniek').options.duty.projectId, 1);
 
@@ -95,12 +100,13 @@ test('a project goes inspectie → diagnose → plan → uitvoeren → meten →
   }
 });
 
-test('at most three projects in the sprint: the fourth waits and moves up by itself', async () => {
+test('with a maximum of three in the sprint (the owner’s setting; none by default): the fourth waits and moves up by itself', async () => {
   const env = await setup();
   try {
     await env.t.agent({ name: 'Sem', role: 'SEO' });
     const [team] = await env.t.api('GET', '/teams');
     const projects = env.t.app.ctx.services.projects;
+    await env.t.api('PUT', '/proactive/settings', { maxSprint: 3 });
     for (const n of ['A', 'B', 'C']) assert.equal((await env.t.api('POST', '/proactive/projects', { naam: `Project ${n}`, doel: 'x' })).project.status, 'sprint');
     const d = await env.t.api('POST', '/proactive/projects', { naam: 'Project D', doel: 'x' });
     assert.equal(d.project.status, 'wacht');
@@ -200,7 +206,7 @@ test('an opportunity needs a dated, recent source; the main bot scores; the top 
   }
 });
 
-test('the researcher looks by itself on schedule and the main bot is only woken when there is something to score', async () => {
+test('the researcher looks on the schedule the owner gave it, and the main bot scores what it found right away (no clock)', async () => {
   const env = await setup({ start: '2026-11-09T04:00:00Z' });
   try {
     const rik = await env.t.agent({ name: 'Rik', role: 'Kansenzoeker', tool_groups: ['team', 'web'] });
@@ -208,10 +214,10 @@ test('the researcher looks by itself on schedule and the main bot is only woken 
     env.t.app.ctx.services.kansen.clock = () => env.clock.now;
     await env.t.api('PUT', '/proactive/settings', { interests: 'webshops, SEO-sites, YouTube' });
     await env.at('2026-11-09T04:01:00Z');
+    assert.equal(env.t.app.ctx.store.one<any>('SELECT COUNT(*) n FROM routines')!.n, 0, 'neither bot got a routine by itself');
+    await give(env, rik, ['kansen.zoeken']);
     const search = env.duty(rik.id, 'kansen.zoeken');
-    const score = env.duty(baas.id, 'kansen.scoren');
-    assert.ok(search && score, 'both come with the role');
-    assert.equal(env.duty(baas.id, 'werk.afmaken'), undefined, 'the main bot does not do the team’s work');
+    assert.equal(await env.workNow(), 0, 'no work yet: nobody is woken');
 
     // Tuesday 06:45: the researcher runs by itself and reports one opportunity with a dated source.
     env.t.script.push(
@@ -224,19 +230,20 @@ test('the researcher looks by itself on schedule and the main bot is only woken 
     assert.equal(env.runs(search.id)[0].status, 'no_update', 'no notification for the search itself');
     assert.equal((await env.t.api('GET', '/proactive/kansen')).kansen[0].status, 'nieuw');
 
-    // Wednesday 18:00: the main bot is woken with exactly that opportunity and scores it.
-    env.t.script.push({ toolCalls: [{ name: 'kans_scoren', args: { kans: 1, vraag: 4, past: 4, moeite: 3, kosten: 1, risico: 4, toelichting: 'Past bij de SEO-sites; pas op met massale AI-video’s.' } }] }, { toolCalls: [{ name: 'duty_report', args: { status: 'in_orde', samenvatting: '1 kans gescoord: 59/100' } }] }, { text: 'Gescoord.' });
+    // No clock in between: the opportunity has no scorecard, that is work for the main bot, now.
     const before = env.t.requests.length;
-    await env.at('2026-11-11T17:00:05Z');
-    assert.match(JSON.stringify(env.t.requests[before].messages), /Deze kansen hebben nog geen scorekaart:[\s\S]*kans 1: YouTube cashcow-kanaal over verbouwen/);
+    env.t.script.push({ toolCalls: [{ name: 'kans_scoren', args: { kans: 1, vraag: 4, past: 4, moeite: 3, kosten: 1, risico: 4, toelichting: 'Past bij de SEO-sites; pas op met massale AI-video’s.' } }] }, { text: 'Kans 1 gescoord: 16 punten.' });
+    assert.equal(await env.workNow(), 1);
+    assert.match(JSON.stringify(env.t.requests[before].messages), /Kansen om te scoren \(kans_scoren\):[\s\S]*kans 1 heeft nog geen scorekaart: YouTube cashcow-kanaal over verbouwen/);
     assert.equal((await env.t.api('GET', '/proactive/kansen')).kansen[0].status, 'gescoord');
-    // Sunday 18:00: nothing new → the main bot is not woken at all.
+    // Nothing new → the main bot is not woken at all, however long it takes.
     const calls = env.t.requests.length;
+    assert.equal(await env.workNow(), 0);
     await env.at('2026-11-15T17:00:05Z');
-    assert.equal(env.runs(score.id).at(-1).summary, 'In orde: geen kansen zonder scorekaart.');
-    assert.equal(env.runs(score.id).filter((x: any) => x.meta?.duty?.model === 1).length, 1, 'woken once in a week');
-    assert.equal(env.t.requests.filter((r) => /Kansen scoren/.test(JSON.stringify(r.messages))).length, 3, 'the three calls of that one run');
-    assert.ok(env.t.requests.length >= calls);
+    assert.equal(await env.workNow(), 0);
+    assert.equal(env.t.requests.filter((r) => /Kansen om te scoren/.test(JSON.stringify(r.messages))).length, 2, 'the two calls of that one turn; no turn without work');
+    void calls;
+    assert.equal(env.duty(baas.id, 'kansen.scoren'), undefined, 'and no routine that runs to find that out');
   } finally {
     await env.t.close();
   }
@@ -251,6 +258,7 @@ test('the briefing: what was done, what changed (numbers), what waits; a quiet d
     const sem = await env.t.agent({ name: 'Sem', role: 'Technische SEO', tool_groups: ['team'] });
     const baas = await mainBot(env);
     await teamWithSite(env);
+    await give(env, sem, ['seo.techniek', 'seo.posities']);
     const briefing = env.t.app.ctx.services.teams.briefing;
     briefing.clock = () => env.clock.now;
     const tick = async (isoUtc: string) => {
@@ -322,6 +330,8 @@ test('two teams for two businesses: own duties, tasks, projects and opportunitie
     const kansen = env.t.app.ctx.services.kansen;
     const projects = env.t.app.ctx.services.projects;
     kansen.clock = projects.clock = () => env.clock.now;
+    await give(env, sem, ['seo.techniek']);
+    await give(env, sam, ['seo.techniek']);
 
     // Each team's bot watches its own team's site (the second one found in the profile text), on the same morning.
     env.t.script.push({ text: 'Taak staat open.' });
@@ -423,17 +433,17 @@ test('private: the Privé team in one click, apart from the business; a reminder
     assert.equal(prive.name, 'Privé');
     assert.deepEqual(prive.bots.map((b: any) => b.name).sort(), ['Assistent', 'Kasboek', 'Opzoeker']);
     const assistent = ctx.store.agent(prive.bots.find((b: any) => b.name === 'Assistent').id)!;
-    assert.equal(assistent.access_mode, 'ask', 'a template bot asks permission …');
+    assert.equal(assistent.access_mode, 'full', 'a bot of a TeamBot template works by itself (only paying still asks) …');
     // Private data stays apart: its own team database, and no access for the business bot (and the other way round).
     await ctx.services.teamdata.write(env.userId, [{ sql: "INSERT INTO taken (titel, eigenaar, status) VALUES ('Tandarts bellen', 'Assistent', 'klaar')" }], prive.id);
     assert.deepEqual((await env.taken(prive.id)).map((x) => x.titel), ['Tandarts bellen']);
     assert.deepEqual((await env.taken(zaak.id)).map((x) => x.titel), ['Zakelijke taak']);
     assert.equal(ctx.services.teams.canRead(sem.id, prive.id), false);
     assert.equal(ctx.services.teams.canRead(assistent.id, zaak.id), false);
-    await env.at('2026-11-09T09:01:00Z');
-    assert.ok(env.duty(assistent.id, 'agenda.vandaag'), 'the assistant watches the agenda by itself');
-    // (The two helpers have roles no preset knows: each gets its one run to propose its own duties.)
     await env.at('2026-11-09T09:05:00Z');
+    assert.deepEqual((await env.t.api('GET', `/proactive/duties?teamId=${prive.id}`)).duties, [], 'no bot of the new team got a routine by itself');
+    // Asked for, the agenda check says what it needs.
+    await give(env, assistent, ['agenda.vandaag']);
     assert.match((await env.t.api('GET', `/proactive/duties?teamId=${prive.id}`)).duties.find((d: any) => d.duty.key === 'agenda.vandaag').needs, /Koppel een agenda/);
 
     // The owner's phone: a chat app connected to the assistant, with himself as "Dit ben ik".
@@ -447,7 +457,9 @@ test('private: the Privé team in one click, apart from the business; a reminder
     env.t.script.push({ toolCalls: [{ name: 'reminder_set', args: { text: 'De tandarts bellen', at: '2026-11-09T15:00' } }] }, { text: 'Staat klaar: vandaag om 15:00.' });
     const r = await f.state.ctx!.receive({ messageId: 'm1', conversation: { id: 'mine', title: 'Sanne', private: true }, sender: { id: 'me', name: 'Sanne' }, text: 'Herinner me om 3 uur aan de tandarts bellen' } as any);
     await env.t.waitIdle(r.threadId!);
-    assert.ok(env.t.requests.at(-1)!.tools.some((x: any) => x.name === 'reminder_set'), 'every bot can set a reminder, also without the Routines tools');
+    // Every bot can set a reminder, also without the Routines tools; this one's instructions name reminder_set, so it is
+    // in its list (tools/selection.ts `wanted`) instead of found on demand.
+    assert.ok(env.t.requests.at(-1)!.tools.some((x: any) => x.name === 'reminder_set'));
     const toolMsg = ctx.store.messages(r.threadId!).find((m: any) => m.role === 'tool');
     assert.match(String(toolMsg!.content), /Herinnering gezet voor .*15:00.*: “De tandarts bellen”/);
     assert.equal(ctx.store.all("SELECT id FROM approvals WHERE status = 'pending'").length, 0);

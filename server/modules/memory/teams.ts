@@ -4,6 +4,7 @@
  * personal or sensitive) to another team. Reading and writing walls live in service.ts (Reader, aclSql,
  * readableDossiers, bucketWhere); see docs/modules/memory.md "Geheugen per team".
  */
+import { teamDossier } from './living.js';
 import { newId, now } from '../../core/db.js';
 import type { MemoryService } from './service.js';
 import type { MemoryItemRow } from './types.js';
@@ -40,6 +41,8 @@ export function fileUnderTeams(svc: MemoryService, userId?: string): number {
           n += changed(svc.store.exec("UPDATE memory_items SET team_id = ? WHERE user_id = ? AND scope = 'agent' AND team_id IS NULL AND agent_id IS ?", team, u, r.agent_id));
         }
         n += changed(svc.store.exec("UPDATE memory_items SET team_id = ? WHERE user_id = ? AND scope = 'shared' AND team_id IS NULL", info.def, u));
+        // (The owner's own dossier is for every team: living.ts.)
+        svc.store.exec("UPDATE memory_dossiers SET team_id = '*' WHERE user_id = ? AND team_id IS NULL AND core = 'owner'", u);
         n += changed(svc.store.exec('UPDATE memory_dossiers SET team_id = ? WHERE user_id = ? AND team_id IS NULL', info.def, u));
         // A conversation summary: the team of the conversation's bot.
         for (const e of svc.store.all<any>('SELECT e.id, e.agent_ids, t.agent_id FROM memory_episodes e LEFT JOIN threads t ON t.id = e.thread_id WHERE e.user_id = ? AND e.team_id IS NULL', u)) {
@@ -137,7 +140,7 @@ export function copyTeamKnowledge(svc: MemoryService, userId: string, fromTeamId
     const toEq = svc.teamEq('team_id', userId, toTeamId);
     const titles = new Set(st.all<any>(`SELECT title FROM memory_dossiers WHERE user_id = ? AND status IN ('active','closed') AND ${toEq.sql}`, userId, ...toEq.params).map((d) => normalize(d.title)));
     let count = st.one<any>("SELECT COUNT(*) AS n FROM memory_dossiers WHERE user_id = ? AND status NOT IN ('trashed','forgotten')", userId)?.n || 0;
-    for (const d0 of st.all<any>(`SELECT * FROM memory_dossiers WHERE user_id = ? AND status IN ('active','closed') AND ${fromEq.sql} ORDER BY created_at`, userId, ...fromEq.params)) {
+    for (const d0 of st.all<any>(`SELECT * FROM memory_dossiers WHERE user_id = ? AND status IN ('active','closed') AND core IS NULL AND ${fromEq.sql} ORDER BY created_at`, userId, ...fromEq.params)) {
       const d = st.decode<any>('memory_dossiers', d0);
       if (titles.has(normalize(d.title))) {
         out.skipped.existing++;
@@ -237,7 +240,8 @@ export function copyTeamKnowledge(svc: MemoryService, userId: string, fromTeamId
         out.skipped.quota++;
         continue;
       }
-      const row = copyItem(r, { scope: 'shared', dossier_id: null, team_id: toTeamId });
+      // (A note of the other team's shared knowledge: of that team's overview, or its lessons.)
+      const row = copyItem(r, { scope: 'shared', dossier_id: teamDossier(svc, userId, r.type === 'lesson' ? 'lessons' : 'overview', toTeamId).id, team_id: toTeamId });
       change('item', row.id, null, `Gekopieerd uit team “${fromName}”: ${svc.label(row)}`);
       out.items++;
     }

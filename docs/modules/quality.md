@@ -59,7 +59,7 @@ Tests: `tests/quality.test.ts`. Plan 0.4, pakket C (kwaliteitshelft).
   Zichtbaar onder zijn bericht en in Geheugen, met ongedaan maken en *Alleen voor <bot>*.
   Zonder engine blijven zijn eigen woorden de les. Max. 10 per bot per dag; per bot uit te zetten.
 - **Skill voorstellen**: deed een bot dezelfde soort taak 3× gecontroleerd goed (90 dagen), dan een kaart onder
-  Wacht op jou. "Ja" vraagt de bot in zijn eigen chat een concept te maken met `skill_draft`; dat gaat door de
+  Wacht op jou. "Ja" vraagt de bot in zijn eigen chat een skill te maken met `skill_save`; dat gaat door de
   gewone beoordeling in Mijn skills. Er wordt nooit iets vanzelf geïnstalleerd.
 - **Ingebouwde werkregel** in de systeemprompt van elke bot die meer mag dan chatten: "Controleer vóór je klaar zegt"
   (eigen tekst; idee: verification-before-completion uit obra/superpowers, MIT).

@@ -1,6 +1,6 @@
 import { type ReactNode, useEffect, useMemo, useState } from 'react';
 import { CircleCheck, FlaskConical, ScrollText, Undo2, Waypoints } from 'lucide-react';
-import { Badge, Button, EmptyState, Select, Spinner, cx, toastError } from '../../components/ui';
+import { Badge, Button, EmptyState, Select, Spinner, cx, toastError, useAsync } from '../../components/ui';
 import { type EventPage, type LogPage, type Row, teamApi, useTeamChanged } from './api';
 import { Block, BotName, Chips, Fields, Fold, Linkified, SearchBox, StatusBadge, When, dateLabel, extraColumns, nameKey, parseTime, statusInfo, useBotsByName } from './parts';
 import { t, uiLocale } from '../../lib/i18n';
@@ -18,7 +18,7 @@ function Loading() {
 function usePaged<P extends { rows: Row[]; next: number | null }>(fetch: (before: number) => Promise<P>, deps: any[], tables: string[]) {
   const [page, setPage] = useState<P | null>(null);
   const [rows, setRows] = useState<Row[]>([]);
-  const [busy, setBusy] = useState(false);
+  const { busy, run } = useAsync();
   const first = () =>
     fetch(0)
       .then((p) => (setPage(p), setRows(p.rows)))
@@ -29,17 +29,13 @@ function usePaged<P extends { rows: Row[]; next: number | null }>(fetch: (before
   }, deps);
   useTeamChanged(tables, () => void first());
   const more = async () => {
-    if (!page?.next) return;
-    setBusy(true);
-    try {
-      const p = await fetch(page.next);
+    const next = page?.next;
+    if (!next) return;
+    await run(async () => {
+      const p = await fetch(next);
       setRows((r) => [...r, ...p.rows]);
       setPage((cur) => (cur ? { ...cur, next: p.next } : p));
-    } catch (e) {
-      toastError(e);
-    } finally {
-      setBusy(false);
-    }
+    });
   };
   return { page, rows, more, busy };
 }

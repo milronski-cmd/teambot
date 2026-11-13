@@ -87,11 +87,11 @@ try {
 
   // ============================================================================================ A: the layout
   // TeamBot 0.4.2 ("simpeler"): the sidebar keeps Wacht op jou, Taken and Instellingen; Routines live in Taken,
-  // Geheugen and Marktplaats in Instellingen (each two clicks from the sidebar).
-  await part('A-06', 'zijbalk: Wacht op jou, Taken en Instellingen, geen Meer', async () => {
+  // Geheugen in Instellingen. 0.4.5: the Marktplaats is a fixed place again (shell/nav.tsx).
+  await part('A-06', 'zijbalk: Wacht op jou, Taken, Marktplaats en Instellingen, geen Meer', async () => {
     const side = page.getByRole('navigation', { name: 'Hoofdmenu' });
     const fixed = await side.locator('a[href^="#/"]').evaluateAll((as) => as.map((a) => a.textContent.trim()).filter((t) => ['Wacht op jou', 'Taken', 'Routines', 'Geheugen', 'Marktplaats', 'Instellingen', 'Meer', 'Teamwerk', 'Groepen'].includes(t)));
-    check('A-06', 'zijbalk: Wacht op jou, Taken, Instellingen', fixed.join(',') === 'Wacht op jou,Taken,Instellingen', fixed.join(', '));
+    check('A-06', 'zijbalk: Wacht op jou, Taken, Marktplaats, Instellingen', fixed.join(',') === 'Wacht op jou,Taken,Marktplaats,Instellingen', fixed.join(', '));
     await go(page, '#/more');
     check('A-06', 'de oude link #/more opent Instellingen', (await hashOf(page)) === '#/settings', await hashOf(page));
   });
@@ -100,18 +100,19 @@ try {
     const side = page.getByRole('navigation', { name: 'Hoofdmenu' });
     const nav = page.getByRole('navigation', { name: 'Instellingen' });
     // What "Meer" held in 0.3 (ui/src/pages/More.tsx before 0.4): now under Instellingen, each with its own address.
+    // Since 12 Nov the list has a row per thing (Bots, Geheugen, Kanalen, Apps, Bestanden under "Van je bots") and one
+    // row "Meer mogelijkheden" with every optional function (lib/palette.ts SETTINGS_ROWS).
     const underSettings = [
-      ['#/agents', 'Alle bots', 'Bots en teams'],
-      
-      ['#/m/mcp/', 'Apps', 'Apps en apparaten'],
-      ['#/m/memory/', 'Geheugen', 'Bots en teams'],
-      ['#/m/channels/', 'Kanalen', 'Apps en apparaten'],
-      ['#/m/browser/', 'Computers', 'Apps en apparaten'],
-      ['#/m/sites/', 'Websites', 'Apps en apparaten'],
-      ['#/m/voice/vergadering', 'Vergadernotities', 'Apps en apparaten'],
-      ['#/m/usage/', 'Gebruik en limieten', 'Gebruik'],
-      ['#/m/folders/', 'Bestanden', 'Apps en apparaten'],
-      ['#/settings/data', 'Waar staat mijn data?', 'Privacy en back-ups'],
+      ['#/agents', 'Alle bots', 'Bots'],
+      ['#/m/mcp/', 'Apps', 'Apps'],
+      ['#/m/memory/', 'Geheugen', 'Geheugen'],
+      ['#/m/channels/', 'Kanalen', 'Kanalen'],
+      ['#/m/browser/', 'Computers', 'Meer mogelijkheden'],
+      ['#/m/sites/', 'Websites', 'Meer mogelijkheden'],
+      ['#/m/voice/vergadering', 'Vergadernotities', 'Meer mogelijkheden'],
+      ['#/m/usage/', 'Gebruik en limieten', 'Meer mogelijkheden'],
+      ['#/m/folders/', 'Bestanden', 'Bestanden'],
+      ['#/settings/data', 'Privacy en gegevens', 'Meer mogelijkheden'],
     ];
     const bad = [];
     for (const [href, title, rowName] of underSettings) {
@@ -192,7 +193,9 @@ try {
       await go(page, `#/t/${adaThread}`);
       if (!(await page.getByRole('button', { name: 'Zijpaneel sluiten' }).count())) await page.getByRole('button', { name: 'Zijpaneel' }).click().catch(() => {});
       await page.waitForTimeout(300);
-      return (await page.getByRole('tab').allInnerTexts()).map((t) => t.trim());
+      const tabs = (await page.getByRole('tab').allInnerTexts()).map((t) => t.trim());
+      // Simple: one purpose, no tabs; the panel is then called "Bestanden van dit gesprek".
+      return tabs.length ? tabs : (await page.getByRole('heading', { name: 'Bestanden van dit gesprek' }).count()) ? ['Bestanden'] : [];
     };
     check('A-07', 'Geavanceerd tonen staat standaard uit', !tb.app.ctx.store.settings(tb.owner.id).ui?.advanced);
     const simple = await tabsOf('#/m/teamdata/');
@@ -212,10 +215,13 @@ try {
     check('A-02', 'Teamwerk: vanuit Taken (zijbalk) is het Logboek in één klik te bereiken (2 klikken totaal)', reach.some((x) => /^Logboek/.test(x)), `op #/tasks: ${reach.join(', ') || 'geen tabbladen of links naar Teamwerk'}`);
     const inspSimple = await inspector();
     check('A-07', 'zijpaneel (eenvoudig): geen Activiteit en Details', inspSimple.includes('Bestanden') && !inspSimple.includes('Activiteit') && !inspSimple.includes('Details'), inspSimple.join(', '));
-    await go(page, '#/settings/general');
-    check('A-07', 'Algemeen › Meer (eenvoudig): Netwerk en proxy verborgen', !(await page.locator('#inhoud').getByRole('navigation', { name: 'Meer' }).getByRole('link', { name: 'Netwerk en proxy' }).count()));
-    // On, with the switch in Instellingen › Geavanceerd tonen.
-    await go(page, '#/settings/advanced');
+    // Since 12 Nov there is no hidden second layer in Instellingen: every optional function is one row under "Meer
+    // mogelijkheden" for everyone (lib/palette.ts ADVANCED_ONLY is empty), Netwerk en proxy too.
+    const proxyRow = async () => (await go(page, '#/settings/meer'), page.locator('#inhoud').getByRole('navigation', { name: 'Onderdelen' }).locator('a[href="#/settings/network-proxy"]').count());
+    check('A-07', 'eenvoudig: Netwerk en proxy staat als regel onder Instellingen › Meer mogelijkheden', (await proxyRow()) === 1);
+    // On, with the switch in Instellingen › Meer mogelijkheden › Deze computer (the old link #/settings/advanced opens
+    // Meer mogelijkheden).
+    await go(page, '#/settings/systeem');
     const sw = page.getByRole('switch', { name: 'Geavanceerd tonen' });
     await sw.click();
     await until(() => tb.app.ctx.store.settings(tb.owner.id).ui?.advanced === true, 5000);
@@ -225,11 +231,10 @@ try {
     check('A-07', 'aan: vanuit Taken (zijbalk) zijn Beslissingen, Gebeurtenissen, Experimenten en Tabellen te bereiken', ['Beslissingen', 'Gebeurtenissen', 'Experimenten', 'Tabellen'].every((x) => reachAdv.some((t) => t.startsWith(x))), `op #/tasks: ${reachAdv.join(', ') || 'geen tabbladen of links naar Teamwerk'}`);
     const inspAdv = await inspector();
     check('A-07', 'aan: zijpaneel toont Activiteit en Details', inspAdv.includes('Activiteit') && inspAdv.includes('Details'), inspAdv.join(', '));
-    await go(page, '#/settings/advanced');
-    check('A-07', 'aan: Netwerk en proxy onder Algemeen › Meer', (await page.locator('#inhoud').getByRole('navigation', { name: 'Meer' }).getByRole('link', { name: 'Netwerk en proxy' }).count()) === 1);
+    check('A-07', 'aan: Netwerk en proxy blijft één regel onder Meer mogelijkheden', (await proxyRow()) === 1);
     await shot(page, 'a07-geavanceerd-aan');
     // Off again: hidden again, never removed (a deep link still works).
-    await go(page, '#/settings/advanced');
+    await go(page, '#/settings/systeem');
     await page.getByRole('switch', { name: 'Geavanceerd tonen' }).click();
     await until(() => tb.app.ctx.store.settings(tb.owner.id).ui?.advanced === false, 5000);
     const off = await tabsOf('#/m/teamdata/');
@@ -271,6 +276,23 @@ try {
   };
 
   await part('B-01', 'twee teams, elk met een bot, map en sleutel, ingericht in Instellingen › Teams', async () => {
+    // Since 12 Nov the first bot is the main bot by itself, and the main bot directs every team by default
+    // (server/modules/teams/service.ts access()). The walls below are about a normal bot of team A, so the owner first
+    // hands the main-bot role to a bot of its own ("Baas", its page › Meer mogelijkheden › Hoofdbot): Ada is then a
+    // normal bot of Fietsen A, as in this scenario.
+    check('B-01', 'de eerste bot (Ada) is vanzelf de hoofdbot', tb.app.ctx.services.teams.mainOf(tb.owner.id) === tb.bot('Ada')?.id);
+    await go(page, '#/agents/new');
+    const nq = page.getByTestId('new-bot-questions');
+    await nq.waitFor({ timeout: 10_000 });
+    await nq.getByLabel('Naam', { exact: true }).fill('Baas');
+    await nq.getByLabel(/^Rol/).fill('Verdeelt het werk over de teams.');
+    await page.getByRole('button', { name: 'Bot aanmaken' }).click();
+    await page.waitForURL(/#\/t\//, { timeout: 15_000 });
+    await go(page, `#/agents/${tb.bot('Baas').id}?meer=1`, 1200);
+    await page.locator('#inhoud').getByRole('button', { name: /^Hoofdbot/ }).first().click();
+    await page.getByRole('button', { name: 'Baas hoofdbot maken' }).click();
+    await confirmDialog(page, 'Hoofdbot maken');
+    check('B-01', 'een andere bot hoofdbot maken op zijn pagina (Meer mogelijkheden › Hoofdbot): Ada is daarna een gewone bot', await until(() => tb.app.ctx.services.teams.mainOf(tb.owner.id) === tb.bot('Baas')?.id, 5000));
     await teamsPage();
     check('B-10', 'één team: geen teamkeuze, geen toegang per bot en geen sleutelscope in beeld', !(await page.getByRole('group', { name: 'Kies een team' }).count()) && !(await page.getByText('Toegang voor bots van andere teams').count()));
     // Team A: name and business profile.
@@ -315,7 +337,7 @@ try {
     const B = teams.find((t) => t.name === 'Webshop B');
     ids.A = A?.id;
     ids.B = B?.id;
-    check('B-01', 'Fietsen A met Ada en een eigen map, Webshop B met Bo (teamleider) en een eigen map', A?.bots.map((b) => b.name).join() === 'Ada' && B?.bots.map((b) => b.name).join() === 'Bo' && B?.leadName === 'Bo' && A?.folder?.path === fa && B?.folder?.path === fb, JSON.stringify(teams.map((t) => ({ n: t.name, bots: t.bots.map((b) => b.name), lead: t.leadName, folder: t.folder?.path }))));
+    check('B-01', 'Fietsen A met Ada (en de hoofdbot Baas) en een eigen map, Webshop B met Bo (teamleider) en een eigen map', A?.bots.map((b) => b.name).sort().join() === 'Ada,Baas' && B?.bots.map((b) => b.name).join() === 'Bo' && B?.leadName === 'Bo' && A?.folder?.path === fa && B?.folder?.path === fb, JSON.stringify(teams.map((t) => ({ n: t.name, bots: t.bots.map((b) => b.name), lead: t.leadName, folder: t.folder?.path }))));
     check('B-10', 'Webshop B toont Ada bij "Toegang voor bots van andere teams", standaard Geen toegang', (await page.getByLabel('Toegang van Ada tot Webshop B').inputValue().catch(() => '')) === 'none');
     // Keys: "Sleutel A" only for Fietsen A, "Sleutel B" only for Webshop B (the found Testmodel stays for all teams).
     const kA = await tb.api('POST', '/providers', { kind: 'mock', name: 'Sleutel A' });
@@ -450,22 +472,25 @@ try {
     ids.claude = claude.id;
     await page.reload();
     await page.waitForTimeout(1500);
-    const bar = page.locator('section').filter({ has: page.getByRole('heading', { name: 'Gebruik', exact: true }) }).first();
-    await bar.waitFor({ timeout: 10_000 });
+    // The limits live on "Gebruik en limieten" (card "Limieten nu"); the sidebar shows the same numbers as rings.
+    await go(page, '#/m/usage/', 1200);
+    const bar = page.locator('#inhoud');
+    await bar.getByText('Limieten nu').first().waitFor({ timeout: 10_000 });
     // The owner asks for fresh numbers (the CLIs answer /usage and account/rateLimits/read without a model call).
-    const more = bar.getByRole('button', { name: 'Meer over het gebruik tonen' });
-    if (await more.count()) await more.click();
-    await bar.getByRole('button', { name: /Vernieuwen/ }).click().catch(() => {});
+    await bar.getByRole('button', { name: /Vernieuwen/ }).first().click().catch(() => {});
     const seen = await until(async () => {
       const t = (await bar.innerText()).replace(/\s+/g, ' ');
-      return /Claude/.test(t) && /86%/.test(t) && /Codex/.test(t) && /97%/.test(t) ? t : false;
+      return /Claude/.test(t) && /Nog 14%/.test(t) && /Codex/.test(t) && /Nog 3%/.test(t) ? t : false;
     }, 25_000, 300);
-    check('E-01', 'de balk toont Claude (5 uur 12%, week 86%) en Codex (5 uur 42%, week 97%) uit de CLI-uitvoer', !!seen && /12%/.test(seen) && /42%/.test(seen), seen || (await bar.innerText()).replace(/\s+/g, ' ').slice(0, 300));
-    const rowsTone = await bar.locator('table td span.tabular-nums, table td span[class*="text-"]').evaluateAll((els) => els.map((e) => `${e.textContent.trim()}|${e.className}`));
-    const tone = (pct) => rowsTone.find((r) => r.startsWith(pct))?.split('|')[1] || '';
-    check('E-01', 'kleuren: 12% groen, 86% oranje (bijna op)', /text-ok|text-muted|text-fg/.test(tone('12%')) && /text-warn/.test(tone('86%')), `${tone('12%')} / ${tone('86%')}`);
-    const resets = await bar.locator('table td:last-child').allInnerTexts();
-    check('E-01', 'elke regel heeft een resettijd', resets.filter((r) => r.trim()).length >= 4, resets.join(' | '));
+    check('E-01', 'Limieten nu toont Claude (5 uur 12% en week 86% gebruikt: nog 88% en 14%) en Codex (nog 58% en 3%) uit de CLI-uitvoer', !!seen && /Nog 88%/.test(seen) && /Nog 58%/.test(seen), seen || (await bar.innerText()).replace(/\s+/g, ' ').slice(0, 300));
+    const sentences = await bar.locator('li li > span[class*="text-"]').evaluateAll((els) => els.map((e) => `${e.textContent.trim()}|${e.className}`).filter((x) => /^(Nog|Op)/.test(x)));
+    const tone = (left) => sentences.find((r) => r.startsWith(left))?.split('|')[1] || '';
+    check('E-01', 'kleuren: nog 88% rustig, nog 14% oranje (bijna op)', /text-fg/.test(tone('Nog 88%')) && /text-warn/.test(tone('Nog 14%')), `${tone('Nog 88%')} / ${tone('Nog 14%')}`);
+    const resets = sentences.map((x) => x.split('|')[0]);
+    check('E-01', 'elke regel heeft een resettijd', resets.filter((r) => /weer vol o[mp] /.test(r)).length >= 4, resets.join(' | '));
+    // The explanation is one click away ("Meer informatie" under the limits).
+    await bar.getByRole('button', { name: 'Meer informatie' }).first().click().catch(() => {});
+    await page.waitForTimeout(300);
     const text = (await bar.innerText()).replace(/\s+/g, ' ');
     check('E-04', 'de gedeelde pot is uitgelegd (Claude en ChatGPT buiten TeamBot)', /Gedeelde pot: je eigen gebruik van Claude en ChatGPT buiten TeamBot/.test(text), text.slice(0, 300));
     await shot(page, 'e01-gebruiksbalk');
@@ -474,7 +499,7 @@ try {
   await part('E-03', 'de balk verspringt na nieuw gebruik, rood bij de limiet, en meldt het', async () => {
     const { parseClaudeRateLimitEvent } = await import('../../server/modules/usage/parse.ts');
     const svc = tb.app.ctx.services.usage;
-    const bar = page.locator('section').filter({ has: page.getByRole('heading', { name: 'Gebruik', exact: true }) }).first();
+    const bar = page.locator('#inhoud');
     // First let the reads that "Vernieuwen" started finish (their answer would replace the numbers reported below).
     await until(async () => (await tb.api('GET', '/usage/bar')).engines.every((e) => !e.reading), 30_000, 300);
     await sleep(1000);
@@ -482,18 +507,18 @@ try {
     // A turn reports the 5-hour window at 47%: the bar jumps without a reload (the plan: within a minute).
     const t0 = Date.now();
     svc.report(ids.claude, parseClaudeRateLimitEvent({ rate_limit_info: { status: 'allowed', resetsAt: Math.floor(now / 1000) + 3 * 3600, rateLimitType: 'five_hour', utilization: 0.47 } }, now));
-    const jumped = await until(async () => /47%/.test(await bar.innerText()), 60_000, 200);
-    check('E-03', 'nieuw gebruik: 12% → 47% in de balk zonder herladen', !!jumped, `${((Date.now() - t0) / 1000).toFixed(1)} s`);
+    const jumped = await until(async () => /Nog 53%/.test(await bar.innerText()), 60_000, 200);
+    check('E-03', 'nieuw gebruik: 12% → 47% gebruikt (nog 53%) op de pagina zonder herladen', !!jumped, `${((Date.now() - t0) / 1000).toFixed(1)} s`);
     // The Opus week is full: red, "op", with the reset; one notification.
     svc.report(ids.claude, parseClaudeRateLimitEvent({ rate_limit_info: { status: 'rejected', resetsAt: Math.floor(now / 1000) + 2 * 86400, rateLimitType: 'seven_day_opus', utilization: 1 } }, now));
-    const red = await until(async () => (await bar.locator('table .text-danger').count()) > 0, 15_000, 200);
+    const red = await until(async () => (await bar.locator('li li > span.text-danger').filter({ hasText: /^Op, weer vol/ }).count()) > 0, 15_000, 200);
     check('E-01', 'limiet bereikt: rood met de resettijd', !!red, (await bar.innerText()).replace(/\s+/g, ' ').slice(0, 300));
     // A free source reported by another module (the free chain): a dot with "op tot …", an estimate.
     svc.reportSource({ id: 'groq', label: 'Groq', status: 'limited', resetsAt: now + 2 * 3600_000, estimated: true, note: '1.000 verzoeken per dag per model; telt TeamBot zelf.', userId: tb.owner.id, kind: 'free' });
-    const dot = await until(async () => /Groq\s*op tot/.test(await bar.innerText()), 10_000, 200);
-    check('E-06', 'gratis bron als bolletje: "Groq op tot …"', !!dot, (await bar.innerText()).replace(/\s+/g, ' ').slice(0, 300));
+    const dot = await until(async () => /Groq.{0,40}Op, weer vol/.test((await bar.innerText()).replace(/\s+/g, ' ')), 10_000, 200);
+    check('E-06', 'gratis bron met een limiet als eigen regel: "Groq … Op, weer vol om …"', !!dot, ((await bar.innerText()).replace(/\s+/g, ' ').match(/.{0,80}Groq.{0,120}/) || ['Groq staat niet op de pagina'])[0]);
     const text = (await bar.innerText()).replace(/\s+/g, ' ');
-    check('E-04', 'schatting uitgelegd ("≈ is een schatting")', /is een schatting/.test(text));
+    check('E-04', 'schatting uitgelegd ("≈ is een schatting" bij de regel, "Schatting:" onder Meer informatie)', (await bar.locator('[title*="is een schatting"]').count()) > 0 && /Schatting: de aanbieder geeft daar geen exact cijfer/.test(text), text.slice(0, 300));
     await go(page, '#/m/notifications/', 1200);
     const notes = await mainText(page);
     check('E-07', 'melding vóór de grens (86% van je limiet) en bij de limiet', /86% van je limiet gebruikt/.test(notes) && /gebruikslimiet bereikt/.test(notes), notes.slice(0, 400));
@@ -502,7 +527,7 @@ try {
 
   await part('E-05', 'klik op de balk: verbruik per bot, vandaag en deze week', async () => {
     await go(page, '#/', 600);
-    await page.getByRole('link', { name: 'Gebruik per bot en alle limieten openen' }).click();
+    await page.getByRole('navigation', { name: 'Hoofdmenu' }).getByRole('link', { name: 'Gebruik en limieten' }).click();
     await page.waitForTimeout(1200);
     check('E-05', 'de klik opent Gebruik en limieten', (await hashOf(page)).startsWith('#/m/usage'), await hashOf(page));
     const text = await mainText(page);

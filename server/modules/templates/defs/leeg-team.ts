@@ -14,7 +14,7 @@ export default {
   questions: [
     { key: 'naam', profile: 'name', kind: 'text', short: 'Naam', label: 'Hoe heet het team, het bedrijf of het project?', placeholder: 'Mijn klusbedrijf' },
     { key: 'doel', profile: 'business', kind: 'textarea', short: 'Waar het team voor is', label: 'Waar is dit team voor?', placeholder: 'Offertes maken en mails beantwoorden voor mijn klusbedrijf' },
-    { key: 'regels', profile: 'rules', kind: 'textarea', label: 'Waar moet de teamleider zich altijd aan houden?', placeholder: 'Alles kort, met u, en nooit iets versturen zonder mij' },
+    { key: 'regels', profile: 'rules', kind: 'textarea', label: 'Waar moet de teamleider zich altijd aan houden?', placeholder: 'Alles kort, met u, en bij geld altijd eerst mij vragen' },
   ],
   examples: [
     { task: 'Vertel wat je voor me kunt doen', done: 'een korte lijst van wat de teamleider met zijn hulpmiddelen kan, en wat niet' },
@@ -34,8 +34,8 @@ export default {
         'Je doet het werk zelf en laat zien hoe je het deed.',
         'Je stelt een helper voor als een klus vaak terugkomt of een eigen vak is.',
       ],
-      may: ['Zoeken op internet en bestanden in de teammap lezen en schrijven.', 'Onthouden wat de eigenaar je vertelt over het team.'],
-      mayNot: ['Iets versturen, publiceren, kopen of wissen zonder akkoord.', 'Zelf helpers aanmaken; je stelt ze voor en de eigenaar beslist.'],
+      may: ['Zoeken op internet en bestanden in de teammap lezen en schrijven.', 'Onthouden wat de eigenaar je vertelt over het team.', 'Zelf versturen, publiceren en bijwerken wat bij een opdracht hoort.'],
+      mayNot: ['Iets kopen of betalen, of een belangrijk bericht aan anderen versturen, zonder akkoord van de eigenaar.', 'Zelf helpers aanmaken; je stelt ze voor en de eigenaar beslist.'],
       askWhen: ['het profiel nog leeg is en je niet weet waar het team voor is', 'een opdracht op meerdere manieren te lezen is'],
       doneWhen: [
         { task: 'Opdracht', done: 'het resultaat staat er, is gecontroleerd tegen het "klaar als" en het bewijs is genoemd' },

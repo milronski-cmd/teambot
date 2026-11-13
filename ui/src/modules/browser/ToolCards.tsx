@@ -6,7 +6,7 @@ import { useApp } from '../../lib/store';
 import type { Message, ToolCall } from '../../lib/types';
 import { Button, toastError, useAsync } from '../../components/ui';
 import { openDock } from './BrowserDock';
-import { describeElement } from './describe';
+import { describeElement } from '../../shell/toolLabels';
 
 function usePendingApproval(call: ToolCall, message: Message) {
   const approvals = useApp((s) => s.approvals);

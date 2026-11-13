@@ -98,7 +98,7 @@ export function threadRoutes(ctx: Ctx) {
       // characters (never a whole long answer) and `parts` only for a failed answer (the budget stop below).
       const lastRows = ctx.store.all<any>(
         `SELECT m.thread_id, substr(m.content, 1, 140) AS content, m.author_name, m.created_at, m.role, m.status,
-           CASE WHEN m.status = 'error' THEN m.parts END AS parts
+           CASE WHEN m.status = 'error' OR m.role = 'system' THEN m.parts END AS parts
          FROM json_each(?) j
          JOIN messages m ON m.id = (SELECT id FROM messages WHERE thread_id = j.value AND deleted = 0 ORDER BY seq DESC LIMIT 1)`,
         list.map((t) => t.id),
@@ -107,9 +107,11 @@ export function threadRoutes(ctx: Ctx) {
       return list.map((t) => {
         const last = lastByThread.get(t.id);
         // status: lets the UI show a bot's "something went wrong" face when its last answer failed; budgetUntil: it was
-        // stopped by the daily budget until then (a limit, not a failure: "daglimiet bereikt").
+        // stopped by the daily budget until then (a limit, not a failure: "daglimiet bereikt"); note: a TeamBot note's line
+        // for the owner (its text is what the bot reads).
         const budgetUntil = last?.status === 'error' && last.parts?.budget?.resetAt ? String(last.parts.budget.resetAt) : undefined;
-        return { ...t, last: last ? { content: last.content.slice(0, 140), author_name: last.author_name, created_at: last.created_at, role: last.role, status: last.status, ...(budgetUntil ? { budgetUntil } : {}) } : null };
+        const note = last?.role === 'system' && last.parts?.note?.text ? last.parts.note : undefined;
+        return { ...t, last: last ? { content: last.content.slice(0, 140), author_name: last.author_name, created_at: last.created_at, role: last.role, status: last.status, ...(budgetUntil ? { budgetUntil } : {}), ...(note ? { note } : {}) } : null };
       });
     }),
   );
@@ -204,7 +206,9 @@ export function threadRoutes(ctx: Ctx) {
       const content = stopped
         ? 'De eigenaar had je gestopt en vraagt je nu verder te gaan waar je gebleven was. Controleer eerst wat al gedaan is voordat je acties herhaalt.'
         : 'Ga verder waar je gebleven was. Controleer eerst wat al gedaan is voordat je acties herhaalt.';
-      const sys = ctx.store.createMessage({ thread_id: t.id, role: 'system', author_type: 'system', author_name: 'TeamBot', content });
+      // The text is for the bot; the owner, who pressed Hervatten, reads what happens (shell/SystemNote.tsx).
+      const note = { text: '{0} gaat verder waar hij gebleven was.', values: [ctx.store.agent(agentId)?.name || 'De bot'] };
+      const sys = ctx.store.createMessage({ thread_id: t.id, role: 'system', author_type: 'system', author_name: 'TeamBot', content, parts: { note } });
       ctx.chat.emitMessage(t, sys);
       return ctx.chat.startAgent(t, agentId, sys.id, 'resume');
     }),

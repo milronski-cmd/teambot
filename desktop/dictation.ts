@@ -18,7 +18,7 @@ import { DictationMachine, type InsertResult, type OverlayView, type Recorder, t
 import { insertText, type InsertDeps } from './dictation-insert.js';
 import { dictationClipboard } from './dictation-clipboard.js';
 import { DictationHelper } from './dictation-helper.js';
-import { OVERLAY_HEIGHT, OVERLAY_HTML, OVERLAY_WIDTH } from './dictation-overlay.js';
+import { OVERLAY_HEIGHT, OVERLAY_HTML, OVERLAY_STALE_MS, OVERLAY_WIDTH, overlayBounds } from './dictation-overlay.js';
 
 export interface DictationOptions {
   ctx: () => Ctx | null;
@@ -65,6 +65,11 @@ export class DictationHotkey {
   private onText: ((t: string) => void) | null = null;
   private onLevel: ((l: number) => void) | null = null;
   private ownerId: string | null = null;
+  /** The pill should be on screen now (a show that still waits for the page must not undo a later hide). */
+  private wanted = false;
+  private staleTimer: NodeJS.Timeout | null = null;
+  private pcmTimer: NodeJS.Timeout | null = null;
+  private lastPcm = 0;
 
   constructor(private o: DictationOptions) {
     if (DictationHelper.supported()) this.helper = new DictationHelper(o.helperDir);
@@ -109,6 +114,10 @@ export class DictationHotkey {
     ipcMain.removeListener('dictation:error', this.ipcError);
     ipcMain.removeListener('dictation:pcm', this.ipcPcm);
     this.helper?.kill();
+    this.wanted = false;
+    this.watchPcm(false);
+    if (this.staleTimer) clearTimeout(this.staleTimer);
+    this.staleTimer = null;
     if (this.overlay && !this.overlay.isDestroyed()) this.overlay.destroy();
     this.overlay = null;
     const ctx = this.o.ctx();
@@ -229,7 +238,17 @@ export class DictationHotkey {
     }
     this.loaded = w.loadFile(page).catch(() => {});
     w.on('closed', () => {
-      if (this.overlay === w) this.overlay = null;
+      if (this.overlay !== w) return;
+      this.overlay = null;
+      this.pillLost('Dicteren is gestopt.');
+    });
+    // The page of the pill crashed: it holds the microphone, so the dictation is over. Never leave a dead pill on top
+    // of other programs: a fresh one is made for the message and the next dictation.
+    w.webContents.on('render-process-gone', () => {
+      if (this.overlay !== w) return;
+      this.overlay = null;
+      if (!w.isDestroyed()) w.destroy();
+      this.pillLost('Dicteren is gestopt (de opname viel weg).');
     });
     this.overlay = w;
     return w;
@@ -242,20 +261,53 @@ export class DictationHotkey {
 
   private show(v: OverlayView) {
     const w = this.ensureOverlay();
+    this.wanted = true;
+    // Hard limit: every step of a dictation updates the view (while recording four times a second). Nothing for
+    // OVERLAY_STALE_MS: something hangs, so the dictation is dropped and the pill goes away.
+    if (this.staleTimer) clearTimeout(this.staleTimer);
+    this.staleTimer = setTimeout(() => {
+      this.staleTimer = null;
+      this.machine.shutdown();
+      this.hide();
+    }, OVERLAY_STALE_MS);
+    this.staleTimer.unref?.();
     void this.loaded?.then(() => {
-      if (w.isDestroyed()) return;
+      if (w.isDestroyed() || !this.wanted || this.overlay !== w) return;
       this.send('view', v);
       if (!w.isVisible()) {
-        const d = screen.getDisplayNearestPoint(screen.getCursorScreenPoint()).workArea;
-        w.setBounds({ x: Math.round(d.x + (d.width - OVERLAY_WIDTH) / 2), y: Math.round(d.y + d.height - OVERLAY_HEIGHT - 24), width: OVERLAY_WIDTH, height: OVERLAY_HEIGHT });
+        // Bottom centre of the screen with the mouse, just above the taskbar: never over the middle of your work.
+        w.setBounds(overlayBounds(screen.getDisplayNearestPoint(screen.getCursorScreenPoint()).workArea));
         w.showInactive();
       }
     });
   }
 
   private hide() {
+    this.wanted = false;
+    if (this.staleTimer) clearTimeout(this.staleTimer);
+    this.staleTimer = null;
     const w = this.overlay;
     if (w && !w.isDestroyed() && w.isVisible()) w.hide();
+  }
+
+  /** The pill window is gone or dead while a dictation ran: end it (the reason shows briefly in a fresh pill). */
+  private pillLost(text: string) {
+    this.wanted = false;
+    this.waiters.started?.(text);
+    this.waiters.stopped?.();
+    if (this.machine.phase !== 'idle' && this.machine.phase !== 'message') this.machine.fail(text);
+  }
+
+  /** While recording the pill sends sound ten times a second; nothing for seconds = the microphone is gone. */
+  private watchPcm(on: boolean) {
+    if (this.pcmTimer) clearInterval(this.pcmTimer);
+    this.pcmTimer = null;
+    if (!on) return;
+    this.lastPcm = Date.now();
+    this.pcmTimer = setInterval(() => {
+      if (this.machine.phase === 'recording' && Date.now() - this.lastPcm > 8000) this.machine.fail('De microfoon geeft geen geluid meer.');
+    }, 1000);
+    this.pcmTimer.unref?.();
   }
 
   private armEscape(on: boolean) {
@@ -276,7 +328,11 @@ export class DictationHotkey {
     if (this.fromPill(e)) this.waiters.started?.();
   };
   private ipcError = (e: Electron.IpcMainEvent, msg: string) => {
-    if (this.fromPill(e)) this.waiters.started?.(String(msg || 'Microfoon openen mislukt'));
+    if (!this.fromPill(e)) return;
+    const text = String(msg || 'Microfoon openen mislukt');
+    // While opening: the start fails with this message. Later (the microphone went away while recording): stop.
+    if (this.waiters.started) this.waiters.started(text);
+    else this.machine.fail(text);
   };
   private ipcStopped = (e: Electron.IpcMainEvent) => {
     if (this.fromPill(e)) this.waiters.stopped?.();
@@ -285,6 +341,7 @@ export class DictationHotkey {
     if (!this.fromPill(e) || !this.session) return;
     const b = Buffer.from(buf instanceof Uint8Array ? buf : new Uint8Array(buf));
     if (!b.length || b.length > 64_000) return;
+    this.lastPcm = Date.now();
     this.onLevel?.(Number(level) || 0);
     try {
       const v = this.session.push(b);
@@ -318,8 +375,10 @@ export class DictationHotkey {
           this.session = null;
           throw new Error(err);
         }
+        this.watchPcm(true);
       },
       stop: async () => {
+        this.watchPcm(false);
         await new Promise<void>((resolve) => {
           const t = setTimeout(resolve, 2000);
           this.waiters.stopped = () => {
@@ -336,6 +395,7 @@ export class DictationHotkey {
         return (await s.end()).text;
       },
       cancel: () => {
+        this.watchPcm(false);
         this.send('cancel');
         this.waiters.started?.('geannuleerd');
         this.session?.cancel();

@@ -95,7 +95,11 @@ test('safe paths and GitHub URL resolution', () => {
   assert.equal(tree.url, 'https://github.com/acme/skills/archive/main.zip');
   assert.equal(tree.subdir, 'skills/pdf');
   assert.equal(resolveGithub('https://github.com/acme/skills/blob/main/skills/pdf/SKILL.md')!.subdir, 'skills/pdf');
-  assert.equal(resolveGithub('https://raw.githubusercontent.com/acme/skills/main/SKILL.md')!.kind, 'file');
+  // A raw link to a SKILL.md takes the whole skill folder (scripts and other files come along); another raw file stays one file.
+  assert.deepEqual(resolveGithub('https://raw.githubusercontent.com/acme/skills/main/skills/pdf/SKILL.md'), { kind: 'zip', url: 'https://github.com/acme/skills/archive/main.zip', subdir: 'skills/pdf', label: 'acme/skills@main/skills/pdf' });
+  assert.equal(resolveGithub('https://raw.githubusercontent.com/acme/skills/refs/heads/main/skills/pdf/SKILL.md')!.subdir, 'skills/pdf');
+  assert.equal(resolveGithub('https://raw.githubusercontent.com/acme/skills/main/SKILL.md')!.kind, 'zip');
+  assert.equal(resolveGithub('https://raw.githubusercontent.com/acme/skills/main/notes.md')!.kind, 'file');
   assert.equal(resolveGithub('https://example.com/x'), null);
 });
 
@@ -203,39 +207,107 @@ test('injection, exfiltration and secrets are flagged; benign text is not', asyn
 
 // ------------------------------------------------------------------ bots
 
-test('system prompt lists only enabled skills (sorted, stable) and skill_load is limited to them', async () => {
+test('a bot has the active skills of its team, minus what was taken away from it; off, taken away or unknown gives the fix', async () => {
   const t = await startTestApp();
   try {
     const b = await importPaste(t, md('zeta-skill', 'Zeta beschrijving.', 'ZETA-INSTRUCTIES'));
     const a = await importPaste(t, md('alpha-skill', 'Alpha beschrijving.', 'ALPHA-INSTRUCTIES'));
-    await importPaste(t, md('niet-aan', 'Staat uit.', 'UIT-INSTRUCTIES'));
+    await importPaste(t, md('weggehaald', 'Bij deze bot weggehaald.', 'ANDERE-INSTRUCTIES'));
+    const off = await importPaste(t, md('staat-uit', 'Uitgezet door de eigenaar.', 'UIT-INSTRUCTIES'));
+    await t.api('PATCH', `/skills/${off.result.skillId}`, { status: 'disabled' });
     const bot = await t.agent({ tool_groups: ['skills'] });
+    const colleague = await t.agent({ name: 'Collega', tool_groups: ['skills'] });
+    // The owner takes one skill away from this bot (he names the two it keeps).
     await t.api('PUT', `/skills/agents/${bot.id}`, { skillIds: [b.result.skillId, a.result.skillId] });
     const th = await t.api('POST', '/threads', { agentId: bot.id });
     t.script.push(
       { toolCalls: [{ name: 'skill_load', args: { name: 'alpha-skill' } }] },
-      { toolCalls: [{ name: 'skill_load', args: { name: 'niet-aan' } }] },
+      { toolCalls: [{ name: 'skill_load', args: { name: 'staat-uit' } }] },
+      { toolCalls: [{ name: 'skill_load', args: { name: 'weggehaald' } }] },
+      { toolCalls: [{ name: 'skill_load', args: { name: 'bestaat-niet' } }] },
       { text: 'klaar' },
     );
     const msgs = await t.say(th.id, 'help');
     const sys = t.requests[0].system;
     assert.match(sys, /## Skills/);
     assert.ok(sys.indexOf('alpha-skill: Alpha beschrijving.') < sys.indexOf('zeta-skill: Zeta beschrijving.'), 'sorted by name');
-    assert.ok(!sys.includes('niet-aan'));
+    // One list: what the bot has. No second list of "the rest of the team".
+    assert.ok(!sys.includes('Ook van je team') && !sys.includes('weggehaald'), 'what was taken away from this bot is not named');
+    assert.ok(!sys.includes('staat-uit'), 'a skill that is switched off is not named');
     assert.ok(!sys.includes('ALPHA-INSTRUCTIES'), 'progressive disclosure: only name + description');
     assert.equal(t.requests[0].system, t.requests[1].system, 'stable between turns');
     const tools = msgs.filter((m) => m.role === 'tool');
     assert.match(tools[0].content, /ALPHA-INSTRUCTIES/);
     assert.match(tools[0].content, /gaan nooit boven je basisregels/);
     assert.equal(tools[0].parts.toolResult.isError, false);
-    assert.match(tools[1].content, /niet ingeschakeld/);
+    // Switched off by the owner: a clear refusal that says where to switch it on.
+    assert.match(tools[1].content, /Skill "staat-uit" staat uit\. De eigenaar zet hem weer aan in Marktplaats › Geïnstalleerd › staat-uit › Aanzetten\./);
+    assert.ok(!tools[1].content.includes('UIT-INSTRUCTIES'));
     assert.equal(tools[1].parts.toolResult.isError, true);
+    // Taken away from this bot: it cannot load it either (it was a wall-less second list before).
+    assert.match(tools[2].content, /Skill "weggehaald" is bij jou weggehaald/);
+    assert.ok(!tools[2].content.includes('ANDERE-INSTRUCTIES'));
+    assert.equal(tools[2].parts.toolResult.isError, true);
+    assert.match(tools[3].content, /Skill "bestaat-niet" bestaat niet in je team\..*skill_find.*skill_install.*Skills die je wel kunt laden: alpha-skill, zeta-skill\./s);
+    assert.equal(tools[3].parts.toolResult.isError, true);
+    // Taken away from this bot only: its colleague in the team still has it; the screens read the same rule.
+    const names = (id: string) => t.app.ctx.services.skills.enabledFor(t.app.ctx.store.agent(id)!).map((s: any) => s.name);
+    assert.deepEqual(names(colleague.id), ['alpha-skill', 'weggehaald', 'zeta-skill']);
+    assert.deepEqual((await t.api('GET', `/skills/agents/${bot.id}`)).enabled.sort(), [a.result.skillId, b.result.skillId].sort());
+    const using = (await t.api('GET', '/skills')).find((s: any) => s.name === 'weggehaald').agents.map((x: any) => x.name);
+    assert.deepEqual(using, ['Collega'], 'the skill names the bots that have it');
   } finally {
     await t.close();
   }
 });
 
-test('skill_read_file reads companion files; scripts stay blocked until trusted; uninstall removes only managed paths', async () => {
+test('taking the last skill away from a bot works: an empty list is not "every skill", and nothing comes back by itself', async () => {
+  const t = await startTestApp();
+  try {
+    const a = await importPaste(t, md('alpha-skill', 'Alpha beschrijving.', 'ALPHA-INSTRUCTIES'));
+    const b = await importPaste(t, md('beta-skill', 'Beta beschrijving.', 'BETA-INSTRUCTIES'));
+    const bot = await t.agent({ tool_groups: ['skills'] });
+    const names = () => t.app.ctx.services.skills.enabledFor(t.app.ctx.store.agent(bot.id)!).map((s: any) => s.name);
+    assert.deepEqual(names(), ['alpha-skill', 'beta-skill'], 'a new bot has the skills of its team');
+    await t.api('PUT', `/skills/agents/${bot.id}`, { skillIds: [a.result.skillId] });
+    assert.deepEqual(names(), ['alpha-skill']);
+    // The last one too: the bot has no skills now (an empty list used to mean all of them).
+    assert.deepEqual((await t.api('PUT', `/skills/agents/${bot.id}`, { skillIds: [] })).enabled, []);
+    assert.deepEqual(t.app.ctx.store.agent(bot.id)!.skills, []);
+    assert.deepEqual(names(), []);
+    const th = await t.api('POST', '/threads', { agentId: bot.id });
+    assert.doesNotMatch(await t.app.ctx.services.runner.systemPrompt(t.app.ctx.store.agent(bot.id)!, t.app.ctx.store.thread(th.id)!), /## Skills|alpha-skill|beta-skill/);
+    // A chat-only bot gets the instructions of its skills in its prompt: only of the skills it has.
+    const chat = await t.agent({ name: 'Praat', access_mode: 'chat', tool_groups: ['skills'] });
+    await t.api('PUT', `/skills/agents/${chat.id}`, { skillIds: [a.result.skillId] });
+    const cth = await t.api('POST', '/threads', { agentId: chat.id });
+    const chatSys = await t.app.ctx.services.runner.systemPrompt(t.app.ctx.store.agent(chat.id)!, t.app.ctx.store.thread(cth.id)!);
+    assert.match(chatSys, /ALPHA-INSTRUCTIES/);
+    assert.doesNotMatch(chatSys, /BETA-INSTRUCTIES/);
+    // A skill made later is this bot's too; what was taken away stays away.
+    const g = await importPaste(t, md('gamma-skill', 'Gamma beschrijving.', 'GAMMA-INSTRUCTIES'));
+    assert.deepEqual(names(), ['gamma-skill']);
+    // Given back: naming a skill gives it (back), the rest stays as it is.
+    await t.api('PUT', `/skills/agents/${bot.id}`, { skillIds: [a.result.skillId, g.result.skillId] });
+    assert.deepEqual(names(), ['alpha-skill', 'gamma-skill']);
+    // Switched off and on again by the owner: the bot's as before (its place on the list is kept, also when its
+    // skills are set in between).
+    await t.api('PATCH', `/skills/${a.result.skillId}`, { status: 'disabled' });
+    assert.deepEqual(names(), ['gamma-skill']);
+    await t.api('PUT', `/skills/agents/${bot.id}`, { skillIds: [g.result.skillId] });
+    assert.ok(t.app.ctx.store.agent(bot.id)!.skills.includes(a.result.skillId), 'the list still names the skill that is off');
+    await t.api('PATCH', `/skills/${a.result.skillId}`, { status: 'active' });
+    assert.deepEqual(names(), ['alpha-skill', 'gamma-skill']);
+    // "Alle bots" on a skill: taken away from the bots that are not named, given back to the ones that are.
+    assert.deepEqual((await t.api('PUT', `/skills/${b.result.skillId}/agents`, { agentIds: [bot.id] })).agentIds, [bot.id]);
+    assert.deepEqual(names(), ['alpha-skill', 'beta-skill', 'gamma-skill']);
+    assert.deepEqual(t.app.ctx.services.skills.enabledFor(t.app.ctx.store.agent(chat.id)!).map((s: any) => s.name), ['alpha-skill', 'gamma-skill'], 'the other bot lost only that one');
+  } finally {
+    await t.close();
+  }
+});
+
+test('companion files and scripts: read with skill_read_file; on at install, and switched off they are not in the work folder; uninstall removes only what TeamBot wrote', async () => {
   const t = await startTestApp();
   try {
     const repo = new AdmZip();
@@ -245,46 +317,57 @@ test('skill_read_file reads companion files; scripts stay blocked until trusted;
     const up = await uploadZip(t, repo.toBuffer());
     assert.equal(up.status, 200);
     assert.equal(up.body.candidates[0].scan.kind, 'scripts');
+    const bot = await t.agent({ tool_groups: ['skills', 'files'], access_mode: 'ask' });
     const c = await t.api('POST', '/skills/import/commit', { stagingId: up.body.stagingId });
     const id = c.results[0].skillId;
-    const bot = await t.agent({ tool_groups: ['skills', 'files'] });
-    await t.api('PUT', `/skills/agents/${bot.id}`, { skillIds: [id] });
+    // Installed: its scripts are on at once (one click), the script is in the bot's work folder.
+    const managed = path.join(bot.workspace, '.agents', 'skills', 'scripttool');
+    assert.equal((await t.api('GET', `/skills/${id}`)).trusted, true);
+    assert.equal(fs.readFileSync(path.join(managed, 'scripts', 'run.py'), 'utf8'), 'print("hallo")');
+    // The owner switches them off (Veiligheid); from here on that is what the bot meets.
+    await t.api('POST', `/skills/${id}/trust`, { trusted: false });
     const th = await t.api('POST', '/threads', { agentId: bot.id });
     t.script.push(
       { toolCalls: [{ name: 'skill_read_file', args: { name: 'scripttool', path: 'checklist.md' } }] },
       { toolCalls: [{ name: 'skill_read_file', args: { name: 'scripttool', path: 'scripts/run.py' } }] },
       { toolCalls: [{ name: 'skill_read_file', args: { name: 'scripttool', path: '../../master.key' } }] },
-      { toolCalls: [{ name: 'skill_prepare_scripts', args: { name: 'scripttool' } }] },
+      { toolCalls: [{ name: 'skill_run_script', args: { name: 'scripttool', script: 'scripts/run.py' } }] },
       { toolCalls: [{ name: 'skill_load', args: { name: 'scripttool' } }] },
       { text: 'ok' },
     );
-    let msgs = await t.say(th.id, 'x');
-    let tools = msgs.filter((m) => m.role === 'tool');
+    const tools = (await t.say(th.id, 'x')).filter((m) => m.role === 'tool');
     assert.match(tools[0].content, /CHECKLIST-INHOUD/);
     assert.match(tools[1].content, /Geblokkeerd/);
     assert.ok(!tools[1].content.includes('hallo'));
     assert.match(tools[2].content, /Ongeldig pad/);
-    assert.match(tools[3].content, /Geblokkeerd/);
-    assert.match(tools[4].content, /nog niet vertrouwd/);
-    const managed = path.join(bot.workspace, '.skills', 'scripttool');
-    assert.equal(fs.existsSync(managed), false);
+    // Switched off: refused before an approval card (approving could never help), and the bot is not told to ask.
+    assert.match(tools[3].content, /staan uit.*Doe het werk zonder dit script/s);
+    assert.equal(t.app.ctx.store.find<any>('approvals', { agent_id: bot.id }).length, 0, 'no approval card for a call that can never succeed');
+    assert.match(tools[4].content, /De scripts van deze skill staan uit/);
+    // In the work folder: the skill with its files, without the script.
+    for (const place of ['.claude', '.agents']) {
+      const folder = path.join(bot.workspace, place, 'skills', 'scripttool');
+      assert.equal(fs.readFileSync(path.join(folder, 'checklist.md'), 'utf8'), 'CHECKLIST-INHOUD');
+      assert.equal(fs.existsSync(path.join(folder, 'scripts', 'run.py')), false, `${place}: a script that is off is not written`);
+      assert.match(fs.readFileSync(path.join(folder, 'SKILL.md'), 'utf8'), /\[TeamBot\] De scripts van deze skill \(scripts\/run\.py\) staan niet in deze map: ze staan uit/);
+    }
+    assert.equal(fs.existsSync(path.join(bot.workspace, '.skills')), false, 'the copy folder of before is not made any more');
 
-    // Trust → prepare copies files into the workspace (managed folder with marker).
-    const trusted = await t.api('POST', `/skills/${id}/trust`, { trusted: true });
-    assert.equal(trusted.trusted, true);
-    t.script.push({ toolCalls: [{ name: 'skill_prepare_scripts', args: { name: 'scripttool' } }] }, { text: 'ok' });
-    msgs = await t.say(th.id, 'nu wel');
-    tools = msgs.filter((m) => m.role === 'tool');
-    assert.match(tools.at(-1)!.content, /Klaargezet in \.skills\/scripttool/);
+    // On again → the script is there; off → gone again.
+    assert.equal((await t.api('POST', `/skills/${id}/trust`, { trusted: true })).trusted, true);
     assert.equal(fs.readFileSync(path.join(managed, 'scripts', 'run.py'), 'utf8'), 'print("hallo")');
-    assert.ok(fs.existsSync(path.join(managed, '.teambot-skill.json')));
+    assert.match(fs.readFileSync(path.join(managed, 'SKILL.md'), 'utf8'), /De scripts van deze skill staan aan/);
+    await t.api('POST', `/skills/${id}/trust`, { trusted: false });
+    assert.equal(fs.existsSync(path.join(managed, 'scripts', 'run.py')), false);
+    await t.api('POST', `/skills/${id}/trust`, { trusted: true });
 
     // A file the user put there themselves must survive uninstall.
     fs.writeFileSync(path.join(managed, 'mijn-notitie.txt'), 'van mij');
     await t.api('DELETE', `/skills/${id}`);
     assert.equal(fs.existsSync(path.join(managed, 'scripts', 'run.py')), false);
-    assert.equal(fs.existsSync(path.join(managed, '.teambot-skill.json')), false);
+    assert.equal(fs.existsSync(path.join(managed, 'SKILL.md')), false);
     assert.equal(fs.readFileSync(path.join(managed, 'mijn-notitie.txt'), 'utf8'), 'van mij');
+    assert.equal(fs.existsSync(path.join(bot.workspace, '.claude')), false, 'nothing of TeamBot is left where the owner added nothing');
     assert.equal(fs.existsSync(path.join(t.dir, 'skills', bot.user_id, id)), false);
     const agent = await t.api('GET', `/agents/${bot.id}`);
     assert.deepEqual(agent.skills, []);
@@ -293,35 +376,79 @@ test('skill_read_file reads companion files; scripts stay blocked until trusted;
   }
 });
 
-test('skill_prepare_scripts of an untrusted skill is refused without an approval card (in "Vraagt toestemming")', async () => {
+test('an installed skill works for a bot that was never configured: named in its instructions and loaded with skill_load', async () => {
   const t = await startTestApp();
   try {
-    const repo = new AdmZip();
-    repo.addFile('tool/SKILL.md', Buffer.from(md('scripttool', 'Heeft een script.', 'Gebruik scripts/run.py.')));
-    repo.addFile('tool/scripts/run.py', Buffer.from('print("hallo")'));
-    const up = await uploadZip(t, repo.toBuffer());
-    const id = (await t.api('POST', '/skills/import/commit', { stagingId: up.body.stagingId })).results[0].skillId;
-    const bot = await t.agent({ tool_groups: ['skills', 'files'], access_mode: 'ask' });
-    await t.api('PUT', `/skills/agents/${bot.id}`, { skillIds: [id] });
+    const bot = await t.agent({ tool_groups: ['skills'] });
+    await importPaste(t, md('mail-en-signalen', 'Leest mail en zet signalen op een rij.', 'SIGNALEN-WERKWIJZE'));
+    // Nobody switched anything on for this bot: the skill is simply there for the whole team.
     const th = await t.api('POST', '/threads', { agentId: bot.id });
-    t.script.push({ toolCalls: [{ name: 'skill_prepare_scripts', args: { name: 'scripttool' } }] }, { text: 'ok' });
-    const msgs = await t.say(th.id, 'zet de scripts klaar');
-    assert.match(msgs.filter((m) => m.role === 'tool').at(-1)!.content, /nog niet vertrouwd.*Toestemming vragen helpt niet/s);
-    assert.equal(t.app.ctx.store.find<any>('approvals', { agent_id: bot.id }).length, 0, 'no approval card for a call that can never succeed');
-    assert.equal(fs.existsSync(path.join(bot.workspace, '.skills', 'scripttool')), false);
+    t.script.push({ toolCalls: [{ name: 'skill_load', args: { name: 'mail-en-signalen' } }] }, { text: 'klaar' });
+    const msgs = await t.say(th.id, 'lees de mail');
+    assert.match(t.requests[0].system, /- mail-en-signalen: Leest mail en zet signalen op een rij\./);
+    const tool = msgs.find((m) => m.role === 'tool')!;
+    assert.match(tool.content, /SIGNALEN-WERKWIJZE/);
+    assert.equal(tool.parts.toolResult.isError, false);
+    assert.equal((await t.api('GET', '/skills'))[0].useCount, 1);
   } finally {
     await t.close();
   }
 });
 
-test('skill_draft creates a reviewable draft that is inactive until published', async () => {
+test('skill_save: a bot\'s skill is active for the team at once; it improves its own skill; money or mail to customers waits for the owner', async () => {
+  const t = await startTestApp();
+  try {
+    const maker = await t.agent({ name: 'Maker', tool_groups: ['skills'] });
+    const other = await t.agent({ name: 'Collega', tool_groups: ['skills'] });
+    const th = await t.api('POST', '/threads', { agentId: maker.id });
+    t.script.push({ toolCalls: [{ name: 'skill_save', args: { name: 'Leadsite Gezondheidscheck', description: 'Controleert of een leadsite bereikbaar is en formulieren werken.', instructions: '1. Open de site.\n2. Test het formulier.\n3. Meld wat stuk is. EERSTE-VERSIE' } }] }, { text: 'vastgelegd' });
+    const made = (await t.say(th.id, 'leg dit vast')).find((m) => m.role === 'tool')!;
+    assert.match(made.content, /Skill "leadsite-gezondheidscheck" is opgeslagen en meteen actief voor alle bots van je team/);
+    let [s] = await t.api('GET', '/skills');
+    assert.equal(s.status, 'active');
+    assert.equal(s.source.type, 'bot');
+    // Another bot of the team, never configured, loads it straight away.
+    const th2 = await t.api('POST', '/threads', { agentId: other.id });
+    t.script.push({ toolCalls: [{ name: 'skill_load', args: { name: 'leadsite-gezondheidscheck' } }] }, { text: 'ok' });
+    assert.match((await t.say(th2.id, 'controleer de site')).find((m) => m.role === 'tool')!.content, /EERSTE-VERSIE/);
+    // The colleague improves it: a new version, active at once, the previous one kept.
+    t.script.push({ toolCalls: [{ name: 'skill_save', args: { name: 'leadsite-gezondheidscheck', description: 'Controleert of een leadsite bereikbaar is en formulieren werken.', instructions: '1. Open de site.\n2. Test het formulier.\n3. Controleer de laadtijd. TWEEDE-VERSIE', note: 'laadtijd erbij' } }] }, { text: 'ok' });
+    assert.match((await t.say(th2.id, 'verbeter de skill')).filter((m) => m.role === 'tool').pop()!.content, /is bijgewerkt \(versie 2\) en meteen actief/);
+    [s] = await t.api('GET', '/skills');
+    assert.equal(s.activeRev, 2);
+    assert.equal((await t.api('GET', `/skills/${s.id}`)).versions.length, 2);
+    // Sending mail to customers by itself, or spending money: a draft for the owner, with the reason.
+    t.script.push(
+      { toolCalls: [{ name: 'skill_save', args: { name: 'klanten-mailen', description: 'Stuurt klanten een herinnering.', instructions: 'Verstuur elke klant met een open offerte een e-mail.' } }] },
+      { toolCalls: [{ name: 'skill_save', args: { name: 'budget-bijsturen', description: 'Stuurt Google Ads bij.', instructions: 'Verhoog het dagbudget van campagnes die goed lopen met 20%.' } }] },
+      // A draft answer for the owner writes to nobody: active.
+      { toolCalls: [{ name: 'skill_save', args: { name: 'antwoord-klaarzetten', description: 'Zet een antwoord klaar.', instructions: 'Lees de vraag. Zet een conceptantwoord aan de klant klaar; de eigenaar verstuurt het zelf.' } }] },
+      { text: 'ok' },
+    );
+    const tools = (await t.say(th.id, 'nog drie')).filter((m) => m.role === 'tool').slice(-3);
+    assert.match(tools[0].content, /"klanten-mailen" is opgeslagen als concept en wacht op de eigenaar, omdat de skill stuurt zelf berichten aan klanten/);
+    assert.match(tools[1].content, /"budget-bijsturen" is opgeslagen als concept en wacht op de eigenaar, omdat de skill geeft geld uit/);
+    assert.match(tools[2].content, /"antwoord-klaarzetten" is opgeslagen en meteen actief/);
+    const all = await t.api('GET', '/skills');
+    assert.deepEqual(all.map((x: any) => `${x.name}:${x.status}`).sort(), ['antwoord-klaarzetten:active', 'budget-bijsturen:draft', 'klanten-mailen:draft', 'leadsite-gezondheidscheck:active']);
+    // A skill from outside keeps its own updates: a bot does not overwrite it.
+    await importPaste(t, md('van-buiten', 'Van een bron.', 'BRON'));
+    t.app.ctx.store.exec("UPDATE skills SET source = ? WHERE name = 'van-buiten'", JSON.stringify({ type: 'github', label: 'acme/skills' }));
+    t.script.push({ toolCalls: [{ name: 'skill_save', args: { name: 'van-buiten', description: 'Eigen versie.', instructions: 'Anders.' } }] }, { text: 'ok' });
+    assert.match((await t.say(th.id, 'pas aan')).filter((m) => m.role === 'tool').pop()!.content, /komt van buiten \(acme\/skills\).*Kies een andere naam/);
+  } finally {
+    await t.close();
+  }
+});
+
+test('a skill that waits for the owner is a reviewable draft, inactive until published', async () => {
   const t = await startTestApp();
   try {
     const bot = await t.agent({ tool_groups: ['skills'] });
     const th = await t.api('POST', '/threads', { agentId: bot.id });
-    t.script.push({ toolCalls: [{ name: 'skill_draft', args: { name: 'Offerte Opstellen', description: 'Stelt offertes op.', instructions: '1. Vraag de klantgegevens.\n2. Maak de offerte.' } }] }, { text: 'voorgesteld' });
+    t.script.push({ toolCalls: [{ name: 'skill_save', args: { name: 'Offerte Opstellen', description: 'Stelt offertes op.', instructions: '1. Vraag de klantgegevens.\n2. Maak de offerte.\n3. Verstuur de offerte per mail aan de klant.' } }] }, { text: 'voorgesteld' });
     const msgs = await t.say(th.id, 'bewaar dit als skill');
-    assert.match(msgs.find((m) => m.role === 'tool')!.content, /Concept "offerte-opstellen" opgeslagen/);
+    assert.match(msgs.find((m) => m.role === 'tool')!.content, /Skill "offerte-opstellen" is opgeslagen als concept en wacht op de eigenaar/);
     const [draft] = await t.api('GET', '/skills');
     assert.equal(draft.status, 'draft');
     assert.equal(draft.draftAgentId, bot.id);
@@ -397,7 +524,7 @@ test('update needing more rights requires confirmation; rollback and pinning wor
   }
 });
 
-test('trust is bound to the scripts: changing a script resets trust', async () => {
+test('trust is bound to the scripts: an install turns them on, a new version he adds keeps what the owner chose', async () => {
   const t = await startTestApp();
   try {
     const mk = (code: string) => {
@@ -408,12 +535,16 @@ test('trust is bound to the scripts: changing a script resets trust', async () =
     };
     const up = await uploadZip(t, mk('echo een'));
     const id = (await t.api('POST', '/skills/import/commit', { stagingId: up.body.stagingId })).results[0].skillId;
-    await t.api('POST', `/skills/${id}/trust`, { trusted: true });
-    assert.equal((await t.api('GET', `/skills/${id}`)).trusted, true);
+    assert.equal((await t.api('GET', `/skills/${id}`)).trusted, true, 'installed: its scripts are on');
     const up2 = await uploadZip(t, mk('echo twee'));
     assert.deepEqual(up2.body.candidates[0].diff.changedScripts, ['run.sh']);
     assert.equal(up2.body.candidates[0].needsConfirmation, true);
     await t.api('POST', '/skills/import/commit', { stagingId: up2.body.stagingId, confirmPermissions: true });
+    assert.equal((await t.api('GET', `/skills/${id}`)).trusted, true, 'the new scripts he added are on too');
+    // He switches them off: the next version he adds keeps them off.
+    await t.api('POST', `/skills/${id}/trust`, { trusted: false });
+    const up3 = await uploadZip(t, mk('echo drie'));
+    await t.api('POST', '/skills/import/commit', { stagingId: up3.body.stagingId, confirmPermissions: true });
     assert.equal((await t.api('GET', `/skills/${id}`)).trusted, false);
   } finally {
     await t.close();
@@ -463,7 +594,7 @@ test('users only see and use their own skills', async () => {
     assert.ok(!t.requests[0].system.includes('van-vriend'));
     assert.ok(t.requests[0].system.includes('van-eigenaar'));
     const tool = msgs.find((m) => m.role === 'tool')!;
-    assert.match(tool.content, /niet ingeschakeld/);
+    assert.match(tool.content, /Skill "van-vriend" bestaat niet in je team/);
     assert.ok(!tool.content.includes('VRIEND-WERKWIJZE'));
     // The friend's library is still intact.
     assert.equal((await friend.api('GET', '/skills')).length, 1);
@@ -585,7 +716,9 @@ test('marketplace: built-in catalog, bot install, external catalog with checksum
     assert.ok(bp.skills.length >= 2);
     const bi = await t.api('POST', '/skills/market/bots/builtin/onderzoeker/install', { provider_id: t.providerId, model: 'mock-1' });
     assert.equal(bi.agent.provider_id, t.providerId);
-    assert.equal(bi.agent.access_mode, 'ask');
+    assert.equal(bi.agent.access_mode, 'full'); // ships with TeamBot: starts at Volledige toegang
+    assert.equal(bi.agent.settings.fullAccessExternal, true);
+    assert.equal(bp.bot.access_mode, 'full', 'the preview shows the same');
     assert.ok(bi.agent.skills.length >= 2);
     assert.equal(bi.agent.settings.template.itemId, 'onderzoeker');
 
@@ -732,7 +865,7 @@ test('discover: skills installed with `npx skills` (skills-lock.json) show their
     assert.ok(c.scan && typeof c.scan.level === 'string', 'the safety scan ran');
     const r = await t.api('POST', '/skills/import/commit', { stagingId: pv.stagingId });
     assert.equal(r.results[0].status, 'created');
-    assert.deepEqual((await t.api('GET', `/agents/${bot.id}`)).skills || [], [], 'switched on for no bot');
+    assert.deepEqual((await t.api('GET', `/agents/${bot.id}`)).skills || [], [r.results[0].skillId], 'an active skill is there for every bot (skills/defaults.ts)');
   } finally {
     delete process.env.TEAMBOT_SKILLS_DISCOVER;
     delete process.env.TEAMBOT_SKILLS_DISCOVER_ONLY;

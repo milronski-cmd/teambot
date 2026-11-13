@@ -1,20 +1,30 @@
 /**
- * TeamBot's own skill catalogue: a fixed list of sources, each pinned to one commit, checked by hand on 2026-11-09
- * (repository, licence file that applies to each skill folder, latest commit; GitHub API via `gh`). Nothing is
- * bundled with TeamBot: installing fetches exactly the pinned files from GitHub, applies the import rules
- * (`import-rules.ts`) and stores the skill with its licence text. A newer upstream version is shown as a diff that the
- * owner approves; it is never applied by itself.
+ * TeamBot's skill catalogue: what the community really uses. The list was made on 2026-11-12 by searching GitHub for
+ * repositories with skills in the open SKILL.md format, sorted by stars, and reading a sample of each candidate.
+ * A skill is listed only when:
+ *  - its repository has an open licence in a licence file (MIT, Apache-2.0, BSD, ISC), checked per skill folder;
+ *  - it is not a company's default bundle: the owner wants what people chose themselves, so Anthropic's, Google's,
+ *    OpenAI's and Vercel's own packs are not listed (anyone can still add them with "Toevoegen via link");
+ *  - the pinned version passed TeamBot's import rules, installed with one click in a test app, and a bot that was
+ *    never configured loaded it with skill_load (checked for every entry below on 2026-11-12).
+ * `stars` is the repository's star count on that day: shown on every card, and the order of the marketplace.
  *
- * Deliberately not in the catalogue (licence check 2026-11-09): CC BY-NC-ND (hesreallyhim/awesome-claude-code),
- * CC-BY-SA (trailofbits/skills), Figma skills (Figma Developer Terms), repositories without a licence file
- * (vercel-labs/agent-skills, ComposioHQ/awesome-claude-skills) and AGPL (basic-memory, Smithery CLI). Anthropic's
- * Office skills are only Apache-2.0 from commit 2c5958ec (2026-11-06) on, so that is the earliest commit we pin.
+ * Nothing is bundled with TeamBot: installing fetches exactly the pinned files from GitHub, applies the import rules
+ * (`import-rules.ts`) and stores the skill with its licence text. A newer upstream version is shown as a diff that the
+ * owner approves; it is never applied by itself. Scripts of a skill stay off until the owner trusts the skill.
+ *
+ * Looked at and left out (2026-11-12):
+ *  - refused by the import rules (too many or too large files, archives): Leonxlnx/taste-skill, tt-a1i/archify,
+ *    mvanhorn/last30days-skill, nicobailon/visual-explainer, Agents365-ai/drawio-skill, mikehasa/golive-skill;
+ *  - serious findings in the safety scan (they would need a confirmation, so no one-click): OthmanAdi/planning-with-files,
+ *    nidhinjs/prompt-master, czlonkowski/n8n-skills n8n-workflow-patterns;
+ *  - AgriciDaniel/claude-ads: its main skill is called "ads" like the one of coreyhaines31/marketingskills (one name per
+ *    team), and its other skills lean on that main skill;
+ *  - no licence file or a restrictive one: vercel-labs/agent-skills, ComposioHQ/awesome-claude-skills,
+ *    sickn33/agentic-awesome-skills (CC BY 4.0 texts), trailofbits/skills (CC-BY-SA), hesreallyhim/awesome-claude-code
+ *    (CC BY-NC-ND);
+ *  - do not work as a loose skill folder: garrytan/gstack, Panniantong/Agent-Reach, nowork-studio/notfair-plugin.
  */
-import { MARKETING_SOURCES } from './curated-marketing.js';
-
-import { CURATED_SERVICE_SOURCES } from './curated-service.js';
-
-import { CURATED_WORK } from './curated-work.js';
 
 export interface WindowsNote {
   /** 'ja': works on Windows; 'deels': part of it does not; 'niet-getest': has scripts that were not run on Windows. */
@@ -57,217 +67,406 @@ export interface CuratedSource {
   owner: string;
   /** Display name of the publisher. */
   publisher: string;
-  /** SPDX licence as checked in the licence file of every listed skill folder (or its nearest parent). */
+  /**
+   * SPDX licence as checked in the licence file of every listed skill folder (or its nearest parent). Empty for a skill
+   * outside the catalogue (an open result): TeamBot checked nothing, so there is nothing to compare with.
+   */
   license: string;
   verifiedAt: string;
   /** One Dutch sentence about the source. */
   note: string;
+  /**
+   * GitHub stars of the repository when it was checked (`verifiedAt`): why it is in the catalogue, shown on every card,
+   * and the order of the marketplace (most stars first).
+   */
+  stars?: number;
   skills: CuratedSkill[];
 }
 
-const VERIFIED = '2026-11-09';
+export { starsText } from '../../../shared/skills.js';
 
-const DOCS_WINDOWS: WindowsNote = {
-  status: 'deels',
-  note: 'Maken en lezen werkt op Windows met de genoemde programma’s. Omzetten naar pdf en alles via scripts/office/soffice.py werkt niet: dat hulpscript gebruikt een Linux-truc (socket.AF_UNIX en LD_PRELOAD); Python op Windows heeft geen AF_UNIX (gecontroleerd met Python 3.12.10 op Windows 11) en LibreOffice staat daar meestal niet in het pad.',
+const VERIFIED = '2026-11-12';
+
+/** A skill with scripts: they are installed switched off, and TeamBot did not run them on Windows. */
+const SCRIPTS_OFF: WindowsNote = {
+  status: 'niet-getest',
+  note: 'De hulpscripts zijn op Windows niet uitgevoerd door TeamBot. De werkwijze zelf werkt zonder; de scripts staan uit tot je de skill vertrouwt.',
 };
 
+/** Most stars first (the order of the marketplace). */
 export const CURATED_SOURCES: CuratedSource[] = [
   {
-    id: 'anthropic-kwp',
-    repo: 'anthropics/knowledge-work-plugins',
-    commit: 'e050c2ec856373787143d7057663a6ebd1277df3',
-    commitDate: '2026-11-07',
-    owner: 'anthropics',
-    publisher: 'Anthropic',
-    license: 'Apache-2.0',
+    id: 'mattpocock-skills',
+    repo: 'mattpocock/skills',
+    stars: 321994,
+    commit: '4ae2317ddb22b046e26455e4f9c9b3aaaf62212d',
+    commitDate: '2026-10-31',
+    owner: 'mattpocock',
+    publisher: 'Matt Pocock',
+    license: 'MIT',
     verifiedAt: VERIFIED,
-    note: 'Werkwijzen van Anthropic voor kenniswerk: klantenservice, marketing, operations, data en klein bedrijf.',
+    note: 'Werkwijze voor programmeerwerk van Matt Pocock; kort en scherp, bedoeld voor ontwikkelaars.',
     skills: [
-      // Customer support (licence: customer-support/LICENSE, Apache-2.0)
-      { path: 'customer-support/skills/ticket-triage', root: 'customer-support', pack: 'Klantenservice', category: 'Klantenservice', note: 'Zet een binnengekomen klantvraag op prioriteit en bepaalt wie hem oppakt.' },
-      { path: 'customer-support/skills/draft-response', root: 'customer-support', pack: 'Klantenservice', category: 'Klantenservice', note: 'Schrijft een nette reactie aan een klant, ook bij slecht nieuws of een klacht.' },
-      { path: 'customer-support/skills/kb-article', root: 'customer-support', pack: 'Klantenservice', category: 'Klantenservice', note: 'Maakt van een opgeloste vraag een artikel voor de kennisbank.' },
-      { path: 'customer-support/skills/customer-escalation', root: 'customer-support', pack: 'Klantenservice', category: 'Klantenservice', note: 'Zet een lastig klantprobleem met alle context klaar voor techniek of leiding.' },
-      { path: 'customer-support/skills/customer-research', root: 'customer-support', pack: 'Klantenservice', category: 'Klantenservice', note: 'Zoekt een klantvraag uit in meerdere bronnen en noemt waar elk antwoord vandaan komt.' },
-      // Marketing (marketing/LICENSE, Apache-2.0)
-      { path: 'marketing/skills/campaign-plan', root: 'marketing', pack: 'Marketing', category: 'Marketing', note: 'Maakt een campagneplan met doelen, doelgroep, kanalen, planning en meetpunten.' },
-      { path: 'marketing/skills/content-creation', root: 'marketing', pack: 'Marketing', category: 'Marketing', note: 'Schrijft marketingteksten per kanaal: blog, social, nieuwsbrief, landingspagina.' },
-      { path: 'marketing/skills/draft-content', root: 'marketing', pack: 'Marketing', category: 'Marketing', note: 'Zet snel een eerste versie van een blog, persbericht of casestudy op papier.' },
-      { path: 'marketing/skills/email-sequence', root: 'marketing', pack: 'Marketing', category: 'Marketing', note: 'Ontwerpt een reeks e-mails met teksten, timing en wanneer iemand eruit gaat.' },
-      { path: 'marketing/skills/seo-audit', root: 'marketing', pack: 'Marketing', category: 'Marketing', note: 'Controleert de vindbaarheid van een site: zoekwoorden, pagina’s, techniek en concurrenten.' },
-      { path: 'marketing/skills/brand-review', root: 'marketing', pack: 'Marketing', category: 'Marketing', note: 'Toetst een tekst aan je merkstem en stijl, met concrete verbeteringen.' },
-      { path: 'marketing/skills/competitive-brief', root: 'marketing', pack: 'Marketing', category: 'Marketing', note: 'Vergelijkt concurrenten en laat zien waar jouw boodschap kan opvallen.' },
-      { path: 'marketing/skills/performance-report', root: 'marketing', pack: 'Marketing', category: 'Marketing', note: 'Maakt een rapport over marketingresultaten met trends en wat beter kan.' },
-      // Operations (no own licence file: the repository's LICENSE, Apache-2.0, applies)
-      { path: 'operations/skills/process-doc', root: 'operations', pack: 'Operations', category: 'Operations', note: 'Legt een werkproces vast met stappen, wie wat doet en de uitzonderingen.' },
-      { path: 'operations/skills/runbook', root: 'operations', pack: 'Operations', category: 'Operations', note: 'Schrijft een draaiboek voor een terugkerende taak, stap voor stap.' },
-      { path: 'operations/skills/risk-assessment', root: 'operations', pack: 'Operations', category: 'Operations', note: 'Brengt de risico’s van een project, leverancier of besluit in kaart, met maatregelen.' },
-      { path: 'operations/skills/vendor-review', root: 'operations', pack: 'Operations', category: 'Operations', note: 'Beoordeelt een leverancier op kosten en risico en geeft een advies.' },
-      { path: 'operations/skills/capacity-plan', root: 'operations', pack: 'Operations', category: 'Operations', note: 'Rekent uit of het team het werk aankan en waar het knelt.' },
-      { path: 'operations/skills/status-report', root: 'operations', pack: 'Operations', category: 'Operations', note: 'Maakt een statusrapport met cijfers, risico’s en actiepunten.' },
-      { path: 'operations/skills/change-request', root: 'operations', pack: 'Operations', category: 'Operations', note: 'Zet een wijzigingsvoorstel op met gevolgen en een plan om terug te draaien.' },
-      { path: 'operations/skills/compliance-tracking', root: 'operations', pack: 'Operations', category: 'Operations', note: 'Houdt bij aan welke regels en audits je moet voldoen en wat nog openstaat.' },
-      { path: 'operations/skills/process-optimization', root: 'operations', pack: 'Operations', category: 'Operations', note: 'Zoekt waar een traag of omslachtig proces sneller en eenvoudiger kan.' },
-      // Data (data/LICENSE, Apache-2.0)
-      { path: 'data/skills/analyze', root: 'data', pack: 'Data', category: 'Data & analyse', note: 'Beantwoordt vragen over je cijfers, van één getal tot een volledige analyse.' },
-      { path: 'data/skills/explore-data', root: 'data', pack: 'Data', category: 'Data & analyse', note: 'Verkent een nieuwe tabel of een nieuw bestand: vorm, kwaliteit en opvallende dingen.' },
-      { path: 'data/skills/sql-queries', root: 'data', pack: 'Data', category: 'Data & analyse', note: 'Schrijft correcte en snelle SQL voor de gangbare databases.' },
-      { path: 'data/skills/statistical-analysis', root: 'data', pack: 'Data', category: 'Data & analyse', note: 'Past statistiek toe: trends, uitschieters en of een verschil echt is.' },
-      { path: 'data/skills/validate-data', root: 'data', pack: 'Data', category: 'Data & analyse', note: 'Controleert een analyse op fouten en vertekening voordat je hem deelt.' },
-      { path: 'data/skills/build-dashboard', root: 'data', pack: 'Data', category: 'Data & analyse', note: 'Bouwt een dashboard als één HTML-bestand met grafieken, filters en tabellen.' },
-      { path: 'data/skills/data-visualization', root: 'data', pack: 'Data', category: 'Data & analyse', note: 'Kiest en maakt de juiste grafiek voor je gegevens.', needs: 'Python met matplotlib, seaborn of plotly om grafieken te tekenen.' },
-      // Small business (no own licence file: the repository's LICENSE, Apache-2.0). Many of these use paid services
-      // (QuickBooks, PayPal, Shopify …) through apps; the working method itself works without them.
-      { path: 'small-business/skills/invoice-chase', root: 'small-business', pack: 'Klein bedrijf', category: 'Financiën', note: 'Schrijft herinneringen voor openstaande facturen, vriendelijk of strenger per klant; versturen pas na jouw akkoord.', needs: 'Werkt het best met een gekoppelde boekhouding of betaaldienst (bijvoorbeeld QuickBooks, Xero, PayPal of Stripe).' },
-      { path: 'small-business/skills/inbox-manager', root: 'small-business', pack: 'Klein bedrijf', category: 'Communicatie', note: 'Maakt van een volle inbox een korte lijst van wat jou nodig heeft, met conceptantwoorden.', needs: 'Een gekoppelde mailbox (Gmail of Microsoft 365).' },
-      { path: 'small-business/skills/review-reputation', root: 'small-business', pack: 'Klein bedrijf', category: 'Marketing', note: 'Verzamelt wat klanten over je zeggen in reviews en mail, en stelt antwoorden voor.' },
-      { path: 'small-business/skills/social-content-engine', root: 'small-business', pack: 'Klein bedrijf', category: 'Marketing', note: 'Houdt een planning voor social media bij en schrijft berichten in jouw toon.' },
-      { path: 'small-business/skills/speed-to-lead', root: 'small-business', pack: 'Klein bedrijf', category: 'Verkoop', note: 'Zorgt dat geen nieuwe aanvraag blijft liggen: beoordeelt hem en zet een antwoord klaar.' },
-      { path: 'small-business/skills/content-strategy', root: 'small-business', pack: 'Klein bedrijf', category: 'Marketing', note: 'Kijkt wat goed en slecht verkoopt en maakt daar een contentplan voor 30 dagen van.' },
-      { path: 'small-business/skills/proposal-builder', root: 'small-business', pack: 'Klein bedrijf', category: 'Verkoop', note: 'Maakt van gespreksnotities een offerte of voorstel met prijzen.' },
-      { path: 'small-business/skills/seo-ai-visibility', root: 'small-business', pack: 'Klein bedrijf', category: 'Marketing', note: 'Controleert of je gevonden wordt in Google én in de antwoorden van AI-assistenten.' },
-      { path: 'small-business/skills/ticket-deflector', root: 'small-business', pack: 'Klein bedrijf', category: 'Klantenservice', note: 'Leest een klantmail, zoekt de bestelling op en zet een antwoord klaar.' },
-      { path: 'small-business/skills/cash-flow-snapshot', root: 'small-business', pack: 'Klein bedrijf', category: 'Financiën', note: 'Voorspelt je geld voor de komende 30, 60 en 90 dagen.' },
-      { path: 'small-business/skills/inventory-planner', root: 'small-business', pack: 'Klein bedrijf', category: 'Webshop', note: 'Rekent uit wat je wanneer moet bijbestellen op basis van wat echt verkoopt.' },
-      { path: 'small-business/skills/contract-review', root: 'small-business', pack: 'Klein bedrijf', category: 'Juridisch', note: 'Leest een contract of geheimhoudingsverklaring door en wijst op ongebruikelijke punten (geen juridisch advies).' },
-    ],
-  },
-  {
-    id: 'anthropic-skills',
-    repo: 'anthropics/skills',
-    // The commit that moved the Office skills to Apache-2.0 (PR #2146); earlier commits must not be used.
-    commit: '2c5958ecac7cee2b583967a2c4981d0f4a75c579',
-    commitDate: '2026-11-06',
-    owner: 'anthropics',
-    publisher: 'Anthropic',
-    license: 'Apache-2.0',
-    verifiedAt: VERIFIED,
-    note: 'De documentskills van Anthropic voor Word, pdf, PowerPoint en Excel (Apache-2.0 sinds 6 november 2026).',
-    skills: [
-      { path: 'skills/docx', scripts: true, pack: 'Documenten', category: 'Documenten', note: 'Maakt, leest en bewerkt Word-documenten.', windows: DOCS_WINDOWS, needs: 'Node.js met het npm-pakket docx om te maken, pandoc om te lezen; LibreOffice voor omzetten (werkt niet op Windows, zie hierboven).' },
-      {
-        path: 'skills/pdf', scripts: true,
-        pack: 'Documenten',
-        category: 'Documenten',
-        note: 'Leest, splitst, voegt samen en vult pdf-bestanden in.',
-        windows: { status: 'niet-getest', note: 'Gebruikt alleen Python-scripts (pypdf, pdfplumber, reportlab) en geen Linux-truc; op Windows niet uitgevoerd door TeamBot.' },
-        needs: 'Python met pypdf, pdfplumber en reportlab; optioneel qpdf en poppler.',
-      },
-      { path: 'skills/pptx', scripts: true, pack: 'Documenten', category: 'Documenten', note: 'Maakt, leest en bewerkt PowerPoint-presentaties.', windows: DOCS_WINDOWS, needs: 'Node.js met pptxgenjs om te maken, markitdown om te lezen; LibreOffice en poppler voor voorbeeldafbeeldingen (werkt niet op Windows).' },
-      { path: 'skills/xlsx', scripts: true, pack: 'Documenten', category: 'Documenten', note: 'Maakt, leest en bewerkt Excel-bestanden met formules.', windows: { ...DOCS_WINDOWS, note: 'Lezen en schrijven met openpyxl en pandas werkt op Windows. Formules laten doorrekenen (scripts/recalc.py) gebruikt LibreOffice via hetzelfde Linux-hulpscript en werkt op Windows niet.' }, needs: 'Python met openpyxl, pandas en markitdown; LibreOffice om formules door te rekenen (werkt niet op Windows).' },
+      { path: 'skills/engineering/to-spec', pack: 'Ontwikkeling', category: 'Ontwikkeling', note: 'Zet het gesprek om in een heldere specificatie van wat er gebouwd moet worden.', needs: 'Schrijft standaard naar een issue-tracker; kan ook naar een bestand.' },
+      { path: 'skills/engineering/tdd', pack: 'Ontwikkeling', category: 'Ontwikkeling', note: 'Laat de bot eerst een test schrijven en dan pas de code, stap voor stap.' },
+      { path: 'skills/productivity/grilling', pack: 'Werkwijze', category: 'Werkwijze', note: 'Bevraagt je plan of idee grondig, ronde na ronde, tot alle beslissingen genomen zijn.' },
+      { path: 'skills/productivity/handoff', pack: 'Productiviteit', category: 'Productiviteit', note: 'Vat een lang gesprek samen in een overdrachtsdocument, zodat een ander verder kan.' },
     ],
   },
   {
     id: 'superpowers',
     repo: 'obra/superpowers',
+    stars: 316285,
     commit: '22f0b463e7a5e579904dd6211a520321035526f7',
     commitDate: '2026-11-03',
     owner: 'obra',
-    publisher: 'Jesse Vincent (obra)',
+    publisher: 'Jesse Vincent',
     license: 'MIT',
     verifiedAt: VERIFIED,
-    note: 'Werkwijzen van Jesse Vincent: eerst bewijzen, dan pas “klaar”; plannen; fouten systematisch zoeken.',
+    note: 'De bekendste werkwijze-set: eerst doordenken, plannen, dan bouwen en controleren.',
     skills: [
-      { path: 'skills/verification-before-completion', pack: 'Werkwijze', category: 'Werkwijze', note: 'Zegt pas “klaar” als een controle het net heeft bewezen: eerst bewijs, dan de bewering.' },
-      { path: 'skills/writing-plans', pack: 'Werkwijze', category: 'Werkwijze', note: 'Schrijft eerst een plan in kleine, controleerbare stappen voordat het werk begint.' },
-      {
-        path: 'skills/executing-plans', scripts: true,
-        pack: 'Werkwijze',
-        category: 'Werkwijze',
-        note: 'Voert een plan stap voor stap uit en controleert elke stap.',
-        windows: { status: 'niet-getest', note: 'De hulpscripts zijn bash-scripts; op Windows alleen met Git Bash. De werkwijze zelf werkt zonder scripts.' },
-      },
-      {
-        path: 'skills/systematic-debugging', scripts: true,
-        pack: 'Werkwijze',
-        category: 'Werkwijze',
-        note: 'Zoekt bij een fout eerst de oorzaak, met een vaste aanpak, voordat er iets wordt aangepast.',
-        windows: { status: 'niet-getest', note: 'Eén hulpscript (find-polluter.sh) is een bash-script; de werkwijze zelf werkt zonder.' },
-      },
-      { path: 'skills/test-driven-development', pack: 'Werkwijze', category: 'Ontwikkeling', note: 'Schrijft eerst een test die faalt, dan pas de code die hem laat slagen.' },
-      { path: 'skills/receiving-code-review', pack: 'Werkwijze', category: 'Ontwikkeling', note: 'Gaat kritisch om met feedback op code: eerst controleren, niet blind overnemen.' },
+      { path: 'skills/brainstorming', pack: 'Werkwijze', category: 'Werkwijze', note: 'Vraagt eerst door en werkt een idee uit tot een ontwerp voordat er iets gebouwd wordt.', scripts: true, windows: SCRIPTS_OFF },
+      { path: 'skills/writing-plans', pack: 'Werkwijze', category: 'Werkwijze', note: 'Maakt van een wens een stappenplan dat een bot zelfstandig kan uitvoeren.' },
+      { path: 'skills/systematic-debugging', pack: 'Ontwikkeling', category: 'Ontwikkeling', note: 'Zoekt stap voor stap de echte oorzaak van een fout in plaats van te gokken.', scripts: true, windows: SCRIPTS_OFF },
+      { path: 'skills/verification-before-completion', pack: 'Werkwijze', category: 'Werkwijze', note: 'Dwingt de bot om te bewijzen dat iets werkt voordat hij zegt dat het klaar is.' },
+      { path: 'skills/executing-plans', pack: 'Werkwijze', category: 'Werkwijze', note: 'Voert een plan stap voor stap uit en controleert elke stap.', scripts: true, windows: SCRIPTS_OFF },
     ],
   },
   {
-    id: 'marketingskills',
-    repo: 'coreyhaines31/marketingskills',
-    commit: '96798cf38736ecdba015a1d2b0521b0c8f8f41dd',
-    commitDate: '2026-11-06',
-    owner: 'coreyhaines31',
-    publisher: 'Corey Haines',
+    id: 'agent-skills',
+    repo: 'addyosmani/agent-skills',
+    stars: 115896,
+    commit: '301b02b12bff98e4688e6984af6556802322bbde',
+    commitDate: '2026-11-01',
+    owner: 'addyosmani',
+    publisher: 'Addy Osmani',
     license: 'MIT',
     verifiedAt: VERIFIED,
-    note: 'Marketingskills van Corey Haines: teksten, advertenties, e-mail, social, conversie en prijzen.',
+    note: 'Degelijke werkwijzen voor het bouwen van software, van idee tot livegang.',
     skills: [
-      { path: 'skills/copywriting', pack: 'Marketing (Corey Haines)', category: 'Marketing', note: 'Schrijft of herschrijft de teksten van een homepage, landings- of productpagina.' },
-      { path: 'skills/copy-editing', pack: 'Marketing (Corey Haines)', category: 'Marketing', note: 'Redigeert bestaande marketingtekst: helderder, korter en overtuigender.' },
-      { path: 'skills/ads', pack: 'Marketing (Corey Haines)', category: 'Advertenties', note: 'Helpt met advertentiecampagnes op Google, Meta, LinkedIn en andere platforms.' },
-      { path: 'skills/ad-creative', pack: 'Marketing (Corey Haines)', category: 'Advertenties', note: 'Bedenkt en test varianten van advertentieteksten en koppen.' },
-      { path: 'skills/emails', pack: 'Marketing (Corey Haines)', category: 'Marketing', note: 'Zet e-mailreeksen op, zoals welkom, nurture en win-back.' },
-      { path: 'skills/social', pack: 'Marketing (Corey Haines)', category: 'Marketing', note: 'Maakt en plant berichten voor LinkedIn, Instagram, TikTok en andere kanalen.' },
-      { path: 'skills/cro', pack: 'Marketing (Corey Haines)', category: 'Webshop', note: 'Zoekt waarom bezoekers een pagina of formulier verlaten en hoe meer mensen converteren.' },
-      { path: 'skills/pricing', pack: 'Marketing (Corey Haines)', category: 'Verkoop', note: 'Denkt mee over prijzen, pakketten en een proefperiode.' },
-      { path: 'skills/launch', pack: 'Marketing (Corey Haines)', category: 'Marketing', note: 'Plant de lancering van een product of nieuwe functie.' },
-      { path: 'skills/ai-seo', pack: 'Marketing (Corey Haines)', category: 'SEO', note: 'Maakt content die AI-zoekmachines en chatbots als bron noemen.' },
-    ],
-  },
-  {
-    id: 'claude-seo',
-    repo: 'AgriciDaniel/claude-seo',
-    commit: '6be93f45064ffbadced572b5d5c95f55fd263af0',
-    commitDate: '2026-10-22',
-    owner: 'AgriciDaniel',
-    publisher: 'AgriciDaniel',
-    license: 'MIT',
-    verifiedAt: VERIFIED,
-    note: 'SEO-skills van AgriciDaniel; gekozen zijn de onderdelen die (vrijwel) zonder hun eigen hulpprogramma werken.',
-    skills: [
-      { path: 'skills/seo-local', pack: 'SEO', category: 'SEO', note: 'Controleert lokale vindbaarheid: Google Bedrijfsprofiel, reviews en vestigingspagina’s.' },
-      { path: 'skills/seo-plan', pack: 'SEO', category: 'SEO', note: 'Maakt een SEO-plan voor een nieuwe of bestaande site, met stappen en volgorde.' },
-      { path: 'skills/seo-content-brief', pack: 'SEO', category: 'SEO', note: 'Schrijft een opdracht voor een nieuwe pagina: onderwerpen, lengte en zoekwoorden.' },
-      { path: 'skills/seo-geo', pack: 'SEO', category: 'SEO', note: 'Verbetert content zodat AI-overzichten en antwoordmachines hem gebruiken.' },
-      { path: 'skills/seo-schema', pack: 'SEO', category: 'SEO', note: 'Controleert of maakt gestructureerde gegevens (Schema.org) voor een pagina.' },
-      { path: 'skills/seo-hreflang', pack: 'SEO', category: 'SEO', note: 'Controleert en maakt taal- en landverwijzingen voor een meertalige site.' },
+      { path: 'skills/spec-driven-development', pack: 'Ontwikkeling', category: 'Ontwikkeling', note: 'Schrijft eerst op wat er gebouwd moet worden en waarom, daarna pas code.' },
+      { path: 'skills/planning-and-task-breakdown', pack: 'Werkwijze', category: 'Werkwijze', note: 'Knipt een groot project op in kleine, controleerbare taken.' },
+      { path: 'skills/shipping-and-launch', pack: 'Ontwikkeling', category: 'Ontwikkeling', note: 'Loopt een controlelijst af voordat een site of app live gaat.' },
+      { path: 'skills/security-and-hardening', pack: 'Ontwikkeling', category: 'Ontwikkeling', note: 'Controleert en verbetert code op beveiliging: invoer, toegang en geheimen.' },
+      { path: 'skills/performance-optimization', pack: 'Ontwikkeling', category: 'Ontwikkeling', note: 'Zoekt waarom een app of site traag is en maakt hem sneller.' },
     ],
   },
   {
     id: 'humanizer',
     repo: 'blader/humanizer',
-    commit: '0ef9fe5bc3572734fd3ae6c448fe00a30cd5dcf0',
-    commitDate: '2026-10-28',
+    stars: 67965,
+    commit: 'b48c832f0f809c1b5658edbb838c2521b72f2413',
+    commitDate: '2026-11-10',
     owner: 'blader',
-    publisher: 'Siqi Chen (blader)',
+    publisher: 'Siqi Chen',
     license: 'MIT',
     verifiedAt: VERIFIED,
-    note: 'Haalt typische AI-sporen uit een tekst, zodat hij natuurlijker leest.',
-    skills: [{ path: '', scripts: true, pack: 'Schrijven', category: 'Schrijven', note: 'Haalt typische AI-sporen uit een tekst, zodat hij natuurlijker leest.' }],
-  },
-  {
-    id: 'planning-with-files',
-    repo: 'OthmanAdi/planning-with-files',
-    commit: '2362ca385ad74f061aa0e7b73f56543a4b7e6df2',
-    commitDate: '2026-11-07',
-    owner: 'OthmanAdi',
-    publisher: 'Ahmad Adi (OthmanAdi)',
-    license: 'MIT',
-    verifiedAt: VERIFIED,
-    note: 'Houdt een plan, bevindingen en voortgang bij in bestanden, zodat werk een herstart of overdracht overleeft.',
+    note: 'Haalt de typische AI-toon uit een tekst.',
     skills: [
-      {
-        path: 'skills/planning-with-files', scripts: true,
-        pack: 'Plannen',
-        category: 'Werkwijze',
-        note: 'Houdt een plan, bevindingen en voortgang bij in bestanden, zodat werk een herstart of overdracht overleeft.',
-        windows: { status: 'niet-getest', note: 'Heeft naast bash- ook PowerShell-scripts; die zijn in TeamBot niet uitgevoerd. De werkwijze met de drie bestanden werkt zonder scripts.' },
-      },
+      { path: '', pack: 'Schrijven', category: 'Schrijven', note: 'Herschrijft een tekst zodat hij menselijk klinkt, zonder de inhoud te veranderen.', scripts: true, windows: SCRIPTS_OFF },
     ],
   },
-  ...MARKETING_SOURCES,
-
-  ...CURATED_SERVICE_SOURCES,
-
-  ...CURATED_WORK,
+  {
+    id: 'marketingskills',
+    repo: 'coreyhaines31/marketingskills',
+    stars: 59778,
+    commit: '1f837447b20bb6f0e72d87b80ece1c221c362c7d',
+    commitDate: '2026-11-11',
+    owner: 'coreyhaines31',
+    publisher: 'Corey Haines',
+    license: 'MIT',
+    verifiedAt: VERIFIED,
+    note: 'De meest gebruikte marketing-set: teksten, SEO, advertenties, e-mail en conversie.',
+    skills: [
+      { path: 'skills/copywriting', pack: 'Schrijven', category: 'Schrijven', note: 'Schrijft of verbetert de tekst van een homepage, landingspagina of prijspagina.' },
+      { path: 'skills/seo-audit', pack: 'SEO', category: 'SEO', note: 'Controleert een website op SEO-problemen en zegt wat eerst moet.' },
+      { path: 'skills/ai-seo', pack: 'SEO', category: 'SEO', note: 'Zorgt dat de site genoemd wordt in antwoorden van ChatGPT, Perplexity en Google AI.' },
+      { path: 'skills/ads', pack: 'Advertenties', category: 'Advertenties', note: 'Helpt advertenties op Google, Meta en LinkedIn opzetten, beoordelen en bijsturen.' },
+      { path: 'skills/cold-email', pack: 'Verkoop', category: 'Verkoop', note: 'Schrijft koude e-mails en opvolgmails die niet als spam lezen.' },
+      { path: 'skills/emails', pack: 'Marketing', category: 'Marketing', note: 'Bouwt e-mailreeksen, zoals welkomstmails en mails voor verlaten winkelwagens.' },
+      { path: 'skills/content-strategy', pack: 'Content', category: 'Content', note: 'Bepaalt waarover je moet schrijven en in welke volgorde.' },
+      { path: 'skills/cro', pack: 'Marketing', category: 'Marketing', note: 'Zoekt uit waarom bezoekers niet kopen of aanvragen en hoe dat beter kan.' },
+      { path: 'skills/ad-creative', pack: 'Advertenties', category: 'Advertenties', note: 'Bedenkt en test varianten van advertentieteksten en koppen.' },
+      { path: 'skills/programmatic-seo', pack: 'SEO', category: 'SEO', note: 'Plant veel pagina’s volgens één sjabloon, zoals per plaats of per vergelijking.' },
+      { path: 'skills/schema', pack: 'SEO', category: 'SEO', note: 'Schrijft gestructureerde gegevens (JSON-LD) voor producten, artikelen en veelgestelde vragen.' },
+      { path: 'skills/site-architecture', pack: 'SEO', category: 'SEO', note: 'Ontwerpt de opbouw van een site: menu, adressen en interne links.' },
+      { path: 'skills/link-building', pack: 'SEO', category: 'SEO', note: 'Zoekt veilige manieren om verwijzingen van andere sites te krijgen en schrijft de mails daarvoor.' },
+      { path: 'skills/analytics', pack: 'Data & analyse', category: 'Data & analyse', note: 'Zet metingen op in GA4 en Google Tag Manager: welke gebeurtenissen, met welke namen.' },
+      { path: 'skills/social', pack: 'Marketing', category: 'Marketing', note: 'Maakt en plant berichten voor LinkedIn, Instagram, TikTok en andere kanalen.' },
+      { path: 'skills/copy-editing', pack: 'Schrijven', category: 'Schrijven', note: 'Redigeert bestaande marketingtekst: helderder, korter en overtuigender.' },
+      { path: 'skills/pricing', pack: 'Verkoop', category: 'Verkoop', note: 'Denkt mee over prijzen, pakketten en een proefperiode.' },
+    ],
+  },
+  {
+    id: 'scientific-agent-skills',
+    repo: 'K-Dense-AI/scientific-agent-skills',
+    stars: 56845,
+    commit: '2d2065fb4520fa3f3f2bcf61cff26ec8b7eba4b5',
+    commitDate: '2026-11-09',
+    owner: 'K-Dense-AI',
+    publisher: 'K-Dense',
+    license: 'MIT',
+    verifiedAt: VERIFIED,
+    note: 'Grote set voor wetenschappelijk werk; een paar skills zijn ook zakelijk bruikbaar.',
+    skills: [
+      { path: 'skills/market-research-reports', pack: 'Onderzoek', category: 'Onderzoek', note: 'Maakt een marktonderzoek met marktomvang, concurrenten en controleerbare bronnen.', scripts: true, windows: SCRIPTS_OFF, needs: 'Python 3.11 of nieuwer voor de hulpscripts (optioneel).' },
+      { path: 'skills/statistical-analysis', pack: 'Data & analyse', category: 'Data & analyse', note: 'Kiest de juiste statistische toets en rekent cijfers netjes door.', scripts: true, windows: SCRIPTS_OFF, needs: 'Python 3.12 met de rekenpakketten die de skill noemt.' },
+    ],
+  },
+  {
+    id: 'obsidian-skills',
+    repo: 'obsidianmd/obsidian-skills',
+    stars: 51710,
+    commit: '398127736bd4ba42d767b1419fee1a927508370b',
+    commitDate: '2026-11-11',
+    owner: 'obsidianmd',
+    publisher: 'Obsidian',
+    license: 'MIT',
+    verifiedAt: VERIFIED,
+    note: 'Leert de bot werken met Obsidian-notities en schone tekst van webpagina’s halen.',
+    skills: [
+      { path: 'plugins/obsidian/skills/obsidian-markdown', pack: 'Productiviteit', category: 'Productiviteit', note: 'Schrijft notities in de juiste Obsidian-opmaak, met links en eigenschappen.', needs: 'Alleen nuttig als je Obsidian gebruikt.' },
+      { path: 'plugins/obsidian/skills/defuddle', pack: 'Onderzoek', category: 'Onderzoek', note: 'Haalt de schone tekst uit een webpagina, zonder menu’s en reclame.', needs: 'Het gratis programma defuddle (npm install -g defuddle).' },
+    ],
+  },
+  {
+    id: 'alirezarezvani-claude-skills',
+    repo: 'alirezarezvani/claude-skills',
+    stars: 29654,
+    commit: '9ca476d8401f8750f92f4a7b31ec68efaa61ab02',
+    commitDate: '2026-11-11',
+    owner: 'alirezarezvani',
+    publisher: 'Alireza Rezvani',
+    license: 'MIT',
+    verifiedAt: VERIFIED,
+    note: 'Zeer grote verzameling; de onderdelen financiën en klantbeheer zijn het bruikbaarst.',
+    skills: [
+      { path: 'finance/skills/financial-analyst', pack: 'Financiën', category: 'Financiën', note: 'Rekent kengetallen, begroting en prognose door op basis van je cijfers.', scripts: true, windows: SCRIPTS_OFF, needs: 'Python op de pc voor de rekenscripts.' },
+      { path: 'finance/skills/month-end-close', pack: 'Financiën', category: 'Financiën', note: 'Loopt de maandafsluiting na met een vaste controlelijst.', scripts: true, windows: SCRIPTS_OFF, needs: 'Python op de pc voor de hulpscripts. Niet afgestemd op Nederlandse regels.' },
+      { path: 'business-growth/skills/customer-success-manager', pack: 'Klantenservice', category: 'Klantenservice', note: 'Schat per klant in hoe tevreden hij is en of hij dreigt weg te gaan.', scripts: true, windows: SCRIPTS_OFF, needs: 'Python op de pc voor de rekenscripts.' },
+    ],
+  },
+  {
+    id: 'claude-seo',
+    repo: 'AgriciDaniel/claude-seo',
+    stars: 28240,
+    commit: 'cca7e4a267991aca880efade1fd12e8498caf2ce',
+    commitDate: '2026-11-11',
+    owner: 'AgriciDaniel',
+    publisher: 'Agrici Daniel',
+    license: 'MIT',
+    verifiedAt: VERIFIED,
+    note: 'Zeer uitgebreide SEO-set: techniek, inhoud, lokaal, webwinkel, schema en AI-zoekmachines.',
+    skills: [
+      { path: 'skills/seo-technical', pack: 'SEO', category: 'SEO', note: 'Controleert de technische kant van een site: vindbaarheid, snelheid, indexering.', needs: 'De hulpscripts staan buiten de map van de skill; de kennis werkt ook zonder.' },
+      { path: 'skills/seo-ecommerce', pack: 'SEO', category: 'SEO', note: 'Beoordeelt productpagina’s en productgegevens van een webwinkel voor Google.', needs: 'Vergelijken met Google Shopping vraagt een betaald DataForSEO-account (optioneel).' },
+      { path: 'skills/seo-local', pack: 'SEO', category: 'SEO', note: 'Controleert lokale vindbaarheid: Google Bedrijfsprofiel, adresgegevens en reviews.' },
+      { path: 'skills/seo-schema', pack: 'SEO', category: 'SEO', note: 'Controleert en maakt de gestructureerde gegevens (schema) voor een pagina.' },
+      { path: 'skills/seo-content', pack: 'Content', category: 'Content', note: 'Beoordeelt of een tekst goed genoeg is voor Google: ervaring, deskundigheid, betrouwbaarheid.' },
+      { path: 'skills/seo-plan', pack: 'SEO', category: 'SEO', note: 'Maakt een SEO-plan voor een nieuwe of bestaande site, met stappen en volgorde.' },
+      { path: 'skills/seo-content-brief', pack: 'SEO', category: 'SEO', note: 'Schrijft een opdracht voor een nieuwe pagina: onderwerpen, lengte en zoekwoorden.' },
+      { path: 'skills/seo-geo', pack: 'SEO', category: 'SEO', note: 'Verbetert content zodat AI-overzichten en antwoordmachines hem gebruiken.' },
+    ],
+  },
+  {
+    id: 'pm-skills',
+    repo: 'phuryn/pm-skills',
+    stars: 27892,
+    commit: '9af7bfd0bc47fdad43c2eaa7a43cd13918e7aaef',
+    commitDate: '2026-11-08',
+    owner: 'phuryn',
+    publisher: 'Pawel Huryn',
+    license: 'MIT',
+    verifiedAt: VERIFIED,
+    note: 'Korte, duidelijke skills voor marktonderzoek, strategie en productwerk.',
+    skills: [
+      { path: 'pm-market-research/skills/competitor-analysis', pack: 'Onderzoek', category: 'Onderzoek', note: 'Brengt vijf directe concurrenten in kaart met sterke en zwakke punten.' },
+      { path: 'pm-market-research/skills/market-sizing', pack: 'Onderzoek', category: 'Onderzoek', note: 'Schat hoe groot de markt voor een product of dienst is.' },
+      { path: 'pm-product-strategy/skills/pricing-strategy', pack: 'Verkoop', category: 'Verkoop', note: 'Helpt een prijs en prijsmodel kiezen.' },
+    ],
+  },
+  {
+    id: 'geo-seo-claude',
+    repo: 'zubair-trabzada/geo-seo-claude',
+    stars: 11628,
+    commit: '989cae01e8ebbc42a9ec798eb9e7cb423f5ec89c',
+    commitDate: '2026-10-05',
+    owner: 'zubair-trabzada',
+    publisher: 'Zubair Trabzada',
+    license: 'MIT',
+    verifiedAt: VERIFIED,
+    note: 'Zichtbaarheid in AI-zoekmachines (GEO) controleren en verbeteren.',
+    skills: [
+      { path: 'skills/geo-audit', pack: 'SEO', category: 'SEO', note: 'Controleert of een site goed gevonden en geciteerd wordt door AI-zoekmachines.', needs: 'Gaat uit van hulp-agents; zonder die werkt het stap voor stap.' },
+      { path: 'skills/geo-llmstxt', pack: 'SEO', category: 'SEO', note: 'Maakt of controleert het bestand llms.txt voor AI-zoekmachines.' },
+    ],
+  },
+  {
+    id: 'dev-browser',
+    repo: 'SawyerHood/dev-browser',
+    stars: 6727,
+    commit: '520ba5cb4fa2856a501376cd8a62fe54a6576549',
+    commitDate: '2026-11-03',
+    owner: 'SawyerHood',
+    publisher: 'Sawyer Hood',
+    license: 'MIT',
+    verifiedAt: VERIFIED,
+    note: 'Laat de bot een echte Chrome-browser bedienen met korte scripts.',
+    skills: [
+      { path: 'skills/dev-browser', pack: 'Browser', category: 'Browser', note: 'Bedient websites: klikken, formulieren invullen, inloggen en gegevens ophalen.', needs: 'Het programma dev-browser (npm install -g dev-browser).' },
+    ],
+  },
+  {
+    id: 'n8n-skills',
+    repo: 'czlonkowski/n8n-skills',
+    stars: 6630,
+    commit: 'e037563e101749e630e6688d121d04529fe6ee7b',
+    commitDate: '2026-10-24',
+    owner: 'czlonkowski',
+    publisher: 'Romuald Członkowski',
+    license: 'MIT',
+    verifiedAt: VERIFIED,
+    note: 'Kennis om goede automatiseringen in n8n te bouwen.',
+    skills: [
+      { path: 'skills/n8n-code-javascript', pack: 'Ontwikkeling', category: 'Ontwikkeling', note: 'Schrijft werkende JavaScript voor de Code-stap in n8n.', needs: 'Alleen nuttig als je n8n gebruikt.' },
+      { path: 'skills/n8n-error-handling', pack: 'Ontwikkeling', category: 'Ontwikkeling', note: 'Zorgt dat een n8n-automatisering fouten netjes opvangt.', needs: 'Alleen nuttig als je n8n gebruikt.' },
+    ],
+  },
+  {
+    id: 'linkedin-skills',
+    repo: 'sergebulaev/linkedin-skills',
+    stars: 5843,
+    commit: '8f8bc4b40a2d5419b2dcf898772b85712cfbdf41',
+    commitDate: '2026-10-27',
+    owner: 'sergebulaev',
+    publisher: 'Serge Bulaev',
+    license: 'MIT',
+    verifiedAt: VERIFIED,
+    note: 'LinkedIn-berichten en -reacties schrijven die niet als AI klinken.',
+    skills: [
+      { path: 'skills/linkedin-post-writer', pack: 'Content', category: 'Content', note: 'Schrijft een LinkedIn-bericht met een sterke openingszin.' },
+      { path: 'skills/linkedin-profile-optimizer', pack: 'Marketing', category: 'Marketing', note: 'Verbetert een LinkedIn-profiel zodat het meer aanvragen oplevert.' },
+    ],
+  },
+  {
+    id: 'playwright-skill',
+    repo: 'lackeyjb/playwright-skill',
+    stars: 3285,
+    commit: 'dd47a6a023e249eb1b36e9e943eab89d0900865d',
+    commitDate: '2026-08-14',
+    owner: 'lackeyjb',
+    publisher: 'Bryan Lackey',
+    license: 'MIT',
+    verifiedAt: VERIFIED,
+    note: 'Browser automatiseren en websites testen met Playwright.',
+    skills: [
+      { path: 'skills/playwright-skill', pack: 'Browser', category: 'Browser', note: 'Schrijft en draait een script dat een website test of bedient en schermafbeeldingen maakt.', scripts: true, windows: SCRIPTS_OFF, needs: 'Node.js 20 of nieuwer; installeert Playwright en Chromium bij eerste gebruik.' },
+    ],
+  },
+  {
+    id: 'web-quality-skills',
+    repo: 'addyosmani/web-quality-skills',
+    stars: 3069,
+    commit: 'afa8da942115f2961fdbfa80807ea0b232ff6c00',
+    commitDate: '2026-08-24',
+    owner: 'addyosmani',
+    publisher: 'Addy Osmani',
+    license: 'MIT',
+    verifiedAt: VERIFIED,
+    note: 'De kwaliteit van een website volgens Google Lighthouse: snelheid, SEO en toegankelijkheid.',
+    skills: [
+      { path: 'skills/seo', pack: 'SEO', category: 'SEO', note: 'Loopt de technische SEO-basis van een site na en lost problemen op.' },
+      { path: 'skills/core-web-vitals', pack: 'Ontwikkeling', category: 'Ontwikkeling', note: 'Maakt een site sneller op de punten waar Google op meet.' },
+      { path: 'skills/accessibility', pack: 'Ontwikkeling', category: 'Ontwikkeling', note: 'Controleert of een site bruikbaar is voor iedereen, ook met een beperking.' },
+    ],
+  },
+  {
+    id: 'wondelai-skills',
+    repo: 'wondelai/skills',
+    stars: 2669,
+    commit: 'd8d5d75f83da9f16d8aad5bab5f5b341a4770a30',
+    commitDate: '2026-11-02',
+    owner: 'wondelai',
+    publisher: 'wondelai',
+    license: 'MIT',
+    verifiedAt: VERIFIED,
+    note: 'Bekende zakenboeken omgezet in werkwijzen: aanbod, marketing, klantgesprekken.',
+    skills: [
+      { path: 'hundred-million-offers', pack: 'Verkoop', category: 'Verkoop', note: 'Bouwt een aanbod dat moeilijk te weigeren is, volgens de methode van Hormozi.' },
+      { path: 'one-page-marketing', pack: 'Marketing', category: 'Marketing', note: 'Maakt een marketingplan op één pagina.' },
+      { path: 'mom-test', pack: 'Onderzoek', category: 'Onderzoek', note: 'Helpt klantgesprekken voeren die eerlijke antwoorden opleveren.' },
+    ],
+  },
+  {
+    id: 'codex-first-customer-finder-skill',
+    repo: 'Kappaemme-git/codex-first-customer-finder-skill',
+    stars: 1249,
+    commit: 'd3f6964bd989745ac183edbd545c588a68451146',
+    commitDate: '2026-09-19',
+    owner: 'Kappaemme-git',
+    publisher: 'Francesco Mistero',
+    license: 'MIT',
+    verifiedAt: VERIFIED,
+    note: 'Zoekt mogelijke eerste klanten op basis van openbare signalen.',
+    skills: [
+      { path: 'first-customer-finder', pack: 'Verkoop', category: 'Verkoop', note: 'Maakt een korte lijst van mogelijke klanten met bewijs waarom ze passen, plus een conceptbericht.', scripts: true, windows: SCRIPTS_OFF },
+    ],
+  },
+  {
+    id: 'jezweb-claude-skills',
+    repo: 'jezweb/claude-skills',
+    stars: 1108,
+    commit: '1260fa7439b36b18dbf16648ccc7fb44783f6c23',
+    commitDate: '2026-10-09',
+    owner: 'jezweb',
+    publisher: 'Jeremy Dawes',
+    license: 'MIT',
+    verifiedAt: VERIFIED,
+    note: 'Praktische skills van een webbureau: Shopify, WordPress, lokale SEO.',
+    skills: [
+      { path: 'plugins/shopify/skills/shopify-setup', pack: 'Webshop', category: 'Webshop', note: 'Regelt de koppeling met een Shopify-winkel.', needs: 'Shopify-winkel en een toegangssleutel voor de Admin API.' },
+      { path: 'plugins/shopify/skills/shopify-products', pack: 'Webshop', category: 'Webshop', note: 'Maakt en wijzigt producten in Shopify, ook in bulk.', needs: 'Shopify-winkel en een toegangssleutel voor de Admin API.' },
+      { path: 'plugins/wordpress/skills/wordpress-setup', pack: 'Webshop', category: 'Webshop', note: 'Regelt de koppeling met een WordPress-site.', needs: 'WordPress-site met WP-CLI via SSH of een applicatiewachtwoord.' },
+      { path: 'plugins/wordpress/skills/wordpress-content', pack: 'Content', category: 'Content', note: 'Plaatst en wijzigt berichten, pagina’s en afbeeldingen op een WordPress-site.', needs: 'WordPress-site met WP-CLI via SSH of een applicatiewachtwoord.' },
+      { path: 'plugins/web-design/skills/seo-local-business', pack: 'SEO', category: 'SEO', note: 'Zet de SEO-basis neer voor de site van een lokaal bedrijf.' },
+    ],
+  },
+  {
+    id: 'coldoutboundskills',
+    repo: 'growthenginenowoslawski/coldoutboundskills',
+    stars: 813,
+    commit: '25c5d85fbb5dd3efec97b0ca457cbbc286547476',
+    commitDate: '2026-10-05',
+    owner: 'growthenginenowoslawski',
+    publisher: 'growthenginenowoslawski',
+    license: 'MIT',
+    verifiedAt: VERIFIED,
+    note: 'Complete werkwijze voor koude e-mail: strategie, teksten en afleverbaarheid.',
+    skills: [
+      { path: 'skills/campaign-strategy', pack: 'Verkoop', category: 'Verkoop', note: 'Bedenkt campagne-ideeën voor koude acquisitie met doelgroep en invalshoek.' },
+      { path: 'skills/campaign-copywriting', pack: 'Verkoop', category: 'Verkoop', note: 'Schrijft koude e-mails in stappen, met jouw akkoord per stap.' },
+      { path: 'skills/spam-word-checker', pack: 'Communicatie', category: 'Communicatie', note: 'Controleert een e-mail op woorden en fouten die hem in de spam laten belanden.' },
+    ],
+  },
+  {
+    id: 'shopify-admin-skills',
+    repo: '40RTY-ai/shopify-admin-skills',
+    stars: 204,
+    commit: 'e3579f43c84c1342a7b700be43f9da1c2ce1ff5b',
+    commitDate: '2026-10-26',
+    owner: '40RTY-ai',
+    publisher: '40RTY.ai',
+    license: 'MIT',
+    verifiedAt: VERIFIED,
+    note: 'Dagelijks beheer van een Shopify-winkel: bestellingen, voorraad, klanten, cijfers.',
+    skills: [
+      { path: 'skills/customer-support/shopify-admin-order-lookup-and-summary', pack: 'Klantenservice', category: 'Klantenservice', note: 'Zoekt een bestelling op en vat status en verzending samen.', needs: 'Shopify-winkel en ingelogde Shopify CLI.' },
+      { path: 'skills/customer-support/shopify-admin-refund-and-reorder', pack: 'Klantenservice', category: 'Klantenservice', note: 'Regelt een terugbetaling en een nieuwe bestelling.', needs: 'Shopify-winkel en ingelogde Shopify CLI.' },
+      { path: 'skills/merchandising/shopify-admin-low-inventory-restock', pack: 'Webshop', category: 'Webshop', note: 'Laat zien welke producten bijna op zijn en bijbesteld moeten worden.', needs: 'Shopify-winkel en ingelogde Shopify CLI.' },
+      { path: 'skills/merchandising/shopify-admin-seo-metadata-audit', pack: 'Webshop', category: 'Webshop', note: 'Controleert titels en beschrijvingen van producten voor Google.', needs: 'Shopify-winkel en ingelogde Shopify CLI.' },
+      { path: 'skills/finance/shopify-admin-payout-reconciliation', pack: 'Financiën', category: 'Financiën', note: 'Legt uitbetalingen van Shopify naast de bestellingen.', needs: 'Shopify-winkel en ingelogde Shopify CLI.' },
+    ],
+  },
 ];
 
 /** Catalogue id of one skill: `<source id>/<path>` (root skill: the source id alone). */

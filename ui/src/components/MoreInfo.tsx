@@ -20,7 +20,7 @@ export function MoreInfo({ children, label = 'Meer informatie', className, block
         aria-expanded={open}
         aria-controls={open ? id : undefined}
         onClick={() => setOpen(!open)}
-        className="inline-flex items-center gap-1 rounded-md align-[-1px] text-xs font-medium text-muted underline-offset-2 hover:text-fg hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent coarse:min-h-11"
+        className={cx("inline-flex items-center gap-1 rounded-md align-[-1px] text-xs font-medium text-muted underline-offset-2 hover:text-fg hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent coarse:min-h-11", !block && 'coarse:-my-3')}
       >
         <Info className="h-3.5 w-3.5 shrink-0" aria-hidden />
         {open ? 'Minder informatie' : label}

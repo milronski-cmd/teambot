@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { Link2, Link2Off, QrCode, ShieldAlert, Smartphone } from 'lucide-react';
 import { api, on } from '../../lib/api';
 import { uiLocale } from '../../lib/i18n';
-import { Badge, Button, Card, Field, Input, Modal, Spinner, useAsync } from '../../components/ui';
+import { Badge, Button, Card, CardHead, Field, Input, Modal, Spinner, useAsync } from '../../components/ui';
 import { MoreInfo } from '../../components/MoreInfo';
 import { isGone, type BindingDetail, type WaLink } from './shared';
 import { QR_RISK } from './picker';
@@ -97,11 +97,12 @@ export function WhatsAppLink({ b, reload, bare }: { b: Pick<BindingDetail, 'id' 
     <>
       <Card className={bare ? 'space-y-4 border-0 p-0' : 'space-y-4 p-4'} data-testid="wa-link" data-phase={st.phase}>
         {!bare && (
-          <div className="flex flex-wrap items-center gap-2">
-            <QrCode className="h-4 w-4 text-accent" aria-hidden />
-            <div className="font-semibold">Koppelen met je telefoon</div>
-            <Badge tone={st.phase === 'ready' ? 'ok' : st.phase === 'error' ? 'danger' : waiting || st.phase === 'syncing' ? 'warn' : 'neutral'}>{PHASE_TEXT[st.phase] || st.phase}</Badge>
-          </div>
+          <CardHead
+            icon={QrCode}
+            tone="blue"
+            title="Koppelen met je telefoon"
+            action={<Badge tone={st.phase === 'ready' ? 'ok' : st.phase === 'error' ? 'danger' : waiting || st.phase === 'syncing' ? 'warn' : 'neutral'}>{PHASE_TEXT[st.phase] || st.phase}</Badge>}
+          />
         )}
 
         {st.phase === 'ready' && st.me && (

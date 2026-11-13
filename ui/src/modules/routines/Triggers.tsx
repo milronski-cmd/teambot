@@ -1,11 +1,11 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Copy, FolderOpen, Globe, History as HistoryIcon, KeyRound, Mail, MessageCircle, Pencil, Plus, Rss, Send, Trash2, TriangleAlert, Webhook, RefreshCw } from 'lucide-react';
 import { api, on } from '../../lib/api';
-import { Badge, Button, Card, EmptyState, Field, Input, Modal, Select, Spinner, Textarea, Toggle, toast, useAsync } from '../../components/ui';
+import { Badge, Button, Card, EmptyState, Field, Input, Modal, Select, Spinner, Textarea, Toggle, toast, useAsync, IconTile, copyText } from '../../components/ui';
 import { Fold, SkeletonRows } from '../../components/overview';
 import { MoreInfo } from '../../components/MoreInfo';
 import { ComputerOnly, useIsPhoneSession } from '../../shell/computerOnly';
-import { copyText, EVENT_STATUS, fmtDate, fmtTime, type FieldFilter, type Filters, type Meta, type TriggerEvent, type TriggerView } from './lib';
+import { EVENT_STATUS, fmtDate, fmtTime, type FieldFilter, type Filters, type Meta, type TriggerEvent, type TriggerView } from './lib';
 
 const KIND: Record<TriggerView['kind'], { label: string; icon: typeof Webhook }> = {
   webhook: { label: 'Webhook', icon: Webhook },
@@ -524,7 +524,7 @@ function TriggerCard({ t, meta, tz, onChanged, onEdit, onDeleted, onSecret }: { 
   return (
     <Card className="space-y-3 p-4">
       <div className="flex flex-wrap items-center gap-2">
-        <K.icon className="h-4 w-4 text-accent" />
+        <IconTile icon={K.icon} tone="blue" />
         <div className="min-w-0 flex-1">
           <div className="truncate font-medium">{t.name}</div>
           <div className="text-xs text-muted">

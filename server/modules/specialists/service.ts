@@ -13,7 +13,7 @@ import { resolveInWorkspace } from '../../tools/builtin/files.js';
 import { type FetchFn, politeFetch, sha } from './fetch.js';
 import { engineFor } from './engine.js';
 import { clip, jaccard, looksLikeInstruction, ownWords, saysUnknown, tokens } from './guard.js';
-import { defaultSourcesFor, fieldOf, primaryScore, sourceQueries, specialismOf } from './defaults.js';
+import { defaultSourcesFor, fieldOf, onTopic, primaryScore, roleHead, sourceQueries, specialismOf, subjectWords, topicHits } from './defaults.js';
 
 export type SourceKind = 'web' | 'feed' | 'docs' | 'file';
 export type Cadence = 'hourly' | 'daily' | 'weekly';
@@ -346,6 +346,71 @@ export class SpecialistService {
    * that it answers with real text. The best few become its sources, marked "voorgesteld", and the owner is told once.
    * At most once a week per bot; never for a bot set to private (its field would leave the computer).
    */
+  /** What this bot's work is about, in words (see defaults.ts › subjectWords). */
+  workWords(agent: Agent, field: string): string[] {
+    // (A known specialism also brings the words of its own search for what changed and of its standard sources.)
+    const sp = specialismOf(`${field} ${agent.name} ${agent.role || ''}`);
+    return subjectWords(field, agent.role, agent.description, sp?.news, ...(sp?.sources || []).map((x) => x.label));
+  }
+
+  /** What the owner is busy with, in words: from the owner's dossier and the overview of the bot's team (memory). */
+  ownerWordsOf(agent: Agent): string[] {
+    try {
+      const core: any[] = this.ctx.services.memory?.living?.core?.(agent.id) || [];
+      return subjectWords(...core.filter((d) => d.core === 'owner' || d.core === 'overview').map((d) => String(d.body || '')));
+    } catch {
+      return [];
+    }
+  }
+
+  /**
+   * Is a page about this bot's work? (Its title or link names a word of the field, role or description.) The one
+   * question every place asks that judges a source without a model: defaults.ts › onTopic with this bot's words.
+   */
+  aboutWork(agent: Agent, field: string, title: string, url: string): boolean {
+    return onTopic(url, title, this.workWords(agent, field));
+  }
+
+  /**
+   * Once per install (the upgrade to sources that must be about the bot's work; no model, no network): a source
+   * TeamBot found itself with a search — never a preset, a template's source or one the owner or a bot added —
+   * whose title and link name nothing of the bot's work is switched off, and the facts learned from exactly that
+   * source go to the archive (one batch per owner: one undo in Geheugen › Geschiedenis brings them back; the source
+   * can be switched on again). Small and conservative on purpose: in doubt everything stays as it is.
+   */
+  pruneUnfitSources(): { sources: number; facts: number } {
+    const out = { sources: 0, facts: 0 };
+    if (this.store.getSetting<any>('', 'specialists.fitChecked', null)) return out;
+    const mem = this.ctx.services.memory?.svc;
+    for (const p of this.store.find<ProfileRow>('specialist_profiles', {})) {
+      const agent = this.store.agent(p.agent_id);
+      const found = Date.parse(p.settings?.discoveredAt || '');
+      if (!agent || !p.field || !found) continue;
+      const presets = new Set(defaultSourcesFor(p.field, 50).map((d) => d.target));
+      let batch: string | null = null;
+      for (const s of this.sources(agent.id)) {
+        if (!s.enabled || !s.suggested || s.kind === 'file' || presets.has(s.target) || (Date.parse((s as any).created_at || '') || 0) < found) continue;
+        const pages = this.store.all<any>('SELECT url, title FROM specialist_pages WHERE source_id = ?', s.id);
+        if ([{ url: s.target, title: s.label }, ...pages].some((x) => this.aboutWork(agent, p.field!, x.title || '', String(x.url || '')))) continue;
+        this.store.update('specialist_sources', s.id, { enabled: false, last_error: 'Zelf gevonden met zoeken, maar de titel gaat niet over het vakgebied: uitgezet. Je kunt deze bron weer aanzetten of weghalen.', updated_at: now() });
+        out.sources++;
+        const urls = [...new Set([s.target, ...pages.map((x) => String(x.url))])];
+        const rows = mem && p.dossier_id ? this.store.all<any>(`SELECT id FROM memory_items WHERE dossier_id = ? AND status = 'active' AND pinned = 0 AND created_by != 'user' AND source_kind = 'url' AND source_ref IN (${urls.map(() => '?').join(',')})`, p.dossier_id, ...urls) : [];
+        for (const r of rows) {
+          batch = batch || newId('mbt_');
+          const before = mem.snapshot('item', r.id);
+          mem.patchItem(r.id, { status: 'archived' });
+          mem.recordChange({ userId: p.user_id, kind: 'item', recordId: r.id, dossierId: p.dossier_id, op: 'archive', before, after: mem.snapshot('item', r.id), summary: `Naar het archief (bron ging niet over het vakgebied): ${mem.label(before)}`, reason: `bron uitgezet: ${clip(s.label || s.target, 120)}`, actor: 'system', actorId: 'specialists-fit', batchId: batch, undoDays: 365 });
+          out.facts++;
+        }
+        this.ctx.log.info(`[specialists] bron van ${agent.name} uitgezet (gaat niet over het vakgebied): ${clip(s.label || s.target, 100)}; ${rows.length} feiten naar het archief (terug te draaien in Geheugen › Geschiedenis)`);
+        this.emit(p.user_id, agent.id, 'knowledge');
+      }
+    }
+    this.store.setSetting('', 'specialists.fitChecked', now());
+    return out;
+  }
+
   async discoverSources(agent: Agent, o: { replace?: boolean } = {}): Promise<number> {
     const p = this.active(agent.id);
     const have = this.sources(agent.id);
@@ -355,6 +420,10 @@ export class SpecialistService {
     this.store.update('specialist_profiles', agent.id, { settings: { ...p.settings, discoveredAt: now() } }, 'agent_id');
     const seen = new Set<string>(have.map((x) => { try { return new URL(x.target).host; } catch { return ''; } }));
     const cands: { url: string; title: string; score: number }[] = [];
+    // A search hit becomes a source only when it is about this bot's work (its field, role and description), and one
+    // that also names what the owner is busy with (the owner's and the team's overview dossier) goes first. An
+    // official site about something else is not a source.
+    const world = this.ownerWordsOf(agent);
     for (const q of sourceQueries(p.field)) {
       let hits: { title: string; url: string }[] = [];
       try {
@@ -369,7 +438,9 @@ export class SpecialistService {
         } catch {
           continue;
         }
-        const score = primaryScore(h.url, h.title || '', p.field);
+        // (primaryScore is 0 for a page that is not about the field: the same check as `aboutWork`, on the field alone.)
+        const primary = primaryScore(h.url, h.title || '', p.field);
+        const score = primary && primary + Math.min(2, topicHits(h.url, h.title || '', world));
         // (One page per site, the first one the search gave.)
         if (!score || seen.has(host) || !/^https?:$/.test(new URL(h.url).protocol)) continue;
         seen.add(host);
@@ -491,7 +562,6 @@ export class SpecialistService {
       retired: p?.dossier_id ? n("SELECT COUNT(*) n FROM memory_items WHERE dossier_id = ? AND status = 'superseded' AND flags LIKE '%\"retired\"%'", p.dossier_id) : 0,
       review: p?.dossier_id ? n("SELECT COUNT(*) n FROM memory_items WHERE dossier_id = ? AND status = 'proposed'", p.dossier_id) : 0,
       goals: n("SELECT COUNT(*) n FROM specialist_goals WHERE agent_id = ? AND status = 'open'", agent.id),
-      proposals: n("SELECT COUNT(*) n FROM specialist_proposals WHERE agent_id = ? AND status = 'open'", agent.id),
       reportsUnseen: n('SELECT COUNT(*) n FROM specialist_reports WHERE agent_id = ? AND seen_at IS NULL', agent.id),
     };
   }
@@ -941,14 +1011,16 @@ export class SpecialistService {
       if (list.length >= MAX_SOURCES) break;
       if (!list.some((x) => x.target === d.target)) list.push({ ...d, enabled: true, suggested: true });
     }
-    this.save(userId, agentId, { enabled: true, field, learnOn: true, sources: list });
+    // The learning round stays off: it costs model calls, so it starts only when the owner (or a bot on his word) switches it on.
+    this.save(userId, agentId, { enabled: true, field, learnOn: false, sources: list });
     return true;
   }
 
   /**
    * A bot whose name or role says it is a specialist in something — any subject ("Belastingadviseur",
    * "TikTok-specialist"), or one of the presets — and that was never set up: it becomes a specialist by itself, with
-   * the learning round on; its sources are the preset's or the ones it finds itself (discoverSources). Once only: a
+   * the learning round OFF (nothing that costs model calls starts by itself); once the round is switched on, its
+   * sources are the preset's or the ones it finds itself (discoverSources). Once only: a
    * bot the owner switched the specialism off for (it has a profile) is never adopted again.
    */
   adopt(agent: Agent): boolean {
@@ -956,8 +1028,8 @@ export class SpecialistService {
     const field = fieldOf(agent.name, agent.role || '');
     if (!field || looksLikeInstruction(field)) return false;
     try {
-      this.save(agent.user_id, agent.id, { enabled: true, field, learnOn: true });
-      this.ctx.audit(agent.user_id, 'specialists.adopted', { agent: agent.name, field, preset: specialismOf(`${agent.name} ${agent.role || ''}`)?.id || null }, agent.id);
+      this.save(agent.user_id, agent.id, { enabled: true, field, learnOn: false });
+      this.ctx.audit(agent.user_id, 'specialists.adopted', { agent: agent.name, field, preset: specialismOf(`${agent.name} ${roleHead(agent.role || '')}`)?.id || null }, agent.id);
       return true;
     } catch (e) {
       this.ctx.log.warn('[specialists] bot niet vanzelf specialist gemaakt', String(e));
@@ -976,12 +1048,43 @@ export class SpecialistService {
     return rows.length;
   }
 
+  /**
+   * Once per specialist, after the update: a source the bot found by itself (discoverSources) that is not about its
+   * field is switched off. Not removed: it stays in the list with the reason, and the owner can switch it on again.
+   * Sources of a preset, of a template and the ones the owner added are never touched. Returns how many went off.
+   */
+  pruneOffTopic(agent: Agent): number {
+    const p = this.profile(agent.id);
+    if (!p?.enabled || !p.field || p.settings?.prunedAt) return 0;
+    const found = Date.parse(p.settings?.discoveredAt || '') || 0;
+    const known = new Set(defaultSourcesFor(`${p.field} ${agent.name} ${agent.role || ''}`).map((d) => d.target));
+    const off: string[] = [];
+    if (found) {
+      for (const s of this.sources(agent.id)) {
+        if (!s.suggested || !s.enabled || s.kind === 'file' || known.has(s.target) || (Date.parse(s.created_at) || 0) < found - 1000) continue;
+        if (this.aboutWork(agent, p.field, s.label || '', s.target)) continue;
+        this.store.update('specialist_sources', s.id, { enabled: false, last_error: 'Uitgezet door TeamBot: deze bron gaat niet over het vakgebied van de bot.', updated_at: now() });
+        this.ctx.audit(agent.user_id, 'specialists.source_off', { agent: agent.name, source: s.target, label: s.label, reason: 'niet over het vakgebied' }, agent.id);
+        off.push(s.label || s.target);
+      }
+    }
+    this.store.update('specialist_profiles', agent.id, { settings: { ...p.settings, prunedAt: now() } }, 'agent_id');
+    if (off.length) {
+      // One whole sentence per form, never "een bron" or "hem"/"ze" as a value.
+      const sources = off.map((x) => clip(x, 80)).join(', ');
+      this.ctx.events.emit(agent.user_id, 'notification', { title: off.length === 1 ? `${agent.name} leert niet meer van een bron buiten zijn vak` : `${agent.name} leert niet meer van ${off.length} bronnen buiten zijn vak`, body: off.length === 1 ? `${sources}. Uitgezet, niet weggehaald: je vindt hem bij de bot onder Specialisme.` : `${sources}. Uitgezet, niet weggehaald: je vindt ze bij de bot onder Specialisme.`, link: `#/m/specialists/${agent.id}/bronnen`, kind: 'memory', agentId: agent.id });
+      this.emit(agent.user_id, agent.id);
+    }
+    return off.length;
+  }
+
   /** At start: adopt known specialists and make every learning routine match its profile (after an update). */
   syncAll() {
     for (const a of this.store.all<any>('SELECT id FROM agents')) {
       const agent = this.store.agent(a.id);
       if (!agent || agent.archived) continue;
       try {
+        this.pruneOffTopic(agent);
         if (!this.adopt(agent)) this.dropRoutine(agent);
       } catch (e) {
         this.ctx.log.warn('[specialists] leerroutine niet bijgewerkt', String(e));

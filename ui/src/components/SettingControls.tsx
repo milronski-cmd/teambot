@@ -1,9 +1,11 @@
 import React, { createContext, useContext, useEffect, useId, useRef, useState } from 'react';
 import { Check, RotateCcw } from 'lucide-react';
+import type { LucideIcon } from 'lucide-react';
 import { isRtl } from '../lib/i18n';
-import { Button, Card, Toggle, cx, toast, toastError } from './ui';
+import { Button, Card, IconTile, Toggle, cx, toast, toastError, type Tone } from './ui';
 import { Listbox } from './Listbox';
 import { MoreInfo } from './MoreInfo';
+import { settingText, type SettingId } from '../../../shared/settings.js';
 
 /**
  * Settings controls (0.4.5, "meer keuzemenu's, heel simpel en duidelijk"). One way to show a setting everywhere:
@@ -87,7 +89,8 @@ export function SavedNote({ shown, className }: { shown: boolean; className?: st
  */
 export function SettingsSection({
   title,
-  icon,
+  icon: Icon,
+  tone,
   hint,
   info,
   onReset,
@@ -99,7 +102,9 @@ export function SettingsSection({
   ...rest
 }: {
   title: React.ReactNode;
-  icon?: React.ReactNode;
+  /** The icon of the card, shown in a soft coloured tile (`tone`). Every section has one. */
+  icon?: LucideIcon;
+  tone?: Tone;
   hint?: React.ReactNode;
   info?: React.ReactNode;
   onReset?: () => Promise<unknown> | void;
@@ -127,25 +132,28 @@ export function SettingsSection({
       <Card className={cx('px-5 pb-2 pt-4', className)} id={id} {...(rest as React.HTMLAttributes<HTMLDivElement>)}>
         <section aria-labelledby={titleId}>
           <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
-            <h2 id={titleId} className="flex min-w-0 flex-1 items-center gap-2 text-[15px] font-bold tracking-tight">
-              {icon && <span className="shrink-0 text-muted [&_svg]:h-4 [&_svg]:w-4" aria-hidden>{icon}</span>}
-              <span className="min-w-0">{title}</span>
-            </h2>
+            {Icon && <IconTile icon={Icon} tone={tone} />}
+            <div className="min-w-0 flex-1">
+              <h2 id={titleId} className="text-[15px] font-bold leading-snug tracking-tight">
+                {title}
+              </h2>
+              {(hint || info) && (
+                <p className="text-xs leading-relaxed text-muted">
+                  {hint}
+                  {hint && info ? ' ' : ''}
+                  {info && <MoreInfo>{info}</MoreInfo>}
+                </p>
+              )}
+            </div>
             <SavedNote shown={saved} />
             {actions}
             {onReset && (
-              <Button size="sm" variant="ghost" className="-me-2" icon={<RotateCcw className="h-3.5 w-3.5" aria-hidden />} loading={busy} disabled={isDefault} onClick={reset} data-testid="reset-defaults">
-                Standaard terugzetten
+              <Button size="sm" variant="ghost" className="-me-2" icon={<RotateCcw className="h-3.5 w-3.5" aria-hidden />} loading={busy} disabled={isDefault} onClick={reset} data-testid="reset-defaults" title="Standaard terugzetten">
+                {/* On a phone only the icon: the words pushed the section title onto two lines. */}
+                <span className="max-sm:sr-only">Standaard terugzetten</span>
               </Button>
             )}
           </div>
-          {(hint || info) && (
-            <p className="mt-0.5 text-xs leading-relaxed text-muted">
-              {hint}
-              {hint && info ? ' ' : ''}
-              {info && <MoreInfo>{info}</MoreInfo>}
-            </p>
-          )}
           <div className="mt-1 divide-y divide-line">{children}</div>
         </section>
       </Card>
@@ -155,14 +163,23 @@ export function SettingsSection({
 
 const RowContext = createContext<{ labelId: string; hintId?: string } | null>(null);
 
+/** The words of a setting row: its title, and its line unless the row gives its own (`null`: none). */
+function wordsOf(id: SettingId, own: React.ReactNode | undefined): { title: string; hint: React.ReactNode } {
+  const d = settingText(id);
+  return { title: d.title, hint: own === undefined ? d.hint : own };
+}
+
 /** The label and hint of the row a control is in (Segmented and Dropdown use it for their accessible name). */
 export const useRowLabel = () => useContext(RowContext);
 
 /**
  * One setting: a short label (and at most one short line) on the start side, the control on the end side. On a narrow
  * screen the control moves under the label. `info` is the longer explanation, behind "Meer informatie".
+ * The label and the line are the setting's own words in shared/settings.ts (`setting`), the words every bot finds it by
+ * (teambot_find); `hint` replaces the line where it depends on the state, `null` leaves it out.
  */
-export function SettingRow({ label, hint, info, children, stack, className, testId }: { label: React.ReactNode; hint?: React.ReactNode; info?: React.ReactNode; children?: React.ReactNode; stack?: boolean; className?: string; testId?: string }) {
+export function SettingRow({ setting, hint: own, info, children, stack, className, testId }: { setting: SettingId; hint?: React.ReactNode; info?: React.ReactNode; children?: React.ReactNode; stack?: boolean; className?: string; testId?: string }) {
+  const { title: label, hint } = wordsOf(setting, own);
   const auto = useId();
   const labelId = `${auto}-label`;
   const hintId = hint ? `${auto}-hint` : undefined;
@@ -187,7 +204,8 @@ export function SettingRow({ label, hint, info, children, stack, className, test
 }
 
 /** An on/off setting: label (and one line) with a switch. Clicking the label flips it too. */
-export function SwitchRow({ label, hint, info, checked, onChange, disabled, testId }: { label: string; hint?: React.ReactNode; info?: React.ReactNode; checked: boolean; onChange(v: boolean): void; disabled?: boolean; testId?: string }) {
+export function SwitchRow({ setting, hint: own, info, checked, onChange, disabled, testId }: { setting: SettingId; hint?: React.ReactNode; info?: React.ReactNode; checked: boolean; onChange(v: boolean): void; disabled?: boolean; testId?: string }) {
+  const { title: label, hint } = wordsOf(setting, own);
   return (
     <div className="flex items-center justify-between gap-4 py-3" data-testid={testId}>
       <div className="min-w-0 flex-1">
@@ -296,9 +314,4 @@ export function Dropdown<T extends string>({ value, options, onChange, label, di
       className={cx('min-w-[12rem] max-w-full sm:w-auto', className)}
     />
   );
-}
-
-/** 2–4 options: a segmented control; more: a dropdown. */
-export function Choice<T extends string>(p: { value: T; options: ChoiceOption<T>[]; onChange(v: T): void; label?: string; disabled?: boolean; className?: string; testId?: string }) {
-  return p.options.length <= 4 ? <Segmented {...p} /> : <Dropdown {...p} />;
 }

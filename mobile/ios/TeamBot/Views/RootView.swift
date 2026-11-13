@@ -19,7 +19,7 @@ struct RootView: View {
                 WebShellView(pairing: p, startRoute: model.startRoute)
                     .id(HostAddress.origin(of: p.baseURL))
                     .ignoresSafeArea(edges: .bottom)
-                    .sheet(isPresented: $model.askPush) { PushPromptView().environmentObject(model) }
+                    .sheet(isPresented: $model.askPush) { PushPromptView().environmentObject(model).tint(Theme.accentText) }
                     .overlay(alignment: .top) { RouteBadge() }
             case .problem(let p, let problem):
                 ConnectionView(pairing: p, problem: problem)
@@ -27,7 +27,7 @@ struct RootView: View {
                 RevokedView()
             }
         }
-        .sheet(isPresented: $model.showSettings) { AppSettingsView().environmentObject(model) }
+        .sheet(isPresented: $model.showSettings) { AppSettingsView().environmentObject(model).tint(Theme.accentText) }
     }
 }
 
@@ -35,13 +35,18 @@ struct CheckingView: View {
     @EnvironmentObject private var model: AppModel
 
     var body: some View {
-        VStack(spacing: 14) {
-            ProgressView().controlSize(.large)
-            Text("Verbinden met je pc…").foregroundStyle(.secondary)
+        VStack(spacing: Theme.gap) {
+            BotFace()
+            ProgressView()
+            Text("Verbinden met je pc…").foregroundStyle(Theme.muted)
         }
+        .padding(Theme.gapLarge)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        // At launch the web app waits until the link is checked and consent is known.
-        .task { await model.refresh() }
+        .tbCanvas()
+        .accessibilityElement(children: .combine)
+        // Paired and agreed before: straight to the conversations, the check runs behind them. Otherwise the web app
+        // waits until the link is checked and consent is known.
+        .task { await model.launch() }
     }
 }
 
@@ -58,66 +63,85 @@ struct PairingView: View {
     @State private var cameraDenied = false
 
     var body: some View {
-        NavigationStack {
-            Form {
-                // 0.4.5: the first screen says one thing. The code below only when the camera is not allowed.
-                Section {
-                    Button {
-                        Task { await startScan() }
-                    } label: {
-                        Label("Scan de QR-code op je computer", systemImage: "qrcode.viewfinder")
-                            .font(.title3.weight(.semibold))
-                    }
-                    .disabled(busy)
-                }
+        ScrollView {
+            VStack(spacing: Theme.gapLarge) {
+                StateHeader(
+                    title: "Koppel met je pc",
+                    message: "Open TeamBot op je pc, ga naar Instellingen › Telefoon en scan de QR-code."
+                )
                 if let note = model.unpairNote {
-                    Section {
-                        Label(note, systemImage: "exclamationmark.triangle")
-                    }
-                }
-                if cameraDenied {
-                    Section {
-                        Text("TeamBot heeft geen toegang tot de camera. Sta dit toe in Instellingen, of koppel met een code.")
-                        Button("Open Instellingen") {
-                            if let url = URL(string: UIApplication.openSettingsURLString) { UIApplication.shared.open(url) }
-                        }
-                    }
-                    Section("Naam van dit apparaat") {
-                        TextField("iPhone", text: $name)
-                    }
-                    Section {
-                        TextField("Adres, bijv. 192.168.1.20:4748", text: $host)
-                            .keyboardType(.URL)
-                            .textInputAutocapitalization(.never)
-                            .autocorrectionDisabled()
-                        TextField("Koppelcode", text: $code)
-                            .textInputAutocapitalization(.characters)
-                            .autocorrectionDisabled()
-                        Button("Koppelen met code") { Task { await pairWithCode() } }
-                            .disabled(busy || host.isEmpty || PairingLink.normalizeCode(code).count < 8)
-                    } header: {
-                        Text("Of met een code")
-                    } footer: {
-                        Text("Het adres en de code staan op je computer onder Instellingen → Telefoon → Meer opties.")
-                    }
+                    NoteCard(note, kind: .info)
                 }
                 if let error {
-                    Section {
-                        Text(error).foregroundStyle(.red)
+                    NoteCard(error)
+                }
+                // The one main action. The code below only when the camera is not allowed.
+                Button {
+                    Task { await startScan() }
+                } label: {
+                    if busy {
+                        HStack(spacing: Theme.gapSmall) {
+                            ProgressView()
+                            Text("Koppelen met je pc…")
+                        }
+                    } else {
+                        Label(error != nil && !cameraDenied ? "Opnieuw proberen" : "QR-code scannen", systemImage: "qrcode.viewfinder")
                     }
                 }
-            }
-            .navigationTitle("TeamBot")
-            .overlay {
-                if busy { ProgressView().controlSize(.large) }
-            }
-            .sheet(isPresented: $scanning) {
-                ScannerSheet { text in
-                    scanning = false
-                    Task { await pairWithScan(text) }
+                .buttonStyle(PrimaryButtonStyle())
+                .disabled(busy)
+                if cameraDenied {
+                    cameraCard
+                    codeCard
                 }
             }
+            .tbColumn()
         }
+        .scrollDismissesKeyboard(.interactively)
+        .tbCanvas()
+        .sheet(isPresented: $scanning) {
+            ScannerSheet { text in
+                scanning = false
+                Task { await pairWithScan(text) }
+            }
+            .tint(Theme.accentText)
+        }
+    }
+
+    private var cameraCard: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("TeamBot mag de camera niet gebruiken. Zet de camera aan in Instellingen, of koppel met een code.")
+                .foregroundStyle(Theme.ink)
+            Button("Open Instellingen") {
+                if let url = URL(string: UIApplication.openSettingsURLString) { UIApplication.shared.open(url) }
+            }
+            .buttonStyle(SecondaryButtonStyle())
+        }
+        .tbCard()
+    }
+
+    private var codeCard: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Koppelen met een code")
+                .font(.headline)
+                .foregroundStyle(Theme.ink)
+                .accessibilityAddTraits(.isHeader)
+            LabeledField("Naam van dit apparaat", prompt: "iPhone", text: $name)
+            LabeledField("Adres van je pc", prompt: "192.168.1.20:4748", text: $host)
+                .keyboardType(.URL)
+                .textInputAutocapitalization(.never)
+                .autocorrectionDisabled()
+            LabeledField("Koppelcode", prompt: "Code van je pc", text: $code)
+                .textInputAutocapitalization(.characters)
+                .autocorrectionDisabled()
+            Button("Koppelen met code") { Task { await pairWithCode() } }
+                .buttonStyle(SecondaryButtonStyle())
+                .disabled(busy || host.isEmpty || PairingLink.normalizeCode(code).count < 8)
+            Text("Het adres en de code staan op je pc onder Instellingen › Telefoon › Meer opties.")
+                .font(.footnote)
+                .foregroundStyle(Theme.muted)
+        }
+        .tbCard()
     }
 
     private func startScan() async {
@@ -173,10 +197,13 @@ struct ScannerSheet: View {
             QRScannerView(onCode: onCode)
                 .ignoresSafeArea()
                 .overlay(alignment: .bottom) {
-                    Text("Richt de camera op de QR-code op je computer")
+                    Text("Richt de camera op de QR-code op je pc")
                         .font(.callout)
-                        .padding(10)
-                        .background(.ultraThinMaterial, in: Capsule())
+                        .multilineTextAlignment(.center)
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 10)
+                        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: Theme.controlRadius, style: .continuous))
+                        .padding(.horizontal, Theme.gapLarge)
                         .padding(.bottom, 32)
                 }
                 .toolbar {
@@ -225,16 +252,20 @@ struct RevokedView: View {
     @EnvironmentObject private var model: AppModel
 
     var body: some View {
-        VStack(spacing: 16) {
-            Image(systemName: "lock.slash").font(.system(size: 44)).foregroundStyle(.secondary).accessibilityHidden(true)
-            Text("Koppeling ingetrokken").font(.title3.bold())
-            Text("Deze iPhone is ontkoppeld op je pc. De sleutel is van deze iPhone verwijderd. Je gesprekken staan op je pc en blijven bewaard.")
-                .multilineTextAlignment(.center)
-                .foregroundStyle(.secondary)
-            Button("Opnieuw koppelen") { model.startOver() }
-                .buttonStyle(.borderedProminent)
+        ScrollView {
+            VStack(spacing: Theme.gapLarge) {
+                StateHeader(
+                    title: "Koppeling ingetrokken",
+                    message: "Deze iPhone is ontkoppeld op je pc. Je gesprekken staan op je pc en blijven bewaard.",
+                    badge: "lock.slash",
+                    sleeping: true
+                )
+                Button("Opnieuw koppelen") { model.startOver() }
+                    .buttonStyle(PrimaryButtonStyle())
+            }
+            .tbColumn()
         }
-        .padding(24)
+        .tbCanvas()
     }
 }
 
@@ -242,17 +273,23 @@ struct PushPromptView: View {
     @EnvironmentObject private var model: AppModel
 
     var body: some View {
-        VStack(spacing: 16) {
-            Image(systemName: "bell.badge").font(.system(size: 44)).foregroundStyle(.tint)
-            Text("Meldingen aanzetten?").font(.title3.bold())
-            Text("Krijg een melding als een bot een vraag heeft, toestemming nodig heeft of klaar is. Een melding opent alleen TeamBot; goedkeuren doe je altijd zelf in de app.")
-                .multilineTextAlignment(.center)
-                .foregroundStyle(.secondary)
-            Button("Meldingen toestaan") { Task { await model.enablePush() } }
-                .buttonStyle(.borderedProminent)
-            Button("Niet nu") { model.askPush = false }
+        ScrollView {
+            VStack(spacing: Theme.gapLarge) {
+                StateHeader(
+                    title: "Meldingen aanzetten?",
+                    message: "Je krijgt een melding als een bot een vraag heeft, toestemming nodig heeft of klaar is. Goedkeuren doe je altijd zelf in de app.",
+                    badge: "bell"
+                )
+                VStack(spacing: Theme.gapSmall) {
+                    Button("Meldingen toestaan") { Task { await model.enablePush() } }
+                        .buttonStyle(PrimaryButtonStyle())
+                    Button("Niet nu") { model.askPush = false }
+                        .buttonStyle(SecondaryButtonStyle())
+                }
+            }
+            .tbColumn()
         }
-        .padding(24)
-        .presentationDetents([.medium])
+        .tbCanvas()
+        .presentationDetents([.medium, .large])
     }
 }

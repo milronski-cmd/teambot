@@ -1,21 +1,22 @@
 #!/usr/bin/env node
 // Memory benchmark (TeamBot 0.4 F2): `npm run memory:bench [-- --modes a,b,c] [--write]` (`--quick`: without the
-// stale facts, the year and the customers; `--only tools`: only the 0.4.5 scenario "the bot discovers facts with a tool").
+// stale facts, the year and the customers).
 //
 // One fixed set (scripts/memory-bench-data.mjs): ±200 facts the owner mentions in passing during long conversations
 // (with small talk in between), paraphrased questions for them (Dutch, some English), corrections, facts that go stale
-// and a simulated year of everyday memory growth. Measured per mode:
-//   - recall@1 / recall@5 of the bot's own search (memory_search's ranking, svc.searchItemsAsync);
-//   - the per-turn context block: does the fact reach the bot (recall), and how much of the "Relevant" part is about
-//     the question (precision);
-//   - corrections: the new value comes first and the old one is no longer active;
+// and a simulated year of everyday memory growth. Every note belongs to a dossier: the background review writes what
+// it learns into the text of a dossier, which the bot reads in every turn. Measured per mode:
+//   - what reaches the bot when the owner asks in other words: in the text it always reads, or in the first five
+//     results of its own memory_search ("bereikt de bot");
+//   - the search alone (recall@1 / @5 of memory_search): the same facts with full dossiers, so all of them are in the
+//     dossiers' archive and only the search finds them;
+//   - corrections: the new value takes the old one's place in the text the bot reads;
 //   - stale facts: refreshed from their source, confirmed by the owner, or marked "te controleren" — never silently
 //     stale;
 //   - after a simulated year: every part within its target size, nothing important (pinned, owner-confirmed, often
-//     used) lost, the archive bounded below the quota, a monthly report with undo;
-//   - (0.4.5) learning from the whole conversation: what the bot found with a tool is learned and marked as such,
-//     a newer reading replaces the older one directly, a tool never overwrites the owner (a card), and a planted
-//     instruction, a key, a guess without work and passing state are never stored.
+//     used) lost, the archive bounded below the quota, a monthly report with undo.
+// Updates without a shared key and learning from a tool are measured in the dossier model by the test files
+// (tests/memory-learn-eval.test.ts, memory-consolidate.test.ts, memory-learn-conversation.test.ts).
 // Modes:
 //   (a) words only: the word index with TeamBot's built-in synonyms (and, for comparison, plain words like 0.3);
 //   (b) the built-in model (multilingual-e5-small on the CPU) + words;
@@ -55,7 +56,6 @@ const opt = (name, def) => {
 };
 const MODES = String(opt('modes', 'a,b,c')).split(',').map((s) => s.trim()).filter(Boolean);
 const WRITE = args.includes('--write');
-const ONLY = opt('only', null);
 const OLLAMA = opt('ollama', 'http://127.0.0.1:11434');
 const OLLAMA_MODEL = 'qwen3.6-uncensored-snel:latest';
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -74,6 +74,9 @@ const { BUILTIN, BUILTIN_FILES, BuiltinModel, runtimeProblem } = await import('.
 const { normalize, tokens } = await import('../server/modules/memory/text.ts');
 const { groundedShare } = await import('../server/modules/memory/learn.ts');
 const { writeCandidate } = await import('../server/modules/memory/pipeline.ts');
+const { systemPromptText } = await import('../server/modules/memory/context.ts');
+const { memoryTools } = await import('../server/modules/memory/tools.ts');
+const { coreDossiers } = await import('../server/modules/memory/living.ts');
 const { FACTS, FILLER, CORRECTIONS, STALE, YEAR_SUBJECTS, YEAR_TEMPLATES, OFFTOPIC, UPDATES, TASKS, DOSSIER_CHANGE, CUSTOMERS, TOOL_LEARN } = await import('./memory-bench-data.mjs');
 
 const log = (...a) => console.log('[bench]', ...a);
@@ -90,7 +93,7 @@ const QUESTIONS = facts.flatMap((f) => f.qs.map((q) => ({ q, fact: f.i })));
 
 // ---------------------------------------------------------------------------- the built-in model (cache)
 async function modelCache() {
-  const dir = path.join(ROOT, '.data', 'models-cache');
+  const dir = process.env.TEAMBOT_BENCH_MODELS || path.join(ROOT, '.data', 'models-cache');
   const m = new BuiltinModel(dir);
   if (!m.present()) {
     log(`ingebouwd model downloaden naar ${m.dir} (eenmalig, ±${Math.round(m.files.reduce((n, f) => n + f.size, 0) / 1e6)} MB, met hashcontrole) …`);
@@ -121,7 +124,21 @@ const KNOWN = [
 ];
 /** Learning calls the learner answered (0.4.5: one call per batch). */
 let LEARN_CALLS = 0;
+/** The core dossier a fact belongs in, as the review names it: the bot's own instructions, the owner himself, or the rest. */
+const placeOf = (k) => (k.about === 'bot' ? 'Werknotities' : /^(mijn|ik|me)\b/i.test(k.content) ? 'Eigenaar' : 'Overzicht');
 function idealLearner(system, prompt) {
+  // The one background review (since every note belongs to a dossier): plain lines "Dossiernaam: zin", one call per
+  // conversation. A correction names the line it takes the place of.
+  if (/Je bent het geheugen van TeamBot/.test(system)) {
+    LEARN_CALLS++;
+    const out = [];
+    for (const m of prompt.matchAll(/<eigenaar>([\s\S]*?)<\/eigenaar>/g)) {
+      const low = normalize(m[1]);
+      for (const k of KNOWN) if (low.includes(normalize(k.content))) out.push(`${placeOf(k)}: ${k.content}`);
+      for (const c of CORRECTIONS) if (low.includes(normalize(c.said))) out.push(`${placeOf({ content: c.content })}: ${c.content} (vervangt: ${c.old})`);
+    }
+    return out.length ? out.join('\n') : 'NIETS';
+  }
   // Consolidation (0.4.4) is not part of the ideal learner: (a) and (b) measure the patterns; (c) the real model.
   if (/langetermijngeheugen van TeamBot/.test(system)) return JSON.stringify({ facts: [] });
   if (/geheugenmodule van TeamBot/.test(system)) {
@@ -178,78 +195,98 @@ function conversations(list) {
   return out;
 }
 
-const parseSection = (text, name) => {
-  const s = String(text || '');
-  const i = s.indexOf(`${name}:\n`);
-  if (i < 0) return [];
-  const rest = s.slice(i + name.length + 2).split('\n');
-  const refs = [];
-  for (const line of rest) {
-    if (!line.startsWith('- ') && !line.startsWith('  ')) break;
-    const m = line.match(/^- \[m:([a-z0-9]+)\]/);
-    if (m) refs.push(m[1]);
-  }
-  return refs;
-};
-
-/** Which stored memories are "this fact" (exact for the ideal learner; by overlap for a real model). */
-function mapFacts(svc, userId) {
-  const rows = svc.store.all("SELECT id, ref, content, status, merge_of FROM memory_items WHERE user_id = ? AND status = 'active'", userId);
-  const map = new Map();
-  for (const f of facts) {
-    const hit = rows.filter((r) => normalize(r.content) === normalize(f.content) || (groundedShare(f.content, r.content) >= 0.7 && groundedShare(r.content, f.content) >= 0.6));
-    map.set(f.i, new Set(hit.map((r) => r.id)));
-  }
-  return map;
+/** memory_search as the bot calls it: its result lines (the first is the best). */
+async function searchLines(t, agent, thread, q) {
+  const tool = memoryTools(t.app.ctx.services.memory.svc, { agent, thread }).find((x) => x.name === 'memory_search');
+  const out = await tool.run({ query: q }, { agent, thread });
+  return String(typeof out === 'string' ? out : out?.text || '')
+    .split('\n')
+    .filter((l) => l.startsWith('- ['));
 }
 
-async function measureRetrieval(t, agent, userId, label) {
-  const svc = t.app.ctx.services.memory.svc;
-  const mem = t.app.ctx.services.memory;
-  const map = mapFacts(svc, userId);
-  const reader = svc.readerFor(t.app.ctx.store.agent(agent.id), null);
-  const refOf = new Map(svc.store.all('SELECT id, ref FROM memory_items WHERE user_id = ?', userId).map((r) => [r.ref, r.id]));
-  let r1 = 0, r5 = 0, ctxHit = 0, n = 0, precSum = 0, precN = 0, inBlock = 0, emptyBlock = 0, extracted = 0, nStored = 0, r5Stored = 0;
+/**
+ * Since every note belongs to a dossier: what reaches the bot when the owner asks in other words. The text of its core
+ * dossiers is in every turn (no search needed); what is not (the archive of a dossier) the bot finds with memory_search.
+ * `reach5` = in what it always reads, or in the first five results of its search — the counterpart of "the block or
+ * recall@5" of the note model.
+ */
+async function measureReach(t, bot, userId, label) {
+  const ctx = t.app.ctx;
+  const svc = ctx.services.memory.svc;
+  const agent = ctx.store.agent(bot.id);
+  const th = await t.api('POST', '/threads', { agentId: bot.id });
+  const thread = ctx.store.thread(th.id);
+  const sys = normalize(systemPromptText(svc, agent, thread) || '');
+  const kept = normalize(
+    [...ctx.store.all('SELECT body FROM memory_dossiers WHERE user_id = ?', userId).map((r) => r.body || ''), ...ctx.store.all("SELECT body FROM memory_records WHERE user_id = ? AND kind = 'event'", userId).map((r) => r.body || '')].join('\n'),
+  );
+  let stored = 0, inPrompt = 0, s1 = 0, s5 = 0, reach = 0, n = 0;
   const qms = [];
   const misses = [];
-  for (const f of facts) if (map.get(f.i)?.size) extracted++;
-  for (const { q, fact } of QUESTIONS) {
-    n++;
-    const want = map.get(fact) || new Set();
-    const t0 = performance.now();
-    const hits = await svc.searchItemsAsync(reader, q, { limit: 10 });
-    qms.push(performance.now() - t0);
-    const rank = hits.findIndex((h) => want.has(h.row.id));
-    if (rank === 0) r1++;
-    if (rank >= 0 && rank < 5) r5++;
-    if (want.size) (nStored++, rank >= 0 && rank < 5 && r5Stored++);
-    if (rank !== 0) misses.push({ q, want: facts[fact].content, stored: !!want.size, rank, top: hits.slice(0, 3).map((h) => `${h.score.toFixed(2)}${h.meaning ? '*' : ''} ${h.row.content}`) });
-    const th = await t.api('POST', '/threads', { agentId: agent.id });
-    const block = (await mem.context(userId, agent.id, th.id, q)) || '';
-    const rel = parseSection(block, 'Relevant').map((r) => refOf.get(r));
-    const pinned = parseSection(block, 'Vastgezet').map((r) => refOf.get(r));
-    if ([...rel, ...pinned].some((id) => want.has(id))) ctxHit++;
-    inBlock += rel.length;
-    if (rel.length) {
-      precSum += rel.filter((id) => want.has(id)).length / rel.length;
-      precN++;
-    } else emptyBlock++;
-    await t.api('DELETE', `/threads/${th.id}`).catch(() => {});
+  for (const f of facts) {
+    const k = normalize(f.content);
+    const p = sys.includes(k);
+    if (p || kept.includes(k)) stored++;
+    for (const q of f.qs) {
+      n++;
+      const t0 = performance.now();
+      const lines = await searchLines(t, agent, thread, q);
+      qms.push(performance.now() - t0);
+      const rank = lines.findIndex((l) => normalize(l).includes(k));
+      if (p) inPrompt++;
+      if (rank === 0) s1++;
+      if (rank >= 0 && rank < 5) s5++;
+      if (p || (rank >= 0 && rank < 5)) reach++;
+      else misses.push({ q, want: f.content, rank, top: lines.slice(0, 3) });
+    }
   }
   qms.sort((a, b) => a - b);
-  // Turns that are not about memory: every "Relevant" line (and any other loose memory line) is noise.
-  let offRel = 0, offAll = 0;
-  for (const q of OFFTOPIC) {
-    const th = await t.api('POST', '/threads', { agentId: agent.id });
-    const block = (await mem.context(userId, agent.id, th.id, q)) || '';
-    offRel += parseSection(block, 'Relevant').length;
-    offAll += parseSection(block, 'Relevant').length + parseSection(block, 'Laatste notities (niet gevonden bij deze vraag)').length;
-    await t.api('DELETE', `/threads/${th.id}`).catch(() => {});
-  }
-  if (args.includes('--debug')) fs.writeFileSync(path.join(DEBUG_DIR, `misses-${label.split(' ')[0]}.json`), JSON.stringify(misses, null, 1));
-  const res = { label, questions: n, facts: facts.length, extracted, recall1: r1 / n, recall5: r5 / n, recall5Stored: nStored ? r5Stored / nStored : NaN, contextRecall: ctxHit / n, contextPrecision: precN ? precSum / precN : NaN, avgInBlock: inBlock / n, emptyBlocks: emptyBlock, offTopicLines: offRel / OFFTOPIC.length, offTopicAllLines: offAll / OFFTOPIC.length, queryMsMedian: qms[Math.floor(qms.length / 2)], queryMsP95: qms[Math.floor(qms.length * 0.95)] };
-  log(label, `R@1 ${pct(res.recall1)} R@5 ${pct(res.recall5)} context ${pct(res.contextRecall)} precision ${pct(res.contextPrecision)} (${res.avgInBlock.toFixed(1)} per block), off-topic ${res.offTopicLines.toFixed(1)} lines (${res.offTopicAllLines.toFixed(1)} with latest notes)`);
+  const res = { label, questions: n, facts: facts.length, extracted: stored, inPrompt: inPrompt / n, search1: s1 / n, search5: s5 / n, reach5: reach / n, promptChars: sys.length, queryMsMedian: qms[Math.floor(qms.length / 2)], queryMsP95: qms[Math.floor(qms.length * 0.95)] };
+  if (args.includes('--debug')) fs.writeFileSync(path.join(DEBUG_DIR, `reach-misses-${label.split(' ')[0]}.json`), JSON.stringify(misses, null, 1));
+  log(label, `opgeslagen ${stored}/${facts.length}; elke beurt in de prompt ${pct(res.inPrompt)}, zoeken R@1 ${pct(res.search1)} R@5 ${pct(res.search5)}, bereikt de bot ${pct(res.reach5)}`);
   return res;
+}
+
+/**
+ * The search alone: the same facts when the dossiers are full, so every line the review writes goes to the archive of
+ * its dossier and only memory_search finds it (a year in, much of what was said lives there). The counterpart of
+ * recall@1/@5 of the note model, where every fact was found only by search.
+ */
+async function archiveSearch(mode, cacheDir) {
+  // A second app next to the first one: any free port.
+  const port = process.env.TEAMBOT_TEST_PORT;
+  process.env.TEAMBOT_TEST_PORT = '0';
+  const t = await startTestApp().finally(() => (process.env.TEAMBOT_TEST_PORT = port));
+  t.app.server.keepAliveTimeout = 30 * 60_000;
+  t.app.server.headersTimeout = 30 * 60_000 + 1000;
+  const ctx = t.app.ctx;
+  const mem = ctx.services.memory;
+  const userId = ctx.auth.owner().id;
+  try {
+    ctx.providers.registerKind({ id: 'mock-local', label: 'Vaste leerder', type: 'api', group: 'local', billing: 'local', needsKey: false, description: 'bench', models: ['ideaal'], defaultModel: 'ideaal', create: () => mockAdapter(t.script, t.requests) });
+    const providerId = (await t.api('POST', '/providers', { kind: 'mock-local' })).id;
+    setShortCallFake(idealLearner);
+    await t.api('PUT', '/memory/settings', { extractor: 'free', engine: { providerId, model: 'ideaal' }, semantic: mode === 'a' ? 'off' : 'auto', semanticModel: mode === 'a' ? null : BUILTIN.id, modelDailyCap: 5000, nightly: false });
+    if (mode !== 'a') installModel(t, cacheDir);
+    const bot = await t.agent({ name: 'Bench', tool_groups: ['memory'] });
+    const agent = ctx.store.agent(bot.id);
+    // Full: lines nobody will ask about, up to the limit of each core dossier.
+    for (const d of coreDossiers(mem.svc, agent)) {
+      const limit = { owner: 5000, overview: 6000, lessons: 3000, notes: 3000 }[d.core];
+      const fill = [];
+      for (let i = 0; fill.join('\n').length < limit - 60; i++) fill.push(`- vulqx ${i} zorvat plimdek`);
+      mem.living.write(d.id, fill.join('\n'), { type: 'user', id: userId });
+    }
+    for (const conv of conversations(facts)) {
+      const th = await talk(t, bot, conv);
+      await mem.learner.learnNow(agent, ctx.store.thread(th.id));
+    }
+    await mem.drain();
+    return await measureReach(t, bot, userId, `${mode} archief`);
+  } finally {
+    // (The first app goes on learning with the same fixed learner.)
+    await t.close();
+  }
 }
 
 // ---------------------------------------------------------------------------- one mode
@@ -296,12 +333,6 @@ async function runMode(mode, cacheDir) {
       }
       return out;
     }
-    // `--only tools` (0.4.5): just the scenario "the bot discovers facts with a tool" (e.g. a quick check of (c)).
-    if (ONLY === 'tools') {
-      out.toolLearn = await toolScenario(t, userId);
-      return out;
-    }
-
     // 1. Learn ±200 facts from long conversations.
     const t1 = performance.now();
     for (const conv of conversations(facts)) {
@@ -310,52 +341,47 @@ async function runMode(mode, cacheDir) {
     }
     await mem.drain();
     out.learnSeconds = (performance.now() - t1) / 1000;
-    out.stored = svc.store.one("SELECT COUNT(*) AS n FROM memory_items WHERE user_id = ? AND status = 'active'", userId).n;
+    // (Lines of the dossiers' text: every note belongs to a dossier, and what the review learns is text of one.)
+    out.stored = ctx.store.all('SELECT body FROM memory_dossiers WHERE user_id = ?', userId).reduce((n, r) => n + String(r.body || '').split('\n').filter((l) => /^\s*-\s/.test(l)).length, 0);
     // What the learner did per batch (model or patterns, how much it applied, proposed or refused).
     const batches = svc.store.all("SELECT last_result FROM memory_learn WHERE user_id = ? AND last_result IS NOT NULL", userId).map((r) => JSON.parse(r.last_result));
     const sum = (k) => batches.reduce((n, r) => n + (r[k] || 0), 0);
     const why = batches.flatMap((r) => r.droppedDetail || []);
     out.learner = { batches: batches.length, model: batches.filter((r) => r.method === 'model').length, applied: sum('applied'), proposed: sum('proposed'), dropped: sum('dropped'), errors: batches.filter((r) => r.error).length, consolidated: { invalidated: sum('invalidated'), closed: sum('closed'), merged: sum('merged') }, droppedWhy: Object.fromEntries([...new Set(why.map((x) => x.why))].map((w) => [w, why.filter((x) => x.why === w).length])), droppedDetail: why.slice(0, 60) };
     out.vectors = svc.store.one('SELECT COUNT(*) AS n FROM memory_vectors WHERE user_id = ?', userId).n;
-    log(mode, `geleerd: ${out.stored} herinneringen in ${out.learnSeconds.toFixed(0)} s, ${out.vectors} vectoren`);
+    log(mode, `geleerd: ${out.stored} regels in de dossiers in ${out.learnSeconds.toFixed(0)} s, ${out.vectors} vectoren`);
 
-    // 2. Retrieval (and, in (a), the 0.3 baseline: words without synonyms).
-    if (mode === 'a') {
-      const orig = svc.ftsText.bind(svc);
-      svc.ftsText = (kind, row) => (kind === 'item' ? (row.sensitivity === 'sensitive' ? [row.canonical_key || '', row.type].join(' ') : [row.content, row.canonical_key || '', row.type].join(' ')) : orig(kind, row));
-      svc.reindex(userId);
-      out.plain = await measureRetrieval(t, bot, userId, 'a0 woorden zonder synoniemen');
-      svc.ftsText = orig;
-      svc.reindex(userId);
-    }
-    out.retrieval = await measureRetrieval(t, bot, userId, `${mode}`);
+    // 2. What reaches the bot: the text it always reads, else its own search; and the search alone (full dossiers).
+    out.retrieval = await measureReach(t, bot, userId, `${mode}`);
+    out.archive = await archiveSearch(mode, cacheDir);
 
-    // 3. Corrections in a later conversation.
+    // 3. Corrections in a later conversation: the new value takes the old one's place in the text the bot reads.
     const th = await talk(t, bot, CORRECTIONS.map((c) => `${c.said}.`));
     await mem.learner.learnNow(agent, ctx.store.thread(th.id));
     await mem.drain();
-    const reader = svc.readerFor(agent, null);
+    const th0 = await t.api('POST', '/threads', { agentId: bot.id });
+    const sys = normalize(systemPromptText(svc, agent, ctx.store.thread(th0.id)) || '');
     let corrOk = 0, oldGone = 0, corr5 = 0;
     const corrDetail = [];
     for (const c of CORRECTIONS) {
-      const hits = await svc.searchItemsAsync(reader, c.q, { limit: 5 });
-      const top = !!hits[0] && c.expect.test(hits[0].row.content);
+      const inText = sys.includes(normalize(c.content));
+      const lines = await searchLines(t, agent, ctx.store.thread(th0.id), c.q);
+      const top = inText || (!!lines[0] && c.expect.test(lines[0]));
       if (top) corrOk++;
-      if (hits.slice(0, 5).some((h) => c.expect.test(h.row.content))) corr5++;
-      const old = svc.store.one("SELECT COUNT(*) AS n FROM memory_items WHERE user_id = ? AND status = 'active' AND content = ?", userId, c.old).n;
+      if (inText || lines.slice(0, 5).some((l) => c.expect.test(l))) corr5++;
+      const old = sys.includes(normalize(c.old));
       if (!old) oldGone++;
-      const neu = svc.store.all("SELECT status, content, proposal_reason FROM memory_items WHERE user_id = ? AND status IN ('active','proposed')", userId).find((r) => c.expect.test(r.content));
-      corrDetail.push({ said: c.said, top, oldActive: !!old, new: neu ? `${neu.status}${neu.proposal_reason ? ' (' + neu.proposal_reason + ')' : ''}` : 'niet opgeslagen', first: hits[0]?.row.content || null });
+      corrDetail.push({ said: c.said, top, oldActive: old, new: inText ? 'in de tekst' : 'niet in de tekst', first: lines[0] || null });
     }
     out.corrections = { total: CORRECTIONS.length, newFirst: corrOk, newTop5: corr5, oldInactive: oldGone, detail: corrDetail };
-    log(mode, `correcties: nieuw bovenaan ${corrOk}/${CORRECTIONS.length}, in top 5 ${corr5}/${CORRECTIONS.length}, oud niet meer actief ${oldGone}/${CORRECTIONS.length}`);
+    log(mode, `correcties: nieuw in wat de bot leest of bovenaan ${corrOk}/${CORRECTIONS.length}, of in top 5 ${corr5}/${CORRECTIONS.length}, oud niet meer in de tekst ${oldGone}/${CORRECTIONS.length}`);
 
-    // 3b (0.4.4). Updates without a shared key, and open tasks that close themselves.
-    out.updates = await updateScenarios(t, bot, agent, userId);
+    // 3b (0.4.4). Open tasks and dossier actions that close themselves; a dossier whose document changes.
+    // (Updates without a shared key and learning from a tool are measured in the dossier model by
+    // tests/memory-learn-eval.test.ts, memory-consolidate.test.ts and memory-learn-conversation.test.ts: the review's
+    // "vervangt" and its checks on work; this bench's scenarios for them read notes, which the review no longer writes.)
     out.tasks = await taskScenario(t, userId);
     out.dossier = await dossierChangeScenario(t, userId);
-    // 3c (0.4.5). Learning from the whole conversation: the bot discovers facts with a tool.
-    out.toolLearn = await toolScenario(t, userId);
 
     if (args.includes('--quick')) return out;
     // 4. Facts that go stale.
@@ -396,42 +422,6 @@ async function talkIn(t, threadId, messages) {
     t.script.push({ text: 'Oké, genoteerd.' });
     await t.say(threadId, m, 60_000);
   }
-}
-
-/**
- * 0.4.4: the owner says things that end older notes without a shared key (a task done, a wish fulfilled, something
- * stopped), one ending that also ends what depended on it, and related news that must end nothing.
- */
-async function updateScenarios(t, bot, agent, userId) {
-  const ctx = t.app.ctx;
-  const svc = ctx.services.memory.svc;
-  const mem = ctx.services.memory;
-  const before = (list) => list.map((x) => findActive(svc, userId, x)?.id || null);
-  const endsIds = before(UPDATES.ends.map((u) => u.old));
-  const cascadeIds = before(UPDATES.cascade.ends);
-  const keepIds = before(UPDATES.keeps.map((u) => u.old));
-  const msgs = [];
-  [...UPDATES.ends, ...UPDATES.keeps].forEach((u, i) => {
-    msgs.push(`${u.said}.`);
-    if (i % 3 === 2) msgs.push(FILLER[i % FILLER.length]);
-  });
-  msgs.push(`${UPDATES.cascade.said}.`);
-  const th = await talk(t, bot, msgs);
-  await mem.learner.learnNow(agent, ctx.store.thread(th.id));
-  await mem.drain();
-  const gone = (id) => !!id && svc.itemRow(id)?.status !== 'active';
-  const detail = [
-    ...UPDATES.ends.map((u, i) => ({ kind: 'ends', heldOut: !!u.heldOut, old: u.old, said: u.said, present: !!endsIds[i], ok: gone(endsIds[i]), reason: endsIds[i] ? svc.itemRow(endsIds[i])?.invalid_reason || null : svc.store.one("SELECT i.status, c.summary FROM memory_items i LEFT JOIN memory_changes c ON c.record_id = i.id WHERE i.user_id = ? AND i.content = ? ORDER BY c.created_at DESC LIMIT 1", userId, u.old) || 'nooit opgeslagen' })),
-    ...UPDATES.cascade.ends.map((o, i) => ({ kind: 'cascade', old: o, said: UPDATES.cascade.said, present: !!cascadeIds[i], ok: gone(cascadeIds[i]) })),
-    ...UPDATES.keeps.map((u, i) => ({ kind: 'keeps', heldOut: !!u.heldOut, old: u.old, said: u.said, present: !!keepIds[i], ok: !!keepIds[i] && !gone(keepIds[i]) })),
-  ];
-  const count = (kind, held) => {
-    const d = detail.filter((x) => x.kind === kind && x.present && (held === undefined || !!x.heldOut === held));
-    return { ok: d.filter((x) => x.ok).length, of: d.length };
-  };
-  const res = { ends: count('ends', false), endsHeldOut: count('ends', true), cascade: count('cascade'), keeps: count('keeps', false), keepsHeldOut: count('keeps', true), wrong: detail.filter((x) => x.kind === 'keeps' && x.present && !x.ok).length, detail };
-  log('bijwerken', `impliciet beëindigd ${res.ends.ok}/${res.ends.of} (achtergehouden ${res.endsHeldOut.ok}/${res.endsHeldOut.of}), ketting ${res.cascade.ok}/${res.cascade.of}, terecht gebleven ${res.keeps.ok}/${res.keeps.of} (achtergehouden ${res.keepsHeldOut.ok}/${res.keepsHeldOut.of})`);
-  return res;
 }
 
 /** 0.4.4, the SEO case: open tasks and dossier actions close when the work is done — and only those. */
@@ -490,88 +480,6 @@ async function taskScenario(t, userId) {
     block,
   };
   log('taken', `afgerond ${res.closed}/4 (${Object.entries(ways).map(([k, v]) => `${k} ${v ? 'ja' : 'nee'}`).join(', ')}), open gebleven: ${res.controlOpen ? 'ja' : 'nee'}, eigen taken afgesloten ${res.todosEnded}/${res.todosPresent}, blok schoon: ${res.blockClean ? 'ja' : 'nee'}`);
-  return res;
-}
-
-/**
- * 0.4.5: a conversation where the bot discovers facts with a tool (TOOL_LEARN). Learned, and marked as found by a
- * tool: what it found about the owner's world. Never: passing state, a page that instructs an AI, a key, a guess of the
- * bot without work. A newer reading replaces the older one directly; a tool that contradicts the owner is a card.
- */
-async function toolScenario(t, userId) {
-  const ctx = t.app.ctx;
-  const svc = ctx.services.memory.svc;
-  const mem = ctx.services.memory;
-  const T = TOOL_LEARN;
-  let output = '';
-  for (const name of new Set([...T.turns, T.later].map((x) => x.tool).filter(Boolean)))
-    ctx.tools.register({ name, group: 'core', risk: 'read', description: `bench: ${name}`, parameters: { type: 'object', properties: {} }, async run() { return output; } });
-  const bot = await t.agent({ name: 'Werkplaatsbot', tool_groups: ['memory', 'core'] });
-  const agent = ctx.store.agent(bot.id);
-  const turn = async (threadId, x) => {
-    if (x.tool) (output = x.output), t.script.push({ toolCalls: [{ name: x.tool, args: {} }] }, { text: x.reply });
-    else t.script.push({ text: x.reply });
-    await t.say(threadId, x.ask, 60_000);
-  };
-  const learnResults = [];
-  const learn = async (threadId) => {
-    learnResults.push(await mem.learner.learnNow(agent, ctx.store.thread(threadId)));
-    await mem.drain();
-  };
-  // 1. Earlier, the owner said where the booking system is hosted (his own words).
-  const th0 = await talk(t, bot, [`${T.ownerBefore}.`]);
-  await learn(th0.id);
-  const owner = findActive(svc, userId, T.ownerBefore);
-  const since = new Date().toISOString();
-  // 2. The bot looks things up, in one conversation (one learning batch).
-  const th = await t.api('POST', '/threads', { agentId: bot.id });
-  for (const x of T.turns) await turn(th.id, x);
-  const c0 = LEARN_CALLS;
-  const t0 = performance.now();
-  await learn(th.id);
-  const ms = performance.now() - t0;
-  // Learning calls for the conversation (the learner counts them; the ideal learner too, for a run before 0.4.5).
-  const calls = learnResults.at(-1)?.calls ?? LEARN_CALLS - c0;
-  const checkCalls = learnResults.at(-1)?.checkCalls || 0;
-  // 3. Later, in another conversation: a newer reading.
-  const th2 = await t.api('POST', '/threads', { agentId: bot.id });
-  await turn(th2.id, T.later);
-  await learn(th2.id);
-  const rows = svc.store.all('SELECT id, content, status, source_kind, source_trust, proposal_reason, conflict_with, superseded_by FROM memory_items WHERE user_id = ? AND created_at >= ?', userId, since);
-  // The stored note that is this text: the same words first (PHP 8.1 and PHP 8.3 share all but one), else by overlap.
-  const find = (text, ok = () => true) => rows.find((r) => ok(r) && normalize(r.content) === normalize(text)) || rows.find((r) => ok(r) && groundedShare(text, r.content) >= 0.7 && groundedShare(r.content, text) >= 0.6);
-  const from = (r) => (r.source_kind === 'tool' && r.source_trust === 'agent' ? 'tool' : r.source_trust === 'agent' ? 'bot' : 'eigenaar');
-  const detail = T.found.map((f) => {
-    const r = find(f.content);
-    return { content: f.content, expect: f.expect, status: r ? r.status : 'niet opgeslagen', from: r ? from(r) : null, reason: r?.proposal_reason || null };
-  });
-  const learned = detail.filter((d) => d.expect === 'stored' || d.expect === 'replaced');
-  const oldRow = find(T.found.find((f) => f.expect === 'replaced').content);
-  const newRow = find(T.newer.content, (r) => r.status === 'active' && r.id !== oldRow?.id);
-  const card = find(T.found.find((f) => f.expect === 'card').content);
-  const live = rows.filter((r) => ['active', 'proposed'].includes(r.status));
-  const res = {
-    learned: learned.filter((d) => d.from === 'tool' && (d.expect === 'stored' ? d.status === 'active' : ['active', 'superseded'].includes(d.status))).length,
-    of: learned.length,
-    marked: learned.filter((d) => d.from === 'tool').length,
-    replaced: !!(newRow && oldRow && oldRow.status === 'superseded' && oldRow.superseded_by === newRow.id),
-    ownerKept: !!owner && svc.itemRow(owner.id)?.status === 'active',
-    card: !!(card && card.status === 'proposed' && owner && card.conflict_with === owner.id),
-    // Without a card (a real model may not name what it contradicts) the check against what is known can still ask
-    // the owner: his note "te controleren" (Klopt dit nog?), never ended.
-    ownerCheck: !!owner && (svc.itemRow(owner.id)?.flags || []).includes('check'),
-    never: detail.filter((d) => d.expect === 'never' && !['active', 'proposed'].includes(d.status)).length + (live.some((r) => T.passing.test(r.content)) ? 0 : 1),
-    neverOf: detail.filter((d) => d.expect === 'never').length + 1,
-    leaked: live.filter((r) => T.never.test(r.content) || T.passing.test(r.content)).map((r) => r.content),
-    cards: rows.filter((r) => r.status === 'proposed').length,
-    calls,
-    checkCalls,
-    errors: learnResults.filter((r) => r?.error).map((r) => r.error),
-    ms,
-    detail,
-    ...(args.includes('--debug') ? { learnResults, rows } : {}),
-  };
-  log('gereedschap', `ontdekt met een tool en geleerd ${res.learned}/${res.of} (als tool gemarkeerd ${res.marked}), nieuwere meting vervangt direct: ${res.replaced ? 'ja' : 'nee'}, tool tegen eigenaar → ${res.card ? 'kaart' : res.ownerCheck ? 'te controleren' : 'geen vraag'} (eigenaar blijft: ${res.ownerKept ? 'ja' : 'nee'}), nooit opgeslagen ${res.never}/${res.neverOf}, kaarten ${res.cards}, leeraanroepen ${calls} (+${checkCalls} controle)${res.errors.length ? `, fouten: ${res.errors.join('; ')}` : ''}`);
   return res;
 }
 
@@ -914,7 +822,7 @@ for (const mode of MODES) {
   log(`modus ${mode} …`);
   // Each mode in its own process: a fresh app, clock and connection pool.
   const outFile = path.join(TMP, `mode-${mode}.json`);
-  const child = spawnSync(process.execPath, [...process.execArgv, fileURLToPath(import.meta.url), '--child', mode, '--out', outFile, ...(args.includes('--debug') ? ['--debug'] : []), ...(args.includes('--quick') ? ['--quick'] : []), ...(args.includes('--scale-only') ? ['--scale-only'] : []), ...(ONLY ? ['--only', ONLY] : []), '--ollama', OLLAMA], { stdio: 'inherit', env: process.env });
+  const child = spawnSync(process.execPath, [...process.execArgv, fileURLToPath(import.meta.url), '--child', mode, '--out', outFile, ...(args.includes('--debug') ? ['--debug'] : []), ...(args.includes('--quick') ? ['--quick'] : []), ...(args.includes('--scale-only') ? ['--scale-only'] : []), '--ollama', OLLAMA], { stdio: 'inherit', env: process.env });
   results.push(fs.existsSync(outFile) ? JSON.parse(fs.readFileSync(outFile, 'utf8')) : { mode, error: `het proces stopte (code ${child.status})` });
 }
 fs.writeFileSync(path.join(TMP, 'results.json'), JSON.stringify(results, null, 1));
@@ -925,10 +833,9 @@ if (args.includes('--scale-only')) {
   process.exit(0);
 }
 
-// `--only tools`: no full report, the scenario's result per mode.
-const md = ONLY ? results.map((r) => `${r.mode}: ${r.error || r.skipped || JSON.stringify({ ...r.toolLearn, learnResults: undefined, rows: undefined }, null, 1)}`).join('\n') : report(results, BEFORE);
+const md = report(results, BEFORE);
 console.log('\n' + md);
-if (WRITE && !ONLY) {
+if (WRITE) {
   const dest = path.join(ROOT, 'docs', 'quality', 'memory-bench.md');
   fs.mkdirSync(path.dirname(dest), { recursive: true });
   fs.writeFileSync(dest, md);
@@ -959,10 +866,14 @@ function report(rs, before = []) {
   L.push(`## Voor en na (${BEFORE_LABEL} → nu)`, '');
   L.push('| Meting | (a) voor | (a) na | (b) voor | (b) na | (c) voor | (c) na |', '|---|---|---|---|---|---|---|');
   const row = (label, f, cb = '–') => L.push(`| ${label} | ${bOf('a') ? f(bOf('a')) : '–'} | ${aOf('a') ? f(aOf('a')) : '–'} | ${bOf('b') ? f(bOf('b')) : '–'} | ${aOf('b') ? f(aOf('b')) : '–'} | ${cb} | ${aOf('c') ? f(aOf('c')) : '–'} |`);
+  // (Dossier model: the search alone is measured with full dossiers, `archive`; what the bot always reads is the text
+  // of its dossiers, `inPrompt`. Note model: the search over notes, and the per-turn block.)
+  const search = (r, k) => (r.archive ? r.archive[`search${k}`] : r.retrieval[`recall${k}`]);
   row('Opgeslagen feiten', (r) => `${r.retrieval.extracted}/${r.retrieval.facts}`, '88/206');
-  row('Recall@1', (r) => pct(r.retrieval.recall1), '30,2 %');
-  row('Recall@5', (r) => pct(r.retrieval.recall5), '38,2 %');
-  row('In het geheugenblok', (r) => pct(r.retrieval.contextRecall), '37,3 %');
+  row('Recall@1 (alleen zoeken)', (r) => pct(search(r, 1)), '30,2 %');
+  row('Recall@5 (alleen zoeken)', (r) => pct(search(r, 5)), '38,2 %');
+  row('In wat de bot elke beurt leest (blok of dossiertekst)', (r) => pct(r.retrieval.inPrompt ?? r.retrieval.contextRecall), '37,3 %');
+  row('Bereikt de bot (elke beurt, of top 5 van zoeken)', (r) => pct(r.retrieval.reach5));
   row('Precisie "Relevant"', (r) => pct(r.retrieval.contextPrecision), '19,1 %');
   row('Regels per blok', (r) => n1(r.retrieval.avgInBlock), '3,8');
   row('Regels bij een beurt zonder geheugenvraag', (r) => n1(r.retrieval.offTopicLines));
@@ -989,7 +900,7 @@ function report(rs, before = []) {
   L.push('| Modus | Opgeslagen | Recall@1 | Recall@5 | Recall@5 van opgeslagen feiten | In het geheugenblok | Precisie "Relevant" | Regels per blok | Regels bij een praatje | Zoektijd (mediaan / p95) |', '|---|---|---|---|---|---|---|---|---|---|');
   for (const r of rs) {
     if (!ok(r)) continue;
-    const line = (x, label) => `| ${label} | ${x.extracted}/${x.facts} | ${pct(x.recall1)} | ${pct(x.recall5)} | ${pct(x.recall5Stored)} | ${pct(x.contextRecall)} | ${pct(x.contextPrecision)} | ${n1(x.avgInBlock)} | ${n1(x.offTopicLines)} | ${x.queryMsMedian.toFixed(0)} / ${x.queryMsP95.toFixed(0)} ms |`;
+    const line = (x, label) => `| ${label} | ${x.extracted}/${x.facts} | ${pct(x.recall1 ?? r.archive?.search1)} | ${pct(x.recall5 ?? r.archive?.search5)} | ${pct(x.recall5Stored)} | ${pct(x.contextRecall ?? x.inPrompt)} | ${pct(x.contextPrecision)} | ${n1(x.avgInBlock)} | ${n1(x.offTopicLines)} | ${x.queryMsMedian.toFixed(0)} / ${x.queryMsP95.toFixed(0)} ms |`;
     if (r.plain) L.push(line(r.plain, '0.3: woorden zonder synoniemen'));
     L.push(line(r.retrieval, name[r.mode]));
   }

@@ -4,17 +4,22 @@ import { HttpError } from '../../core/http.js';
 import { type FileMap, LIMITS, filesFromZip, findSkillRoots, safeRelPath, subset, zipInfo } from './files.js';
 import { analyze } from './library.js';
 import { MANIFEST_FILE } from '../../../packages/teambot-sdk/src/index.js';
-import { type LicenseInfo, categorize, classifyId, licenseFilesIn, licenseReason, resolveSkillLicense } from './licenses.js';
+import { type LicenseInfo, categorize, classifyId, licenseFilesIn, resolveSkillLicense } from './licenses.js';
 import { WebCache, WebError, isOffline } from './webcache.js';
+import type { OpenHit, OpenSort } from '../../../shared/skills.js';
 
 /**
- * Skills from the internet. Two public sources:
- *  - curated GitHub collections (repositories with SKILL.md folders), indexed from GitHub's archive downloads
- *    (codeload, not the rate-limited REST API). Which commit HEAD points to is read from the archive redirect,
- *    so an unchanged repository is never downloaded twice;
- *  - the skills.sh directory search (public, rate-limited per IP; results cached), which points into GitHub repos.
- * Repositories too large for an archive download fall back to the GitHub tree API plus raw files.
- * Nothing downloaded here is ever executed: it is parsed, scanned and shown; installing goes through the importer.
+ * Everything public: the open side of the marketplace. Three sources that answer without an account:
+ *  - GitHub's repository search (repositories with skills in the open SKILL.md format), in the orders GitHub knows:
+ *    most stars, recently updated, and by creation date (for "trending" and "newest", see `searchGithub`);
+ *  - the open skill directory skills.sh: single skills that live in GitHub repositories, with their install counts
+ *    (search by words, most installed, most installed in the last 24 hours);
+ *  - the skill library ClawHub: single skills it hosts itself (not on GitHub), each with versions, its own stars and
+ *    download counts (search by words; lists by its stars, its own trending order, newest, recently updated).
+ * A repository is read from GitHub's archive download (codeload, not the rate-limited REST API); which commit HEAD
+ * points to comes from the archive redirect, so an unchanged repository is never downloaded twice. Repositories too
+ * large for an archive fall back to the tree API. Nothing downloaded here is ever executed: it is parsed and shown;
+ * installing goes through the catalogue's install path (curated-routes.ts: import rules, scan, a pinned commit).
  */
 
 export const GITHUB_TOKEN_SECRET = 'market:github-token';
@@ -22,40 +27,40 @@ const REPO_RE = /^[A-Za-z0-9_.-]{1,100}\/[A-Za-z0-9_.-]{1,100}$/;
 const SHA_RE = /^[0-9a-f]{40}$/;
 const MAX_ROOTS = 400;
 const HOUR = 3600_000;
-/** Per-source time limits: a slow source never holds up the others (the marketplace keeps showing the cache). */
+/** Per-source time limits: a slow source never holds up the others. */
 export const SOURCE_TIMEOUTS = { head: 10_000, archive: 60_000, api: 10_000, raw: 20_000, search: 10_000 };
-/** A check that ended (success or failure) is not repeated in the background for this long. */
-export const RETRY_CHECK_MS = 5 * 60_000;
 
-export interface Collection {
-  repo: string;
-  /** TeamBot's own one-line description. */
-  note: string;
+/** Searching GitHub has a limit of its own (per minute), next to the hourly limit of the rest of its API. */
+export const GITHUB_SEARCH_LIMIT = 'api.github.com#search';
+/** Results per page of the open search. */
+export const OPEN_PAGE = 30;
+/** "Trending": repositories created within this many days, most stars first. */
+export const TRENDING_DAYS = 30;
+/** "Nieuwste": repositories created within this many days, newest first. */
+export const NEW_DAYS = 7;
+/** GitHub search gives at most this many results of one query. */
+const GITHUB_MAX_RESULTS = 1000;
+const DIRECTORY_CHUNK = 200;
+
+export const OPEN_SORTS: OpenSort[] = ['stars', 'trending', 'new', 'updated'];
+
+/** ClawHub: a skill is `<owner>/<slug>`; its pin is a version (as the publisher named it), not a commit. */
+export const CLAWHUB = 'https://clawhub.ai';
+const CLAW_NAME = /^[A-Za-z0-9][A-Za-z0-9_.-]{0,99}$/;
+export const VERSION_RE = /^[0-9A-Za-z][0-9A-Za-z.+_-]{0,63}$/;
+const CLAW_SORT: Record<OpenSort, string> = { stars: 'stars', trending: 'trending', new: 'newest', updated: 'updated' };
+
+export interface OpenPage {
+  hits: OpenHit[];
+  /** How many results the source has in all (null: it does not say). */
+  total: number | null;
+  more: boolean;
+  /** Shown from the cache because the source could not be asked now. */
+  stale: boolean;
+  error: string | null;
+  /** The source's limit was reached: when it may be asked again (ms since 1970). */
+  limitedUntil: number | null;
 }
-
-/**
- * Open skill collections, followed live at HEAD (checked 2026-11-07). Since 0.4 they are not used by default: the
- * marketplace shows TeamBot's own catalogue on pinned commits instead (curated.ts; research 2026-11-09: open stores
- * and moving HEADs were the route for trojanised skills). Set TEAMBOT_SKILL_COLLECTIONS=owner/repo,… to browse open
- * collections anyway (developer use); skills.sh search only runs when open collections are configured.
- */
-export const DEFAULT_COLLECTIONS: Collection[] = [];
-
-export const OPEN_COLLECTIONS: Collection[] = [
-  { repo: 'anthropics/skills', note: 'Voorbeeldskills van Anthropic (documenten, ontwerp, ontwikkeling).' },
-  { repo: 'openai/skills', note: 'Skills van OpenAI voor Codex; licentie verschilt per skill.' },
-  { repo: 'vercel-labs/agent-skills', note: 'Skills van Vercel voor React, Next.js en deploys.' },
-  { repo: 'anthropics/knowledge-work-plugins', note: 'Skills voor kenniswerk per vakgebied van Anthropic.' },
-  { repo: 'huggingface/skills', note: 'Skills van Hugging Face voor modellen, datasets en training.' },
-  { repo: 'cloudflare/skills', note: 'Skills van Cloudflare voor Workers en het Cloudflare-platform.' },
-  { repo: 'supabase/agent-skills', note: 'Skills van Supabase voor Postgres en Supabase.' },
-  { repo: 'expo/skills', note: 'Skills van Expo voor React Native-apps.' },
-  { repo: 'microsoft/azure-skills', note: 'Skills van Microsoft voor Azure.' },
-  { repo: 'mattpocock/skills', note: 'Ontwikkel- en schrijfskills van Matt Pocock.' },
-  { repo: 'obra/superpowers', note: 'Werkwijzen voor programmeeragenten (plannen, testen, debuggen).' },
-  { repo: 'trailofbits/skills', note: 'Beveiligingsskills van Trail of Bits.' },
-  { repo: 'remotion-dev/skills', note: 'Skills van Remotion voor video in React.' },
-];
 
 export interface IndexedSkill {
   /** Folder inside the repository ('' = the repository root). */
@@ -73,7 +78,7 @@ export interface IndexedSkill {
   labels: string[];
   category: string;
   errors: string[];
-  /** Tree mode: only the path is known until the skill is opened. */
+  /** Tree mode: only the path is known. */
   partial?: boolean;
 }
 
@@ -95,17 +100,17 @@ export interface RepoMeta {
   stars: number;
   license: string | null;
   pushedAt: string | null;
+  createdAt: string | null;
   description: string;
   archived: boolean;
   htmlUrl: string;
 }
 
-export interface SkillsShHit {
-  id: string;
-  source: string;
-  skillId: string;
-  name: string;
-  installs: number;
+/** An error of an internet source as an HTTP answer (its own status where that says something). */
+export function webErr(e: any): never {
+  if (e instanceof HttpError) throw e;
+  if (e instanceof WebError) throw new HttpError(e.status === 404 ? 404 : e.status === 429 ? 429 : e.status === 503 ? 503 : 502, e.message);
+  throw new HttpError(502, String(e?.message || e).slice(0, 300));
 }
 
 export function assertRepo(r: any): string {
@@ -114,53 +119,57 @@ export function assertRepo(r: any): string {
   return s;
 }
 
-export function assertSkillPath(p: any): string {
-  const s = String(p ?? '').trim();
-  if (!s) return '';
-  const rel = safeRelPath(s);
-  if (!rel) throw new HttpError(400, 'Ongeldig pad.');
-  return rel;
-}
-
-/** catalog_ref of a skill installed from GitHub: `github/<owner>/<repo>[/<path>]`. */
+/**
+ * The open id of a skill on GitHub: `github/<owner>/<repo>[/<folder>]` (also the catalog_ref of skills installed from
+ * the internet before 0.4).
+ */
 export function webRef(repo: string, p: string) {
   return `github/${repo}${p ? '/' + p : ''}`;
+}
+/** The open id of a skill on ClawHub: `clawhub/<owner>/<slug>`. */
+export function clawRef(owner: string, slug: string) {
+  return `clawhub/${owner}/${slug}`;
+}
+export function parseClawRef(ref: string | null | undefined): { owner: string; slug: string } | null {
+  const parts = String(ref || '').split('/');
+  if (parts.length !== 3 || parts[0] !== 'clawhub' || !CLAW_NAME.test(parts[1]) || !CLAW_NAME.test(parts[2])) return null;
+  return { owner: parts[1], slug: parts[2] };
 }
 export function parseWebRef(ref: string | null | undefined): { repo: string; path: string } | null {
   if (!ref || !ref.startsWith('github/')) return null;
   const parts = ref.split('/');
   if (parts.length < 3) return null;
   const repo = `${parts[1]}/${parts[2]}`;
-  if (!REPO_RE.test(repo)) return null;
+  if (!REPO_RE.test(repo) || repo.split('/').some((p) => p === '.' || p === '..')) return null;
   return { repo, path: parts.slice(3).join('/') };
 }
 
-function envCollections(): Collection[] | null {
-  const raw = process.env.TEAMBOT_SKILL_COLLECTIONS;
-  if (raw === undefined) return null;
-  return raw
-    .split(',')
-    .map((s) => s.trim())
-    .filter((s) => REPO_RE.test(s))
-    .map((repo) => ({ repo, note: '' }));
+/** The words of a search as they go to a source: one line, no control characters, capped. */
+export function searchWords(q: unknown): string {
+  return String(q ?? '')
+    .replace(/[\u0000-\u001f\u007f]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, 100);
 }
 
 const EMPTY = Buffer.alloc(0);
+const noPage = (o: Partial<OpenPage> = {}): OpenPage => ({ hits: [], total: null, more: false, stale: false, error: null, limitedUntil: null, ...o });
+const base = (p: string) => path.posix.basename(p);
 
 export class WebSkills {
   private mem = new Map<string, RepoIndex>();
-  /** Index runs in progress per repository (a browse, a poll and an install share one download and one parse). */
+  /** Repositories known to have no index in the cache (so a list of results does not look on disk again and again). */
+  private noIndex = new Set<string>();
+  /** Index runs in progress per repository (a view and an install share one download and one parse). */
   private running = new Map<string, Promise<RepoIndex>>();
-  /** When the last index run of a repository ended, and its error when it fell back to the cache or failed. */
-  private tried = new Map<string, { at: number; error: string | null }>();
-  collections: Collection[];
+  /** Facts of repositories seen in search results (stars, licence, last push), by lower-case name. */
+  private metas = new Map<string, RepoMeta>();
 
   constructor(
     private ctx: Ctx,
     readonly cache: WebCache,
-  ) {
-    this.collections = envCollections() ?? DEFAULT_COLLECTIONS;
-  }
+  ) {}
 
   // ---------- GitHub access ----------
   token(userId?: string | null): string | null {
@@ -187,66 +196,265 @@ export class WebSkills {
     }
   }
 
-  /** Repository facts from the GitHub API (stars, licence). Optional: null when rate limited or offline. */
+  private remember(meta: RepoMeta | null, repo: string) {
+    if (!meta) return;
+    if (this.metas.size > 5000) this.metas.delete(this.metas.keys().next().value!);
+    this.metas.set(repo.toLowerCase(), meta);
+  }
+
+  /** Repository facts from the GitHub API (stars, licence). Optional: what is known when rate limited or offline. */
   async repoMeta(repo: string, userId?: string | null, o: { force?: boolean } = {}): Promise<RepoMeta | null> {
     try {
       const hit = await this.cache.json<any>(`ghrepo:${repo}`, `https://api.github.com/repos/${repo}`, { ttlMs: 24 * HOUR, headers: this.apiHeaders(userId), accept: 'application/vnd.github+json', force: o.force, timeoutMs: SOURCE_TIMEOUTS.api });
-      return metaOf(hit.data);
+      const meta = metaOf(hit.data);
+      this.remember(meta, repo);
+      return meta;
     } catch {
       return this.peekRepoMeta(repo);
     }
   }
+  /** What is already known about a repository (a search result, or an earlier API answer); no network. */
   peekRepoMeta(repo: string): RepoMeta | null {
+    const seen = this.metas.get(repo.toLowerCase());
+    if (seen) return seen;
     const hit = this.cache.peek<any>(`ghrepo:${repo}`);
-    return hit ? metaOf(hit.data) : null;
+    const meta = hit ? metaOf(hit.data) : null;
+    this.remember(meta, repo);
+    return meta;
   }
 
-  // ---------- index ----------
+  // ---------- search: GitHub ----------
+  /**
+   * Repositories with skills on GitHub. Without words: everything with the topic `agent-skills`; with words: the words
+   * plus "skill" in the name, description or topics. The orders:
+   *  - `stars`: most stars first;
+   *  - `updated`: most recently pushed first;
+   *  - `trending`: GitHub has no public list of stars gained, so: created in the last TRENDING_DAYS days, most stars first;
+   *  - `new`: GitHub cannot order repositories by creation date, so: of those created in the last NEW_DAYS days the 100
+   *    with the most stars, newest first.
+   * One request per page, kept for an hour (searching is limited to 10 a minute without a token).
+   */
+  async searchGithub(o: { q: string; sort: OpenSort; page: number; userId?: string | null }): Promise<OpenPage> {
+    const words = searchWords(o.q);
+    const page = Math.max(1, Math.floor(o.page) || 1);
+    const scope = words ? `${words} skill in:name,description,topics` : 'topic:agent-skills';
+    const since = (days: number) => new Date(Date.now() - days * 24 * HOUR).toISOString().slice(0, 10);
+    const window = o.sort === 'trending' ? ` created:>=${since(TRENDING_DAYS)}` : o.sort === 'new' ? ` created:>=${since(NEW_DAYS)}` : '';
+    const local = o.sort === 'new';
+    const perPage = local ? 100 : OPEN_PAGE;
+    const ghPage = local ? 1 : page;
+    if (ghPage * perPage > GITHUB_MAX_RESULTS) return noPage();
+    const url = `https://api.github.com/search/repositories?q=${encodeURIComponent(scope + window)}&sort=${o.sort === 'updated' ? 'updated' : 'stars'}&order=desc&per_page=${perPage}&page=${ghPage}`;
+    let hit;
+    try {
+      // The key leaves the date out: when GitHub cannot be asked, yesterday's answer is still shown.
+      hit = await this.cache.json<any>(`ghsearch:${o.sort}:${words.toLowerCase()}:${ghPage}`, url, {
+        ttlMs: o.sort === 'updated' ? 10 * 60_000 : HOUR,
+        headers: this.apiHeaders(o.userId),
+        accept: 'application/vnd.github+json',
+        timeoutMs: SOURCE_TIMEOUTS.search,
+        limitKey: GITHUB_SEARCH_LIMIT,
+      });
+    } catch (e: any) {
+      const limited = e instanceof WebError && e.code === 'rate-limited';
+      return noPage({ error: String(e?.message || e).slice(0, 300), limitedUntil: limited ? (e.until ?? this.cache.blockedHost(GITHUB_SEARCH_LIMIT) ?? Date.now() + 60_000) : null });
+    }
+    const all: OpenHit[] = [];
+    for (const r of Array.isArray(hit.data?.items) ? hit.data.items : []) {
+      const meta = metaOf(r);
+      if (!meta || !REPO_RE.test(String(r.full_name))) continue;
+      this.remember(meta, r.full_name);
+      all.push({ kind: 'repo', from: 'github', repo: r.full_name, skill: null, name: String(r.name || r.full_name.split('/')[1]), description: meta.description, stars: meta.stars, downloads: null, flagged: false, installs: null, recent: null, license: meta.license, updatedAt: meta.pushedAt, createdAt: meta.createdAt, archived: meta.archived });
+    }
+    const found = Math.max(0, Math.floor(Number(hit.data?.total_count) || 0));
+    // Only a stale answer says why (a limit that is running does not make a fresh answer from the cache a problem).
+    const limitedUntil = hit.stale ? this.cache.blockedHost(GITHUB_SEARCH_LIMIT) : null;
+    if (local) {
+      all.sort((a, b) => String(b.createdAt || '').localeCompare(String(a.createdAt || '')));
+      return { hits: all.slice((page - 1) * OPEN_PAGE, page * OPEN_PAGE), total: Math.min(found, all.length), more: page * OPEN_PAGE < all.length, stale: hit.stale, error: hit.error, limitedUntil };
+    }
+    return { hits: all, total: found, more: all.length > 0 && page * OPEN_PAGE < Math.min(found, GITHUB_MAX_RESULTS), stale: hit.stale, error: hit.error, limitedUntil };
+  }
+
+  // ---------- search: the open skill directory (skills.sh) ----------
+  /**
+   * Single skills from skills.sh, each in a GitHub repository. It knows two orders: most installed (also for a search
+   * by words) and most installed in the last 24 hours (without words); for the other orders it has nothing (null).
+   */
+  async searchDirectory(o: { q: string; sort: OpenSort; page: number }): Promise<OpenPage | null> {
+    const words = searchWords(o.q);
+    const page = Math.max(1, Math.floor(o.page) || 1);
+    const from = (page - 1) * OPEN_PAGE;
+    const hitOf = (s: any, recent: boolean): OpenHit | null => {
+      const repo = String(s?.source || '');
+      const skill = String(s?.skillId || s?.slug || '').slice(0, 120);
+      // The directory also lists skills that are not in a GitHub repository; those cannot be fetched and pinned.
+      if (!REPO_RE.test(repo) || !skill || s?.isDuplicate) return null;
+      const n = Math.max(0, Math.floor(Number(s?.installs) || 0));
+      return { kind: 'skill', from: 'skills.sh', repo, skill, name: String(s?.name || skill).slice(0, 120), description: '', stars: null, downloads: null, flagged: false, installs: recent ? null : n, recent: recent ? n : null, license: null, updatedAt: null, createdAt: null, archived: false };
+    };
+    try {
+      if (words) {
+        if (o.sort !== 'stars' || words.length < 2) return null;
+        const hit = await this.cache.json<any>(`skillssh:${words.toLowerCase()}`, `https://skills.sh/api/search?q=${encodeURIComponent(words)}&limit=${DIRECTORY_CHUNK}`, { ttlMs: HOUR, timeoutMs: SOURCE_TIMEOUTS.search });
+        const all = (Array.isArray(hit.data?.skills) ? hit.data.skills : []).map((s: any) => hitOf(s, false)).filter(Boolean) as OpenHit[];
+        all.sort((a, b) => (b.installs || 0) - (a.installs || 0));
+        return { hits: all.slice(from, from + OPEN_PAGE), total: all.length, more: from + OPEN_PAGE < all.length, stale: hit.stale, error: hit.error, limitedUntil: null };
+      }
+      const board = o.sort === 'stars' ? 'all-time' : o.sort === 'trending' ? 'trending' : null;
+      if (!board) return null;
+      // The directory gives 200 at a time; a page of ours can lie across two of them.
+      const hits: OpenHit[] = [];
+      let total: number | null = null;
+      let more = false;
+      let stale = false;
+      let error: string | null = null;
+      for (let chunk = Math.floor(from / DIRECTORY_CHUNK); chunk <= Math.floor((from + OPEN_PAGE - 1) / DIRECTORY_CHUNK); chunk++) {
+        const hit = await this.cache.json<any>(`skillssh-list:${board}:${chunk}`, `https://skills.sh/api/skills/${board}/${chunk}`, { ttlMs: board === 'trending' ? HOUR / 2 : HOUR, timeoutMs: SOURCE_TIMEOUTS.search });
+        const list: any[] = Array.isArray(hit.data?.skills) ? hit.data.skills : [];
+        const start = Math.max(0, from - chunk * DIRECTORY_CHUNK);
+        const end = Math.min(list.length, from + OPEN_PAGE - chunk * DIRECTORY_CHUNK);
+        for (const s of list.slice(start, end)) {
+          const h = hitOf(s, board === 'trending');
+          if (h) hits.push(h);
+        }
+        total = Number.isFinite(Number(hit.data?.total)) ? Number(hit.data.total) : total;
+        more = end < list.length || !!hit.data?.hasMore;
+        stale = stale || hit.stale;
+        error = error || hit.error;
+        if (!hit.data?.hasMore) break;
+      }
+      return { hits, total, more, stale, error, limitedUntil: null };
+    } catch (e: any) {
+      const limited = e instanceof WebError && e.code === 'rate-limited';
+      return noPage({ error: String(e?.message || e).slice(0, 300), limitedUntil: limited ? (e.until ?? Date.now() + 60_000) : null });
+    }
+  }
+
+  // ---------- search: the skill library ClawHub ----------
+  /**
+   * Single skills from ClawHub. Without words its own lists (most stars there, its trending order, newest, recently
+   * updated), 30 at a time with the cursor it gives; with words its search, put in the chosen order here (trending:
+   * most installs in the last 60 days, the number its search gives).
+   */
+  async searchClawhub(o: { q: string; sort: OpenSort; page: number }): Promise<OpenPage> {
+    const words = searchWords(o.q);
+    const page = Math.max(1, Math.floor(o.page) || 1);
+    const iso = (ms: unknown) => (Number(ms) > 0 ? new Date(Number(ms)).toISOString() : null);
+    const count = (n: unknown) => Math.max(0, Math.floor(Number(n) || 0));
+    const text = (v: unknown, max: number) => String(v || '').split(/\s+/).join(' ').trim().slice(0, max);
+    type Hit = OpenHit & { recent60: number };
+    const hitOf = (owner: unknown, k: any, extra: { license?: unknown; name?: unknown } = {}): Hit | null => {
+      const slug = String(k?.slug || '');
+      if (!CLAW_NAME.test(String(owner || '')) || !CLAW_NAME.test(slug)) return null;
+      return {
+        kind: 'skill',
+        from: 'clawhub',
+        repo: `${owner}/${slug}`,
+        skill: slug,
+        name: text(extra.name || k.displayName, 120) || slug,
+        description: text(k.summary, 300),
+        stars: count(k.stats?.stars),
+        downloads: count(k.stats?.downloads),
+        flagged: !!k.isSuspicious,
+        installs: null,
+        recent: null,
+        license: text(extra.license, 40) || null,
+        updatedAt: iso(k.updatedAt),
+        createdAt: iso(k.createdAt),
+        archived: false,
+        recent60: 0,
+      };
+    };
+    const plain = (list: Hit[]): OpenHit[] => list.map(({ recent60: _recent, ...h }) => h);
+    try {
+      if (words) {
+        if (words.length < 2) return noPage();
+        const hit = await this.cache.json<any>(`clawhub-search:${words.toLowerCase()}`, `${CLAWHUB}/api/v1/search?q=${encodeURIComponent(words)}&limit=100`, { ttlMs: HOUR, timeoutMs: SOURCE_TIMEOUTS.search });
+        const all: Hit[] = [];
+        for (const r of Array.isArray(hit.data?.results) ? hit.data.results : []) {
+          const h = hitOf(r?.native?.ownerHandle, r?.native?.skill, { name: r?.displayName });
+          if (!h) continue;
+          h.recent60 = count(r?.metrics?.rolling60DayInstalls);
+          all.push(h);
+        }
+        const newer = (a: string | null, b: string | null) => String(b || '').localeCompare(String(a || ''));
+        all.sort((a, b) => (o.sort === 'new' ? newer(a.createdAt, b.createdAt) : o.sort === 'updated' ? newer(a.updatedAt, b.updatedAt) : o.sort === 'trending' ? b.recent60 - a.recent60 : (b.stars || 0) - (a.stars || 0)) || (b.downloads || 0) - (a.downloads || 0));
+        const from = (page - 1) * OPEN_PAGE;
+        return { hits: plain(all.slice(from, from + OPEN_PAGE)), total: all.length, more: from + OPEN_PAGE < all.length, stale: hit.stale, error: hit.error, limitedUntil: null };
+      }
+      // A list goes by cursor: page n needs the cursor page n-1 gave (each page is kept, so "Meer laden" is one request).
+      let cursor = '';
+      let last: any = null;
+      let stale = false;
+      let error: string | null = null;
+      for (let p = 1; p <= page; p++) {
+        const hit = await this.cache.json<any>(`clawhub-list:${o.sort}:${p}`, `${CLAWHUB}/api/v1/skills?limit=${OPEN_PAGE}&sort=${CLAW_SORT[o.sort]}${cursor ? `&cursor=${encodeURIComponent(cursor)}` : ''}`, { ttlMs: o.sort === 'updated' || o.sort === 'new' ? 10 * 60_000 : HOUR, timeoutMs: SOURCE_TIMEOUTS.search });
+        last = hit.data;
+        stale = stale || hit.stale;
+        error = error || hit.error;
+        cursor = typeof last?.nextCursor === 'string' ? last.nextCursor : '';
+        if (!cursor && p < page) return noPage({ stale, error });
+      }
+      const hits: Hit[] = [];
+      for (const k of Array.isArray(last?.items) ? last.items : []) {
+        const h = hitOf(k?.ownerHandle, k, { license: k?.latestVersion?.license });
+        if (h) hits.push(h);
+      }
+      return { hits: plain(hits), total: null, more: !!cursor, stale, error, limitedUntil: null };
+    } catch (e: any) {
+      const limited = e instanceof WebError && e.code === 'rate-limited';
+      return noPage({ error: String(e?.message || e).slice(0, 300), limitedUntil: limited ? (e.until ?? Date.now() + 60_000) : null });
+    }
+  }
+
+  /**
+   * What ClawHub says about one skill now: its latest version (what an install pins, and what an update check
+   * compares with), the licence it names, and the words of its own moderation when it has any.
+   */
+  async clawhubSkill(name: string, o: { force?: boolean } = {}): Promise<{ version: string | null; license: string | null; warning: string; error: string | null }> {
+    const [owner, slug] = name.split('/');
+    try {
+      const hit = await this.cache.json<any>(`clawhub-skill:${name}`, `${CLAWHUB}/api/v1/skills/${encodeURIComponent(slug)}?ownerHandle=${encodeURIComponent(owner)}`, { ttlMs: HOUR, force: o.force, timeoutMs: SOURCE_TIMEOUTS.api });
+      const version = String(hit.data?.latestVersion?.version || '');
+      const m = hit.data?.moderation;
+      // Its moderation is empty for an ordinary skill; what it does say is passed on in its own words.
+      const said = m && typeof m === 'object' ? [m.verdict, m.status, m.reason, m.summary].filter((x) => typeof x === 'string' && x).join(': ') || (m.isSuspicious || m.isMalwareBlocked || m.isHidden ? 'gemarkeerd' : '') : '';
+      const fine = ['clean', 'ok', 'approved', 'safe', 'benign', 'none'].includes(said.split(':')[0].trim().toLowerCase());
+      return { version: VERSION_RE.test(version) ? version : null, license: hit.data?.latestVersion?.license ? String(hit.data.latestVersion.license).slice(0, 40) : null, warning: fine ? '' : said.slice(0, 200), error: hit.error };
+    } catch (e: any) {
+      return { version: null, license: null, warning: '', error: String(e?.message || e).slice(0, 300) };
+    }
+  }
+
+  // ---------- the skills in one repository ----------
   /** Cached index without network access. */
   peekIndex(repo: string): RepoIndex | null {
     const m = this.mem.get(repo);
     if (m) return m;
+    if (this.noIndex.has(repo)) return null;
     const hit = this.cache.peek<RepoIndex>(`index:${repo}`);
     if (hit?.data?.repo === repo && Array.isArray(hit.data.skills)) {
       this.mem.set(repo, hit.data);
       return hit.data;
     }
+    if (this.noIndex.size > 5000) this.noIndex.clear();
+    this.noIndex.add(repo);
     return null;
   }
 
-  /**
-   * Asking for this repository's index would go to the network: it is not indexed yet, or the last check of its HEAD
-   * is older than an hour (then the cached index is still shown while it is checked: stale-while-revalidate).
-   */
-  needsRefresh(repo: string): boolean {
-    if (this.running.has(repo)) return true;
-    if (isOffline()) return false;
-    if (!this.peekIndex(repo)) return true;
-    // A check that just ended (also one that failed: GitHub unreachable) counts as checked for a few minutes, so a
-    // page that asks again does not keep the "bijwerken" state, and GitHub is not asked on every poll.
-    if (Date.now() - (this.tried.get(repo)?.at || 0) < RETRY_CHECK_MS) return false;
-    return !this.cache.fresh(`head:${repo}`, HOUR);
+  private keep(idx: RepoIndex) {
+    this.noIndex.delete(idx.repo);
+    this.mem.set(idx.repo, idx);
+    this.cache.put(`index:${idx.repo}`, idx);
   }
 
-  /** The cached index as the marketplace shows it: marked stale when the last check of the source failed. */
-  snapshot(repo: string): RepoIndex | null {
-    const idx = this.peekIndex(repo);
-    const err = this.tried.get(repo)?.error;
-    return idx && err ? { ...idx, stale: true, error: err } : idx;
-  }
-
-  /** The index of a repository; concurrent calls share one run (one download, one parse). */
+  /** The skills of a repository at the commit HEAD points to; concurrent calls share one run (one download, one parse). */
   index(repo: string, o: { force?: boolean; userId?: string | null } = {}): Promise<RepoIndex> {
     assertRepo(repo);
     const cur = this.running.get(repo);
     if (cur && !o.force) return cur;
-    const p = this.buildOrReuse(repo, o).then(
-      (r) => (this.tried.set(repo, { at: Date.now(), error: r.stale ? r.error || 'bron niet bereikbaar' : null }), r),
-      (e) => {
-        this.tried.set(repo, { at: Date.now(), error: String(e?.message || e).slice(0, 300) });
-        throw e;
-      },
-    );
+    const p = this.buildOrReuse(repo, o);
     p.finally(() => {
       if (this.running.get(repo) === p) this.running.delete(repo);
     }).catch(() => {});
@@ -273,8 +481,7 @@ export class WebSkills {
     }
     const idx = this.buildIndex(repo, hit.data, head.commit);
     if (prev?.commit && prev.commit !== idx.commit) this.cache.drop(`zip:${repo}@${prev.commit}`);
-    this.mem.set(repo, idx);
-    this.cache.put(`index:${repo}`, idx);
+    this.keep(idx);
     return idx;
   }
 
@@ -307,8 +514,8 @@ export class WebSkills {
     return { repo, mode: 'zip', commit: realCommit, commitDate: info.newest, fetchedAt: new Date().toISOString(), skills, rootLicense, skipped: skipped.length, truncated: roots.length >= MAX_ROOTS };
   }
 
-  private describe(root: string, own: FileMap, repo: string, repoFiles: { path: string; text: string }[], githubSpdx?: string | null): IndexedSkill {
-    const a = analyze(own, path.posix.basename(root) || repo.split('/')[1]);
+  private describe(root: string, own: FileMap, repo: string, repoFiles: { path: string; text: string }[]): IndexedSkill {
+    const a = analyze(own, base(root) || repo.split('/')[1]);
     const m = a.parsed.meta;
     return {
       path: root,
@@ -316,7 +523,7 @@ export class WebSkills {
       description: m.description,
       version: m.version,
       author: m.author || m.metadata?.author || '',
-      license: resolveSkillLicense({ skillFiles: own, frontmatter: m.license, repoFiles, githubSpdx }),
+      license: resolveSkillLicense({ skillFiles: own, frontmatter: m.license, repoFiles }),
       checksum: a.checksum,
       fileCount: a.fileCount,
       size: a.size,
@@ -328,106 +535,50 @@ export class WebSkills {
     };
   }
 
-  /** Large repositories: list SKILL.md folders through the tree API; files come from raw.githubusercontent.com. */
+  /** Large repositories: the folders with a SKILL.md through the tree API (their names only). */
   private async treeIndex(repo: string, commit: string | null, userId?: string | null): Promise<RepoIndex> {
     const ref = commit || 'HEAD';
     const hit = await this.cache.json<any>(`tree:${repo}@${ref}`, `https://api.github.com/repos/${repo}/git/trees/${ref}?recursive=1`, { ttlMs: commit ? 30 * 24 * HOUR : 12 * HOUR, headers: this.apiHeaders(userId), accept: 'application/vnd.github+json', timeoutMs: SOURCE_TIMEOUTS.raw });
     const blobs: string[] = (Array.isArray(hit.data?.tree) ? hit.data.tree : []).filter((t: any) => t?.type === 'blob' && typeof t.path === 'string').map((t: any) => safeRelPath(t.path)).filter(Boolean);
     const roots = findSkillRoots(new Map(blobs.map((n) => [n, EMPTY]))).slice(0, MAX_ROOTS);
-    const prev = this.peekIndex(repo);
     const skills: IndexedSkill[] = roots.map((r) => {
-      const known = prev?.commit === commit ? prev?.skills.find((s) => s.path === r && !s.partial) : null;
-      if (known) return known;
-      const name = path.posix.basename(r) || repo.split('/')[1];
+      const name = base(r) || repo.split('/')[1];
       return { path: r, name, description: '', version: '', author: '', license: { spdx: null, label: 'Nog niet bekeken', status: 'unknown', source: 'none' }, checksum: '', fileCount: 0, size: 0, kind: 'prompt', scanLevel: 'ok', labels: [], category: categorize(name), errors: [], partial: true };
     });
     const meta = await this.repoMeta(repo, userId);
     const idx: RepoIndex = { repo, mode: 'tree', commit, commitDate: meta?.pushedAt || null, fetchedAt: new Date().toISOString(), skills, rootLicense: meta?.license ? { ...(classifyId(meta.license) || { spdx: null, label: meta.license, status: 'unknown' }), source: 'github' } : null, skipped: 0, truncated: !!hit.data?.truncated || roots.length >= MAX_ROOTS };
-    (idx as any).blobs = blobs.filter((b) => roots.some((r) => r === '' || b.startsWith(r + '/')) || !b.includes('/')).slice(0, 20_000);
-    this.mem.set(repo, idx);
-    this.cache.put(`index:${repo}`, idx);
+    this.keep(idx);
     return idx;
   }
 
-  /** The files of one skill (from the cached archive, or raw files in tree mode). Never executed. */
-  async skillFiles(repo: string, skillPath: string, userId?: string | null): Promise<{ files: FileMap; index: RepoIndex; skill: IndexedSkill }> {
-    const idx = await this.index(repo, { userId });
-    const skill = idx.skills.find((s) => s.path === skillPath);
-    if (!skill) throw new HttpError(404, `Skill ${skillPath || '(hoofdmap)'} niet gevonden in ${repo}.`);
-    const roots = idx.skills.map((s) => s.path);
-    let files: FileMap;
-    if (idx.mode === 'zip') {
-      const zip = this.cache.peek<Buffer>(`zip:${repo}@${idx.commit || 'HEAD'}`);
-      let buf = zip?.data;
-      if (!buf) buf = (await this.cache.buffer(`zip:${repo}@${idx.commit || 'HEAD'}`, `https://codeload.github.com/${repo}/zip/${idx.commit || 'HEAD'}`, { ttlMs: 30 * 24 * HOUR, maxBytes: LIMITS.maxZipBytes, timeoutMs: SOURCE_TIMEOUTS.archive })).data;
-      const info = zipInfo(buf);
-      const top = commonTop(info.names);
-      const strip = (p: string) => (top && p.startsWith(top + '/') ? p.slice(top.length + 1) : p);
-      const pre = skillPath ? skillPath + '/' : '';
-      const raw = filesFromZip(buf, { lenient: true, include: (rel) => strip(rel).startsWith(pre) });
-      const all: FileMap = new Map();
-      for (const [p, b] of raw) all.set(strip(p), b);
-      files = subset(all, skillPath, roots);
-    } else {
-      const blobs: string[] = ((idx as any).blobs || []).filter((b: string) => (skillPath ? b.startsWith(skillPath + '/') : true));
-      const nested = roots.filter((r) => r !== skillPath && (skillPath === '' || r.startsWith(skillPath + '/')));
-      const mine = blobs.filter((b) => !nested.some((n) => b.startsWith(n + '/')));
-      if (mine.length > LIMITS.maxFiles) throw new HttpError(422, `Deze skill heeft te veel bestanden (${mine.length}, maximaal ${LIMITS.maxFiles}).`);
-      files = new Map();
-      let total = 0;
-      for (const b of mine) {
-        const url = `https://raw.githubusercontent.com/${repo}/${idx.commit || 'HEAD'}/${b.split('/').map(encodeURIComponent).join('/')}`;
-        const r = await this.cache.buffer(`raw:${repo}@${idx.commit || 'HEAD'}:${b}`, url, { ttlMs: idx.commit ? 30 * 24 * HOUR : 12 * HOUR, maxBytes: LIMITS.maxFileBytes, timeoutMs: SOURCE_TIMEOUTS.raw });
-        total += r.data.length;
-        if (total > LIMITS.maxSkillBytes) throw new HttpError(422, 'Deze skill is te groot.');
-        const rel = skillPath ? b.slice(skillPath.length + 1) : b;
-        files.set(path.posix.basename(rel).toLowerCase() === 'skill.md' && !rel.includes('/') ? 'SKILL.md' : rel, r.data);
-      }
-      if (skill.partial) {
-        const filled = this.describe(skillPath, files, repo, [], idx.rootLicense?.spdx || null);
-        Object.assign(skill, filled, { partial: false });
-        this.cache.put(`index:${repo}`, idx);
-      }
-    }
-    files.delete(MANIFEST_FILE);
-    return { files, index: idx, skill };
+  /** A skill of an index by what an open result calls it: its folder, the name in its SKILL.md, or its folder name. */
+  find(idx: RepoIndex, what: string): IndexedSkill | null {
+    const w = what.toLowerCase();
+    return idx.skills.find((x) => x.path === what) || idx.skills.find((x) => x.name.toLowerCase() === w) || idx.skills.find((x) => base(x.path).toLowerCase() === w) || null;
   }
 
-  // ---------- skills.sh ----------
-  async searchSkillsSh(q: string): Promise<{ hits: SkillsShHit[]; stale: boolean; error: string | null }> {
-    const query = q.trim().slice(0, 100);
-    if (query.length < 2) return { hits: [], stale: false, error: null };
-    const hit = await this.cache.json<any>(`skillssh:${query.toLowerCase()}`, `https://skills.sh/api/search?q=${encodeURIComponent(query)}&limit=60`, { ttlMs: HOUR, timeoutMs: SOURCE_TIMEOUTS.search });
-    const hits: SkillsShHit[] = (Array.isArray(hit.data?.skills) ? hit.data.skills : [])
-      .slice(0, 100)
-      .map((s: any) => ({ id: String(s?.id || ''), source: String(s?.source || ''), skillId: String(s?.skillId || s?.slug || ''), name: String(s?.name || s?.skillId || '').slice(0, 120), installs: Math.max(0, Math.floor(Number(s?.installs) || 0)) }))
-      .filter((s: SkillsShHit) => s.id && s.skillId && s.source);
-    return { hits, stale: hit.stale, error: hit.error };
-  }
-
-  /** Install counts we already know for a repository's skills (from cached skills.sh searches). */
-  installsFrom(hits: SkillsShHit[]) {
-    const m = new Map<string, number>();
-    for (const h of hits) m.set(`${h.source.toLowerCase()}|${h.skillId.toLowerCase()}`, Math.max(h.installs, m.get(`${h.source.toLowerCase()}|${h.skillId.toLowerCase()}`) || 0));
-    return m;
-  }
-
-  /** Find the folder of a skills.sh result inside its repository (by SKILL.md name, then folder name). */
-  async resolve(source: string, skillId: string, userId?: string | null): Promise<{ repo: string; path: string }> {
-    if (!REPO_RE.test(source)) throw new HttpError(422, `Deze skill komt niet uit een GitHub-repository (${source.slice(0, 80)}); TeamBot kan hem niet ophalen.`);
-    const idx = await this.index(source, { userId });
-    const id = skillId.toLowerCase();
-    const s = idx.skills.find((x) => x.name.toLowerCase() === id) || idx.skills.find((x) => path.posix.basename(x.path).toLowerCase() === id);
-    if (!s) throw new HttpError(404, `Skill ${skillId} niet (meer) gevonden in ${source}.`);
-    return { repo: source, path: s.path };
-  }
-
-  // ---------- updates ----------
-  /** Update available for an installed skill (cached index only, no network). */
   /**
-   * Newer source version of an installed internet skill, or null. `known` says whether a checksum is already one of the
-   * skill's stored revisions: after a local edit (or a rollback) the active checksum differs from the source, but the
-   * source version is not new, so it is no update.
+   * The folder of an open result in its repository, at the commit HEAD points to now. `what` is a folder, a skill name
+   * (as the directory gives it), or empty for a repository that holds one skill.
+   */
+  async resolveOpen(repo: string, what: string, userId?: string | null): Promise<{ repo: string; path: string; index: RepoIndex; skill: IndexedSkill }> {
+    const idx = await this.index(assertRepo(repo), { userId });
+    if (!idx.skills.length) throw new HttpError(404, `In ${repo} staat geen skill (geen map met een SKILL.md).`);
+    const list = (n = 30) => idx.skills.slice(0, n).map((s) => webRef(repo, s.path || s.name)).join(', ') + (idx.skills.length > n ? ` en nog ${idx.skills.length - n}` : '');
+    if (!what) {
+      if (idx.skills.length === 1) return { repo, path: idx.skills[0].path, index: idx, skill: idx.skills[0] };
+      throw new HttpError(409, `${repo} heeft ${idx.skills.length} skills; kies er een: ${list()}.`, 'choose');
+    }
+    const s = this.find(idx, what);
+    if (!s) throw new HttpError(404, `Skill ${what} niet (meer) gevonden in ${repo}. Wel: ${list(15)}.`);
+    return { repo, path: s.path, index: idx, skill: s };
+  }
+
+  // ---------- updates of skills installed from the internet before 0.4 (catalog_ref `github/…`) ----------
+  /**
+   * Newer source version of such a skill, or null (cached index only, no network). `known` says whether a checksum is
+   * already one of the skill's stored revisions: after a local edit (or a rollback) the active checksum differs from
+   * the source, but the source version is not new, so it is no update.
    */
   updateFor(ref: string | null | undefined, checksum: string, known?: (checksum: string) => boolean): { version: string; commit: string | null; repo: string; path: string } | null {
     const r = parseWebRef(ref);
@@ -442,7 +593,15 @@ export class WebSkills {
 function metaOf(j: any): RepoMeta | null {
   if (!j || typeof j !== 'object' || typeof j.full_name !== 'string') return null;
   const spdx = j.license?.spdx_id && j.license.spdx_id !== 'NOASSERTION' ? String(j.license.spdx_id) : null;
-  return { stars: Number(j.stargazers_count) || 0, license: spdx, pushedAt: j.pushed_at ? String(j.pushed_at) : null, description: String(j.description || '').slice(0, 300), archived: !!j.archived, htmlUrl: String(j.html_url || '') };
+  return {
+    stars: Number(j.stargazers_count) || 0,
+    license: spdx,
+    pushedAt: j.pushed_at ? String(j.pushed_at) : null,
+    createdAt: j.created_at ? String(j.created_at) : null,
+    description: String(j.description || '').replace(/\s+/g, ' ').trim().slice(0, 300),
+    archived: !!j.archived,
+    htmlUrl: String(j.html_url || ''),
+  };
 }
 
 function commonTop(names: string[]): string {
@@ -450,5 +609,3 @@ function commonTop(names: string[]): string {
   const first = names[0].split('/')[0];
   return names.every((n) => n.includes('/') && n.split('/')[0] === first) ? first : '';
 }
-
-export { licenseReason };

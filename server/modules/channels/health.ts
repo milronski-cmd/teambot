@@ -10,11 +10,10 @@
  * can also run a test: send "test CODE" to the bot, TeamBot answers, and both directions are proven in one step.
  */
 import type { AdapterDef, Binding } from './types.js';
+import type { HealthEvent, HealthState, HealthView } from '../../../shared/channelHealth.js';
 
-export interface HealthEvent {
-  at: string;
-  text: string;
-}
+/** What the Kanalen page shows: shared/channelHealth.ts. */
+export type { HealthView };
 
 export interface HealthRecord {
   /** When the current connection settings took effect (evidence from before does not count). */
@@ -35,26 +34,6 @@ export interface HealthRecord {
   /** A running test: the owner sends "test CODE"; only the hash is kept. */
   test?: { codeHash: string; startedAt: string; expiresAt: string } | null;
   lastTest?: { at: string; ok: boolean; text: string } | null;
-}
-
-export type HealthState = 'off' | 'connecting' | 'error' | 'untested' | 'receive_failed' | 'send_failed' | 'ok';
-
-export interface HealthView {
-  state: HealthState;
-  /** Exact reason for error / receive_failed / send_failed (plain Dutch). */
-  reason: string | null;
-  receiveOk: boolean;
-  sendOk: boolean;
-  /** False for a webhook without replies: receiving alone is enough. */
-  sendNeeded: boolean;
-  inAt: string | null;
-  outAt: string | null;
-  platformAt: string | null;
-  lastError: HealthEvent | null;
-  testing: { expiresAt: string } | null;
-  lastTest: { at: string; ok: boolean; text: string } | null;
-  /** Last 24 hours, from the channel log. */
-  day: { in: number; out: number; errors: number };
 }
 
 /** Log kinds "in" that are not proof of a delivered message. */

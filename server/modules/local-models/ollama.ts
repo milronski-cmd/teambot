@@ -1,15 +1,8 @@
-import type { GpuVendor, Hardware } from './hardware.js';
 import { budget } from './advice.js';
+import { originOf } from '../../providers/localmodels.js';
+import type { CpuWarning, GpuVendor, Hardware, Placement, PullState } from '../../../shared/localModels.js';
 
 /** Ollama's own API for what TeamBot shows on "Lokale modellen op deze pc": /api/ps, /api/tags, /api/pull. */
-
-export const originOf = (base: string) => {
-  try {
-    return new URL(base).origin;
-  } catch {
-    return base.replace(/\/v1\/?$/, '');
-  }
-};
 
 export async function getJson(url: string, timeoutMs = 3000): Promise<any> {
   const r = await fetch(url, { signal: AbortSignal.timeout(timeoutMs), redirect: 'error' });
@@ -32,7 +25,6 @@ export function parsePs(j: any): PsModel[] {
     .filter((m: PsModel) => m.name);
 }
 
-export type Placement = 'gpu' | 'partly' | 'cpu';
 /** Where Ollama runs a loaded model: `ollama ps` says "100% GPU", "48%/52% CPU/GPU" or "100% CPU". */
 export const placement = (m: PsModel): Placement => (m.sizeVram <= 0 ? 'cpu' : m.sizeVram >= m.size * 0.98 ? 'gpu' : 'partly');
 
@@ -43,16 +35,6 @@ const DRIVERS: Record<GpuVendor, string | null> = {
   apple: null,
   other: null,
 };
-
-export interface CpuWarning {
-  /** The model that runs on the processor. */
-  model: string;
-  /** The video card this pc has. */
-  gpu: string;
-  vendor: GpuVendor;
-  /** Where the newest driver is. */
-  driverUrl: string | null;
-}
 
 /**
  * Ollama runs a model entirely on the processor although this pc has a usable video card: almost always a missing
@@ -69,19 +51,6 @@ export function cpuWarning(ps: PsModel[], hw: Hardware | null): CpuWarning | nul
 }
 
 // ------------------------------------------------------------------ downloads (/api/pull), only on the owner's click
-
-export interface PullState {
-  model: string;
-  /** Ollama's last status line ("pulling manifest", "pulling <digest>", "verifying sha256 digest", "success"). */
-  status: string;
-  completed: number;
-  total: number;
-  done: boolean;
-  ok?: boolean;
-  error?: string;
-  cancelled?: boolean;
-  startedAt: string;
-}
 
 interface Job {
   state: PullState;

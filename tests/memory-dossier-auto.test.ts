@@ -73,11 +73,14 @@ test('a conversation that names a dossier is linked by itself; its state is in e
     assert.match(c2, /Besluiten: \[b:[^\]]+\] Besloten: Jansen krijgt 5 procent korting/);
     assert.match(c2, /Open acties: \[a:[^\]]+\] Jansen wil de fietsen vóór 1 april geleverd/);
 
-    // The tool list stays small: dossier_note in "memory", the detailed writers in their own part (still callable).
+    // The tool list stays small: dossier_write and dossier_get in "memory", the detailed writers (dossier_note with
+    // them, since living dossiers) in their own part (still callable).
     const tools = await t.app.ctx.tools.forAgent(t.app.ctx.store.agent(a.id)!, t.app.ctx.store.thread(th.id)!);
-    assert.equal(tools.find((x) => x.name === 'dossier_note')?.group, 'memory');
+    assert.equal(tools.find((x) => x.name === 'dossier_write')?.group, 'memory');
+    assert.equal(tools.find((x) => x.name === 'dossier_note')?.group, DETAIL_GROUP);
+    assert.deepEqual(tools.filter((x) => x.group === 'memory').map((x) => x.name).sort(), ['dossier_get', 'dossier_write', 'memory_forget', 'memory_remember', 'memory_search', 'memory_update']);
     assert.equal(tools.find((x) => x.name === 'dossier_add')?.group, DETAIL_GROUP);
-    assert.ok(!tools.some((x) => x.group === 'memory' && ['dossier_add', 'dossier_create', 'dossier_update'].includes(x.name)));
+    assert.ok(!tools.some((x) => x.group === 'memory' && ['dossier_add', 'dossier_note', 'dossier_update'].includes(x.name)));
   } finally {
     await t.close();
   }
@@ -108,7 +111,7 @@ test('a recurring client without a dossier: proposed after the second conversati
     assert.equal(props[0].pending, 1);
     assert.equal(props[0].agent.name, 'Verkoop');
     // The bot does not see a proposal as a dossier.
-    assert.equal(t.app.ctx.services.memory.svc.readableDossiers(t.app.ctx.services.memory.svc.readerFor(ag, null)).length, 0);
+    assert.equal(t.app.ctx.store.all<any>("SELECT id FROM memory_dossiers WHERE core IS NULL AND status = 'active'").length, 0);
     const made = (await t.api('POST', `/memory/dossier-proposals/${props[0].id}/accept`, {})).dossier;
     assert.equal(made.title, 'Klant Bakker');
     assert.equal(made.agent_ids, null, 'for every bot of the team');

@@ -5,12 +5,13 @@ import { Skeleton } from '../../components/overview';
 import { BotAvatar } from '../../components/BotFace';
 import { on } from '../../lib/api';
 import { navigate } from '../../lib/router';
+import { t } from '../../lib/i18n';
 import type { Agent } from '../../lib/types';
 import type { CuratedCard, CuratedList, RegistryCard, RegistryList, StagingView } from './api';
 import { ErrorCard, LoadingCards, useList } from './marketParts';
-import { AddDialog, AppCard, SkillCard, useOwnBots } from './ClearMarket';
-import { CuratedDetailModal, ReviewModal, UpdateDiffModal } from './Catalog';
-import { RegistryDetailModal } from './RegistryApps';
+import { SkillCard, useAddSkill, useOwnBots } from './ClearMarket';
+import { ReviewModal, UpdateDiffModal } from './Catalog';
+import { QuickAppCard, RegistryDetailModal } from './RegistryApps';
 import { fitScore, groupIdOf, tileIdOf } from './marketGroups';
 
 /**
@@ -19,9 +20,12 @@ import { fitScore, groupIdOf, tileIdOf } from './marketGroups';
  * bots there is one short starter list (one skill per subject).
  */
 
-const SKILLS_PER_BOT = 3;
-const APPS_PER_BOT = 2;
+// One row per bot (two skills and an app), and the first three bots; the rest opens with "Alle N tonen". With eight
+// bots this page was forty cards, each with its own orange button.
+const SKILLS_PER_BOT = 2;
+const APPS_PER_BOT = 1;
 const MAX_BOTS = 8;
+const BOTS_SHOWN = 3;
 
 const botText = (a: Agent) => `${a.name} ${a.role || ''} ${a.description || ''}`;
 const skillText = (c: CuratedCard) => `${c.name.replace(/[-_]/g, ' ')} ${c.note} ${c.category} ${c.pack}`;
@@ -40,12 +44,12 @@ export function RecommendedTab() {
   const bots = useOwnBots();
   const skills = useList<CuratedList>('/skills/curated');
   const apps = useList<RegistryList>('/mcp/registry/servers');
-  const [adding, setAdding] = useState<{ c: CuratedCard; bot?: string } | null>(null);
-  const [open, setOpen] = useState<string | null>(null);
   const [app, setApp] = useState<string | null>(null);
   const [review, setReview] = useState<StagingView | null>(null);
   const [diff, setDiff] = useState<{ skillId: string; commit: string } | null>(null);
+  const [allBots, setAllBots] = useState(false);
   const reload = skills.reload;
+  const adder = useAddSkill({ onReview: setReview, onDone: reload });
   useEffect(() => on('skills.updated', reload), [reload]);
   const lists = useMemo(() => {
     const items = skills.data?.items || [];
@@ -54,10 +58,9 @@ export function RecommendedTab() {
       .slice(0, MAX_BOTS)
       .map((b) => {
         const text = botText(b);
-        const mine = new Set(b.skills || []);
         return {
           bot: b,
-          skills: top(items.filter((c) => !(c.installed && mine.has(c.installed.skillId))), (c) => fitScore(text, skillText(c), tileIdOf(c.category, c.pack)), SKILLS_PER_BOT),
+          skills: top(items.filter((c) => !c.installed), (c) => fitScore(text, skillText(c), tileIdOf(c.category, c.pack)), SKILLS_PER_BOT),
           apps: top(regs.filter((i) => !i.installed.length), (i) => fitScore(text, appText(i), groupIdOf(i.category)), APPS_PER_BOT),
         };
       })
@@ -66,7 +69,7 @@ export function RecommendedTab() {
   // Something fits a bot but it already has it all: say that, not "nothing fits".
   const allAdded = useMemo(() => {
     const items = skills.data?.items || [];
-    return !lists.length && bots.some((b) => items.some((c) => c.installed && (b.skills || []).includes(c.installed.skillId) && fitScore(botText(b), skillText(c), tileIdOf(c.category, c.pack)) > 0));
+    return !lists.length && bots.some((b) => items.some((c) => c.installed && fitScore(botText(b), skillText(c), tileIdOf(c.category, c.pack)) > 0));
   }, [lists, bots, skills.data]);
   // One skill per subject to start with (no bots yet, or none of them matched).
   const starter = useMemo(() => {
@@ -80,7 +83,7 @@ export function RecommendedTab() {
   }, [skills.data]);
   const card = (c: CuratedCard, bot?: Agent) => (
     <li key={`${bot?.id || ''}${c.id}`} className="min-w-0">
-      <SkillCard c={c} forBot={bot} onAdd={() => setAdding({ c, bot: bot?.id })} onDetails={() => setOpen(c.id)} onDiff={() => c.installed?.update && setDiff({ skillId: c.installed.skillId, commit: c.installed.update.to })} />
+      <SkillCard c={c} adder={adder} onDiff={setDiff} />
     </li>
   );
   if (skills.error) return <ErrorCard error={skills.error} retry={skills.reload} />;
@@ -102,7 +105,7 @@ export function RecommendedTab() {
       ) : !lists.length ? (
         <p className="text-sm text-muted">Bij je bots past nog niets. Geef een bot een rol, bijvoorbeeld “SEO” of “klantenservice”.</p>
       ) : (
-        lists.map((l) => (
+        (allBots ? lists : lists.slice(0, BOTS_SHOWN)).map((l) => (
           <section key={l.bot.id} aria-labelledby={`rec-${l.bot.id}`} className="space-y-3" data-rec-bot={l.bot.id}>
             <h2 id={`rec-${l.bot.id}`} className="flex min-w-0 items-center gap-2 text-[15px] font-bold tracking-tight">
               <BotAvatar bot={l.bot} size={28} />
@@ -114,12 +117,17 @@ export function RecommendedTab() {
               {l.skills.map((c) => card(c, l.bot))}
               {l.apps.map((i) => (
                 <li key={`${l.bot.id}${i.name}`} className="min-w-0">
-                  <AppCard i={i} onAdd={() => setApp(i.name)} />
+                  <QuickAppCard i={i} onDetails={() => setApp(i.name)} onChanged={apps.reload} />
                 </li>
               ))}
             </ul>
           </section>
         ))
+      )}
+      {lists.length > BOTS_SHOWN && (
+        <Button size="sm" variant="ghost" onClick={() => setAllBots(!allBots)} aria-expanded={allBots}>
+          {allBots ? 'Minder tonen' : t('Alle {0} tonen', lists.length)}
+        </Button>
       )}
       {(!lists.length || !bots.length) && starter.length > 0 && (
         <section aria-labelledby="rec-start" className="space-y-3">
@@ -129,8 +137,6 @@ export function RecommendedTab() {
           <ul className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">{starter.map((c) => card(c))}</ul>
         </section>
       )}
-      {adding && <AddDialog c={adding.c} teamId="" presetBot={adding.bot} onClose={() => setAdding(null)} onReview={(s) => (setAdding(null), setReview(s))} onDone={() => (setAdding(null), reload())} />}
-      {open && <CuratedDetailModal id={open} onClose={() => (setOpen(null), reload())} onAdd={(c) => (setOpen(null), setAdding({ c }))} onReview={(s) => (setOpen(null), setReview(s))} onDiff={(skillId, commit) => (setOpen(null), setDiff({ skillId, commit }))} />}
       {app && <RegistryDetailModal name={app} onClose={() => (setApp(null), apps.reload())} />}
       {review && <ReviewModal staging={review} onClose={() => (setReview(null), reload())} />}
       {diff && <UpdateDiffModal skillId={diff.skillId} commit={diff.commit} onClose={() => (setDiff(null), reload())} />}

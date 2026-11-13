@@ -1,4 +1,5 @@
 import type { Ctx, User } from '../../core/types.js';
+import type { PolicyDecision, PublisherChange, PublisherPolicy, SignatureState, SignatureView, TrustedPublisher } from '../../../shared/skills.js';
 import { HttpError, ah, bad, notFound, requireRole, str, user } from '../../core/http.js';
 import { isRestricted } from '../../api/member-policy.js';
 import {
@@ -25,7 +26,6 @@ import {
  * always held to the policy; owner/admin may override per install with an explicit, audited confirmation.
  */
 
-export type PublisherPolicy = 'open' | 'signed-only' | 'allowlist';
 export const POLICIES: PublisherPolicy[] = ['open', 'signed-only', 'allowlist'];
 export const POLICY_SETTING = 'publisherPolicy';
 
@@ -34,15 +34,6 @@ export const POLICY_LABEL: Record<PublisherPolicy, string> = {
   'signed-only': 'Alleen ondertekende pakketten',
   allowlist: 'Alleen vertrouwde uitgevers en ingebouwde TeamBot-items',
 };
-
-export interface TrustedPublisher {
-  publicKey: string;
-  name: string;
-  fingerprint: string;
-  publisherId: string;
-  addedBy: string;
-  addedAt: string;
-}
 
 export interface PublisherSettings {
   policy: PublisherPolicy;
@@ -64,43 +55,6 @@ export interface PackageInfo {
   verifiedAt: string;
   /** Full signed manifest (skill revisions only), so the package can be shared or downloaded again. */
   manifest?: PackageManifest;
-}
-
-export type SignatureState = 'builtin' | 'trusted' | 'untrusted' | 'unsigned' | 'invalid';
-
-/** What the API shows wherever a package appears. */
-export interface SignatureView {
-  state: SignatureState;
-  label: string;
-  /** Display name: trust-list name, "TeamBot" for built-ins, otherwise the self-declared name. */
-  publisher: string | null;
-  declaredPublisher: string | null;
-  publisherId: string | null;
-  publicKey: string | null;
-  fingerprint: string | null;
-  packageName: string | null;
-  version: string | null;
-  license: string | null;
-  teambot: string | null;
-  via: string | null;
-  compatible: boolean;
-  incompatible: string[];
-  errors: string[];
-  warnings: string[];
-  /** Invalid signature or incompatible: never installable, not even with an override. */
-  blocked: boolean;
-  blockReason: string | null;
-}
-
-export interface PolicyDecision {
-  policy: PublisherPolicy;
-  allowed: boolean;
-  /** Not allowed by the policy, but this user may confirm an override. */
-  needsOverride: boolean;
-  canOverride: boolean;
-  /** Refused outright (invalid/incompatible, or a restricted member outside the policy). */
-  blocked: boolean;
-  reason: string | null;
 }
 
 // ------------------------------------------------------------------ settings
@@ -318,12 +272,6 @@ export function auditOverride(ctx: Ctx, userId: string, sig: SignatureView, d: P
 export function assertMaySelfAuthor(ctx: Ctx, u: User, what: string) {
   const policy = publisherSettings(ctx).policy;
   if (policy !== 'open' && isRestricted(ctx, u)) throw new HttpError(403, `Op deze server geldt het uitgeversbeleid “${POLICY_LABEL[policy]}”: leden kunnen geen ${what}. Vraag de beheerder.`, 'policy-blocked');
-}
-
-export interface PublisherChange {
-  from: { name: string; fingerprint: string | null } | null;
-  to: { name: string; fingerprint: string | null } | null;
-  reason: string;
 }
 
 /** Same-publisher rule for updates: null when the update keeps the installed publisher (or nothing was signed). */

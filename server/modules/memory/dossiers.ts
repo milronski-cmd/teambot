@@ -3,6 +3,7 @@
  * organisations, sources (with optional indexed document chunks) and notes (memory items with scope "dossier").
  * Access: the owner; bots of the owner (all, or a chosen list); other users only through an explicit share (read/edit).
  */
+import { limitOf, ownerDossier, teamDossier, writeBody } from './living.js';
 import fs from 'node:fs';
 import path from 'node:path';
 import type { Agent } from '../../core/types.js';
@@ -55,10 +56,24 @@ export function dossierView(svc: MemoryService, d: any, viewerId: string) {
     notes: counts?.notes || 0,
     sources: counts?.sources || 0,
     last_activity_at: [d.updated_at, counts?.last_record].filter(Boolean).sort().pop(),
+    // The living text of the dossier (living.ts) and how long it may get.
+    body_limit: limitOf(d),
     agent_names: Array.isArray(d.agent_ids) && d.user_id === viewerId ? d.agent_ids.map((id: string) => svc.agentName(id)) : null,
     // The dossier's team for its owner, only with two or more teams ('*' = Alle teams).
     team: d.user_id === viewerId ? svc.teamTag(d.user_id, d.team_id ?? null) : null,
   };
+}
+
+/** The shared core dossiers of an owner exist before he looks (the owner's, and each team's overview and lessons). */
+export function ensureCoreDossiers(svc: MemoryService, userId: string) {
+  svc.store.tx(() => {
+    ownerDossier(svc, userId);
+    const info = svc.teamInfo(userId);
+    for (const team of info ? [...info.ids] : [null]) {
+      teamDossier(svc, userId, 'overview', team);
+      teamDossier(svc, userId, 'lessons', team);
+    }
+  });
 }
 
 export function listDossiers(svc: MemoryService, reader: Reader, o: { q?: string; status?: string; teamId?: string | null } = {}) {
@@ -70,7 +85,10 @@ export function listDossiers(svc: MemoryService, reader: Reader, o: { q?: string
     ids = ids.filter((id) => team.has(id));
   }
   if (!ids.length) return [];
-  let rows = svc.store.all<any>(`SELECT * FROM memory_dossiers WHERE id IN (${ids.map(() => '?').join(',')}) ORDER BY pinned DESC, updated_at DESC`, ...ids).map((r) => svc.store.decode('memory_dossiers', r));
+  // The core dossiers first (owner, overview, lessons), bots' working notes last.
+  let rows = svc.store
+    .all<any>(`SELECT * FROM memory_dossiers WHERE id IN (${ids.map(() => '?').join(',')}) ORDER BY CASE core WHEN 'owner' THEN 0 WHEN 'overview' THEN 1 WHEN 'lessons' THEN 2 WHEN 'notes' THEN 9 ELSE 5 END, pinned DESC, updated_at DESC`, ...ids)
+    .map((r) => svc.store.decode('memory_dossiers', r));
   if (o.status && o.status !== 'all') rows = rows.filter((d: any) => d.status === o.status);
   else rows = rows.filter((d: any) => d.status !== 'trashed' || o.status === 'all');
   if (o.q?.trim()) {
@@ -243,7 +261,9 @@ export function updateDossier(svc: MemoryService, userId: string, id: string, pa
     p.team_id = patch.teamId;
   }
   if (p.summary && isInjectionLike(p.summary) && actor.type === 'agent') throw new Error('Deze samenvatting lijkt een instructie te bevatten en is niet opgeslagen.');
-  if (!Object.keys(p).length) return d;
+  // The text of the dossier (the owner edits it in Geheugen): through the one write path, with archive and history.
+  if (patch.body !== undefined) writeBody(svc, id, String(patch.body ?? ''), { type: actor.type, id: actor.id, guard: actor.type === 'agent' });
+  if (!Object.keys(p).length) return svc.store.decode('memory_dossiers', svc.store.get('memory_dossiers', id));
   svc.store.tx(() => {
     const before = svc.snapshot('dossier', id);
     svc.store.update('memory_dossiers', id, { ...p, version: (d.version || 1) + 1, updated_at: now() });
@@ -513,8 +533,9 @@ const SOURCE_MAX_CHARS = 400_000;
  * The text of a document for a dossier source, so it becomes searchable and quotable (folders/documents.ts reads it):
  * pdf with pdf.js and OCR for scanned pages, Word with mammoth (headings and tables kept), Excel sheets as tables,
  * PowerPoint slides with notes, a photo of a text with OCR. Pages keep a "--- pagina n ---" line, so a bot can say
- * where a quote comes from. Null: not a document (text files are handled by addSource), or a picture while scans
- * cannot be read yet (the source is kept without text, as before).
+ * where a quote comes from. A picture fetches the language data for reading scans first, as read_document does
+ * (ocr.ts `ensure`). Null: not a document (text files are handled by addSource), or a picture while that could not be
+ * fetched (no internet): the source is kept without text.
  */
 export async function documentSourceText(file: string, name = file): Promise<string | null> {
   const st = fs.statSync(file);
@@ -530,7 +551,7 @@ export async function documentSourceText(file: string, name = file): Promise<str
   const { ocrEngine, OCR_HINT } = await import('../folders/ocr.js');
   const kind = documentKind(head, name);
   if (!kind || kind === 'text') return null;
-  if (kind === 'image' && !ocrEngine()?.ready()) return null;
+  if (kind === 'image' && !(await ocrEngine()?.ensure())) return null;
   const label = { pdf: 'Deze pdf', word: 'Dit Word-bestand', excel: 'Deze Excel-werkmap', powerpoint: 'Deze presentatie', image: 'Deze afbeelding' }[kind];
   let d: Awaited<ReturnType<typeof readDocument>>;
   try {
@@ -542,7 +563,7 @@ export async function documentSourceText(file: string, name = file): Promise<str
   let text = d.text;
   if (kind === 'pdf') {
     const plain = text.replace(/--- pagina \d+ ---/g, '').replace(/\(geen tekst op deze pagina[^)]*\)/g, '').trim();
-    if (plain.length < 20) throw new Error(`In deze pdf staat geen leesbare tekst (waarschijnlijk een scan). ${ocrEngine()?.ready() ? '' : `${OCR_HINT} `}Of plak de tekst, of voeg een versie met tekst toe.`);
+    if (plain.length < 20) throw new Error(`In deze pdf staat geen leesbare tekst (waarschijnlijk een scan). ${ocrEngine()?.ready() ? '' : `${ocrEngine()?.problem() ?? OCR_HINT} `}Of plak de tekst, of voeg een versie met tekst toe.`);
   } else if (text.replace(/^## (Dia|Blad).*$|\((leeg|geen tekst[^)]*)\)/gm, '').trim().length < 2) {
     throw new Error(kind === 'word' ? 'In dit Word-bestand staat geen tekst.' : `${label} bevat geen tekst.`);
   }

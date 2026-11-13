@@ -19,7 +19,7 @@ packages:
 settings:
   base:
     SWIFT_VERSION: "5.0"
-    MARKETING_VERSION: "0.4.4"
+    MARKETING_VERSION: "2.2.0"
     CURRENT_PROJECT_VERSION: "1"
     DEVELOPMENT_TEAM: ${TEAMBOT_TEAM_ID}
     CODE_SIGN_STYLE: Automatic
@@ -67,6 +67,7 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: app.teambot.companion
         TARGETED_DEVICE_FAMILY: "1,2"
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
         ENABLE_PREVIEWS: YES
   TeamBotTests:
     type: bundle.unit-test

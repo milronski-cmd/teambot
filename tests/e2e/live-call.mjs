@@ -1,6 +1,7 @@
 // Live calling with a bot through a cloud voice (Gemini Live), as a person does it, against a mocked Google: no real
 // API calls, no keys. On the computer: the phone icon → the call dialog explains the choices in plain words (no grey
-// buttons) → "Live met Gemini" → paste a key → "Klaarmaken en bellen" → the call runs over a WebSocket (fake
+// buttons; the free call says it still needs one download, with its size, and "Klaarmaken en bellen" offers one button
+// "Downloaden en bellen (… MB)", not pressed here) → "Live met Gemini" → paste a key → "Klaarmaken en bellen" → the call runs over a WebSocket (fake
 // microphone), the voice hands work to the bot (ask_agent, does not block), the bot answers, the voice says goodbye
 // and calls end_call → TeamBot hangs up after the goodbye was played → the call log (summary + what the bot did) is
 // in the chat. Then the same as a paired iPhone (WKWebView user agent, touch): start the call, say "hang maar op".
@@ -131,7 +132,8 @@ await new Promise((r) => gserver.listen(0, '127.0.0.1', r));
 const gport = gserver.address().port;
 
 // ---------------------------------------------------------------- TeamBot with an empty data folder
-const { createApp } = await import('../../server/app.ts');
+const { createApp } = await import('./server.mjs');
+const { settled } = await import('./axe-check.mjs');
 const { mockAdapter } = await import('../helpers.ts');
 const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'tb-live-call-'));
 const app = await createApp({ dataDir: dir, port: Number(process.env.TEAMBOT_E2E_PORT) || 0, host: '127.0.0.1', mode: 'desktop', quiet: true });
@@ -159,6 +161,7 @@ step(`TeamBot op ${app.url}, nep-Google op poort ${gport} (lege datamap)`);
 
 async function axe(page, what) {
   await page.addScriptTag({ content: axeSource });
+  await settled(page); // contrast on what stays on screen, not half-way a fade (axe-check.mjs)
   const r = await page.evaluate(async () => {
     const res = await window.axe.run(document, { runOnly: { type: 'tag', values: ['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa', 'wcag22aa'] } });
     return res.violations.map((v) => `${v.id}: ${v.nodes.length}× ${v.nodes[0]?.target?.join(' ')}`);
@@ -184,18 +187,30 @@ try {
   const dlg = page.getByRole('dialog', { name: 'Praten met Ada' });
   await dlg.waitFor({ timeout: 10000 });
   // Step 0: no voice service yet. The choices are explained in words and none is greyed out.
-  await dlg.getByText('Om te bellen is één ding nodig', { exact: false }).waitFor({ timeout: 8000 }).catch(() => fail('stap 0: geen uitleg zonder spraakdienst'));
+  await dlg.getByText('Kies hoe je wilt bellen: met een eigen sleutel, of gratis op je pc.', { exact: false }).waitFor({ timeout: 8000 }).catch(() => fail('stap 0: geen uitleg zonder spraakdienst'));
   for (const name of ['Live met OpenAI', 'Live met Gemini (Google)', 'Live gesprek, gratis (op je eigen pc)']) {
     const c = dlg.getByRole('radio', { name: new RegExp(name.replace(/[()]/g, '\\$&')) });
     if (!(await c.count())) fail(`stap 0: keuze "${name}" ontbreekt`);
     else if (await c.isDisabled()) fail(`stap 0: keuze "${name}" is grijs`);
   }
-  if (!(await dlg.getByText('dat gebeurt pas als jij ja zegt', { exact: false }).count())) fail('stap 0: het gratis pad noemt niet dat downloaden pas na een ja gebeurt');
+  // The free call says honestly what is still needed: one download, with its size, which the button does.
+  const free = (await dlg.getByRole('radio', { name: /Live gesprek, gratis/ }).innerText()).replace(/\s+/g, ' ');
+  if (!/Nog niet klaar\. Eénmalige download \(\d+ MB\)/.test(free) || !/“Klaarmaken en bellen” downloadt het en start daarna het gesprek/.test(free)) fail(`stap 0: het gratis gesprek zegt niet eerlijk wat er nog moet: ${free}`);
   if (!(await page.getByRole('button', { name: 'Klaarmaken en bellen' }).count())) fail('stap 0: geen knop "Klaarmaken en bellen"');
   if (await page.getByRole('button', { name: /^Start/ }).count()) fail('stap 0: een startknop die niet kan werken');
   await axe(page, 'belscherm stap 0 (pc)');
   if (SHOTS) await page.screenshot({ path: path.join(SHOTS, 'pc-stap0.png') });
-  step('stap 0: drie keuzes in gewone woorden, niets grijs, "Klaarmaken en bellen", download pas na een ja');
+  // "Klaarmaken en bellen" on the free call: one button that downloads and then calls (nothing is downloaded before
+  // that click; the download itself and the call that starts after it: tests/e2e/voice-download-buttons.mjs).
+  await dlg.getByRole('radio', { name: /Live gesprek, gratis/ }).click();
+  await page.getByRole('button', { name: 'Klaarmaken en bellen' }).click();
+  const setup = page.getByRole('dialog', { name: 'Gratis spraakherkenning op deze computer' });
+  const both = setup.getByRole('button', { name: /^Downloaden en bellen \(\d+ MB\)$/ });
+  await both.waitFor({ timeout: 10000 }).catch(async () => fail(`stap 0: geen knop "Downloaden en bellen (… MB)": ${(await setup.innerText().catch(() => '')).replace(/\s+/g, ' ').slice(0, 200)}`));
+  if ((await both.count()) > 1) fail('stap 0: meer dan één knop "Downloaden en bellen"');
+  await page.keyboard.press('Escape');
+  await setup.waitFor({ state: 'hidden', timeout: 5000 }).catch(() => fail('stap 0: het downloadvenster gaat niet dicht zonder te downloaden'));
+  step('stap 0: drie keuzes in gewone woorden, niets grijs; gratis: "Nog niet klaar. Eénmalige download (… MB)" en één knop "Downloaden en bellen (… MB)"');
 
   await dlg.getByRole('radio', { name: /Live met Gemini/ }).click();
   await dlg.getByLabel('Google AI Studio-sleutel').fill(GOOGLE_KEY);

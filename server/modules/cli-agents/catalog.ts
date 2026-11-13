@@ -530,6 +530,39 @@ export function installLines(def: CliDef): { label: string; cmd: string; note?: 
   return out;
 }
 
+/**
+ * How TeamBot installs a CLI itself ("Installeren"), from the official ways in its catalog line, in this order:
+ *  - npm: the package of its npm line (with this computer's npm, or TeamBot's own Node.js, core/runtimes.ts);
+ *  - uv: `uv tool install <pkg>` (with this computer's uv, or TeamBot's own uv);
+ *  - the vendor's own install script for this platform (PowerShell `irm … | iex` on Windows, `curl … | sh` elsewhere).
+ * Null when there is none (only a note, Homebrew or winget): then only the official commands are shown.
+ */
+export type InstallPlan = { kind: 'npm'; args: string[] } | { kind: 'uv'; args: string[] } | { kind: 'script'; shell: 'powershell' | 'sh'; command: string };
+export function installPlan(def: CliDef, platform: NodeJS.Platform = process.platform): InstallPlan | null {
+  const i = def.install || {};
+  const pkg = /^(?:@[a-z0-9._-]+\/)?[a-z0-9._-]+(?:@[\w.-]+)?$/i;
+  if (def.npmPackage && pkg.test(def.npmPackage)) return { kind: 'npm', args: ['install', '-g', def.npmPackage] };
+  const npm = /^npm\s+(?:install|i)\s+(.+)$/.exec((i.npm || '').trim());
+  if (npm) {
+    const words = npm[1].split(/\s+/);
+    if ((words.includes('-g') || words.includes('--global')) && words.every((w) => /^(?:-g|--global|--ignore-scripts)$/.test(w) || pkg.test(w)) && words.some((w) => pkg.test(w)))
+      return { kind: 'npm', args: ['install', ...words] };
+  }
+  const uv = /^uv\s+tool\s+install\s+(\S+)$/.exec((i.uv || '').trim());
+  if (uv && pkg.test(uv[1])) return { kind: 'uv', args: ['tool', 'install', uv[1]] };
+  const url = String.raw`https://[A-Za-z0-9.-]+(?:/[A-Za-z0-9._~%/?=&+-]*)?`;
+  if (platform === 'win32') {
+    const w = (i.windows || '').trim();
+    const ps = new RegExp(String.raw`^(?:powershell(?:\s+-NoProfile)?(?:\s+-ExecutionPolicy\s+Bypass)?\s+-(?:c|Command)\s+"(.+)"|(.+))$`, 'i').exec(w);
+    const inner = (ps?.[1] || ps?.[2] || '').trim();
+    if (new RegExp(String.raw`^(?:iex\s*\(\s*irm\s+'?${url}'?\s*\)|irm\s+'?${url}'?\s*\|\s*iex)$`, 'i').test(inner)) return { kind: 'script', shell: 'powershell', command: inner };
+    return null;
+  }
+  const u = (i.unix || '').trim();
+  if (new RegExp(String.raw`^curl\s+(?:-[A-Za-z]+\s+)*${url}(?:\s+-[A-Za-z]+)*\s*\|\s*(?:ba)?sh$`).test(u)) return { kind: 'script', shell: 'sh', command: u };
+  return null;
+}
+
 export function fileExists(p: string): boolean {
   try {
     const st = fs.statSync(p);

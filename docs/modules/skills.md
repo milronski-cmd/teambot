@@ -31,8 +31,37 @@ install flow), §12, §21.6, §21.1 (sjablonen). Uitgevershandtekeningen, beleid
   `getpaperclipai`, `anthropic` i.p.v. `anthropics`, of `101-skills/superpowers` met de repositorynaam van een ander)
   komt als waarschuwing in de preview en moet expliciet worden bevestigd (`needs-acknowledge`).
 - **Installatiebereik**: een skill is geïnstalleerd voor **één team** of **voor alle teams** (zie *Per team*).
-- **Gebruik door bots**: per bot aan of uit (`agent.skills`), alleen skills die het team van de bot heeft. De systeemprompt bevat alleen naam en beschrijving van
-  ingeschakelde skills (stabiel en gesorteerd); de volledige tekst laadt pas op verzoek.
+- **Gebruik door bots**: een geïnstalleerde skill is er meteen voor **alle bots van het team**. Eén regel beslist wat
+  een bot heeft (`SkillLibrary.enabledFor`): de actieve skills van zijn team, min wat bij die bot is weggehaald. De
+  prompt, `skill_load`, het `/`-menu, de schermen en de mappen in de werkmap lezen die ene regel. De lijst per bot
+  (`agent.skills`) is wat de schermen tonen en bewerken: wat de bot heeft komt er vanzelf op (`defaults.ts`,
+  `skill_offers`), en een skill die erop stond en eraf is, is bij die bot **weggehaald** (ook als het zijn laatste was;
+  een lege lijst betekent niet meer "alles"). Laadt een skill niet, dan zegt de melding waarom en wat het oplost
+  (weggehaald, staat uit, is nog een concept, bestaat niet).
+- **In de werkmap, waar de engine zelf zoekt** (`workspace.ts`): de skills van een bot staan als echte skillmappen in
+  `<werkmap>/.claude/skills/<naam>/` en `<werkmap>/.agents/skills/<naam>/`. Eén functie (`sync`) schrijft ze, op de
+  punten waar het antwoord verandert (elke schrijfactie van de bibliotheek, een bot die gemaakt, gewijzigd of verplaatst
+  wordt) en vlak voor een CLI-run. Alleen in een werkmap die TeamBot zelf voor de bot maakte: in een map van de
+  eigenaar of van een ander programma schrijft TeamBot niets. Per plek zegt `.teambot-skills.json` wat TeamBot schreef
+  (met een controlegetal per bestand); een map die de eigenaar zelf maakte of aanpaste blijft staan en hij hoort het
+  één keer. Scripts staan er alleen van een vertrouwde skill van het eigen team. De SKILL.md die een engine leest heeft
+  alleen naam en beschrijving in de kop (geen `allowed-tools`, hooks of ander model) en geen regel die een engine bij
+  het laden zou uitvoeren; de bibliotheek bewaart de skill zoals hij binnenkwam.
+- **Per engine**: Claude Code laadt de mappen zelf (naam en beschrijving eerst, de tekst bij gebruik). Zo'n bot krijgt
+  geen lijst van TeamBot en geen `skill_load`; in de beperkte modus (die de werkmap overslaat) en in een werkmap die
+  niet van TeamBot is gaan dezelfde skills mee als plugin-map van TeamBot (`--plugin-dir`). Getoond met echte runs
+  (`tests/e2e/skills-live.mjs ask|full`). Elke andere route (model via API-sleutel, lokaal model, Codex, OpenCode en
+  andere ACP-agents, Claude Code in alleen-lezen of een versie zonder `--plugin-dir`) houdt de lijst in de prompt
+  (naam en beschrijving, stabiel en gesorteerd, hooguit 80) plus `skill_load`. Gebruik wordt op één plek geteld
+  (`SkillLibrary.used`), ook als Claude Code de skill zelf laadt.
+- **Bots maken en verbeteren zelf skills** (`skill_save`): meteen actief voor het
+  team, en dezelfde naam is een nieuwe versie van de eigen skill van het team (de vorige blijft bewaard). Alleen een
+  skill die geld uitgeeft of zelf berichten aan klanten stuurt, of waar de scan iets ernstigs in vindt, wordt een
+  concept dat op de eigenaar wacht (`ownerFirst` in `tools.ts`). Een skill uit de catalogus of van GitHub overschrijft
+  een bot niet; die houdt zijn eigen updates.
+- **Bots zoeken en voegen toe** (`skill_find`, `skill_install`): in wat het team heeft en in de TeamBot-catalogus (met
+  sterren), of vanaf een adres op GitHub. Scripts blijven uit tot de eigenaar de skill vertrouwt, en een skill met een
+  ernstige scanbevinding of een namaak-uitgever voegt een bot niet toe (de eigenaar ziet die eerst).
 - **Kiezen in het invoerveld** (`/` aan het begin van een regel, `$` overal na een spatie): een menu met de skills van de
   bot (in een groep: van alle bots, met hun naam) en bij `/` ook opdrachten (Nieuw gesprek, Zoeken in dit gesprek,
   Stoppen, Bestand toevoegen, Skills beheren). Zoeken op naam en beschrijving, pijltjes + Enter/Tab of tikken, Esc
@@ -43,11 +72,12 @@ install flow), §12, §21.6, §21.1 (sjablonen). Uitgevershandtekeningen, beleid
 
   | Tool | Risico | Wat |
   |---|---|---|
-  | `skill_load` | read | Volledige instructies van een ingeschakelde skill laden. |
-  | `skill_read_file` | read | Bijbehorend bestand van een ingeschakelde skill lezen. |
-  | `skill_prepare_scripts` | write | Scripts van een *vertrouwde* skill in de werkmap zetten (`.skills/<naam>/`). |
-  | `skill_run_script` | danger | Eén script van een *vertrouwde* skill uitvoeren: vraagt altijd toestemming (onder *Volledige toegang* vraagt de tool het zelf), alleen de scripts van die skill, zonder shell (Python, Node.js, PowerShell, bash), in de werkmap met een eigen thuis-, temp- en app-datamap (`.skills/.thuis/<naam>`, in de teammap als de bot daar mag schrijven, anders in de werkmap) en zonder sleutels in de omgeving (`safeEnv` plus verwijzingen naar het echte profiel, zoals OneDrive, SSH-agent en cloudconfiguratie). Geen afscherming door het besturingssysteem: een script dat zelf een absoluut pad opent, kan dat nog. Leden op een gedeelde server: alleen als de beheerder de terminal voor leden aanzette (`memberPolicy.allowShell`), net als `run_command`. |
-  | `skill_draft` | write | Een nieuwe skill als **concept** voorstellen na een geslaagde taak; de gebruiker beoordeelt en publiceert. |
+  | `skill_load` | read | Volledige instructies van een skill van het team laden. |
+  | `skill_read_file` | read | Bijbehorend bestand van een skill van het team lezen. |
+  | `skill_find` | read | Zoeken in de skills van het team en in de catalogus. |
+  | `skill_install` | write | Een skill uit de catalogus of van een GitHub-adres toevoegen voor het team. |
+  | `skill_save` | write | Een eigen werkwijze vastleggen of verbeteren (meteen actief). |
+  | `skill_run_script` | danger | Eén script van een *vertrouwde* skill uitvoeren: vraagt altijd toestemming (onder *Volledige toegang* vraagt de tool het zelf), alleen de scripts van die skill, zonder shell (Python, Node.js, PowerShell, bash), vanaf een verse kopie in TeamBots eigen data (`skill-runs/<bot>/<naam>`, dus wat de eigenaar vertrouwt en nooit een bestand dat in een werkmap is aangepast), in de werkmap met een eigen thuis-, temp- en app-datamap (`.skills/.thuis/<naam>`, in de teammap als de bot daar mag schrijven, anders in de werkmap) en zonder sleutels in de omgeving (`safeEnv` plus verwijzingen naar het echte profiel, zoals OneDrive, SSH-agent en cloudconfiguratie). Geen afscherming door het besturingssysteem: een script dat zelf een absoluut pad opent, kan dat nog. Leden op een gedeelde server: alleen als de beheerder de terminal voor leden aanzette (`memberPolicy.allowShell`), net als `run_command`. |
 
   `skill_load` noemt bij een catalogusskill de herkomst (repository, commit, licentie). Verwijzingen als
   `../../shared/x.md` in een catalogusskill vindt `skill_read_file` in de map `_bron/`.
@@ -198,10 +228,10 @@ gebruiker niets: alle bots zitten in dat team.
 - **Waar een installatie heen gaat** (`placementFor`): `teamId` in de aanvraag (een team van de eigenaar, of `'*'` = alle
   teams); zonder keuze het standaardteam. Een andere module die de importer aanroept zonder team (de OpenBot-import)
   installeert voor alle teams, zoals vóór 0.4. Een bot-sjabloon zet zijn skills in het team van de nieuwe bot (`teamId`),
-  een concept van een bot (`skill_draft`) in het team van die bot.
+  een skill van een bot (`skill_save`) in het team van die bot.
 - **Wat een bot mag** (`reach`): skills van zijn eigen team en voor alle teams **gebruiken**; met *meekijken* of
   *aansturen* op een ander team diens skills **lezen** (`skill_load`, `skill_read_file`, de naam in de prompt), maar nooit
-  hun scripts uitvoeren (`skill_prepare_scripts`/`skill_run_script` geweigerd vóór de toestemmingskaart, `scriptRefusal`);
+  hun scripts uitvoeren (`skill_run_script` geweigerd vóór de toestemmingskaart, `scriptRefusal`; in de werkmap staan ze niet);
   zonder toegang bestaat de skill voor hem niet (`enabledFor` laat hem weg, ook als hij nog in `agent.skills` staat).
   `setAgentSkills` (en `PUT /skills/agents/:id`) neemt geen skill aan die de bot niet mag zien.
 - **Scripts**: de eigen thuis-, temp- en app-datamap van een script staat in de teammap van het thuisteam als de bot daar
@@ -223,9 +253,9 @@ gebruiker niets: alle bots zitten in dat team.
 ## Marktplaats
 
 - **Skills**: standaard de TeamBot-catalogus hierboven. *Zelf geschreven en eigen catalogi* bevat de ingebouwde
-  skills van TeamBot en catalogi die de eigenaar zelf toevoegde. **Open bronnen** (live GitHub-collecties op HEAD en de
-  skills.sh-zoekfunctie) zijn geen standaardbron meer; ze verschijnen alleen als ze bewust zijn ingesteld
-  (`TEAMBOT_SKILL_COLLECTIONS`). Zie [marketplace.md](marketplace.md).
+  skills van TeamBot en catalogi die de eigenaar zelf toevoegde. Naast *Gecontroleerd* staat **Open**: zoeken en
+  sorteren in alles wat openbaar is op GitHub, skills.sh en ClawHub, voor iedereen aan; toevoegen gaat langs dezelfde
+  weg als de catalogus en legt de commit of versie van dat moment vast. Zie [marketplace.md](marketplace.md).
 - Tabs **Skills**, **Apps** (MCP-register; plus de connectorcatalogus van de MCP-module en connectorpakketten uit
   externe catalogi), **Bots** (sjablonen), **Bronnen** en **Meldingen**. Er zijn zoek-, categorie- en bronfilters en de schakelaar **Alleen
   ondertekend** (`?signed=1`; ingebouwde items tellen mee). Elk item heeft een detailpagina met versie, wijzigingen,

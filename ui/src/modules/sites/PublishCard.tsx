@@ -1,13 +1,15 @@
 import { useEffect, useState } from 'react';
+import { formatBytes } from '../../lib/format';
 import { CircleAlert, Globe, ShieldCheck } from 'lucide-react';
 import { api } from '../../lib/api';
 import { t } from '../../lib/i18n';
-import { agentById, useApp } from '../../lib/store';
+import { agentById } from '../../lib/store';
 import type { Approval } from '../../lib/types';
 import { BotAvatar } from '../../components/BotFace';
 import { MoreInfo } from '../../components/MoreInfo';
-import { Button, Spinner, timeAgo, toastError } from '../../components/ui';
-import { REACH, fmtBytes, type Reach } from './api';
+import { Button, Spinner, timeAgo } from '../../components/ui';
+import { REACH, type Reach } from './api';
+import { useDecide } from '../../shell/approvalDecide';
 
 interface Preview {
   ok: boolean;
@@ -45,7 +47,7 @@ export function SitePublishCard({ a, showThreadLink }: { a: Approval; showThread
   const agent = agentById(a.agent_id);
   const [p, setP] = useState<Preview | null>(null);
   const [err, setErr] = useState<string | null>(null);
-  const [busy, setBusy] = useState<string | null>(null);
+  const { busy, decide } = useDecide(a);
   useEffect(() => {
     let alive = true;
     api
@@ -56,17 +58,6 @@ export function SitePublishCard({ a, showThreadLink }: { a: Approval; showThread
       alive = false;
     };
   }, [a.id]);
-  const decide = async (decision: 'approve' | 'deny') => {
-    setBusy(decision);
-    try {
-      await api.post(`/approvals/${a.id}`, { decision });
-      useApp.setState((s) => ({ approvals: s.approvals.filter((x) => x.id !== a.id) }));
-    } catch (e) {
-      toastError(e);
-    } finally {
-      setBusy(null);
-    }
-  };
   const reach: Reach = (p?.reach || a.input?.reach || 'local') as Reach;
   const title = p?.title || String(a.input?.title || '') || String(a.input?.path || 'Website');
   const days = p?.expiresDays ?? (Number(a.input?.expires_days) || 0);
@@ -110,7 +101,7 @@ export function SitePublishCard({ a, showThreadLink }: { a: Approval; showThread
           </Row>
           {p && p.files > 0 && (
             <Row k="Inhoud">
-              {t('{0, plural, one {# bestand} other {# bestanden}} · {1}', p.files, fmtBytes(p.bytes))}
+              {t('{0, plural, one {# bestand} other {# bestanden}} · {1}', p.files, formatBytes(p.bytes))}
               {p.entry ? (
                 <>
                   {' '}

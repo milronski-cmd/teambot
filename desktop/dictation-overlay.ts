@@ -1,11 +1,22 @@
 /**
- * The small recording pill for the dictation hotkey (bottom centre of the screen with the mouse). It never takes the
- * focus (the text has to go to the app you are typing in) and lets every click through. It also does the recording:
+ * The small recording pill for the dictation hotkey (bottom centre of the screen with the mouse, just above the
+ * taskbar: never over the middle of your work). It never takes the focus (the text has to go to the app you are typing
+ * in) and lets every click through. It also does the recording:
  * the microphone is only opened on "start" and closed again on "stop"/"cancel" (16 kHz PCM via an AudioWorklet,
  * sent to the main process every 100 ms).
  */
-export const OVERLAY_WIDTH = 460;
-export const OVERLAY_HEIGHT = 64;
+export const OVERLAY_WIDTH = 420;
+export const OVERLAY_HEIGHT = 52;
+/** Distance to the bottom of the work area (the taskbar). */
+export const OVERLAY_MARGIN = 12;
+/** No view update for this long while it is shown: hide it, whatever the state (longer than any step may take). */
+export const OVERLAY_STALE_MS = 150_000;
+
+/** Where the pill goes on a display's work area: bottom centre, never wider than the screen. */
+export function overlayBounds(workArea: { x: number; y: number; width: number; height: number }) {
+  const width = Math.max(200, Math.min(OVERLAY_WIDTH, workArea.width - 16));
+  return { x: Math.round(workArea.x + (workArea.width - width) / 2), y: Math.round(workArea.y + workArea.height - OVERLAY_HEIGHT - OVERLAY_MARGIN), width, height: OVERLAY_HEIGHT };
+}
 
 const WORKLET = `class TbDictPcm extends AudioWorkletProcessor {
   constructor() { super(); this.ratio = Math.max(1, sampleRate / 16000); this.pos = 0; this.acc = 0; this.n = 0; this.out = new Int16Array(320); this.k = 0; }
@@ -29,7 +40,7 @@ registerProcessor('tb-dict-pcm', TbDictPcm);`;
 
 export const OVERLAY_HTML = `<!doctype html><html lang="nl"><head><meta charset="utf-8"><style>
 html,body{margin:0;height:100%;background:transparent;overflow:hidden;font-family:"Segoe UI",system-ui,sans-serif;user-select:none}
-#pill{position:fixed;left:8px;right:8px;bottom:6px;height:44px;display:flex;align-items:center;gap:10px;padding:0 16px;box-sizing:border-box;
+#pill{position:fixed;left:6px;right:6px;bottom:6px;height:38px;display:flex;align-items:center;gap:10px;padding:0 16px;box-sizing:border-box;
   background:rgba(18,18,22,.92);color:#fff;border-radius:999px;font-size:13px;line-height:18px;box-shadow:0 6px 24px rgba(0,0,0,.35);white-space:nowrap;overflow:hidden}
 #dot{flex:none;width:10px;height:10px;border-radius:50%;background:#ef4444;animation:pulse 1.1s ease-in-out infinite}
 #what{flex:none;font-weight:600}
@@ -89,6 +100,8 @@ body:not(.recording) #meter{display:none}
       var s = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true } });
       if (my !== gen) { s.getTracks().forEach(function (t) { t.stop(); }); return; }
       stream = s;
+      // The microphone went away while recording (unplugged, taken by Windows): say so, the pill then closes.
+      s.getTracks().forEach(function (t) { t.onended = function () { if (my !== gen) return; ++gen; close(); bridge.error('De microfoon is weggevallen.'); }; });
       console.debug('[dicteren] microfoon open');
       ac = new AudioContext({ latencyHint: 'interactive' });
       if (ac.state !== 'running') await ac.resume();

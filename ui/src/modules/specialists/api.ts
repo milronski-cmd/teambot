@@ -36,7 +36,7 @@ export interface SpecialistView {
   dossierId: string | null;
   engine: { kind: 'free' | 'own' | 'none'; label: string; billing: string; problem: string | null };
   canUseTools: boolean;
-  counts: { facts: number; review: number; goals: number; proposals: number; reportsUnseen: number; retired?: number };
+  counts: { facts: number; review: number; goals: number; reportsUnseen: number; retired?: number };
   /** Active facts against the knowledge base's budget (memory keeps it at or under the target). */
   size?: { active: number; target: number } | null;
   /** The newest "wat is er nieuw en wat verandert er daardoor" of a learning round. */
@@ -126,16 +126,6 @@ export interface Report {
   data: { roundIds: string[]; facts: { text: string; ref?: string; source?: string; sourceLabel?: string }[]; conflicts: any[]; goalsDone: { question: string }[]; errors: string[]; sources: { url: string; label: string }[] };
 }
 
-export interface Proposal {
-  id: string;
-  title: string;
-  summary: string;
-  skill_md: string;
-  status: 'open' | 'accepted' | 'dismissed';
-  evidence: { threadId: string; task: string; at: string }[];
-  created_at: string;
-}
-
 export interface SpecialistListItem {
   agentId: string;
   agentName: string;
@@ -165,8 +155,6 @@ export const spApi = {
   undoRound: (roundId: string, index?: number) => api.post<{ undone: number; failed: string[] }>(`/specialists/rounds/${roundId}/undo`, index === undefined ? {} : { index }),
   undoReport: (reportId: string) => api.post<{ undone: number; failed: string[] }>(`/specialists/reports/${reportId}/undo`),
   seen: (reportId: string) => api.post(`/specialists/reports/${reportId}/seen`),
-  proposals: (agentId: string) => api.get<Proposal[]>(`/specialists/${agentId}/proposals`),
-  decide: (id: string, body: { status?: Proposal['status']; skillMd?: string; skillId?: string }) => api.post<Proposal>(`/specialists/proposals/${id}`, body),
   // Memory's own public routes (the facts live in memory).
   undoChange: (changeId: string) => api.post(`/memory/changes/${changeId}/undo`),
   forget: (itemId: string) => api.post(`/memory/items/${itemId}/forget`, { alsoSource: false }),

@@ -1,7 +1,7 @@
 import { useEffect, useId, useRef, useState } from 'react';
 import { Check, ChevronsUpDown, Plus, Settings2 } from 'lucide-react';
 import { cx } from '../components/ui';
-import { MenuSeparator, Pop, menuRow } from '../components/Menu';
+import { MenuSeparator, Pop, menuKeys, menuRow, useDismiss } from '../components/Menu';
 import { t } from '../lib/i18n';
 import { moduleById } from '../modules';
 import { NewTeamModal } from '../modules/teams/TeamsPage';
@@ -38,10 +38,8 @@ export function TeamSwitcher({ size = 'desk', className, onNavigate }: { size?: 
     // Focus the current choice (or the first item) when the menu opens.
     const list = items();
     (list.find((el) => el.getAttribute('aria-checked') === 'true') || list[0])?.focus();
-    const away = (e: MouseEvent) => wrap.current && !wrap.current.contains(e.target as Node) && setOpen(false);
-    document.addEventListener('mousedown', away);
-    return () => document.removeEventListener('mousedown', away);
   }, [open]);
+  useDismiss(open, wrap, () => setOpen(false), btn);
 
   if (!multi) return null;
 
@@ -53,17 +51,8 @@ export function TeamSwitcher({ size = 'desk', className, onNavigate }: { size?: 
       onNavigate?.();
     }
   };
-  const onMenuKey = (e: React.KeyboardEvent) => {
-    const list = items();
-    const i = list.indexOf(document.activeElement as HTMLElement);
-    const to = (n: number) => (e.preventDefault(), list[(n + list.length) % list.length]?.focus());
-    if (e.key === 'ArrowDown') to(i + 1);
-    else if (e.key === 'ArrowUp') to(i - 1);
-    else if (e.key === 'Home') to(0);
-    else if (e.key === 'End') to(list.length - 1);
-    else if (e.key === 'Escape') (e.preventDefault(), close());
-    else if (e.key === 'Tab') setOpen(false);
-  };
+  // Arrows, Home and End walk the rows (menuKeys); Escape and a press outside close it (useDismiss); Tab leaves it.
+  const onMenuKey = (e: React.KeyboardEvent<HTMLElement>) => (menuKeys(e), e.key === 'Tab' && setOpen(false));
   const phone = size === 'phone';
   const item = cx(phone ? menuRow.replace('min-h-9', 'min-h-11') : menuRow, 'gap-2.5 font-normal');
   const manage = active ? `#/m/teams/${active.id}` : '#/settings/teams-teams';

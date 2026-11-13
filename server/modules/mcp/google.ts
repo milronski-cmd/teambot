@@ -10,6 +10,7 @@ import type { McpManager } from './runtime.js';
 import { AuthRequiredError, getConn, patchOAuth } from './oauth.js';
 import { TEAMBOT_GOOGLE_CLIENT } from './google-client.js';
 import { cleanError, guardedFetch, sha256 } from './util.js';
+import { actionsByDefault } from './defaults.js';
 
 /**
  * Google in one go (0.4.4): one login gives the bots Search Console, Merchant Center, Google Ads, Analytics, Gmail,
@@ -639,7 +640,7 @@ export function registerGoogle(ctx: Ctx, mgr: McpManager, h: GoogleHelpers) {
           trusted_at: ts,
           allow_private: false,
           enabled: true,
-          allow_actions: false,
+          allow_actions: actionsByDefault(ctx, flow.userId),
           verified_at: null,
           verify_result: null,
           status: 'new',

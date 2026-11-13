@@ -1,14 +1,15 @@
 import type { Agent, Ctx, Message, Run, Thread, ToolDef } from '../core/types.js';
-import { now } from '../core/db.js';
-import { estimateCost } from '../providers/pricing.js';
+import { judgeEngine, runShortCall, type ShortEngine } from './short-call.js';
 import { redact } from '../core/secrets.js';
 import { outputLanguage } from './language.js';
 import { userLanguage } from '../core/i18n.js';
 
 /**
- * Auto Review: for bots in "automatisch" mode, a second model call checks every write/exec action before it runs.
- * If the action does not clearly follow from what the human asked (e.g. it was triggered by text from a web page,
- * e-mail or another external source), it is escalated to a normal human approval. Fails closed: any error → ask.
+ * Auto Review: a second model call reads one step before it runs. Only the permission gate (tools/gate.ts) decides
+ * when that happens, for every way a step arrives: when a rule of the owner that TeamBot cannot check in code names
+ * this kind of step, or when the owner switched on "Automatische controle" for a bot on "Automatisch". With the bot's
+ * own check: a step that does not clearly follow from what the human asked (e.g. it was triggered by text from a web
+ * page, e-mail or another external source) goes to a normal human approval, and any error asks too.
  */
 export interface ReviewVerdict {
   verdict: 'allow' | 'ask';
@@ -48,24 +49,64 @@ function readVerdict(text: string): { verdict: 'allow' | 'ask'; reason: string }
   }
 }
 
+/** A CLI engine's small fast model for a yes/no check (the bot's own model is for the work, not for this). */
+const FAST_MODEL: Record<string, string> = { 'claude-code': 'haiku' };
+
 /**
- * `rules`: the owner's own rules that TeamBot cannot pin down in code (module botrules). With the bot's own Auto
- * Review on, an action that goes against one of them, or where the reviewer is unsure, asks the owner; without it only
- * an action that does what a rule names asks.
+ * The engines that may do the check, in order: the one the owner picked for it (bot editor), else the bot's own engine
+ * with whatever model is on it (an API model, a local model, or an abonnement CLI such as Claude Code, Codex or
+ * OpenCode through its one-shot answer); then every other connected engine that costs nothing extra, as a reserve.
+ * Before 10 nov a bot on an abonnement CLI could not be checked at all ("Deze provider kan de automatische controle
+ * niet doen"), so with one rule of the owner every step asked him, also on Volledige toegang.
  */
-export async function autoReview(ctx: Ctx, agent: Agent, thread: Thread, run: Run, tool: Pick<ToolDef, 'name' | 'risk' | 'description'>, args: any, rules: string[] = []): Promise<ReviewVerdict> {
+export function reviewEngines(ctx: Ctx, agent: Agent, userId: string): ShortEngine[] {
+  const out: ShortEngine[] = [];
+  const o = { userId, agent };
+  const add = (providerId: string | null | undefined, model: string | null | undefined, source: 'explicit' | 'other') => {
+    if (!providerId || out.some((e) => e.providerId === providerId)) return;
+    const kind = ctx.providers.config(providerId)?.kind || '';
+    const v = judgeEngine(ctx, o, { providerId, model: model || FAST_MODEL[kind] || '' }, source);
+    if (v.engine) out.push(v.engine);
+  };
+  const picked = agent.settings?.autoReviewProviderId;
+  if (picked) add(picked, agent.settings?.autoReviewModel, 'explicit');
+  add(agent.provider_id, picked ? '' : agent.settings?.autoReviewModel || (FAST_MODEL[ctx.providers.config(agent.provider_id || '')?.kind || ''] ? '' : agent.model), 'explicit');
+  for (const p of ctx.providers.list(userId)) if (p.enabled) add(p.id, '', 'other');
+  return out.slice(0, 4);
+}
+
+export async function autoReview(
+  ctx: Ctx,
+  agent: Agent,
+  thread: Thread,
+  run: Run,
+  tool: Pick<ToolDef, 'name' | 'risk'>,
+  args: any,
+  /**
+   * `rules`: the owner's own rules that TeamBot cannot pin down in code (module botrules) and that name this kind of
+   * step. `own`: the bot's own "Automatische controle" is on: a step that goes against a rule, or where the reviewer
+   * is unsure, asks the owner; without it only a step that does what a rule names asks.
+   * `failOpen`: the step is only possibly a payment or a message (an API call, a change in an app). When the reviewer
+   * cannot be reached or gives no readable answer, the step goes on: a reviewer that is down must not turn ordinary
+   * work into a question. A real "ask" of the reviewer still asks.
+   */
+  o: { rules?: string[]; own?: boolean; failOpen?: boolean } = {},
+): Promise<ReviewVerdict> {
+  const rules = o.rules || [];
+  const failed = (reason: string): ReviewVerdict => {
+    if (!o.failOpen) return { verdict: 'ask', reason };
+    ctx.audit(thread.user_id, 'autoreview.skipped', { tool: tool.name, reason }, agent.id);
+    return { verdict: 'allow', reason };
+  };
   try {
-    if (!agent.provider_id) return { verdict: 'ask', reason: 'Geen model beschikbaar voor de automatische controle' };
-    const reviewerProvider = agent.settings?.autoReviewProviderId || agent.provider_id;
-    const { cfg, adapter } = ctx.providers.adapter(reviewerProvider);
-    if (!adapter.chat) return { verdict: 'ask', reason: 'Deze provider kan de automatische controle niet doen' };
-    const model = agent.settings?.autoReviewModel || agent.model;
+    const engines = reviewEngines(ctx, agent, thread.user_id);
+    if (!engines.length) return failed('Geen model beschikbaar voor de automatische controle');
     const input: Message | null = run.input_message_id ? ctx.store.message(run.input_message_id) : null;
     const recent = ctx.store.messages(thread.id, { limit: 40 });
     const lastHuman = [...recent].reverse().find((m) => m.role === 'user' && (m.author_type === 'user' || m.author_type === 'external'));
     const external = recent.some((m) => m.role === 'tool' && /^(web_|browser_|mcp_|channel_|memory_search|skill_)/.test(m.parts?.toolResult?.name || '')) || lastHuman?.author_type === 'external';
     // Only the owner's rules to check (no Auto Review of the bot itself): the narrow question, nothing else.
-    const rulesOnly = rules.length > 0 && !agent.settings?.autoReview;
+    const rulesOnly = rules.length > 0 && !o.own;
     const ruleLines = rules.map((x) => `- ${redact(x).replace(/[\r\n]+/g, ' ').slice(0, 300)}`).join('\n');
     const body = (
       rulesOnly
@@ -83,18 +124,28 @@ export async function autoReview(ctx: Ctx, agent: Agent, thread: Thread, run: Ru
     const system = outputLanguage(rulesOnly ? RULES_SYSTEM : SYSTEM, userLanguage(ctx.store, thread.user_id));
     // A thinking model spends its thinking from the same budget: with 200 tokens the answer itself often never came
     // ("Twijfel" on 25 of 31 checks, 10 nov). Little thinking, room for the answer, and one retry when it is unreadable.
+    // The first engine that gives a readable answer decides. An engine that fails (at its limit, not logged in, no
+    // answer in time, an unreadable answer twice) is skipped, so one engine that is down never makes every step ask.
     let v: ReturnType<typeof readVerdict> = null;
-    for (let attempt = 0; attempt < 2 && !v; attempt++) {
-      const r = await adapter.chat({ model, system, messages: [{ role: 'user', content: body }], tools: [], maxTokens: attempt ? 4000 : 1500, reasoning: 'low' }, AbortSignal.timeout(45_000), () => {});
-      const cost = estimateCost(cfg.kind, model, r.usage.input, r.usage.output, r.usage.cacheRead, cfg.config);
-      ctx.store.insert('usage_log', { user_id: thread.user_id, agent_id: agent.id, provider_id: cfg.id, model: r.model || model, input: r.usage.input, output: r.usage.output, cost: cost ?? 0, created_at: now() });
-      v = readVerdict(r.text || '');
+    let why = '';
+    for (const engine of engines) {
+      for (let attempt = 0; attempt < 2 && !v; attempt++) {
+        try {
+          const r = await runShortCall(ctx, engine, { userId: thread.user_id, agentId: agent.id, system, prompt: body, maxTokens: attempt ? 4000 : 1500, timeoutMs: 60_000, reasoning: 'low' });
+          v = readVerdict(r.text || '');
+        } catch (e: any) {
+          why = String(e?.message || e).slice(0, 80);
+          break;
+        }
+      }
+      if (v) break;
     }
+    if (!v) return failed(why ? `Automatische controle niet gelukt (${why})` : 'De automatische controle gaf geen leesbaar antwoord');
     const verdict = v?.verdict === 'allow' ? 'allow' : 'ask';
     const reason = v?.reason || (verdict === 'allow' ? 'In orde' : v ? 'Twijfel' : 'De automatische controle gaf geen leesbaar antwoord');
     ctx.audit(thread.user_id, 'autoreview.' + verdict, { tool: tool.name, reason }, agent.id);
     return { verdict, reason };
   } catch (e: any) {
-    return { verdict: 'ask', reason: `Automatische controle niet gelukt (${String(e?.message || e).slice(0, 80)})` };
+    return failed(`Automatische controle niet gelukt (${String(e?.message || e).slice(0, 80)})`);
   }
 }

@@ -20,7 +20,7 @@ const browser = await chromium.launch({ channel: process.env.TEAMBOT_E2E_BROWSER
 const home = fs.mkdtempSync(path.join(os.tmpdir(), 'tb-mem-inbox-home-'));
 Object.assign(process.env, { APPDATA: path.join(home, 'AppData', 'Roaming'), LOCALAPPDATA: path.join(home, 'AppData', 'Local') });
 delete process.env.TEAMBOT_DATA;
-const { createApp } = await import('../../server/app.ts');
+const { createApp } = await import('./server.mjs');
 const { mockAdapter } = await import('../helpers.ts');
 const { writeCandidate } = await import('../../server/modules/memory/pipeline.ts');
 const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'tb-mem-inbox-'));

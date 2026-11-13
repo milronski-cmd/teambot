@@ -420,7 +420,7 @@ test('with every real 0.4 part (C2 main bot, S specialists, B2 team databases): 
     assert.equal(res.roles.main.status, 'set');
     const kk = t.app.ctx.services.specialists.profile(byName['Kennis & Kansen'].id);
     assert.equal(kk?.enabled, true, 'a real specialist (S)');
-    assert.equal((await t.api('GET', `/specialists/${byName['Kennis & Kansen'].id}`)).learnOn, true, 'its learning round on, like every new specialist (the import said nothing else)');
+    assert.equal((await t.api('GET', `/specialists/${byName['Kennis & Kansen'].id}`)).learnOn, false, 'its learning round off until someone switches it on (the import said nothing else)');
     assert.deepEqual(res.roles.specialists.map((s: any) => [s.name, s.status]), [['Kennis & Kansen', 'specialist']]);
     const td = t.app.ctx.services.teamdata;
     const rowsIn = async (tbl: string) => (await td.rows(owner.id, `SELECT COUNT(*) AS n FROM ${tbl}`, [], true, team.id))[0]?.n ?? 0;

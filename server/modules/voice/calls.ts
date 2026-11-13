@@ -89,9 +89,10 @@ function limits(ctx: Ctx, c: any, cost: number) {
   return {
     cost,
     capUsd: cap,
-    warn: cost >= cap * 0.8,
-    overCap: cost >= cap,
-    overTime: minutes >= settings.maxMinutes,
+    // 0 = no ceiling / no maximum length (the default).
+    warn: cap > 0 && cost >= cap * 0.8,
+    overCap: cap > 0 && cost >= cap,
+    overTime: settings.maxMinutes > 0 && minutes >= settings.maxMinutes,
     maxMinutes: settings.maxMinutes,
   };
 }

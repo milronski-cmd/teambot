@@ -13,12 +13,13 @@ import { MoreInfo } from '../components/MoreInfo';
 import { useProviderKinds } from './Providers';
 import { ChatList } from '../shell/ChatList';
 import { Mark, StopAllButton } from '../shell/Sidebar';
-import { OpenBotBanner } from '../modules/openbot-import/Banner';
+import { OpenBotBanner, useOpenBotOffer } from '../modules/openbot-import/Banner';
 import { NotificationBell } from '../modules/notifications/parts';
 import { LanguageCorner } from '../components/LanguagePicker';
 import { LOCAL_KINDS, engineRank } from './newbot/choices';
 import { welcomeSlots } from './welcomeSlots';
-import { FreeCard, KeyCard, SubscriptionCard, freeOptions, subscriptionRank, subscriptionReady, useSubscriptions } from './welcome/StartOptions';
+import { FreeCard, KeyCard, SubscriptionCard, freeOptions, useSubscriptions } from './welcome/StartOptions';
+import { mainAction } from './welcome/mainAction';
 import { useMainBot } from '../modules/teams/api';
 import { TeamSwitcher } from '../shell/TeamSwitcher';
 import { NewMenu } from '../shell/NewMenu';
@@ -38,39 +39,30 @@ function Faces() {
  * First run (TeamBot 0.4.2): one calm screen, nothing installed yet (no bots, teams, skills or routines). Three plain
  * ways to get going, each in one or two clicks (welcome/StartOptions.tsx): "Ik heb Claude of ChatGPT", "Ik heb een
  * API-sleutel" and "Gratis beginnen". The choice makes a ready first bot with that engine (welcome/FirstBot.tsx, 0.4.5).
- * The option that suits best (a logged-in subscription, then a free or local engine, then a key) is the one primary
- * button. No ports, no Tailscale, no jargon here.
+ * Exactly one main button, whatever is on this PC (welcome/mainAction.ts): an OpenBot installation to take over, else
+ * the AI that suits best; every other way in is a quiet choice with its own button (Gebruiken, Inloggen, Installeren,
+ * Koppelen). No ports, no Tailscale, no jargon here.
  */
 function Welcome() {
   const providers = useApp((s) => s.providers);
   const settings = useApp((s) => s.settings);
-  const { kinds } = useProviderKinds(true);
+  const { kinds, reload: reloadKinds } = useProviderKinds(true);
   const subs = useSubscriptions();
+  const openbot = useOpenBotOffer();
 
   const enabled = useMemo(() => providers.filter((p) => p.enabled), [providers]);
   const kindOf = useMemo(() => new Map((kinds || []).map((k) => [k.id, k])), [kinds]);
   const free = useMemo(() => freeOptions(kinds, enabled), [kinds, enabled]);
   // Already connected with a key (or another program): under "Ik heb een API-sleutel" with "Gebruiken".
   const keyed = useMemo(() => enabled.filter((p) => !free.some((f) => f.providerId === p.id) && p.kind !== 'claude-code' && p.kind !== 'codex-cli'), [enabled, free]);
-  // The one recommended choice (newbot/choices.ts order): own subscription, OpenCode, a local model, a free tier, a key.
-  const primaryId = useMemo(() => {
-    const ready: { id: string; rank: number }[] = [];
-    for (const it of subs.view?.items || []) if (subscriptionReady(it)) ready.push({ id: `sub:${it.id}`, rank: subscriptionRank(it) });
-    for (const o of free) {
-      const k = kindOf.get(o.kind);
-      ready.push({ id: o.key, rank: engineRank({ kind: o.kind, type: k?.type || (o.kind === 'opencode' ? 'cli' : 'api'), billing: k?.billing, group: k?.group }) });
-    }
-    for (const p of keyed) {
-      const k = kindOf.get(p.kind);
-      ready.push({ id: `p:${p.id}`, rank: engineRank({ kind: p.kind, type: p.type, billing: p.billing ?? k?.billing, group: k?.group }) });
-    }
-    const best = ready.sort((a, b) => a.rank - b.rank)[0]?.id;
-    if (best) return best;
-    // Nothing ready yet, but Claude Code or Codex is on this PC: logging in there is the main step.
-    const login = subs.view?.items.find((it) => it.installed && it.loggedIn === false);
-    return login ? `sub:${login.id}` : null;
-  }, [subs.view, free, keyed, kindOf]);
-  // OpenCode's free models stop at a daily limit; a local model does not. Without one here, say so in one line.
+  // The ONE main button (welcome/mainAction.ts): the OpenBot offer, else the best AI (own subscription, OpenCode, a
+  // local model, a free tier, a key), else logging in, else "Gratis starten". A failed look counts as nothing found.
+  const primaryId = useMemo(
+    () => mainAction({ openbot: openbot.shown, subs: subs.view?.items ?? (subs.err ? [] : null), free, keyed, kinds: kindOf }),
+    [openbot.shown, subs.view, subs.err, free, keyed, kindOf],
+  );
+  // OpenCode's free models stop at a daily limit; a local model does not. Without one here, Ollama is a choice with
+  // "Installeren" (StartOptions.tsx).
   const noLocal = !!kinds && !kinds.some((k) => LOCAL_KINDS.has(k.id) && k.status?.installed) && !providers.some((p) => LOCAL_KINDS.has(p.kind));
   const ollamaHere = !!kinds?.some((k) => k.id === 'ollama' && k.status?.installed);
   const LocalModels = welcomeSlots.localModels;
@@ -110,13 +102,13 @@ function Welcome() {
         <p className="mx-auto mt-2 max-w-sm text-center text-[15px] leading-relaxed text-muted">Je eigen team van AI-bots, op deze computer. Kies hoe je begint.</p>
 
         <div className="-mb-3 mt-7 empty:hidden">
-          <OpenBotBanner />
+          <OpenBotBanner offer={openbot} primary={primaryId === 'openbot'} />
         </div>
 
         <div className="mt-7 space-y-3">
           <SubscriptionCard view={subs.view} err={subs.err} primaryId={primaryId} onChanged={subs.load} />
           <KeyCard kinds={kinds} connected={keyed} primaryId={primaryId} />
-          <FreeCard options={free} primaryId={primaryId} freeStartPrimary={!primaryId && !!subs.view} showLocalHint={noLocal}>
+          <FreeCard options={free} primaryId={primaryId} freeStartPrimary={primaryId === 'free-start'} localMissing={noLocal} onLocalFound={reloadKinds}>
             {/* Slot (package Q): which local models fit this pc, only when Ollama is here (see welcomeSlots.ts). */}
             {LocalModels && ollamaHere && (
               <div className="mt-3">
@@ -142,9 +134,10 @@ function Welcome() {
           <Lock className="me-1 inline h-3.5 w-3.5 align-[-2px]" aria-hidden />
           Je gesprekken blijven op deze computer.{' '}
           <a className="underline hover:text-fg" href="#/settings/data">
-            Waar staat mijn data?
+            Privacy en gegevens
           </a>{' '}
-          <MoreInfo>Bots vragen toestemming voordat ze iets wijzigen.</MoreInfo>
+          {/* As the first bot starts (Volledige toegang): it does the work itself, and asks for money and messages to others. */}
+          <MoreInfo>Bots doen het werk zelf en vragen het je bij geld en belangrijke berichten naar anderen.</MoreInfo>
         </p>
       </div>
     </Page>
@@ -221,7 +214,12 @@ function PhoneChats() {
 /** Role, or the bot's state in words while it works, waits or failed (the face alone never carries the status). */
 function BotStatusLine({ agent }: { agent: Agent }) {
   const mood = useAgentMood(agent);
-  return <span className={cx('w-full truncate text-xs', mood === 'idle' ? 'text-muted' : moodTone(mood))}>{moodText(mood, agent.role || 'Bot')}</span>;
+  // Idle, the line is the bot's role: the user's words, never translated.
+  return (
+    <span className={cx('w-full truncate text-xs', mood === 'idle' ? 'text-muted' : moodTone(mood))} translate={mood === 'idle' && agent.role ? 'no' : undefined}>
+      {moodText(mood, agent.role || 'Bot')}
+    </span>
+  );
 }
 
 /**
@@ -239,9 +237,7 @@ function DesktopHome() {
     if (main === undefined || (!latest && !front)) return;
     // Only from the start page itself: while the main bot loaded, the owner may already have gone elsewhere (Wacht op
     // jou, a link in a notification); this effect can still run once after that hash change.
-    if (!/^(#\/?)?$/.test(location.hash)) return;
-    history.replaceState(null, '', front ? `#/a/${front}` : `#/t/${latest!.id}`);
-    dispatchEvent(new HashChangeEvent('hashchange'));
+    navigate(front ? `/a/${front}` : `/t/${latest!.id}`, { from: '#/', replace: true });
   }, [latest?.id, front, main === undefined]);
   if (latest || front || main === undefined) return null;
   return (

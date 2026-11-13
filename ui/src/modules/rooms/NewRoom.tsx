@@ -23,28 +23,30 @@ function BotPicker({ value, onChange }: { value: string[]; onChange(v: string[])
 /** "Nieuwe groepschat": a name, the bots, how they work together; or a template / a team package file. */
 export function NewRoomModal({ open, onClose }: { open: boolean; onClose(): void }) {
   const agents = useApp((s) => s.agents);
-  const [f, setF] = useState({ name: '', agentIds: [] as string[], mode: 'lead' as Mode, leadAgentId: '', instructions: '', maxCostUsd: '1', maxTurnsPerMessage: '8' });
+  const [f, setF] = useState({ name: '', agentIds: [] as string[], mode: 'lead' as Mode, leadAgentId: '', instructions: '', maxCostUsd: '0', maxTurnsPerMessage: '' });
   // Zelf samenstellen, a team template (A-14) or a team package file (A-63).
   const [source, setSource] = useState<'self' | 'template' | 'import'>('self');
   const [teamBtn, setTeamBtn] = useState<{ label: string; disabled: boolean; run(): Promise<void> } | null>(null);
   const a = useAsync();
   useEffect(() => {
-    if (open) setF({ name: '', agentIds: [], mode: 'lead', leadAgentId: '', instructions: '', maxCostUsd: '1', maxTurnsPerMessage: '8' });
+    if (open) setF({ name: '', agentIds: [], mode: 'lead', leadAgentId: '', instructions: '', maxCostUsd: '0', maxTurnsPerMessage: '' });
     if (open) (setSource('self'), setTeamBtn(null));
   }, [open]);
   const create = () =>
     a.run(async () => {
+      const from = location.hash;
       const r = await api.post<{ threadId: string }>('/rooms', {
         name: f.name,
         agentIds: f.agentIds,
         mode: f.mode,
         leadAgentId: f.mode === 'lead' ? f.leadAgentId || f.agentIds[0] : undefined,
         instructions: f.instructions,
-        limits: { maxCostUsd: Number(f.maxCostUsd.replace(',', '.')) || 0, maxTurnsPerMessage: Number(f.maxTurnsPerMessage) || 8 },
+        // No built-in brakes: no cost cap and the standard (generous) turn cap unless the owner fills one in.
+        limits: { maxCostUsd: Number(f.maxCostUsd.replace(',', '.')) || 0, ...(Number(f.maxTurnsPerMessage) > 0 ? { maxTurnsPerMessage: Number(f.maxTurnsPerMessage) } : {}) },
       });
       await useApp.getState().refreshThreads();
       onClose();
-      navigate(`/t/${r.threadId}`);
+      navigate(`/t/${r.threadId}`, { from });
     });
   return (
     <Modal

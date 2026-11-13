@@ -48,9 +48,8 @@ Tests: `tests/specialists.test.ts`, probes in `tests/teams-isolation.test.ts`.
   leerdoelen. De volgende ronde zoekt eerst naar leerdoelen, ook in pagina's die niet veranderden.
 - Een **leerverslag** per week: kaart in de Kennisbank, regel in de tijdlijn van het dossier (Geheugen) en een
   melding. Alles wat geleerd is kan per regel of in één keer **ongedaan** worden gemaakt.
-- **Skillvoorstellen**: doet een specialist drie keer met succes dezelfde klus (dezelfde tools in dezelfde volgorde,
-  in minstens twee gesprekken), dan komt er een voorstel met een **SKILL.md-concept**. Installeren gebeurt alleen na
-  akkoord, via de gewone controle van Skills (`/skills/import/preview` + `/skills/import/commit`).
+- Skillvoorstellen doet de specialist niet meer zelf: één plek stelt voor om van herhaald werk een skill te maken,
+  voor elke bot (Kwaliteit, `quality/skills.ts`; zie `docs/modules/quality.md`).
 
 ## De leerronde stap voor stap (`round.ts`)
 
@@ -135,12 +134,11 @@ feiten uit de eigen kennisbank met id, bron en datum, zodat de bot ze kan citere
 | `GET/POST /specialists/:agentId/goals`, `PATCH/DELETE /specialists/goals/:id` | leerdoelen |
 | `GET /specialists/:agentId/reports`, `POST /specialists/:agentId/report` | leerverslagen en rondes / verslag nu maken |
 | `POST /specialists/rounds/:id/undo` (`{index?}`), `POST /specialists/reports/:id/undo`, `POST /specialists/reports/:id/seen` | ongedaan maken, gelezen |
-| `GET /specialists/:agentId/proposals`, `POST /specialists/proposals/:id` | skillvoorstellen (`status: accepted\|dismissed`, `skillMd`, `skillId`) |
 
 Te controleren oplossen en vergeten gaan via de bestaande routes van het geheugen (`/memory/items/:id/approve`
 met `mode: replace\|keep_both`, `/reject`, `/forget`, `/memory/changes/:id/undo`).
 
-Event: `specialists.changed` (`{agentId, what}`). Meldingen: leerverslag, te controleren, skillvoorstel (met
+Event: `specialists.changed` (`{agentId, what}`). Meldingen: leerverslag en te controleren (met
 `agentId`, dus het meldingsniveau per bot geldt). Tabellen: zie `schema.ts`. Export: `exportUser` (profielen,
 bronnen zonder cache, leerdoelen, rondes, verslagen, voorstellen; de feiten zelf zitten in de export van het
 geheugen).
@@ -199,7 +197,6 @@ belasten); de tests dekken het met de nep-provider.
 - Leren van PDF/Word-bronnen kan nog niet (alleen tekstformaten); pagina's die alleen via JavaScript renderen ziet
   hij niet.
 - Feeds: de tekst uit de feed zelf; de gelinkte artikelen worden niet opgehaald (zuinig en beleefd).
-- Lessen uit correcties van de eigenaar (pakket C) worden nog geen skillvoorstel; alleen herhaalde toolreeksen.
 - Leerdoelen worden gezocht in de eigen bronnen (en hun cache), niet met een zoekmachine.
 - De kennisbank is per bot; een gedeelde *teamkennisbank* hoort bij golf 2 (geheugen per team).
 - Er zijn geen eigen auditregels: het geheugen logt elk opgeslagen feit (`memory.created/proposed`), de routinemodule

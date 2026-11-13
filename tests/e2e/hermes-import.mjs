@@ -27,7 +27,7 @@ delete process.env.HERMES_HOME;
 delete process.env.TEAMBOT_HERMES_HOME;
 delete process.env.TEAMBOT_DATA;
 
-const { createApp } = await import('../../server/app.ts');
+const { createApp } = await import('./server.mjs');
 const { HERMES_DECOYS, makeHermesFixture, snapshotFolder } = await import('../fixtures/hermes/fixture.ts');
 const hx = makeHermesFixture();
 const before = snapshotFolder(hx.home);
@@ -70,6 +70,9 @@ try {
 
     // Instellingen › Overstappen: the way in, with Grok Bot said plainly.
     await page.goto(`${app.url}/#/settings/openbot-import-overstappen`);
+    // The other apps are in the fold "Uit een andere app" (open by itself when there is no OpenBot).
+    await page.getByTestId('more-options').first().waitFor({ state: 'attached', timeout: 10000 });
+    await page.evaluate(() => document.querySelectorAll('[data-testid="more-options"]').forEach((x) => (x.open = true)));
     await page.getByText('Grok Bot kun je niet importeren: het heeft geen export en bewaart niets op je computer.', { exact: false }).first().waitFor({ timeout: 10000 });
     await page.getByRole('button', { name: 'Overstappen uit Hermes Agent' }).click();
     await page.getByRole('heading', { name: 'Overstappen uit Hermes Agent' }).waitFor({ timeout: 10000 });

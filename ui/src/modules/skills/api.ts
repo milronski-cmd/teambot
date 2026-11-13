@@ -1,92 +1,13 @@
 import { uiLocale } from '../../lib/i18n';
+import type { Finding, OpenSection, OpenSort, PermissionDiff, Permissions, PolicyDecision, PublisherChange, PublisherPolicy, SignatureView, SkillMeta, TrustedPublisher } from '../../../../shared/skills.js';
 // Shapes returned by /api/skills/* (see server/modules/skills/routes.ts).
 
 export type Level = 'ok' | 'info' | 'warn' | 'danger';
-
-export interface Finding {
-  severity: 'info' | 'warn' | 'danger';
-  kind: string;
-  file: string;
-  line?: number;
-  message: string;
-  excerpt?: string;
-}
 
 export interface ScanFileView {
   path: string;
   size: number;
   type: 'skill' | 'text' | 'script' | 'executable' | 'binary';
-}
-
-export interface Permissions {
-  tools: string[];
-  groups: string[];
-  scripts: { path: string; sha256: string }[];
-  binaries: string[];
-  domains: string[];
-}
-
-export interface PermissionDiff {
-  addedTools: string[];
-  removedTools: string[];
-  addedGroups: string[];
-  addedScripts: string[];
-  changedScripts: string[];
-  removedScripts: string[];
-  addedBinaries: string[];
-  addedDomains: string[];
-  removedDomains: string[];
-  elevated: boolean;
-}
-
-/** Publisher signature state (server: server/modules/skills/publishers.ts). */
-export type SignatureState = 'builtin' | 'trusted' | 'untrusted' | 'unsigned' | 'invalid';
-
-export interface SignatureView {
-  state: SignatureState;
-  label: string;
-  publisher: string | null;
-  declaredPublisher: string | null;
-  publisherId: string | null;
-  publicKey: string | null;
-  fingerprint: string | null;
-  packageName: string | null;
-  version: string | null;
-  license: string | null;
-  teambot: string | null;
-  via: string | null;
-  compatible: boolean;
-  incompatible: string[];
-  errors: string[];
-  warnings: string[];
-  blocked: boolean;
-  blockReason: string | null;
-}
-
-export type PublisherPolicy = 'open' | 'signed-only' | 'allowlist';
-
-export interface PolicyDecision {
-  policy: PublisherPolicy;
-  allowed: boolean;
-  needsOverride: boolean;
-  canOverride: boolean;
-  blocked: boolean;
-  reason: string | null;
-}
-
-export interface PublisherChange {
-  from: { name: string; fingerprint: string | null } | null;
-  to: { name: string; fingerprint: string | null } | null;
-  reason: string;
-}
-
-export interface TrustedPublisher {
-  publicKey: string;
-  name: string;
-  fingerprint: string;
-  publisherId: string;
-  addedBy: string;
-  addedAt: string;
 }
 
 export interface PublishersView {
@@ -172,20 +93,6 @@ export interface VersionView {
   signature: SignatureView;
   active: boolean;
   diffFromActive: PermissionDiff | null;
-}
-
-export interface SkillMeta {
-  name: string;
-  description: string;
-  license: string;
-  version: string;
-  allowedTools: string[];
-  metadata: Record<string, string>;
-  compatibility: string;
-  author: string;
-  homepage: string;
-  dependencies: string[];
-  platforms: string[];
 }
 
 export interface SkillDetail extends SkillSummary {
@@ -447,77 +354,46 @@ export function fmtDate(iso: string | null | undefined) {
   return isNaN(d.getTime()) ? iso : d.toLocaleString(uiLocale(), { dateStyle: 'medium', timeStyle: 'short' });
 }
 
-// ---------------------------------------------------------------- internet sources
+// ---------------------------------------------------------------- everything public (the open search)
 // Shapes returned by /api/skills/web/* (server/modules/skills/web-routes.ts) and /api/mcp/registry/* (server/modules/mcp/api.ts).
 
-export interface LicenseView {
-  spdx: string | null;
-  label: string;
-  status: 'open' | 'restricted' | 'unknown';
-  source: 'skill-file' | 'frontmatter' | 'repo-file' | 'github' | 'registry' | 'none';
-  file?: string;
-}
-
-export interface WebSkillItem {
-  type: 'skill';
-  source: 'github' | 'skills.sh';
-  catalogId: string;
-  id: string;
-  ref?: string;
-  repo: string | null;
-  path: string | null;
-  skillId?: string;
-  sourceLabel?: string;
-  name: string;
-  title: string;
-  description: string;
-  category: string;
-  version?: string;
-  commit?: string | null;
-  updatedAt?: string | null;
-  publisher: string;
-  author?: string;
-  license: LicenseView;
-  installable: boolean | null;
-  reason: string | null;
-  stars?: number | null;
-  installs: number | null;
-  kind?: 'prompt' | 'scripts';
-  scanLevel?: Level;
-  labels?: string[];
-  fileCount?: number;
-  size?: number;
-  partial?: boolean;
-  unresolved?: boolean;
-  url?: string;
-  installed: { skillId: string; version: string; status: string; updateAvailable: boolean } | null;
-}
-
-/** A skill from TeamBot's own catalogue, shown while the internet collections are fetched for the first time. */
-export interface StarterSkill {
-  catalogId: string;
-  id: string;
-  title: string;
-  description: string;
-  category: string;
-  version: string;
-}
-
-export interface WebSkillList {
-  items: WebSkillItem[];
-  total: number;
-  categories: string[];
-  /** Collections that are still downloading for the first time. */
-  pending: string[];
-  /** Collections shown from the cache while they are checked for changes. */
-  refreshing: string[];
-  collections: { total: number; ready: number };
-  starter: StarterSkill[];
-  starterTotal: number;
-  errors: { repo: string; error: string }[];
-  stale: boolean;
-  skillsSh: { used: boolean; error: string | null; stale: boolean };
+export interface OpenSearch {
+  q: string;
+  sort: OpenSort;
+  page: number;
+  /** Matches in the checked catalogue (first page of a search by words). */
+  checked: CuratedCard[];
+  directory: (OpenSection & { source: string; order: 'installs' | 'recent' }) | null;
+  github: OpenSection;
+  /** Skills hosted by ClawHub; null when it was not asked. */
+  clawhub: OpenSection | null;
+  /** GitHub's search limit was reached: when it works again, and the sentence to show. */
+  limit: { source: string; until: number; text: string } | null;
   offline: boolean;
+}
+
+/** The skills in one repository on GitHub (GET /skills/web/repo). */
+export interface OpenRepo {
+  repo: string;
+  url: string;
+  commit: string | null;
+  updatedAt: string | null;
+  stars: number | null;
+  license: string | null;
+  description: string;
+  publisherStatus: 'known' | 'lookalike' | 'unknown';
+  publisherNote: string;
+  namesOnly: boolean;
+  truncated: boolean;
+  stale: boolean;
+  skills: { id: string; path: string; name: string; description: string; checked: boolean; license: string | null; scripts: boolean; scanLevel: Level; problem: string; installed: { skillId: string } | null }[];
+}
+
+export interface WebSources {
+  offline: boolean;
+  github: { tokenSet: boolean; apiBlockedUntil: number | null; searchBlockedUntil: number | null };
+  skillsSh: { blockedUntil: number | null };
+  clawhub: { blockedUntil: number | null };
 }
 
 /** A connector from TeamBot's own catalogue, shown while the MCP Registry is fetched for the first time. */
@@ -542,29 +418,6 @@ export interface RegistryList {
   featuredTotal?: number;
   starter?: StarterApp[];
   starterTotal?: number;
-}
-
-export interface WebSkillDetail extends WebSkillItem {
-  skillMd: string;
-  meta: SkillMeta;
-  errors: string[];
-  warnings: string[];
-  scan: { level: Level; kind: 'prompt' | 'scripts'; labels: string[]; findings: Finding[]; files: ScanFileView[]; domains: string[] };
-  permissions: Permissions;
-  files: ScanFileView[];
-  checksum: string;
-  substance?: Substance;
-  repoMeta: { stars: number; license: string | null; pushedAt: string | null; description: string; archived: boolean; htmlUrl: string } | null;
-  repoLicense: LicenseView | null;
-  indexMode: 'zip' | 'tree';
-  stale: boolean;
-}
-
-export interface WebSources {
-  offline: boolean;
-  github: { tokenSet: boolean; apiBlockedUntil: number | null };
-  skillsSh: { blockedUntil: number | null };
-  collections: { repo: string; note: string; url: string; indexed: boolean; mode: string | null; skills: number | null; installable: number | null; commit: string | null; updatedAt: string | null; fetchedAt: string | null; license: string | null; stars: number | null }[];
 }
 
 export interface RegistryCard {
@@ -673,6 +526,13 @@ export interface CuratedCard {
   publisher: string;
   owner: string;
   publisherStatus: 'known' | 'lookalike' | 'unknown';
+  publisherNote?: string;
+  /** Checked by TeamBot (source, licence, pinned version). False: an open result, checked by nobody. */
+  checked?: boolean;
+  /** Where the skill is hosted: its pin is a commit on GitHub, a version on ClawHub. */
+  host?: 'github' | 'clawhub';
+  /** GitHub stars of the repository when TeamBot checked it (0 = not counted). */
+  stars: number;
   license: string;
   commit: string;
   commitDate: string;
@@ -685,7 +545,7 @@ export interface CuratedCard {
 }
 
 export interface CuratedList {
-  sources: { id: string; repo: string; publisher: string; owner: string; license: string; commit: string; commitDate: string; verifiedAt: string; note: string; url: string; skills: number }[];
+  sources: { id: string; repo: string; publisher: string; owner: string; license: string; commit: string; commitDate: string; verifiedAt: string; note: string; stars: number; url: string; skills: number }[];
   packs: string[];
   items: CuratedCard[];
   offline: boolean;
@@ -746,7 +606,8 @@ export interface CuratedDiff {
   files: { files: FileDiffView[]; added: number; removed: number; changed: number; unchanged: number };
   permissions: PermissionDiff;
   scan: { level: Level; kind: string; labels: string[]; findings: Finding[] };
-  trustReset: boolean;
+  /** The scripts change while they are on: after the update the bots run the new ones. */
+  scriptsChange: boolean;
   license: CuratedLicense;
   dropped: { path: string; reason: string }[];
   problems: string[];

@@ -3,7 +3,7 @@ import { Clock, Coins } from 'lucide-react';
 import { api } from '../../lib/api';
 import { t } from '../../lib/i18n';
 import { formatPercent, formatTime, formatUsd } from '../../lib/format';
-import { Button, toastError } from '../../components/ui';
+import { Button, useAsync } from '../../components/ui';
 import { resetLong, windowName } from './bar';
 
 /** GET /usage/estimate (server/modules/usage/estimate.ts). */
@@ -30,13 +30,13 @@ function startText(at: number): string {
 
 const pct = (n: number) => (n < 1 ? t('minder dan 1%') : formatPercent(Math.round(n)));
 
-/** The money line: "Kost ongeveer $0,40 per keer.", "Kost geen geld: valt onder je abonnement." … */
+/** The money line: "Kost ongeveer $0,40 per keer.", "Kost geen geld: valt onder je abonnement." …; '' when the price is not known. */
 function moneyLine(e: EstimateView): string {
   const c = e.cost;
   if (c.how === 'covered') return t('Kost geen geld: valt onder je abonnement.');
   if (c.how === 'free') return t('Kost geen geld: gratis model of op je eigen computer.');
   if (c.usd !== null && (c.how === 'price' || c.how === 'measured')) return t('Kost ongeveer {0} per keer.', formatUsd(c.usd, { min: 2, max: 2 }));
-  return t('Wat het kost is nog onbekend: de prijs van dit model is niet bekend.');
+  return '';
 }
 
 /** "Op basis van de laatste 4 runs van deze routine." */
@@ -50,11 +50,12 @@ function basisLine(e: EstimateView): string {
 /**
  * "Kosten vooraf" (package P3): before a big task or routine, what it roughly costs (money, or a share of the 5-hour
  * and weekly window on a subscription), always labelled as an estimate. When it does not fit in what is left of a
- * window it offers "Start na de reset om …" (`onStartAfter`). Renders nothing when the work is small and not important.
+ * window it offers "Start na de reset om …" (`onStartAfter`). Renders nothing when the work is small and not important,
+ * and nothing when there is no amount or share to show.
  */
 export function CostEstimate({ agentId, routineId, important, onStartAfter, startLabel }: { agentId?: string | null; routineId?: string | null; important?: boolean; onStartAfter?(at: number): Promise<void>; startLabel?: string }) {
   const [e, setE] = useState<EstimateView | null>(null);
-  const [busy, setBusy] = useState(false);
+  const { busy, run } = useAsync();
   const [planned, setPlanned] = useState<number | null>(null);
   useEffect(() => {
     if (!agentId && !routineId) return setE(null);
@@ -70,17 +71,13 @@ export function CostEstimate({ agentId, routineId, important, onStartAfter, star
   }, [agentId, routineId, important]);
   if (!e?.show) return null;
   const shares = e.windows.filter((w) => w.share !== null || w.fits === false);
+  const money = moneyLine(e);
+  // Nothing to tell (price unknown, no share of a window): no box at all, rather than a box that says "onbekend".
+  if (!money && !shares.length) return null;
   const start = async () => {
     if (!e.startAfter || !onStartAfter) return;
-    setBusy(true);
-    try {
-      await onStartAfter(e.startAfter.at);
-      setPlanned(e.startAfter.at);
-    } catch (err) {
-      toastError(err);
-    } finally {
-      setBusy(false);
-    }
+    const at = e.startAfter.at;
+    await run(async () => (await onStartAfter(at), setPlanned(at)));
   };
   return (
     <section aria-label={t('Kosten vooraf')} className="space-y-1.5 rounded-xl border border-line bg-surface-2 px-3 py-2.5 text-sm" data-testid="cost-estimate">
@@ -89,7 +86,7 @@ export function CostEstimate({ agentId, routineId, important, onStartAfter, star
         {t('Kosten vooraf')}
         <span className="rounded-full bg-surface px-2 py-0.5 text-[11px] font-medium text-muted">{t('schatting')}</span>
       </div>
-      <p>{moneyLine(e)}</p>
+      {money && <p>{money}</p>}
       {shares.map((w) => (
         <p key={w.id} className={w.fits === false ? 'text-warn' : ''}>
           {w.share !== null

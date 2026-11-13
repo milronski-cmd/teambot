@@ -4,27 +4,9 @@
  * transport that is merely up never gets a green badge.
  */
 
-export type HealthState = 'off' | 'connecting' | 'error' | 'untested' | 'receive_failed' | 'send_failed' | 'ok';
+import type { HealthView } from '../../../../shared/channelHealth.js';
 
-export interface HealthEvent {
-  at: string;
-  text: string;
-}
-
-export interface HealthView {
-  state: HealthState;
-  reason: string | null;
-  receiveOk: boolean;
-  sendOk: boolean;
-  sendNeeded: boolean;
-  inAt: string | null;
-  outAt: string | null;
-  platformAt: string | null;
-  lastError: HealthEvent | null;
-  testing: { expiresAt: string } | null;
-  lastTest: { at: string; ok: boolean; text: string } | null;
-  day: { in: number; out: number; errors: number };
-}
+export type { HealthState, HealthView } from '../../../../shared/channelHealth.js';
 
 export interface HealthBadge {
   tone: 'ok' | 'warn' | 'danger' | 'neutral';

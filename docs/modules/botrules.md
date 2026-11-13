@@ -27,7 +27,7 @@ Deterministisch (dezelfde zin geeft altijd dezelfde regel), Nederlands en Engels
 
 ## Handhaving (`match.ts`, Broker)
 
-`Broker.decide` (de enige permissiepoort, ook voor CLI-bots via `cli-agents/permissions.ts` en de MCP-brug) rekent
+`Broker.decide` (aangeroepen door de ene permissiepoort `tools/gate.ts`, voor elke route: API-model, lokaal model en CLI-engine) rekent
 eerst het niveau en de keuzes per tool uit, en geeft dat aan `ctx.services.botRules.decide`:
 
 - **Strengste wint**: nooit > eerst vragen > toestaan. Een regel mag elk niveau strenger maken, ook *Volledige toegang*
@@ -41,7 +41,7 @@ eerst het niveau en de keuzes per tool uit, en geeft dat aan `ctx.services.botRu
 - Fout in de regels: "toestaan" wordt "vragen" (fail-safe). Een onbekend chatkanaal bij `channel_send` telt voor een
   strenge regel als geraakt.
 - De goedkeuringskaart begint met **Jouw regel: “…”**; een weigering zegt de bot "Geweigerd door een regel van je
-  eigenaar: “…”" (`ownRule` in `tools/execute.ts`).
+  eigenaar: “…”" (`ownRule` in `tools/gate.ts`).
 - Systeemprompt (stabiel): `## Regels van je eigenaar` met de zinnen, zodat de bot het niet eerst probeert.
 
 Regels gelden per bot (`agent_id`) en per team (`team_id`: alle bots met dat thuisteam, `services.teams.teamOf`).

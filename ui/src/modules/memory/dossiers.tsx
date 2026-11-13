@@ -1,11 +1,12 @@
-import React, { useState } from 'react';
-import { Building2, CalendarClock, CheckSquare, Copy, ExternalLink, FileText, FolderOpen, Gavel, Link as LinkIcon, Milestone, Plus, Square, Trash2, Upload, UserRound } from 'lucide-react';
+import React, { useEffect, useState } from 'react';
+import { Building2, CalendarClock, CheckSquare, Copy, Download, ExternalLink, History, FileText, FolderOpen, Gavel, Link as LinkIcon, Milestone, Plus, Square, Trash2, Upload, UserRound, FolderPlus, BarChart3, Users } from 'lucide-react';
 import { api, authUrl, upload } from '../../lib/api';
 import { t } from '../../lib/i18n';
 import { navigate } from '../../lib/router';
 import { useApp } from '../../lib/store';
-import { Badge, Button, Card, EmptyState, Field, Input, Modal, Select, Tabs, Textarea, Toggle, cx, timeAgo, toast, useAsync } from '../../components/ui';
+import { Badge, Button, Card, EmptyState, Field, Input, Modal, Select, Tabs, Textarea, Toggle, cx, timeAgo, toast, useAsync, CardHead } from '../../components/ui';
 import { ChangeRow, ErrorBox, ForgetDialog, ItemList, Loading, TeamBadge } from './parts';
+import { Words } from '../../components/Words';
 import { Menu } from '../../components/overview';
 import { MemoryShell } from './pages';
 import { DocumentToSkillModal } from '../skills/FromDocument';
@@ -29,13 +30,13 @@ function DossierProposals({ onMade }: { onMade(): void }) {
   if (!r.data?.length) return null;
   return (
     <Card className="space-y-2 p-3">
-      <h2 className="text-sm font-semibold">{t('{0, plural, one {Voorgesteld dossier} other {Voorgestelde dossiers}}', r.data.length)}</h2>
+      <CardHead icon={FolderPlus} tone="amber" title={t('{0, plural, one {Voorgesteld dossier} other {Voorgestelde dossiers}}', r.data.length)} />
       <ul className="space-y-2">
         {r.data.map((p: any) => (
           <li key={p.id} className="flex flex-wrap items-center gap-2 rounded-lg border border-line p-2 text-sm">
             <FolderOpen className="h-4 w-4 shrink-0 text-muted" aria-hidden />
             <span className="min-w-[12rem] flex-1">
-              <span className="font-medium">{p.name}</span>
+              <span className="font-medium" translate="no">{p.name}</span>
               <span className="block text-xs text-muted">
                 {[
                   t('{0, plural, one {kwam in # gesprek voor} other {kwam in # gesprekken voor}}', p.threads),
@@ -117,15 +118,19 @@ function DossierList() {
             <a key={d.id} href={memPath(`dossiers/${d.id}`)} className="tb-in block rounded-card border border-line bg-surface p-4 transition-colors hover:border-line-strong">
               <div className="flex items-start gap-2.5">
                 <FolderOpen className="mt-0.5 h-4 w-4 shrink-0 text-muted" aria-hidden />
-                <span className="min-w-0 flex-1 font-semibold leading-snug [overflow-wrap:anywhere]">{d.title}</span>
+                <span className="min-w-0 flex-1 font-semibold leading-snug [overflow-wrap:anywhere]" translate="no">{d.title}</span>
                 {/* One signal: what is still open. */}
                 {d.open_actions > 0 && <Badge tone="warn">{t('{0, plural, one {# open actie} other {# open acties}}', d.open_actions)}</Badge>}
               </div>
-              {d.summary && <p className="mt-1.5 line-clamp-2 text-sm text-muted">{d.summary}</p>}
+              {d.summary && <p className="mt-1.5 line-clamp-2 text-sm text-muted" translate="no">{d.summary}</p>}
               <div className="mt-2 flex flex-wrap gap-x-2 gap-y-1 text-xs text-muted">
                 <span>{DOSSIER_KIND_LABEL[d.kind] || d.kind}</span>
                 {d.team && <span>· {d.team.id === ALL_TEAMS ? 'Alle teams' : d.team.name}</span>}
-                {d.role !== 'owner' && <span>· van {d.owner_name}</span>}
+                {d.role !== 'owner' && (
+                <span>
+                  · <Words text="van {0}" values={[d.owner_name || '']} />
+                </span>
+              )}
                 <span>· bijgewerkt {timeAgo(d.last_activity_at)}</span>
               </div>
             </a>
@@ -207,7 +212,7 @@ function CopyKnowledge({ onClose, onDone }: { onClose(): void; onDone(): void })
             <Field label="Van team">
               <Select value={from} onChange={(e) => setFrom(e.target.value)} aria-label="Van team">
                 {teams.teams.map((x) => (
-                  <option key={x.id} value={x.id}>
+                  <option key={x.id} value={x.id} translate="no">
                     {x.name}
                   </option>
                 ))}
@@ -216,7 +221,7 @@ function CopyKnowledge({ onClose, onDone }: { onClose(): void; onDone(): void })
             <Field label="Naar team">
               <Select value={to} onChange={(e) => setTo(e.target.value)} aria-label="Naar team">
                 {teams.teams.map((x) => (
-                  <option key={x.id} value={x.id}>
+                  <option key={x.id} value={x.id} translate="no">
                     {x.name}
                   </option>
                 ))}
@@ -238,7 +243,7 @@ function TeamPicker({ value, onChange }: { value: string; onChange(v: string): v
     <Field label="Team" hint="De bots van dit team gebruiken het dossier. Een ander team ziet het niet.">
       <Select value={value} onChange={(e) => onChange(e.target.value)} aria-label="Team">
         {teams.teams.map((x) => (
-          <option key={x.id} value={x.id}>
+          <option key={x.id} value={x.id} translate="no">
             {x.name}
           </option>
         ))}
@@ -399,16 +404,16 @@ function ImportMarkdown({ onClose, onDone }: { onClose(): void; onDone(): void }
                   <div className="min-w-0 flex-1">
                     <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
                       {l.status === 'created' && l.dossierId ? (
-                        <a className="truncate font-semibold text-accent hover:underline" href={memPath(`dossiers/${l.dossierId}`)} onClick={onClose}>
+                        <a className="truncate font-semibold text-accent hover:underline" href={memPath(`dossiers/${l.dossierId}`)} onClick={onClose} translate="no">
                           {l.title}
                         </a>
                       ) : (
-                        <span className="truncate font-semibold">{l.title || l.name}</span>
+                        <span className="truncate font-semibold" translate="no">{l.title || l.name}</span>
                       )}
                       <Badge tone={st.tone}>{st.label}</Badge>
                     </div>
-                    <div className="truncate text-xs text-muted">{l.name}</div>
-                    {l.summary && ['new', 'renamed', 'created'].includes(l.status) && <p className="mt-0.5 line-clamp-2 text-xs text-muted">{l.summary}</p>}
+                    <div className="truncate text-xs text-muted" translate="no">{l.name}</div>
+                    {l.summary && ['new', 'renamed', 'created'].includes(l.status) && <p className="mt-0.5 line-clamp-2 text-xs text-muted" translate="no">{l.summary}</p>}
                     {!['new', 'created'].includes(l.status) && <p className={cx('mt-0.5 text-xs', l.status === 'rejected' || l.status === 'failed' || l.status === 'too_big' ? 'text-danger' : 'text-muted')}>{l.message}</p>}
                     {l.warning && <p className="mt-0.5 text-xs text-warn">{l.warning}</p>}
                   </div>
@@ -453,10 +458,11 @@ function CreateDossier({ onClose }: { onClose(): void }) {
             disabled={!title.trim()}
             onClick={() =>
               run(async () => {
+                const from = location.hash;
                 const r = await api.post('/memory/dossiers', { title, kind, summary, agentIds: all ? null : chosen.filter((id) => agents.some((a) => a.id === id)), ...(teams.multi && team ? { teamId: team } : {}) });
                 if (r.existed) toast('Er bestond al een dossier met die titel', 'neutral');
                 onClose();
-                navigate(memPath(`dossiers/${r.dossier.id}`));
+                navigate(memPath(`dossiers/${r.dossier.id}`), { from });
               })
             }
           >
@@ -514,7 +520,7 @@ function BotAccess({ all, setAll, chosen, setChosen, agents, multi }: { all: boo
           {agents.map((a) => (
             <label key={a.id} className="flex items-center gap-1.5 rounded-lg border border-line px-2 py-1 text-sm">
               <input type="checkbox" checked={chosen.includes(a.id)} onChange={(e) => setChosen(e.target.checked ? [...chosen, a.id] : chosen.filter((x) => x !== a.id))} />
-              {a.name}
+              <span translate="no">{a.name}</span>
             </label>
           ))}
         </div>
@@ -534,6 +540,8 @@ const SUBTABS = [
   { id: 'toegang', label: 'Toegang' },
   { id: 'geschiedenis', label: 'Geschiedenis' },
 ];
+
+const RARE_TABS = ['toegang', 'geschiedenis'];
 
 const IDENTITY_STRENGTH: Record<string, string> = { channel: 'herkend aan het kanaal', 'email-auth': 'e-mail met geslaagde afzendercontrole', owner: 'door jou gekoppeld' };
 
@@ -561,6 +569,7 @@ function CustomerIdentity({ info }: { info: { identities: any[]; knows: { facts:
 }
 
 function DossierDetail({ id }: { id: string }) {
+  const page = location.hash;
   const r = useMem<any>(`/memory/dossiers/${id}`);
   const [tab, setTab] = useState('overzicht');
   const [forget, setForget] = useState(false);
@@ -584,41 +593,51 @@ function DossierDetail({ id }: { id: string }) {
       </div>
       <div className="flex flex-wrap items-start gap-2">
         <div className="min-w-[12rem] flex-1">
-          <h2 className="text-lg font-semibold">{d.title}</h2>
+          <h2 className="text-lg font-semibold" translate="no">{d.title}</h2>
           <div className="flex flex-wrap items-center gap-1.5 text-xs text-muted">
             <Badge>{DOSSIER_KIND_LABEL[d.kind] || d.kind}</Badge>
             <Badge tone={d.status === 'active' ? 'ok' : 'neutral'}>{({ active: 'Actief', closed: 'Afgesloten', archived: 'Gearchiveerd', trashed: 'Prullenbak' } as any)[d.status] || d.status}</Badge>
             <TeamBadge team={d.team} />
-            {d.role !== 'owner' && <Badge tone="accent">{d.role === 'edit' ? 'Je mag bewerken' : 'Alleen lezen'} · van {d.owner_name}</Badge>}
+            {d.role !== 'owner' && (
+            <Badge tone="accent">
+              {d.role === 'edit' ? 'Je mag bewerken' : 'Alleen lezen'} · <Words text="van {0}" values={[d.owner_name || '']} />
+            </Badge>
+          )}
             <span>laatst bijgewerkt {timeAgo(d.last_activity_at)}</span>
           </div>
         </div>
-        <div className="flex flex-wrap gap-2">
-          <a className="inline-flex h-8 items-center rounded-lg border border-line px-2.5 text-sm hover:bg-surface-2" href={authUrl(`/memory/dossiers/${id}/export?format=md`)} download>
-            Export (MD)
-          </a>
-          <a className="inline-flex h-8 items-center rounded-lg border border-line px-2.5 text-sm hover:bg-surface-2" href={authUrl(`/memory/dossiers/${id}/export?format=json`)} download>
-            Export (JSON)
-          </a>
-          {d.role === 'owner' && (
-            <Select style={{ width: 'auto', height: '2rem' }} value={d.status} onChange={(e) => patch({ status: e.target.value }, 'Status bijgewerkt')} aria-label="Status van het dossier" disabled={busy}>
-              <option value="active">Actief</option>
-              <option value="closed">Afgesloten</option>
-              <option value="archived">Gearchiveerd</option>
-              <option value="trashed">Prullenbak</option>
-            </Select>
-          )}
-          {d.role === 'owner' && (
-            <Button size="sm" variant="ghost" className="text-danger" onClick={() => setForget(true)}>
-              Vergeten…
-            </Button>
-          )}
-        </div>
+        {/* One quiet menu for what you rarely do with a dossier: its status, a copy to keep, forgetting it. */}
+        <Menu
+          label="Meer opties"
+          variant="secondary"
+          items={[
+            ...(d.role === 'owner'
+              ? ([
+                  { heading: 'Status van het dossier' },
+                  ...(['active', 'closed', 'archived', 'trashed'] as const).map((st) => ({
+                    label: { active: 'Actief', closed: 'Afgesloten', archived: 'Gearchiveerd', trashed: 'Prullenbak' }[st],
+                    checked: d.status === st,
+                    disabled: busy,
+                    onSelect: () => void (d.status !== st && patch({ status: st }, 'Status bijgewerkt')),
+                  })),
+                  'sep',
+                ] as const)
+              : []),
+            { label: 'Toegang', icon: <Users />, onSelect: () => setTab('toegang') },
+            { label: 'Geschiedenis', icon: <History />, onSelect: () => setTab('geschiedenis') },
+            'sep',
+            { label: 'Export (MD)', icon: <Download />, href: authUrl(`/memory/dossiers/${id}/export?format=md`) },
+            { label: 'Export (JSON)', icon: <Download />, href: authUrl(`/memory/dossiers/${id}/export?format=json`) },
+            d.role === 'owner' && 'sep',
+            d.role === 'owner' && { label: 'Vergeten…', icon: <Trash2 />, danger: true, onSelect: () => setForget(true) },
+          ]}
+        />
       </div>
       {full.customer && <CustomerIdentity info={full.customer} />}
-      <Tabs tabs={SUBTABS} value={tab} onChange={setTab} />
+      {/* Seven tabs fit; who may read it and the history are rarely needed: in the menu, and a tab while open. */}
+      <Tabs tabs={SUBTABS.filter((x) => !RARE_TABS.includes(x.id) || x.id === tab)} value={tab} onChange={setTab} />
       <div className="pt-1">
-        {tab === 'overzicht' && <Overview full={full} canEdit={canEdit} onSave={(summary: string) => patch({ summary }, 'Samenvatting opgeslagen')} go={setTab} />}
+        {tab === 'overzicht' && <Overview full={full} canEdit={canEdit} onSave={(summary: string) => patch({ summary }, 'Samenvatting opgeslagen')} onSaveBody={(body: string) => patch({ body }, 'Dossier opgeslagen')} go={setTab} />}
         {tab === 'tijdlijn' && <Timeline full={full} canEdit={canEdit} reload={r.reload} />}
         {tab === 'besluiten' && <Records kind="decision" list={full.decisions} dossierId={id} canEdit={canEdit} reload={r.reload} />}
         {tab === 'acties' && <Records kind="action" list={full.actions} dossierId={id} canEdit={canEdit} reload={r.reload} />}
@@ -634,19 +653,68 @@ function DossierDetail({ id }: { id: string }) {
           </Card>
         )}
       </div>
-      {forget && <ForgetDialog title={`Het hele dossier “${d.title}” met alle notities, besluiten, acties, personen en bronnen.`} endpoint={`/memory/dossiers/${id}/forget`} onClose={() => setForget(false)} onDone={() => navigate(memPath('dossiers'))} />}
+      {forget && <ForgetDialog title={<Words text="Het hele dossier “{0}” met alle notities, besluiten, acties, personen en bronnen." values={[d.title]} />} endpoint={`/memory/dossiers/${id}/forget`} onClose={() => setForget(false)} onDone={() => navigate(memPath('dossiers'), { from: page })} />}
     </div>
   );
 }
 
-function Overview({ full, canEdit, onSave, go }: { full: any; canEdit: boolean; onSave(s: string): void; go(t: string): void }) {
+/**
+ * The text of a dossier: what the bots always read and keep up to date themselves, and the owner can change here. Also
+ * shown in Geheugen with the place it belongs to (about you, one bot, a team): pages.tsx.
+ */
+export function DossierText({ saved, limit, canEdit, onSave, title, className }: { saved: string; limit: number; canEdit: boolean; onSave(s: string): void; title?: string; className?: string }) {
+  const [body, setBody] = useState(saved);
+  useEffect(() => setBody(saved), [saved]);
+  return (
+    <Card className={cx('space-y-2 p-3', className)}>
+      {title ? (
+        <h3 className="text-sm font-semibold" translate="no">
+          {title}
+        </h3>
+      ) : (
+        <CardHead as="h3" icon={FileText} tone="amber" title="Tekst van het dossier" />
+      )}
+      <p className="text-xs text-muted">Dit lezen je bots. Ze houden het zelf bij; jij kunt het hier aanpassen.</p>
+      {canEdit ? (
+        <>
+          <Textarea rows={title ? 8 : 14} value={body} onChange={(e) => setBody(e.target.value)} aria-label="Tekst van het dossier" placeholder="Nog leeg. Je bots vullen dit zodra ze iets weten dat hier hoort." />
+          <div className="flex items-center gap-3">
+            <Button size="sm" disabled={body === saved || body.trim().length > limit} onClick={() => onSave(body)}>
+              Opslaan
+            </Button>
+            <span className={`text-xs ${body.trim().length > limit ? 'text-danger' : 'text-muted'}`}>
+              {body.trim().length > limit ? t('{0} van {1} tekens: maak het korter', body.trim().length, limit) : t('{0} van {1} tekens', body.trim().length, limit)}
+            </span>
+          </div>
+        </>
+      ) : (
+        <p className="whitespace-pre-wrap text-sm">{saved || <span className="text-muted">Nog leeg.</span>}</p>
+      )}
+    </Card>
+  );
+}
+
+function Overview({ full, canEdit, onSave, onSaveBody, go }: { full: any; canEdit: boolean; onSave(s: string): void; onSaveBody(s: string): void; go(t: string): void }) {
   const [summary, setSummary] = useState(full.dossier.summary || '');
+  const saved: string = full.dossier.body || '';
+  const limit: number = full.dossier.body_limit || 8000;
   const open = full.actions.filter((a: DossierRecord) => a.status === 'open');
   const decisions = full.decisions.filter((x: DossierRecord) => x.status === 'active').slice(0, 3);
+  const activeDecisions = full.decisions.filter((x: any) => x.status === 'active').length;
+  const counts: { n: number; tab: string; text: string }[] = [
+    { n: open.length, tab: 'acties', text: t('{0, plural, one {# open actie} other {# open acties}}', open.length) },
+    { n: activeDecisions, tab: 'besluiten', text: t('{0, plural, one {# besluit} other {# besluiten}}', activeDecisions) },
+    { n: full.events.length, tab: 'tijdlijn', text: t('{0, plural, one {# gebeurtenis} other {# gebeurtenissen}}', full.events.length) },
+    { n: full.entities.length, tab: 'personen', text: t('{0, plural, one {# persoon/organisatie} other {# personen/organisaties}}', full.entities.length) },
+    { n: full.sources.length, tab: 'bronnen', text: t('{0, plural, one {# bron} other {# bronnen}}', full.sources.length) },
+    { n: full.items.length, tab: 'notities', text: t('{0, plural, one {# notitie} other {# notities}}', full.items.length) },
+  ];
   return (
     <div className="grid gap-3 lg:grid-cols-3">
+      <DossierText className="lg:col-span-2" saved={saved} limit={limit} canEdit={canEdit} onSave={onSaveBody} />
+      {!saved && (full.dossier.summary || canEdit) && (
       <Card className="space-y-2 p-3 lg:col-span-2">
-        <div className="text-sm font-semibold">Samenvatting</div>
+        <CardHead as="h3" icon={FileText} tone="amber" title="Samenvatting" />
         {canEdit ? (
           <>
             <Textarea rows={5} value={summary} onChange={(e) => setSummary(e.target.value)} aria-label="Samenvatting" placeholder="Waar gaat dit dossier over? Doelen, stand van zaken…" />
@@ -655,34 +723,48 @@ function Overview({ full, canEdit, onSave, go }: { full: any; canEdit: boolean; 
             </Button>
           </>
         ) : (
-          <p className="whitespace-pre-wrap text-sm">{full.dossier.summary || <span className="text-muted">Geen samenvatting.</span>}</p>
+          <p className="whitespace-pre-wrap text-sm">{full.dossier.summary ? <span translate="no">{full.dossier.summary}</span> : <span className="text-muted">Geen samenvatting.</span>}</p>
         )}
       </Card>
+      )}
+      {/* What is in the dossier: only what is there, each line the way to it (no row of zeros). */}
       <Card className="space-y-2 p-3">
-        <div className="text-sm font-semibold">In cijfers</div>
-        <ul className="space-y-1 text-sm">
-          <li>{t('{0, plural, one {# open actie} other {# open acties}}', open.length)}</li>
-          <li>{t('{0, plural, one {# besluit} other {# besluiten}}', full.decisions.filter((x: any) => x.status === 'active').length)}</li>
-          <li>{t('{0, plural, one {# gebeurtenis} other {# gebeurtenissen}}', full.events.length)}</li>
-          <li>{t('{0, plural, one {# persoon/organisatie} other {# personen/organisaties}}', full.entities.length)}</li>
-          <li>{t('{0, plural, one {# bron} other {# bronnen}}', full.sources.length)}</li>
-          <li>{t('{0, plural, one {# notitie} other {# notities}}', full.items.length)}</li>
-        </ul>
+        <CardHead as="h3" icon={BarChart3} title="In cijfers" />
+        {counts.some((c) => c.n > 0) ? (
+          <ul className="space-y-1 text-sm">
+            {counts
+              .filter((c) => c.n > 0)
+              .map((c) => (
+                <li key={c.tab + c.text}>
+                  <button type="button" className="text-start hover:underline" onClick={() => go(c.tab)}>
+                    {c.text}
+                  </button>
+                </li>
+              ))}
+          </ul>
+        ) : (
+          <p className="text-sm text-muted">Nog leeg.</p>
+        )}
       </Card>
       <Card className="space-y-2 p-3 lg:col-span-2">
-        <div className="flex items-center justify-between">
-          <div className="text-sm font-semibold">Open acties</div>
-          <button className="text-sm text-accent hover:underline" onClick={() => go('acties')}>
-            Alle acties
-          </button>
-        </div>
+        <CardHead
+          as="h3"
+          icon={CheckSquare}
+          tone="orange"
+          title="Open acties"
+          action={
+            <button className="text-sm text-accent hover:underline" onClick={() => go('acties')}>
+              Alle acties
+            </button>
+          }
+        />
         {open.length === 0 ? (
           <p className="text-sm text-muted">Geen open acties.</p>
         ) : (
           <ul className="space-y-1 text-sm">
             {open.slice(0, 6).map((a: DossierRecord) => (
               <li key={a.id} className="flex flex-wrap gap-x-2">
-                <span className="min-w-0 flex-1">{a.title}</span>
+                <span className="min-w-0 flex-1" translate="no">{a.title}</span>
                 <span className="text-xs text-muted">
                   {a.owner || 'geen eigenaar'}
                   {a.due_at ? ` · uiterlijk ${fmtDate(a.due_at)}` : ''}
@@ -693,14 +775,14 @@ function Overview({ full, canEdit, onSave, go }: { full: any; canEdit: boolean; 
         )}
       </Card>
       <Card className="space-y-2 p-3">
-        <div className="text-sm font-semibold">Laatste besluiten</div>
+        <CardHead as="h3" icon={Gavel} title="Laatste besluiten" />
         {decisions.length === 0 ? (
           <p className="text-sm text-muted">Nog geen besluiten.</p>
         ) : (
           <ul className="space-y-1 text-sm">
             {decisions.map((x: DossierRecord) => (
               <li key={x.id}>
-                {x.title} <span className="text-xs text-muted">· {fmtDate(x.occurred_at)}</span>
+                <span translate="no">{x.title}</span> <span className="text-xs text-muted">· {fmtDate(x.occurred_at)}</span>
               </li>
             ))}
           </ul>
@@ -731,9 +813,9 @@ function Timeline({ full, canEdit, reload }: { full: any; canEdit: boolean; relo
             <li key={x.id} className="relative">
               <span className="absolute -start-[1.4rem] top-0.5 flex h-5 w-5 items-center justify-center rounded-full bg-surface text-muted ring-1 ring-line">{KIND_ICON[x.kind]}</span>
               <div className="text-xs text-muted">
-                {fmtDate(x.at)} · {RECORD_LABEL[x.kind]} · {x.author_name}
+                {fmtDate(x.at)} · {RECORD_LABEL[x.kind]} · <bdi translate="no">{x.author_name}</bdi>
               </div>
-              <div className={cx('text-sm', ['superseded', 'cancelled', 'revoked'].includes(x.status) && 'text-muted line-through')}>{x.title}</div>
+              <div className={cx('text-sm', ['superseded', 'cancelled', 'revoked'].includes(x.status) && 'text-muted line-through')} translate="no">{x.title}</div>
             </li>
           ))}
         </ol>
@@ -788,9 +870,13 @@ function RecordRow({ r, canEdit, reload }: { r: DossierRecord; canEdit: boolean;
             </div>
           ) : (
             <>
-              <div className={cx('text-sm', (done || ['superseded', 'cancelled', 'revoked'].includes(r.status)) && 'text-muted line-through')}>{r.title}</div>
-              {r.data?.question && <div className="text-xs text-muted">Vraag: {r.data.question}</div>}
-              {r.body && <div className="whitespace-pre-wrap text-xs text-muted">{r.body}</div>}
+              <div className={cx('text-sm', (done || ['superseded', 'cancelled', 'revoked'].includes(r.status)) && 'text-muted line-through')} translate="no">{r.title}</div>
+              {r.data?.question && (
+                <div className="text-xs text-muted">
+                  <Words text="Vraag: {0}" values={[r.data.question]} />
+                </div>
+              )}
+              {r.body && <div className="whitespace-pre-wrap text-xs text-muted" translate="no">{r.body}</div>}
               <div className="mt-1 flex flex-wrap gap-x-2 text-xs text-muted">
                 {r.kind === 'entity' && <span>{r.data?.entity_kind === 'organization' ? 'Organisatie' : r.data?.entity_kind === 'person' ? 'Persoon' : r.data?.entity_kind}</span>}
                 {r.data?.aliases?.length > 0 && <span>ook: {r.data.aliases.join(', ')}</span>}
@@ -798,7 +884,9 @@ function RecordRow({ r, canEdit, reload }: { r: DossierRecord; canEdit: boolean;
                 {r.due_at && <span className={cx(!done && r.due_at < new Date().toISOString() && 'text-danger')}>uiterlijk {fmtDate(r.due_at)}</span>}
                 {r.occurred_at && r.kind !== 'action' && <span>{fmtDate(r.occurred_at)}</span>}
                 {r.status !== 'active' && r.status !== 'open' && <Badge tone={r.status === 'proposed' ? 'warn' : 'neutral'}>{({ proposed: 'Voorstel', superseded: 'Vervangen', done: 'Klaar', cancelled: 'Geannuleerd', revoked: 'Herroepen' } as any)[r.status] || r.status}</Badge>}
-                <span>· {r.author_name}</span>
+                <span>
+                  · <bdi translate="no">{r.author_name}</bdi>
+                </span>
                 {r.sources?.filter((s) => s.kind === 'thread' && s.ref).slice(0, 1).map((s) => (
                   <a key={s.ref} className="inline-flex items-center gap-0.5 text-accent hover:underline" href={`#/t/${s.ref}`}>
                     <LinkIcon className="h-3 w-3" /> bron
@@ -837,7 +925,7 @@ function RecordRow({ r, canEdit, reload }: { r: DossierRecord; canEdit: boolean;
           </div>
         )}
       </div>
-      {forget && <ForgetDialog title={`${RECORD_LABEL[r.kind]}: ${r.title}`} endpoint={`/memory/records/${r.id}/forget`} onClose={() => setForget(false)} onDone={() => (setForget(false), reload())} />}
+      {forget && <ForgetDialog title={<Words text="{0}: {1}" values={[{ text: RECORD_LABEL[r.kind] || r.kind }, r.title]} />} endpoint={`/memory/records/${r.id}/forget`} onClose={() => setForget(false)} onDone={() => (setForget(false), reload())} />}
     </Card>
   );
 }
@@ -989,17 +1077,17 @@ function Sources({ full, canEdit, reload }: { full: any; canEdit: boolean; reloa
               {s.kind === 'url' ? <ExternalLink className="mt-0.5 h-4 w-4 text-muted" /> : s.kind === 'thread' ? <LinkIcon className="mt-0.5 h-4 w-4 text-muted" /> : <FileText className="mt-0.5 h-4 w-4 text-muted" />}
               <div className="min-w-0 flex-1">
                 {s.kind === 'url' ? (
-                  <a className="break-all text-accent hover:underline" href={s.target} target="_blank" rel="noreferrer noopener">
+                  <a className="break-all text-accent hover:underline" href={s.target} target="_blank" rel="noreferrer noopener" translate="no">
                     {s.title || s.target}
                   </a>
                 ) : (
-                  <span>{s.title}</span>
+                  <span translate="no">{s.title}</span>
                 )}
                 <div className="text-xs text-muted">
                   {fmtDate(s.created_at)}
                   {s.chunks ? ` · ${s.chunks} delen doorzoekbaar` : ''}
                 </div>
-                {s.excerpt && <p className="mt-0.5 line-clamp-2 text-xs text-muted">{s.excerpt}</p>}
+                {s.excerpt && <p className="mt-0.5 line-clamp-2 text-xs text-muted" translate="no">{s.excerpt}</p>}
               </div>
               {s.chunks > 0 && s.kind !== 'thread' && (
                 <Button size="sm" variant="ghost" onClick={() => setToSkill(s.id)} title="Maak een skill van dit document">
@@ -1016,7 +1104,7 @@ function Sources({ full, canEdit, reload }: { full: any; canEdit: boolean; reloa
         </Card>
       )}
       {toSkill && <DocumentToSkillModal sourceId={toSkill} onClose={() => setToSkill(null)} />}
-      {forget && <ForgetDialog title={`Bron: ${forget.title}`} endpoint={`/memory/sources/${forget.id}/forget`} onClose={() => setForget(null)} onDone={() => (setForget(null), reload())} />}
+      {forget && <ForgetDialog title={<Words text="Bron: {0}" values={[forget.title]} />} endpoint={`/memory/sources/${forget.id}/forget`} onClose={() => setForget(null)} onDone={() => (setForget(null), reload())} />}
     </div>
   );
 }
@@ -1036,14 +1124,15 @@ function Access({ full, reload }: { full: any; reload(): void }) {
     return (
       <Card className="space-y-2 p-3 text-sm">
         <p>
-          Dit dossier is van {d.owner_name}. Je hebt {d.role === 'edit' ? 'bewerkrechten' : 'leesrechten'}. Je bots kunnen het lezen als hun instelling “gedeeld geheugen lezen” aan staat.
+          Dit dossier is van <bdi translate="no">{d.owner_name}</bdi>. Je hebt {d.role === 'edit' ? 'bewerkrechten' : 'leesrechten'}. Je bots kunnen het lezen als hun instelling “gedeeld geheugen lezen” aan staat.
         </p>
         <Button
           size="sm"
           onClick={() =>
             run(async () => {
+              const from = location.hash;
               await api.post(`/memory/dossiers/${d.id}/leave`, {});
-              navigate(memPath('dossiers'));
+              navigate(memPath('dossiers'), { from });
             }, 'Je hebt het dossier verlaten')
           }
         >
@@ -1068,8 +1157,7 @@ function Access({ full, reload }: { full: any; reload(): void }) {
         </Button>
       </Card>
       <Card className="space-y-3 p-3">
-        <div className="text-sm font-semibold">Mensen op deze server</div>
-        <p className="text-xs text-muted">Gedeelde personen en hun bots kunnen dit dossier lezen. Je persoonlijke geheugen blijft privé.</p>
+        <CardHead as="h3" icon={Users} tone="rose" title="Mensen op deze server" hint="Gedeelde personen en hun bots kunnen dit dossier lezen. Je persoonlijke geheugen blijft privé." />
         {full.acl.length === 0 ? (
           <p className="text-sm text-muted">Nog met niemand gedeeld.</p>
         ) : (
@@ -1077,7 +1165,10 @@ function Access({ full, reload }: { full: any; reload(): void }) {
             {full.acl.map((a: any) => (
               <li key={a.user_id} className="flex flex-wrap items-center gap-2 py-2">
                 <span className="min-w-0 flex-1 truncate">
-                  {a.name} <span className="text-xs text-muted">{a.email}</span>
+                  <span translate="no">{a.name}</span>{' '}
+                  <span className="text-xs text-muted" translate="no">
+                    {a.email}
+                  </span>
                 </span>
                 <Badge>{a.role === 'edit' ? 'Bewerken' : 'Lezen'}</Badge>
                 <Button size="sm" variant="ghost" onClick={() => run(async () => (await api.post(`/memory/dossiers/${d.id}/share`, { userId: a.user_id, revoke: true }), reload()), 'Toegang ingetrokken')}>

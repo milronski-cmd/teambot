@@ -236,15 +236,25 @@ export class DesktopStatus {
     if (this.win && !this.win.isDestroyed()) return this.win;
     const o = this.owner();
     const saved = o ? this.d.handle()?.ctx.store.getSetting<any>(o.id, 'desktopStatusBounds', null) : null;
+    // By itself it only ever opens in the bottom right corner (never over the middle of the screen), and never larger
+    // than the screen. A place the owner dragged it to is kept, but always completely on a screen.
     const wa = screen.getPrimaryDisplay().workArea;
-    const W = 340;
-    const H = 400;
+    const W = Math.min(340, Math.max(200, wa.width - 32));
+    const H = Math.min(400, Math.max(120, wa.height - 32));
     const onScreen = saved && screen.getAllDisplays().some((d) => saved.x >= d.workArea.x - 20 && saved.y >= d.workArea.y - 20 && saved.x < d.workArea.x + d.workArea.width - 60 && saved.y < d.workArea.y + d.workArea.height - 40);
-    const b = onScreen ? { x: saved.x, y: saved.y, width: Math.max(280, Math.min(600, saved.width || W)), height: Math.max(160, Math.min(900, saved.height || H)) } : { x: wa.x + wa.width - W - 16, y: wa.y + wa.height - H - 16, width: W, height: H };
+    let b = { x: wa.x + wa.width - W - 16, y: wa.y + wa.height - H - 16, width: W, height: H };
+    if (onScreen) {
+      const width = Math.max(280, Math.min(600, saved.width || W));
+      const height = Math.max(160, Math.min(900, saved.height || H));
+      const d = screen.getDisplayMatching({ x: saved.x, y: saved.y, width, height }).workArea;
+      const w2 = Math.min(width, d.width);
+      const h2 = Math.min(height, d.height);
+      b = { x: Math.max(d.x, Math.min(saved.x, d.x + d.width - w2)), y: Math.max(d.y, Math.min(saved.y, d.y + d.height - h2)), width: w2, height: h2 };
+    }
     const w = new BrowserWindow({
       ...b,
-      minWidth: 280,
-      minHeight: 160,
+      minWidth: Math.min(280, b.width),
+      minHeight: Math.min(160, b.height),
       frame: false,
       resizable: true,
       minimizable: false,

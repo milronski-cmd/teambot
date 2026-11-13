@@ -485,4 +485,27 @@ DELETE FROM memory_fts WHERE rowid NOT IN (SELECT MAX(rowid) FROM memory_fts GRO
 INSERT OR REPLACE INTO memory_fts_rows (kind, rid, row, user_id) SELECT kind, rid, rowid, user_id FROM memory_fts;
 `,
   },
+  {
+    // Living dossiers (living.ts): the text of a dossier that the bots keep up to date themselves (`body`), and which
+    // core dossier it is (`core`: owner, overview, lessons, notes; NULL = a dossier about one subject).
+    id: 'memory-010',
+    sql: `
+ALTER TABLE memory_dossiers ADD COLUMN body TEXT NOT NULL DEFAULT '';
+ALTER TABLE memory_dossiers ADD COLUMN core TEXT;
+CREATE INDEX memory_dossiers_core ON memory_dossiers(user_id, core) WHERE core IS NOT NULL;
+`,
+  },
+  {
+    // One write path (write.ts): what a loose note carried is now on the change of the dossier's text. The capture it
+    // came from (the same message, lesson or import line never writes twice), and the message it was learned from
+    // (the line under that message in the chat, with undo).
+    id: 'memory-011',
+    sql: `
+ALTER TABLE memory_changes ADD COLUMN idem_key TEXT;
+ALTER TABLE memory_changes ADD COLUMN source_thread_id TEXT;
+ALTER TABLE memory_changes ADD COLUMN source_ref TEXT;
+CREATE INDEX memory_changes_idem ON memory_changes(user_id, idem_key) WHERE idem_key IS NOT NULL;
+CREATE INDEX memory_changes_thread ON memory_changes(source_thread_id) WHERE source_thread_id IS NOT NULL;
+`,
+  },
 ];

@@ -1,6 +1,6 @@
 import type { Agent, ChatMsg, ContentPart, Ctx, Message, Run, Thread, ToolDef, ToolSpec, Usage } from '../core/types.js';
 import { CHARS_PER_TOKEN, estimateTokens } from '../core/tokens.js';
-import { LOADER_NAME, loaderTool, selectTools, shortKey, specTokens, type Selection } from '../tools/selection.js';
+import { CALL_NAME, FIND_NAME, onDemand, shortKey, specOf, specTokens, type OnDemand } from '../tools/selection.js';
 
 /**
  * Context budget (TeamBot 0.4, package Y: "efficiënter"). Every model call resends the whole context: system prompt,
@@ -19,7 +19,8 @@ import { LOADER_NAME, loaderTool, selectTools, shortKey, specTokens, type Select
  *      pinned memory rules and the owner's own rules ("vraag eerst …") in a block at the front.
  *    Never touched: the system prompt (instructions, safety rules), the current question and its context, the owner's
  *    own words in the kept part, and the output of tools whose result is the owner's answer or a loaded skill.
- * 3. Fewer tool definitions (tools/selection.ts), with `tools_load` for the rest.
+ * 3. Fewer tool definitions (tools/selection.ts): a small core is listed, the rest is found and used on demand
+ *    (`tools_find`, `tools_call`).
  * 4. Caching stays effective: every change is decided per whole turn (or per block of steps), in steps of a few
  *    turns, so between those moments each call is the previous call plus what was added (append-only). Claude's
  *    thinking blocks are bound to the conversation before them: when something before a block changed since it was
@@ -45,10 +46,8 @@ export interface SaverSettings {
   runToolChars: number;
   /** The same tool call with the same output is not sent twice. */
   duplicates: boolean;
-  /** Send only the tool definitions likely needed (with tools_load for the rest). */
+  /** List only the core of the tool definitions; the rest on demand (tools/selection.ts). Off: every definition. */
   selectTools: boolean;
-  /** Tool definitions up to this many tokens are always sent in full. */
-  toolTokens: number;
   /** History budget for a delegated task or a bot-to-bot message (tokens). */
   delegationTokens: number;
 }
@@ -63,7 +62,6 @@ export const SAVER_DEFAULTS: SaverSettings = {
   runToolChars: 2500,
   duplicates: true,
   selectTools: true,
-  toolTokens: 6000,
   delegationTokens: 12_000,
 };
 
@@ -74,7 +72,6 @@ const LIMITS: Partial<Record<keyof SaverSettings, [number, number]>> = {
   keepSteps: [2, 200],
   stepChunk: [1, 50],
   runToolChars: [500, 30_000],
-  toolTokens: [500, 200_000],
   delegationTokens: [1000, 400_000],
 };
 
@@ -207,7 +204,7 @@ export interface ShortenResult {
 }
 
 /** Tools whose result is the owner's own answer, a memory fact or loaded instructions: never shortened. */
-const NEVER_SHORTEN = new Set(['ask_user', 'ask_form', 'memory_get', 'memory_search', 'dossier_get', 'dossier_search', 'skill_load', 'skill_read_file', 'plan_update', 'notify_user', LOADER_NAME]);
+const NEVER_SHORTEN = new Set(['ask_user', 'ask_form', 'memory_get', 'memory_search', 'dossier_get', 'skill_load', 'skill_read_file', 'plan_update', 'notify_user', FIND_NAME]);
 const OLD_MIN = 2000;
 const RUN_MIN = 6000;
 const DUP_MIN = 800;
@@ -215,6 +212,16 @@ const ATT_MIN = 3000;
 
 const textParts = (c: string | ContentPart[]) => (typeof c === 'string' ? c : c.filter((p) => p.type === 'text').map((p: any) => p.text).join('\n'));
 const imageParts = (c: string | ContentPart[]) => (typeof c === 'string' ? [] : c.filter((p) => p.type === 'image'));
+
+/**
+ * A tool result that is too long for one message: the first and the last part, with how much was left out between
+ * them. The one cut for what a tool gives back, on every engine (the chat loop and the tool host of the CLI engines).
+ */
+export function cutMiddle(s: string, max: number): string {
+  if (s.length <= max) return s;
+  const half = Math.floor(max / 2) - 100;
+  return s.slice(0, half) + `\n… (${s.length - 2 * half} tekens weggelaten) …\n` + s.slice(-half);
+}
 
 function cutWithMarker(s: string, max: number, marker: (dropped: number) => string): string {
   if (s.length <= max) return s;
@@ -247,10 +254,12 @@ export function shortenItems(items: HistItem[], s: SaverSettings, opts: { questi
   for (const it of items) {
     const m = it.msg;
     const old = turnCut > 0 && it.turn <= turnCut;
-    if (it.kind === 'tool' && !it.synthetic && !NEVER_SHORTEN.has(m.toolName || '')) {
+    // The tool that ran (a tools_call is stored under the tool it names; `toolName` is what the model called).
+    const ran = it.row?.parts?.toolResult?.name || m.toolName || '';
+    if (it.kind === 'tool' && !it.synthetic && !NEVER_SHORTEN.has(ran)) {
       const text = textParts(m.content);
       const imgs = imageParts(m.content);
-      const tool = m.toolName || 'de tool';
+      const tool = ran || 'de tool';
       let next: string | null = null;
       let dropImages = false;
       let kind: HistEdit['kind'] | null = null;
@@ -456,13 +465,13 @@ export function isDelegated(run: Run | null | undefined, thread: Thread): boolea
 
 /**
  * The per-run hook of the runner (API engines): builds each model call's history and tool list and its stats.
- * `tools`: what the bot may use (ToolRegistry.forAgent); `.tools` adds tools_load when parts can be left out.
+ * `tools`: every tool a call of this run may name (ToolRegistry.forAgent, plus tools_find and tools_call when tools
+ * are on demand); `demand`: what is listed, and how a `tools_call` becomes the call it names.
  */
 export class ContextSaver {
   readonly settings: SaverSettings;
   readonly tools: ToolDef[];
-  private botNames: string[] = [];
-  private about: string;
+  readonly demand: OnDemand;
   constructor(
     private ctx: Ctx,
     private agent: Agent,
@@ -473,16 +482,10 @@ export class ContextSaver {
     private build: (o: { vision: boolean; budgetTokens?: number; saver: SaverSettings | false }) => { messages: ChatMsg[]; truncated: boolean; info?: HistoryInfo },
   ) {
     this.settings = saverSettings(ctx, agent);
-    this.about = [agent.instructions || '', agent.description || '', agent.role || ''].join('\n');
-    const select = this.settings.on && this.settings.selectTools && all.length > 1;
-    this.tools = select ? [...all, loaderTool(all, ctx.tools.groups)] : all;
-    if (select) {
-      try {
-        this.botNames = ctx.store.all<{ name: string }>('SELECT name FROM agents WHERE user_id = ? AND id != ? AND archived = 0', agent.user_id, agent.id).map((r) => r.name);
-      } catch {
-        this.botNames = [];
-      }
-    }
+    // A tool the message of this run names is in its list (tools/selection.ts `wanted`).
+    const asked = ctx.store.message(run?.input_message_id)?.content || '';
+    this.demand = onDemand({ tools: all, groups: ctx.tools.groups, guides: ctx.tools.guides, who: { agent, thread, userId: thread.user_id }, on: this.settings.on && this.settings.selectTools, told: new Set<string>(), asked });
+    this.tools = this.demand.callable;
   }
 
   /** History, tool list and stats for the next model call. */
@@ -492,25 +495,24 @@ export class ContextSaver {
     const historyTokens = Number(this.agent.settings?.historyTokens) || 80_000;
     const budgetTokens = delegated ? Math.min(historyTokens, s.delegationTokens) : undefined;
     const h = this.build({ vision: o.vision, budgetTokens, saver: s.on ? s : false });
-    let sel: Selection;
-    if (s.on && s.selectTools) {
-      sel = selectTools({ tools: this.all, groups: this.ctx.tools.groups, system: this.system, about: this.about, messages: h.messages, budget: s.toolTokens, room: this.thread.kind === 'room' || !!this.thread.room_id, botNames: this.botNames });
-    } else sel = { specs: this.all.map((t) => ({ name: t.name, description: t.description, parameters: t.parameters, ...(t.app ? { app: t.app } : {}) })), leftOut: [], of: this.all.length, key: '' };
+    // The same list in every step of every conversation of this bot (tools/selection.ts).
+    const d = this.demand;
+    const specs = d.listed.map(specOf);
     let thinking = 0;
     let key = '';
     if (h.info) {
-      thinking = stripStaleThinking(h.messages, h.info.metas, sel.key, h.info.frontKey, h.info.edits);
-      key = editsKey(sel.key, h.info.frontKey, h.info.edits);
+      thinking = stripStaleThinking(h.messages, h.info.metas, d.key, h.info.frontKey, h.info.edits);
+      key = editsKey(d.key, h.info.frontKey, h.info.edits);
     }
-    const parts = measure(this.system, sel.specs, h.messages);
+    const parts = measure(this.system, specs, h.messages);
     const sh = h.info?.shortened;
-    const toolSaved = sel.leftOut.reduce((n, b) => n + b.tokens, 0) - (sel.leftOut.length ? specTokens(sel.specs.filter((x) => x.name === LOADER_NAME)) : 0);
+    const toolSaved = d.active ? specTokens(this.all.map(specOf)) - parts.tools : 0;
     const stats: ContextStats = {
       v: 1,
       engine: 'api',
       parts,
       total: sumParts(parts),
-      tools: { sent: sel.specs.filter((x) => x.name !== LOADER_NAME).length, of: sel.of, leftOut: sel.leftOut.map((b) => b.label) },
+      tools: { sent: specs.filter((x) => x.name !== FIND_NAME && x.name !== CALL_NAME).length, of: this.all.length, leftOut: d.leftOut },
       shortened: {
         toolOutputs: sh?.toolOutputs || 0,
         duplicates: sh?.duplicates || 0,
@@ -526,7 +528,7 @@ export class ContextSaver {
       ...(delegated ? { delegation: budgetTokens } : {}),
       ...(key ? { key } : {}),
     };
-    return { messages: h.messages, truncated: h.truncated, specs: sel.specs, stats };
+    return { messages: h.messages, truncated: h.truncated, specs, stats };
   }
 
   /** The stats to store on the answer, with the engine's own count; also one line in the log. */
@@ -586,8 +588,8 @@ export async function cliContextStats(ctx: Ctx, agent: Agent, thread: Thread, o:
 }
 
 /**
- * The estimate with the TeamBot tools the CLI really got listed (cli-agents/toolhost.ts: a smaller list plus tools_load
- * for an engine that lists again, the whole set for the others). Without that information: unchanged.
+ * The estimate with the TeamBot tools the CLI really got listed (cli-agents/toolhost.ts: the core plus tools_find and
+ * tools_call). Without that information: unchanged.
  */
 export function withServedTools(s: ContextStats, t?: { tokens: number; full: number; sent: number; of: number; leftOut: string[] } | null): ContextStats {
   if (!t || !Number.isFinite(t.tokens)) return s;

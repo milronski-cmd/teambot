@@ -8,6 +8,7 @@ import { PersistentScreenDriver, type ScreenDriver } from '../browser/screen.js'
 import type { Monitor } from '../browser/screen-policy.js';
 import { cleanSettings, cursorOn, DEFAULT_SETTINGS, driverCall, frameGeometry, frameQuality, ownerPolicy, parseInput, type EndReason, type RemoteSettings } from './core.js';
 import type { IndicatorSession } from './indicator.js';
+import { PLACE } from '../../../shared/places.js';
 
 /**
  * "Bureaublad op afstand": the owner sees and controls the whole Windows desktop from the paired phone or a browser on
@@ -259,7 +260,7 @@ export class RemoteDesktopService {
   start(u: User, auth: { id: string; kind: string; name: string }, o: { ip: string; monitor?: unknown; view?: unknown }): RemoteSession {
     this.requireOwner(u);
     const s = this.settings();
-    if (!s.enabled) throw new HttpError(409, 'Bureaublad op afstand staat uit. Zet het aan op de computer zelf (Instellingen › Telefoon › Bureaublad op afstand).', 'remote_off');
+    if (!s.enabled) throw new HttpError(409, `Bureaublad op afstand staat uit. Zet het aan op de computer zelf (${PLACE.remoteDesktop}).`, 'remote_off');
     const un = this.unavailable();
     if (un) throw new HttpError(409, endText.unavailable, 'remote_unavailable');
     // one session per sign-in: a reconnect of the same viewer replaces its old session

@@ -6,6 +6,7 @@ import { useApp } from '../../lib/store';
 import type { Message } from '../../lib/types';
 import { BotAvatar } from '../../components/BotFace';
 import { Badge, Button, Spinner, cx, timeAgo, toast, toastError } from '../../components/ui';
+import { t } from '../../lib/i18n';
 
 /**
  * Hire proposals of a group's lead ("stel een nieuw lid voor", server: rooms/board.ts propose/decide).
@@ -120,7 +121,7 @@ export function ProposalCard({ p, showRoom, className }: { p: Proposal; showRoom
   };
   const room = p.roomName ? `“${p.roomName}”` : 'de groep';
   return (
-    <div role="group" aria-label={`Voorstel: ${name} toevoegen aan ${p.roomName || 'de groep'}`} className={cx('w-full rounded-2xl border p-4', pending ? 'tb-ask' : 'border-line bg-surface', className)}>
+    <div role="group" aria-label={p.roomName ? t('Voorstel: {0} toevoegen aan {1}', name, p.roomName) : t('Voorstel: {0} toevoegen aan de groep', name)} className={cx('w-full rounded-2xl border p-4', pending ? 'tb-ask' : 'border-line bg-surface', className)}>
       <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted">
         <BotAvatar bot={{ id: p.proposer_agent_id, name: p.proposerName, avatar: p.proposerAvatar }} size={20} mood={pending ? 'waiting' : 'idle'} />
         <span>
@@ -143,7 +144,10 @@ export function ProposalCard({ p, showRoom, className }: { p: Proposal; showRoom
         <div className="min-w-0 flex-1">
           <div className="break-words text-[15px] font-bold leading-snug">
             {name}
-            {p.profile.role ? <span className="font-semibold text-muted"> · {p.profile.role}</span> : null} toevoegen aan {room}
+            {p.profile.role ? <span className="font-semibold text-muted">
+                {' · '}
+                <span translate="no">{p.profile.role}</span>
+              </span> : null} toevoegen aan {room}
           </div>
           <div className="mt-1.5 flex flex-wrap items-center gap-2 text-[13px] text-muted">
             <Badge tone={p.kind === 'new' ? 'accent' : 'neutral'}>{p.kind === 'new' ? 'Nieuwe bot' : 'Bestaande bot'}</Badge>

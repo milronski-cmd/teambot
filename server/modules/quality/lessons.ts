@@ -6,14 +6,15 @@ import { outputLanguage } from '../../agent/language.js';
 import { parseJsonObject } from '../../agent/short-call.js';
 import { quickCall } from './engine.js';
 import type { QualityService } from './service.js';
+import { standingIntent } from '../memory/text.js';
 
 /**
  * Learning from corrections. When the owner corrects a bot ("nee, zo doen we dat niet", "doe dit voortaan anders",
- * "dat klopt niet, offertes gaan als PDF") right after its answer, that becomes a lasting lesson for the whole team of
- * that bot (0.4 F2: shared knowledge of the bot's home team, so every bot of the team works the same way; the owner can
- * narrow one lesson to that single bot in Geheugen), stored through the memory module's public service (type "lesson",
- * source = the owner's own message, the bot it came from as its author). It is visible in Geheugen and under the
- * owner's message, with undo, like everything memory learns.
+ * "dat klopt niet, offertes gaan als PDF") right after its answer, that becomes a lasting lesson for that bot: a line
+ * in its own working notes under "Opdrachten van de eigenaar" (memory's ownOrder), the one place for what it was told.
+ * Only when he says it is for everyone ("voor alle bots", "iedereen") is it a lesson of the team's "Lessen" (type
+ * "lesson", source = the owner's own message). Either way visible in Geheugen and under the owner's message, with
+ * undo, like everything memory learns.
  *
  * One short model call (the bot's check engine) turns the correction plus what the bot did into one sentence; without
  * an engine the owner's own words are kept, with a pointer to what the bot did. Bounded per bot per day.
@@ -32,7 +33,9 @@ const CORRECTION_RE = new RegExp(
     String.raw`\b(?:dat|dit) is (?:fout|verkeerd|onjuist)\b`,
     String.raw`\b(?:dat|dit|het) (?:moet|kan) anders\b`,
     String.raw`\bdoe (?:dit|dat|het) (?:voortaan|vanaf nu|in het vervolg|de volgende keer) anders\b`,
-    String.raw`\b(?:voortaan|vanaf nu|in het vervolg|de volgende keer|volgende keer)\b.{3,}`,
+    // ("Volgende keer …" is about what the bot just did. "Voortaan" alone is often a plain request — "zet die routine
+    // voortaan op 9:30" — that the bot carries out: no lesson. "Voortaan … je …" is the bot's order: standingIntent.)
+    String.raw`\b(?:de volgende keer|volgende keer)\b.{3,}`,
     String.raw`\bniet (?:meer )?zo\b[,.!]`,
     String.raw`\bdat (?:hoef|moet) je niet (?:meer )?te doen\b`,
     String.raw`\bdat had je (?:niet )?moeten\b`,
@@ -46,13 +49,27 @@ const CORRECTION_RE = new RegExp(
 /** Words that make a correction a standing rule, whatever a (small) model thinks. */
 const LASTING_RE = /\b(altijd|nooit|voortaan|vanaf nu|in het vervolg|volgende keer|zo doen (?:we|wij) (?:dat|het) niet|from now on|next time|always|never)\b/i;
 
+/** The owner says a correction is for every bot, not only this one. */
+const FOR_EVERYONE_RE = /\b(?:voor alle bots|alle bots|iedereen|het hele team|jullie allemaal|voor alle teams|for (?:all|every) bots?|everyone)\b/i;
+
 /** "Onthoud dat …", "vergeet …": the memory module handles those itself. */
 const MEMORY_INTENT_RE = /^\s*(onthoud|niet onthouden|vergeet|remember|forget)\b/i;
+
+/**
+ * How the bot itself is called or answers from now on ("voortaan heet je Max en antwoord je in drie zinnen"): the bot
+ * writes that in its own settings (my_settings). It is no lesson for the whole team: as a shared lesson every colleague
+ * would call itself Max (seen with a real model, 12 nov).
+ */
+const SELF_SETTING_RE = /\b(heet je|je heet|jouw naam|je naam is|antwoord je|your name is|you are called)\b/i;
 
 export function isCorrection(text: string): boolean {
   const s = String(text || '').trim();
   if (s.length < 6 || s.length > 2000) return false;
   if (MEMORY_INTENT_RE.test(s)) return false;
+  if (SELF_SETTING_RE.test(s)) return false;
+  // What the owner tells this bot to do from now on ("voortaan sluit je elke mail af met …") is that bot's own order, kept
+  // in its working notes by memory (pipeline.ts captureStanding): one place, not also a lesson for the whole team.
+  if (standingIntent(s)) return false;
   return CORRECTION_RE.test(s);
 }
 
@@ -134,8 +151,17 @@ export async function learnFromCorrection(svc: QualityService, m: Message, threa
   }
   if (!content) content = plainLesson(owner, m.content, answer);
 
-  // For the bot's whole team (its home team; with teams off: all bots that read shared knowledge). A bot that does not
-  // read shared knowledge keeps the lesson for itself, so it still reaches it.
+  // A correction of one bot's work is that bot's own: in its working notes, with what the owner told it (one place, one
+  // copy: what it says already is not written again). Only when he says it is for everyone ("voor alle bots",
+  // "iedereen", "het hele team") is it a lesson of the team's "Lessen" (a bot that does not read shared knowledge keeps
+  // it for itself, so it still reaches it).
+  if (!FOR_EVERYONE_RE.test(m.content) && memory.ownOrder) {
+    const own = memory.ownOrder(thread.user_id, agent.id, content, { threadId: thread.id, messageId: m.id, excerpt: m.content.slice(0, 600), idemKey: `lesson:${m.id}:${agent.id}` });
+    const ref = own?.dossier ? `d:${own.dossier.ref}` : own?.item?.ref;
+    record(svc, { userId: thread.user_id, agentId: agent.id, threadId: thread.id, messageId: m.id, content, method, action: own?.action || 'unknown', ref, itemId: own?.item?.id, changeId: own?.changeId });
+    ctx.audit(thread.user_id, 'quality.lesson', { agent: agent.name, action: own?.action, ref, method }, agent.id);
+    return { action: own?.action || 'unknown', content, ref };
+  }
   const forTeam = memory.svc?.effective ? memory.svc.effective(agent).readShared !== false : true;
   const out = memory.remember(thread.user_id, {
     content,
@@ -147,9 +173,10 @@ export async function learnFromCorrection(svc: QualityService, m: Message, threa
     module: 'quality',
     idemKey: `lesson:${m.id}:${agent.id}`,
   });
-  record(svc, { userId: thread.user_id, agentId: agent.id, threadId: thread.id, messageId: m.id, content, method, action: out?.action || 'unknown', ref: out?.item?.ref, itemId: out?.item?.id, changeId: out?.changeId });
-  ctx.audit(thread.user_id, 'quality.lesson', { agent: agent.name, action: out?.action, ref: out?.item?.ref, method }, agent.id);
-  return { action: out?.action || 'unknown', content, ref: out?.item?.ref };
+  const ref = out?.item?.ref;
+  record(svc, { userId: thread.user_id, agentId: agent.id, threadId: thread.id, messageId: m.id, content, method, action: out?.action || 'unknown', ref, itemId: out?.item?.id, changeId: out?.changeId });
+  ctx.audit(thread.user_id, 'quality.lesson', { agent: agent.name, action: out?.action, ref, method }, agent.id);
+  return { action: out?.action || 'unknown', content, ref };
 }
 
 function record(svc: QualityService, o: { userId: string; agentId: string; threadId: string; messageId: string; content: string; method: string; action: string; ref?: string; itemId?: string; changeId?: string | null }) {

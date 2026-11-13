@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { Plus, Search, Star, Upload } from 'lucide-react';
+import { MessageSquare, Plus, Search, Star, Upload } from 'lucide-react';
 import { api } from '../lib/api';
 import { t } from '../lib/i18n';
 import { upsert, useApp } from '../lib/store';
@@ -123,45 +123,45 @@ export function AgentsPage() {
             action={!archived && !q ? <Button variant="primary" onClick={() => (location.hash = '#/agents/new')}>Maak je eerste bot</Button> : undefined}
           />
         ) : (
-          <div className="grid gap-2.5 sm:grid-cols-2">
+          // One calm list: face, name, what the bot does. Nothing technical here (the AI and model are on the bot's
+          // own page, and in the tooltip of the row); only a bot without an AI says so, because then it cannot answer.
+          <div className="divide-y divide-line overflow-hidden rounded-card border border-line bg-surface">
             {list.map((a) => {
               const provider = providers.find((p) => p.id === a.provider_id);
               return (
-                <div key={a.id} className="group flex items-start gap-3 rounded-card border border-line bg-surface p-4">
+                <div key={a.id} className="group flex flex-wrap items-center gap-x-3 gap-y-2 px-4 py-3" title={provider ? `${provider.name} · ${botModelText(a.model, lastModels[a.id])}` : undefined}>
                   <a href={`#/a/${a.id}`} tabIndex={-1} aria-hidden>
-                    <LiveBotAvatar bot={a} size={52} />
+                    <LiveBotAvatar bot={a} size={40} />
                   </a>
-                  <div className="min-w-0 flex-1">
+                  <div className="min-w-0 flex-1 basis-40">
                     <div className="flex items-center gap-2">
                       <a href={`#/a/${a.id}`} className="truncate font-bold hover:underline">
                         {a.name}
                       </a>
                       <MoodBadge agent={a} />
-                      {a.pinned && <Badge>bovenaan</Badge>}
+                      {!provider && <Badge tone="warn">geen AI gekoppeld</Badge>}
                     </div>
-                    <div className="truncate text-[13px] text-muted">{a.role || a.description || 'Bot'}</div>
-                    <div className="mt-0.5 truncate text-xs text-muted">
-                      {provider?.name || 'geen AI gekoppeld'}
-                      {provider ? ` · ${botModelText(a.model, lastModels[a.id])}` : ''}
+                    <div className="truncate text-[13px] text-muted" translate={a.role || a.description ? 'no' : undefined}>
+                      {a.role || a.description || 'Bot'}
                     </div>
-                    <div className="mt-3 flex flex-wrap gap-1.5">
-                      <Button size="sm" variant="primary" onClick={() => (location.hash = `#/a/${a.id}`)}>
-                        Chatten
+                  </div>
+                  <div className="flex shrink-0 items-center gap-1">
+                    {!a.archived && (
+                      <Button size="sm" variant="ghost" onClick={() => togglePin(a)} aria-pressed={a.pinned} aria-label={a.pinned ? 'Niet meer bovenaan zetten' : 'Bovenaan in je lijst zetten'} title={a.pinned ? 'Niet meer bovenaan zetten' : 'Bovenaan in je lijst zetten'}>
+                        <Star className={a.pinned ? 'h-4 w-4 fill-current' : 'h-4 w-4'} aria-hidden />
                       </Button>
-                      <Button size="sm" onClick={() => (location.hash = `#/agents/${a.id}`)}>
-                        Instellingen
+                    )}
+                    {a.archived && (
+                      <Button size="sm" variant="ghost" onClick={() => unarchive(a)}>
+                        Bot uit archief halen
                       </Button>
-                      {!a.archived && (
-                        <Button size="sm" variant="ghost" onClick={() => togglePin(a)} aria-pressed={a.pinned} aria-label={a.pinned ? 'Niet meer bovenaan zetten' : 'Bovenaan in je lijst zetten'} title={a.pinned ? 'Niet meer bovenaan zetten' : 'Bovenaan in je lijst zetten'}>
-                          <Star className={a.pinned ? 'h-4 w-4 fill-current' : 'h-4 w-4'} aria-hidden />
-                        </Button>
-                      )}
-                      {a.archived && (
-                        <Button size="sm" variant="ghost" onClick={() => unarchive(a)}>
-                          Bot uit archief halen
-                        </Button>
-                      )}
-                    </div>
+                    )}
+                    <Button size="sm" variant="ghost" icon={<MessageSquare className="h-4 w-4" />} onClick={() => (location.hash = `#/a/${a.id}`)}>
+                      Chatten
+                    </Button>
+                    <Button size="sm" onClick={() => (location.hash = `#/agents/${a.id}`)}>
+                      Instellingen
+                    </Button>
                   </div>
                 </div>
               );

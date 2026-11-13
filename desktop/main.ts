@@ -478,6 +478,26 @@ function trayWithDot(): Electron.NativeImage | null {
   return (trayDotImg ??= trayImageWithDot(appIcon()));
 }
 
+/** Started at login: only the tray, no window. */
+const LOGIN_ARGS = ['--hidden'];
+
+/**
+ * "Het werkt gewoon": the installed TeamBot starts with the computer from its first run on (once; shell-state
+ * `loginItemAt`), so bots, routines and the phone are back after a restart or a crash of the pc. Switching it off in
+ * the tray menu stays off. Not for a development run (that would register electron.exe).
+ */
+function startAtLoginByDefault() {
+  if (!app.isPackaged || process.platform === 'linux') return;
+  const dir = app.getPath('userData');
+  if (readShellState(dir).loginItemAt) return;
+  try {
+    if (!app.getLoginItemSettings({ args: LOGIN_ARGS }).openAtLogin) app.setLoginItemSettings({ openAtLogin: true, args: LOGIN_ARGS });
+    writeShellState(dir, { loginItemAt: new Date().toISOString() });
+  } catch {
+    /* next start tries again */
+  }
+}
+
 function buildTray() {
   const icon = appIcon();
   const img = icon.isEmpty() ? nativeImage.createEmpty() : trayImage(icon);
@@ -485,7 +505,7 @@ function buildTray() {
   tray = new Tray(img);
   tray.setToolTip('TeamBot');
   const refresh = () => {
-    const login = app.getLoginItemSettings();
+    const login = app.getLoginItemSettings({ args: LOGIN_ARGS });
     const u = updater?.state;
     const updateItem: Electron.MenuItemConstructorOptions[] =
       !u || u.phase === 'off'
@@ -531,7 +551,7 @@ function buildTray() {
           type: 'checkbox',
           checked: login.openAtLogin,
           click: (item) => {
-            app.setLoginItemSettings({ openAtLogin: item.checked, args: ['--hidden'] });
+            app.setLoginItemSettings({ openAtLogin: item.checked, args: LOGIN_ARGS });
             refresh();
           },
         },
@@ -848,6 +868,7 @@ app.whenReady().then(async () => {
     if (!hidden) await openStartWindow(installed);
     await startServer();
     lockDownSession();
+    startAtLoginByDefault();
   } catch (e: any) {
     // desktop/boot.ts writes the log and says it in plain words (with "Opnieuw proberen"); without it, the bare error.
     if (!(app as NodeJS.EventEmitter).emit('teambot:start-failed', e)) {

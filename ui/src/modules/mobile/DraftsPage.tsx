@@ -3,7 +3,7 @@ import { CloudOff, Copy, Send, Trash2 } from 'lucide-react';
 import { on, wsConnected } from '../../lib/api';
 import { useApp } from '../../lib/store';
 import { navigate } from '../../lib/router';
-import { Badge, Button, Card, EmptyState, Page, PageHeader, timeAgo, toast, toastError } from '../../components/ui';
+import { Badge, Button, Card, EmptyState, Page, PageHeader, timeAgo, toast, toastError, copyText } from '../../components/ui';
 import { deliver, removeDraft, useDrafts, type Draft } from './drafts';
 
 function useOnline() {
@@ -91,12 +91,7 @@ export function DraftsPage() {
               <Button
                 size="sm"
                 variant="ghost"
-                onClick={() =>
-                  navigator.clipboard
-                    .writeText(d.content)
-                    .then(() => toast('Gekopieerd', 'ok'))
-                    .catch(() => toast('Kopiëren lukt hier niet', 'danger'))
-                }
+                onClick={() => void copyText(d.content)}
                 icon={<Copy className="h-3.5 w-3.5" />}
               >
                 Kopiëren

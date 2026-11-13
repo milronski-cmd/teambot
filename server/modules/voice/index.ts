@@ -79,7 +79,7 @@ const mod: Module = {
       /**
        * An audio or video file attached to a chat (agent/attachments.ts). On this computer by default: an upload never
        * costs money or leaves the pc by itself. Only when the owner chose it for attachments (setting
-       * attachmentSpeech: 'provider') the speech service of Instellingen › Spraak is used; 'off' = never (null).
+       * attachmentSpeech: 'provider') the speech service of Instellingen › Meer mogelijkheden › Spraak is used; 'off' = never (null).
        */
       async transcribeAttachment(userId: string, buf: Buffer, mime: string, opts: { agentId?: string | null; signal?: AbortSignal } = {}) {
         const u = ctx.store.user(userId);

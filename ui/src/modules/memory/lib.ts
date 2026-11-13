@@ -1,66 +1,14 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { api, on } from '../../lib/api';
 import { t, translate, uiLocale } from '../../lib/i18n';
-import { formatBytes } from '../../lib/format';
+import type { ItemType, MemoryItemFields, MemoryItemShown, Scope, Sensitivity } from '../../../../shared/memory.js';
 
-// ---- shapes returned by /api/memory (mirrors server/modules/memory/types.ts) ----
+// ---- shapes returned by /api/memory (a memory itself: shared/memory.ts) ----
 
-export type Scope = 'about_you' | 'agent' | 'dossier' | 'shared';
-export type ItemType = 'fact' | 'preference' | 'instruction' | 'decision' | 'person' | 'event' | 'task' | 'lesson' | 'note';
-export type Sensitivity = 'normal' | 'personal' | 'sensitive';
+export type { ItemType, Scope, Sensitivity } from '../../../../shared/memory.js';
 
-export interface MemItem {
-  id: string;
-  ref: string;
-  user_id: string;
-  scope: Scope;
-  agent_id: string | null;
-  dossier_id: string | null;
-  type: ItemType;
-  canonical_key: string | null;
-  content: string;
-  source_kind: string;
-  source_ref: string | null;
-  source_thread_id: string | null;
-  source_excerpt: string | null;
-  source_trust: string;
-  confidence: number;
-  sensitivity: Sensitivity;
-  status: 'active' | 'proposed' | 'archived' | 'superseded' | 'trashed' | 'rejected' | 'forgotten';
-  proposal_reason: string | null;
-  conflict_with: string | null;
-  merge_of: string[] | null;
-  flags: string[];
-  pinned: boolean;
-  observed_at: string | null;
-  valid_from: string | null;
-  valid_to: string | null;
-  expires_at: string | null;
-  review_at: string | null;
-  /** Review interval in days (30, 90, 180, 365); null/0 = no recurring check. */
-  review_every_days?: number | null;
-  /** A fact that changes over time (price, version, rule, agreement, hours, contact): it has a review date. */
-  review_kind?: string | null;
-  /** Why it is "te controleren" (maintenance could not confirm it). */
-  review_note?: string | null;
-  /** Learned automatically from a conversation (0.4.5): from your own words, the bot's answer or a tool result. */
-  learned_from?: 'owner' | 'bot' | 'tool';
-  last_confirmed_at: string | null;
-  version: number;
-  supersedes_id: string | null;
-  superseded_by: string | null;
-  created_by: string;
-  created_by_agent: string | null;
-  use_count: number;
-  last_used_at: string | null;
-  created_at: string;
-  updated_at: string;
-  agent_name?: string | null;
-  dossier_title?: string | null;
-  source_thread_title?: string | null;
+export interface MemItem extends MemoryItemFields, MemoryItemShown {
   changeId?: string | null;
-  /** The team (only sent with two or more teams; '*' = Alle teams). */
-  team?: TeamTag | null;
 }
 
 /** A team as the memory page shows it (id '*' = "Alle teams"). */
@@ -227,10 +175,6 @@ export function rememberToast(action?: string): string {
   if (action === 'duplicate') return 'Stond er al in';
   if (action === 'superseded') return 'Bijgewerkt (oude versie bewaard)';
   return 'Onthouden';
-}
-
-export function fmtBytes(n: number): string {
-  return formatBytes(n);
 }
 
 /**

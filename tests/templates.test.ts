@@ -17,10 +17,12 @@ import { normalizeTeam } from '../server/modules/rooms/packages.js';
 import { TEAM_TEMPLATES } from '../server/modules/rooms/team-templates.js';
 import { findSecrets } from '../server/modules/skills/scan.js';
 import type { TemplateDef } from '../server/modules/templates/types.js';
+import { defaultToolGroups } from '../server/agent/new-bot.js';
 
 // Package R (0.4): team templates as data. Every template loads and validates, builds a clean team package, creates
 // a real team with the mock provider in a temporary data folder, fills the profile from the questions, and creates
-// nothing that runs by itself.
+// nothing that runs by itself. No form any more: a team starts with an empty profile, always has a team lead, the
+// owner always has a main bot (made with the first team), and that main bot asks the questions in its chat.
 
 const BUSINESS_NEW = ['webshop', 'seo-en-content', 'advertenties-en-shopping', 'klantcontact', 'operations', 'software-bouwen'];
 const REFRESHED = ['onderzoek-en-schrijven', 'klantenservice', 'software'];
@@ -86,7 +88,8 @@ test('instructions: the lead checks before "klaar", helpers mostly read, every b
         assert.match(text, /beslist de eigenaar/);
         assert.match(text, /zet het door naar de eigenaar/);
       }
-      if (b.customer === 'drafts') assert.match(text, /jij verstuurt nooit zelf iets naar een klant/);
+      if (b.customer === 'drafts') assert.match(text, /Een klacht, iets over geld of iets juridisch leg je eerst aan de eigenaar voor/);
+      assert.match(text, /Alleen geld uitgeven en een belangrijk bericht aan anderen .* leg je eerst aan de eigenaar voor/, `${d.id}/${b.name}: works by itself, asks for money and important messages`);
     }
     assert.match(teamInstructions(d), /^Doel: /);
   }
@@ -147,12 +150,16 @@ test('packages: every template builds a clean team package (no secrets, no AI ch
     assert.equal(n.bots.length, d.bots.length);
     assert.equal(n.bots.filter((b) => b.role === 'lead').length, 1);
     assert.equal(n.mode, 'lead');
-    assert.equal(n.limits.maxDelegationDepth, 2);
+    assert.ok(!n.limits.maxDelegationDepth && !n.limits.maxTurnsPerMessage, `${d.id}: a ready-made team brings no limit of its own`);
     for (const b of pkg.bots) {
       assert.equal(b.template.access_mode, 'ask', `${d.id}/${b.template.name}: vraagt toestemming`);
       assert.equal(b.template.model_hint, '');
       assert.deepEqual(b.perms, b.role === 'lead' ? LEAD_PERMS : HELPER_PERMS);
-      for (const r of b.template.routines) assert.equal(r.options.missedPolicy, 'skip');
+      for (const r of b.template.routines) {
+        assert.equal(r.options.missedPolicy, 'skip');
+        // No built-in brake: a ready-made routine has no runs-per-day or minutes-per-run limit of its own.
+        assert.ok(!('maxRunsPerDay' in r.options) && !('timeoutMinutes' in r.options), `${d.id}/${r.name}: no limit of its own`);
+      }
     }
   }
   // Answers fill the routine prompts; without an answer the routine says so and stops.
@@ -252,7 +259,7 @@ test('API: list, detail and preview (creates nothing); the old "Uit een sjabloon
     assert.match(pv.profileText, /Testbedrijf webshop/);
     assert.match(pv.instructions, /Testbedrijf webshop/);
     assert.ok(pv.bots.find((b: any) => b.name === 'Productschrijver').skills.some((s: any) => s.name === 'productbeschrijving'));
-    assert.equal(pv.bots.every((b: any) => b.access_mode === 'ask'), true);
+    assert.equal(pv.bots.every((b: any) => b.access_mode === 'full'), true, 'the preview shows the access the bots really start with');
     assert.equal((await t.api('GET', '/agents')).length, 0, 'a preview creates nothing');
     assert.equal((await t.api('GET', '/rooms')).length, 0);
 
@@ -284,7 +291,8 @@ test('install: a team from every template with the mock provider; the profile is
       assert.deepEqual(prof.template, { id: d.id, version: d.version });
       for (const a of out.agents) {
         const agent = store.agent(a.id)!;
-        assert.equal(agent.access_mode, 'ask', `${d.id}/${a.name}: vraagt toestemming`);
+        assert.equal(agent.access_mode, 'full', `${d.id}/${a.name}: werkt zelf (Volledige toegang); alleen betalen vraagt nog`);
+        assert.equal(agent.settings.fullAccessExternal, true, `${d.id}/${a.name}: also sends to others by itself`);
         assert.equal(agent.provider_id, t.providerId);
         const def = d.bots.find((b) => b.name === a.name)!;
         assert.deepEqual(agent.settings.specialist || null, def.specialist ? { field: def.specialist.field, suggestedSources: def.specialist.suggestedSources } : null, `${d.id}/${a.name}: specialist`);
@@ -294,12 +302,15 @@ test('install: a team from every template with the mock provider; the profile is
     assert.equal((await t.api('GET', '/agents')).length, bots);
 
     // Nothing runs by itself: every routine is paused with a reason, nothing is scheduled, no run was started.
-    const rts = store.all<any>('SELECT status, next_run_at, paused_reason FROM routines');
+    const rts = store.all<any>('SELECT status, next_run_at, paused_reason, options FROM routines');
     assert.equal(rts.length, TEMPLATE_DEFS.reduce((n, d) => n + d.bots.reduce((m, b) => m + (b.routines?.length || 0), 0), 0));
     for (const r of rts) {
       assert.equal(r.status, 'paused');
       assert.equal(r.next_run_at, null);
       assert.match(r.paused_reason, /staat uit/);
+      // Once turned on, no built-in brake: no runs-per-day or minutes-per-run limit (0 = none).
+      const o = JSON.parse(r.options);
+      assert.deepEqual([o.maxRunsPerDay, o.timeoutMinutes], [0, 0]);
     }
     await new Promise((r) => setTimeout(r, 300));
     assert.equal(store.all('SELECT id FROM runs').length, 0, 'no run started');
@@ -328,7 +339,9 @@ test('install with skills: the suggested catalogue skills are installed for the 
     for (const b of d.bots) {
       const a = t.app.ctx.store.agent(out.agents.find((x: any) => x.name === b.name).id)!;
       const names = t.app.ctx.services.skills.enabledFor(a).map((s: any) => s.name).sort();
-      assert.deepEqual(names, (b.skills || []).map((s) => s.id).sort(), `${b.name}: its own skills`);
+      // Every bot of the team has the team's active skills (skills/defaults.ts), its own among them.
+      for (const s of b.skills || []) assert.ok(names.includes(s.id), `${b.name}: its own skill ${s.id}`);
+      assert.deepEqual(names, [...lib].sort(), `${b.name}: the skills of the team`);
       for (const n of names) assert.ok(lib.includes(n));
     }
     // Without the option no skill is installed.
@@ -355,7 +368,10 @@ test('install with the teams module: one team per template with its bots, team l
     assert.equal(team.profile.company, 'Testbedrijf webshop');
     assert.match(team.profile.about, /Webwinkel: https:\/\/www\.voorbeeld\.nl/);
     assert.equal(team.leadName, 'Winkelchef');
-    assert.equal(team.bots.length, 4);
+    assert.deepEqual(out.lead, { id: team.leadAgentId, name: 'Winkelchef' });
+    // The main bot was made in the same step; it lives in the first team but is not one of the template's bots.
+    assert.equal(team.bots.filter((b: any) => !b.main).length, 4);
+    assert.deepEqual(team.bots.filter((b: any) => b.main).map((b: any) => b.name), ['Hoofdbot']);
     // The profile lives in the team (it reaches every bot); the group instructions do not repeat it.
     const room = await t.api('GET', `/rooms/${out.roomId}`);
     assert.doesNotMatch(room.instructions, /Bedrijfsprofiel/);
@@ -376,12 +392,109 @@ test('install with the teams module: one team per template with its bots, team l
     assert.equal(thuis.profile.rules, 'Geen vlees op maandag', 'empty fields are filled');
     assert.equal(thuis.leadName, 'Huisplanner');
     assert.equal(thuis.bots.length, 4);
+    assert.deepEqual([again.main.id, again.main.created, home.main.id], [out.main.id, false, out.main.id], 'one main bot, made once');
     assert.ok(home.warnings.some((w: string) => /alleen de lege velden/.test(w)));
 
     // All or nothing: a failing install leaves no empty team behind.
     await assert.rejects(t.api('POST', '/team-templates/reizen/install', { provider_id: 'bestaat-niet' }), /Onbekende provider/);
     assert.equal((await t.api('GET', '/teams')).length, 3);
     assert.equal(t.app.ctx.store.all('SELECT id FROM runs WHERE thread_id NOT IN (?)', out.threadId).length, 0, 'nothing else ran');
+  } finally {
+    await t.close();
+  }
+});
+
+test('validator: every template has exactly one team lead (none or two is refused)', () => {
+  for (const d of TEMPLATE_DEFS) assert.equal(d.bots.filter((b) => b.lead).length, 1, `${d.id}: exactly one lead`);
+  const none = clone(templateDef('webshop')!) as any;
+  for (const b of none.bots) delete b.lead;
+  assert.match(validateTemplate(none).join('\n'), /exactly one team lead \(found 0\)/);
+  const two = clone(templateDef('webshop')!) as any;
+  for (const b of two.bots.slice(0, 2)) b.lead = true;
+  assert.match(validateTemplate(two).join('\n'), /exactly one team lead \(found 2\)/);
+  assert.match(validateRegistry([none]).join('\n'), /exactly one team lead/);
+});
+
+test('main bot: made once with the first team from a template; an owner who has one keeps it', async () => {
+  const t = await app(true);
+  try {
+    const store = t.app.ctx.store;
+    assert.equal((await t.api('GET', '/teams/main')).main, null);
+    // One button, no answers: the team is there with an empty profile, its lead and a main bot.
+    const a = await t.api('POST', '/team-templates/webshop/install', { provider_id: t.providerId, model: 'mock-1' });
+    assert.equal(a.main.created, true);
+    const main = store.agent(a.main.id)!;
+    assert.deepEqual([main.name, main.access_mode, main.settings.fullAccessExternal, main.provider_id, main.model], ['Hoofdbot', 'full', true, t.providerId, 'mock-1']);
+    assert.deepEqual([...main.tool_groups].sort(), defaultToolGroups(t.app.ctx).sort(), 'the tools of a normal new bot');
+    assert.equal((await t.api('GET', '/teams/main')).main.id, main.id);
+    const team = (await t.api('GET', '/teams')).find((x: any) => x.id === a.teamId);
+    assert.deepEqual([team.profile.company, team.profile.about, team.leadName], ['', '', 'Winkelchef'], 'empty profile, a team lead');
+    assert.notEqual(team.leadAgentId, main.id);
+    for (const x of a.agents) assert.equal(store.agent(x.id)!.access_mode, 'full');
+    // Logged like the switch in the bot editor: one `agent.full_access` line per bot, the main bot included.
+    const logged = store.all<any>("SELECT agent_id FROM audit WHERE kind = 'agent.full_access'").map((r) => r.agent_id);
+    assert.deepEqual([...logged].sort(), [main.id, ...a.agents.map((x: any) => x.id)].sort());
+    assert.ok(store.all<any>('SELECT status FROM routines').every((r) => r.status === 'paused'), 'routines stay paused');
+
+    // A second team: no second main bot.
+    const b = await t.api('POST', '/team-templates/prive/install', { provider_id: t.providerId, model: 'mock-1' });
+    assert.deepEqual([b.main.id, b.main.created], [main.id, false]);
+    assert.equal(store.agents(t.app.ctx.auth.owner()!.id, { archived: true }).filter((x) => /hoofdbot/i.test(x.name)).length, 1);
+    assert.equal(store.all('SELECT agent_id FROM team_main').length, 1);
+    assert.equal(store.all('SELECT id FROM runs').length, 0, 'nothing runs without the app asking for the intake');
+  } finally {
+    await t.close();
+  }
+
+  const u = await app(true);
+  try {
+    const baas = await u.agent({ name: 'Baas' });
+    await u.api('PUT', `/teams/main/${baas.id}`);
+    const out = await u.api('POST', '/team-templates/webshop/install', { provider_id: u.providerId, model: 'mock-1' });
+    assert.deepEqual(out.main, { id: baas.id, name: 'Baas', created: false });
+    assert.ok(!(await u.api('GET', '/agents')).some((x: any) => x.name === 'Hoofdbot'));
+  } finally {
+    await u.close();
+  }
+});
+
+test('intake: after "Team maken" the main bot starts by itself with the questions and writes the answers in the profile', async () => {
+  const t = await app(true);
+  try {
+    const store = t.app.ctx.store;
+    const d = templateDef('webshop')!;
+    t.script.push({ text: 'Welkom! Je team Webshop staat klaar, met Winkelchef als teamleider. Hoe heet je webshop?' });
+    const out = await t.api('POST', '/team-templates/webshop/install', { provider_id: t.providerId, model: 'mock-1', intake: true });
+    assert.equal(out.chat.agentId, out.main.id);
+    await t.waitIdle(out.chat.threadId);
+    let msgs = store.messages(out.chat.threadId);
+    assert.deepEqual(msgs.map((m) => m.role), ['system', 'assistant'], 'one line from TeamBot, then the main bot speaks; nothing hangs');
+    assert.equal(msgs[0].content, 'Team “Webshop” is gemaakt. Teamleider: Winkelchef.');
+    assert.equal(msgs[1].author_id, out.main.id);
+    assert.match(msgs[1].content, /Hoe heet je webshop\?/);
+    // The instruction of that turn carries the template's questions (with their keys), one at a time, and the tool.
+    const req = JSON.stringify(t.requests.at(-1));
+    for (const q of d.questions) assert.ok(req.includes(`- ${q.key} — ${q.label}`), `question ${q.key}`);
+    assert.match(req, /één vraag per bericht/);
+    assert.match(req, /voorstel voor een eerste taak/);
+    assert.match(t.requests.at(-1)!.tools?.find((x) => x.name === 'tools_find')?.description || '', /\bteam_profile\b/, 'the main bot has team_profile (found on demand)');
+    assert.equal(store.all('SELECT id FROM runs WHERE thread_id != ?', out.chat.threadId).length, 0, 'only the main bot ran');
+
+    // The owner answers; the main bot writes it down with its tool and asks the next question.
+    const name = d.questions.find((q) => q.profile === 'name')!;
+    t.script.push({ toolCalls: [{ name: 'team_profile', args: { team: 'Webshop', answers: { [name.key]: 'Bakkerij De Korenaar' } } }] }, { text: 'Genoteerd. Wat verkoop je?' });
+    msgs = await t.say(out.chat.threadId, 'Bakkerij De Korenaar');
+    assert.equal(msgs.at(-1)!.content, 'Genoteerd. Wat verkoop je?');
+    const team = (await t.api('GET', '/teams')).find((x: any) => x.id === out.teamId);
+    assert.equal(team.profile.company, 'Bakkerij De Korenaar');
+    const tool = msgs.find((m) => m.role === 'tool' && m.parts?.toolResult?.name === 'team_profile')!;
+    assert.ok(!tool.parts!.toolResult!.isError);
+    assert.match(tool.content, new RegExp(`Opgeschreven: ${name.key}\\.`));
+    assert.doesNotMatch(tool.content, new RegExp(`- ${name.key} — `), 'the answered question is no longer open');
+    // The lead gets what was written down.
+    t.script.push({ text: 'Begrepen.' });
+    await t.say(out.threadId, 'Wat verkopen we?');
+    assert.match(JSON.stringify(t.requests.at(-1)), /Bakkerij De Korenaar/);
   } finally {
     await t.close();
   }

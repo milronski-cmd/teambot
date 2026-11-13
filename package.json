@@ -1,7 +1,7 @@
 {
   "name": "teambot",
   "productName": "TeamBot",
-  "version": "0.4.4",
+  "version": "2.2.0",
   "description": "Open-source AI-agentteam: eigen bots, eigen modellen, lokaal of in de cloud.",
   "license": "Apache-2.0",
   "author": "TeamBot contributors",
@@ -33,6 +33,7 @@
     "licenses:check": "node scripts/notices.mjs --check",
     "models:snapshot": "node --import tsx scripts/models-dev-snapshot.mjs",
     "secrets:check": "node scripts/secret-scan.mjs",
+    "dup:check": "node scripts/dup-check.mjs",
     "e2e": "node --import tsx tests/e2e/smoke.mjs && node --import tsx tests/e2e/extensions-ui.mjs && node --import tsx tests/e2e/c2-chat.mjs && node --import tsx tests/e2e/c2-proposals-restart.mjs && node --import tsx tests/e2e/c2-routines-memory.mjs && node --import tsx tests/e2e/c2-security-phone.mjs && node --import tsx tests/e2e/files-chat.mjs && node --import tsx tests/e2e/language-switch.mjs && node --import tsx tests/e2e/c4-core.mjs && node --import tsx tests/e2e/c4-groups.mjs && node --import tsx tests/e2e/c4-models-cli-review.mjs && node --import tsx tests/e2e/shared-bot.mjs && node --import tsx tests/e2e/history-pages.mjs && node --import tsx tests/e2e/newcomer.mjs && node --import tsx tests/e2e/layout.mjs && node --import tsx tests/e2e/phone-owner.mjs && node --import tsx tests/e2e/accent.mjs && node --import tsx tests/e2e/web-notes.mjs && node --import tsx tests/e2e/skill-pin-updates.mjs && node --import tsx tests/e2e/market-clear.mjs && node --import tsx tests/e2e/chat-folders.mjs && node --import tsx tests/e2e/hermes-import.mjs && node --import tsx tests/e2e/iroh-pairing.mjs && node --import tsx tests/e2e/own-rules.mjs && node --import tsx tests/e2e/backups-offsite.mjs && node --import tsx tests/e2e/openbot-cutover.mjs && node --import tsx tests/e2e/app-update.mjs && node --import tsx tests/e2e/dialogs-math.mjs",
     "backups:check": "node --import tsx tests/e2e/backups-offsite.mjs",
     "newcomer:check": "node --import tsx tests/e2e/newcomer.mjs",

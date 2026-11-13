@@ -1,5 +1,6 @@
-import net from 'node:net';
 import type { Config } from '../../core/config.js';
+import { PLACE } from '../../../shared/places.js';
+import { isLoopbackHost } from '../../core/util.js';
 
 /**
  * Exposure check at startup (0.4, package P: "alles wat de pc verlaat staat standaard uit").
@@ -64,17 +65,7 @@ export class ExposureRefusedError extends Error {
   }
 }
 
-/** True when an address or host name only reaches this computer. */
-export function isLoopbackHost(host: string | null | undefined): boolean {
-  let h = String(host || '').trim().toLowerCase();
-  if (h.startsWith('[') && h.includes(']')) h = h.slice(1, h.indexOf(']'));
-  if (!h) return false;
-  if (h === 'localhost' || h.endsWith('.localhost')) return true;
-  if (h.startsWith('::ffff:')) h = h.slice(7);
-  if (net.isIPv4(h)) return h.split('.')[0] === '127';
-  if (net.isIPv6(h)) return h === '::1' || /^0*:0*:0*:0*:0*:0*:0*:0*1$/.test(h);
-  return false;
-}
+export { isLoopbackHost };
 
 const truthy = (v: string | undefined) => v === '1' || v === 'true' || v === 'yes';
 
@@ -102,7 +93,7 @@ export function checkExposure(i: ExposureInput): ExposureReport {
       message: `De desktopversie van TeamBot luistert alleen op deze computer, niet op ${i.host}: de eigenaar heeft hier geen wachtwoord.`,
       fix: i.unsafeOverride
         ? 'TEAMBOT_UNSAFE_EXPOSE=1 staat aan: TeamBot is nu via het netwerk bereikbaar met alleen het lokale token. Zet dit zo snel mogelijk weer uit.'
-        : 'Gebruik voor je telefoon Instellingen › Telefoon (Tailscale), of draai TeamBot in servermodus met accounts en https. Laat TEAMBOT_HOST weg (dan 127.0.0.1).',
+        : `Gebruik voor je telefoon ${PLACE.phone} (Tailscale), of draai TeamBot in servermodus met accounts en https. Laat TEAMBOT_HOST weg (dan 127.0.0.1).`,
     });
   }
   if (i.mode === 'server' && !loopbackOnly && !https) {
@@ -118,7 +109,7 @@ export function checkExposure(i: ExposureInput): ExposureReport {
       level: 'warn',
       code: 'open-signup',
       message: 'Aanmelden zonder uitnodiging staat aan (TEAMBOT_ALLOW_SIGNUP=1): iedereen die deze server bereikt, kan een account maken.',
-      fix: 'Zet TEAMBOT_ALLOW_SIGNUP uit en nodig mensen uit via Instellingen › Gebruikers.',
+      fix: `Zet TEAMBOT_ALLOW_SIGNUP uit en nodig mensen uit via ${PLACE.users}.`,
     });
   }
   if (!loopbackOnly && /^(true|\*|all)$/i.test(i.trustProxy.trim())) {

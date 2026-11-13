@@ -3,7 +3,7 @@ import { CheckCircle2, Copy, RefreshCw, ShieldCheck, XCircle } from 'lucide-reac
 import { api, on } from '../../lib/api';
 import { t } from '../../lib/i18n';
 import { formatDateTime } from '../../lib/format';
-import { askConfirm, Badge, Button, Card, toast, useAsync } from '../../components/ui';
+import { askConfirm, Badge, Button, Card, CardHead, toast, useAsync, copyText } from '../../components/ui';
 
 /** Mirror of GET /api/cli-agents/versions (server/modules/cli-agents/versions.ts). */
 interface EngineView {
@@ -26,15 +26,6 @@ interface EngineView {
 }
 
 const TONE: Record<EngineView['state'], 'ok' | 'warn' | 'danger' | 'neutral'> = { getest: 'ok', werkt: 'ok', nieuw: 'warn', onbekend: 'neutral', mislukt: 'danger', akkoord: 'warn', ontbreekt: 'neutral' };
-
-async function copy(text: string) {
-  try {
-    await navigator.clipboard.writeText(text);
-    toast('Gekopieerd', 'ok');
-  } catch {
-    toast('Kopiëren lukte niet — selecteer de tekst handmatig', 'danger');
-  }
-}
 
 /**
  * Instellingen › CLI-agents › Versies van de engines: which version runs, which one TeamBot tested, a change since
@@ -70,19 +61,20 @@ export function EngineVersionsCard() {
   };
   return (
     <Card className="space-y-3 p-4" data-testid="engine-versions">
-      <div className="flex flex-wrap items-start justify-between gap-2">
-        <div className="max-w-2xl">
-          <h3 className="flex items-center gap-2 text-[15px] font-bold tracking-tight">
-            <ShieldCheck className="h-4 w-4" aria-hidden /> Versies van de engines
-          </h3>
-          <p className="mt-1 text-sm text-muted">
-            Claude Code, Codex en OpenCode werken zichzelf soms bij. TeamBot ziet dat, test een nieuwe versie kort zelf (zonder prompt, kost geen tegoed) en zegt hoe je terug kunt. Je eigen CLI verandert TeamBot nooit.
-          </p>
-        </div>
-        <Button size="sm" icon={<RefreshCw className="h-3.5 w-3.5" />} onClick={() => load(true)}>
-          Opnieuw kijken
-        </Button>
-      </div>
+      <CardHead
+        as="h3"
+        icon={ShieldCheck}
+        tone="violet"
+        title="Versies van de engines"
+        action={
+          <Button size="sm" icon={<RefreshCw className="h-3.5 w-3.5" />} onClick={() => load(true)}>
+            Opnieuw kijken
+          </Button>
+        }
+      />
+      <p className="max-w-2xl text-sm text-muted">
+        Claude Code, Codex en OpenCode werken zichzelf soms bij. TeamBot ziet dat, test een nieuwe versie kort zelf (zonder prompt, kost geen tegoed) en zegt hoe je terug kunt. Je eigen CLI verandert TeamBot nooit.
+      </p>
       <ul className="divide-y divide-line">
         {shown.map((e) => (
           <li key={e.id} className="space-y-2 py-3">
@@ -122,7 +114,7 @@ export function EngineVersionsCard() {
                 {e.rollback.command && (
                   <div className="flex items-start gap-1.5">
                     <code className="min-w-0 flex-1 break-all rounded-md bg-surface px-2 py-1.5 font-mono text-xs">{e.rollback.command}</code>
-                    <Button size="icon" variant="ghost" className="h-7 w-7 shrink-0" aria-label={t('Kopieer: {0}', e.rollback.command)} onClick={() => copy(e.rollback!.command!)}>
+                    <Button size="icon" variant="ghost" className="h-7 w-7 shrink-0" aria-label={t('Kopieer: {0}', e.rollback.command)} onClick={() => copyText(e.rollback!.command!)}>
                       <Copy className="h-3.5 w-3.5" />
                     </Button>
                   </div>

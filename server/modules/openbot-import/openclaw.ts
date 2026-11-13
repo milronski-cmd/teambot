@@ -8,6 +8,7 @@ import { filesFromDir, findSkillRoots, subset } from '../skills/files.js';
 import { parseImport } from '../memory/io.js';
 import { colorFor } from './mapping.js';
 import { type OcSnapshot, type OpenClawPaths, defaultOpenClawPaths, detectOpenClaw, mapOcSchedule, ocPrompt, readOpenClaw } from './openclaw-reader.js';
+import { PLACE } from '../../../shared/places.js';
 
 /**
  * "Overstappen uit OpenClaw" (0.4.4, item 13): the owner's own OpenClaw on this computer becomes TeamBot bots. Same
@@ -279,7 +280,7 @@ export class OpenClawImport {
     const notImported = [
       'Gesprekken: die blijven in OpenClaw (schone start).',
       'Sleutels, tokens en wachtwoorden: nooit. Koppel je AI en apps opnieuw in TeamBot.',
-      snap.seen.channels.length ? `Kanalen (${snap.seen.channels.join(', ')}): koppel ze opnieuw onder Instellingen › Kanalen.` : 'Kanalen: koppel ze opnieuw onder Instellingen › Kanalen.',
+      snap.seen.channels.length ? `Kanalen (${snap.seen.channels.join(', ')}): koppel ze opnieuw onder ${PLACE.channels}.` : `Kanalen: koppel ze opnieuw onder ${PLACE.channels}.`,
       ...(snap.seen.dailyLogs ? [`Het dagboek van OpenClaw (memory/…md, ${snap.seen.dailyLogs} dagen): blijft in OpenClaw.`] : []),
       'Geplande taken die een opdracht of script uitvoeren, en HEARTBEAT.md, TOOLS.md en BOOTSTRAP.md.',
     ];
@@ -381,7 +382,6 @@ export class OpenClawImport {
           avatar: encodeFace(traitsFor(`openclaw:${a.id}`)),
           provider_id: e.providerId,
           model: e.model || undefined,
-          access_mode: 'ask',
           skills,
           ...(a.workspaceExists ? { workspace: a.workspace } : {}),
           settings: {

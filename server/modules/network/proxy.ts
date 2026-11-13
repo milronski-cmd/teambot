@@ -3,6 +3,7 @@ import https from 'node:https';
 import net from 'node:net';
 import tls from 'node:tls';
 import { createRequire } from 'node:module';
+import { isLoopbackHost } from '../../core/util.js';
 import { SocksClient, type SocksProxy } from 'socks';
 import type { socksDispatcher as SocksDispatcherFn } from 'fetch-socks';
 
@@ -148,14 +149,8 @@ function unmapped(ip: string): string {
   return m ? m[1] : ip;
 }
 
-/** localhost, *.localhost, 127.0.0.0/8 and ::1 are always reached directly. */
-export function isLoopbackHost(host: string): boolean {
-  const h = unmapped(cleanHost(host));
-  if (h === 'localhost' || h.endsWith('.localhost')) return true;
-  if (net.isIPv4(h)) return h.startsWith('127.');
-  if (net.isIPv6(h)) return h === '::1' || /^0*:0*:0*:0*:0*:0*:0*:0*1$/.test(h);
-  return false;
-}
+/** localhost, *.localhost, 127.0.0.0/8 and ::1 are always reached directly (core/util). */
+export { isLoopbackHost };
 
 export function matchesNoProxy(rules: Rule[], host: string, port?: number): boolean {
   const h = unmapped(cleanHost(host));

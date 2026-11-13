@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { create } from 'zustand';
 import { api, on } from '../../lib/api';
+import type { ImportResult } from '../../../../shared/teamdata.js';
 
 // Mirrors server/modules/teamdata (JSON returned by /api/teamdata/*). Rows keep whatever columns the table has.
 
@@ -133,17 +134,6 @@ const pickedTeam = () => {
   const t = useTeamPick.getState().team;
   return t && t !== 'all' ? t : null;
 };
-
-export interface ImportResult {
-  table: string;
-  source: string;
-  created: boolean;
-  inserted: number;
-  skipped: number;
-  rows: number;
-  columns: { name: string; label: string; type: string }[];
-  sheet?: string;
-}
 
 function qs(p: Record<string, string | number | undefined>) {
   const u = new URLSearchParams();

@@ -1,7 +1,7 @@
 import { useEffect, useId, useRef, useState } from 'react';
 import { Bot, LayoutTemplate, MessagesSquare, Plus, Users } from 'lucide-react';
 import { Modal, cx } from '../components/ui';
-import { Pop, menuRow } from '../components/Menu';
+import { Pop, menuKeys, menuRow, useDismiss } from '../components/Menu';
 import { navigate } from '../lib/router';
 import { NewTeamModal } from '../modules/teams/TeamsPage';
 import { loadTeams, setActiveTeam, useTeamView } from '../modules/teams/scope';
@@ -32,25 +32,12 @@ export function NewMenu({ size = 'desk', onNavigate }: { size?: 'desk' | 'phone'
     if (focus) btn.current?.focus();
   };
   useEffect(() => {
-    if (!open) return;
-    items()[0]?.focus();
-    const away = (e: Event) => wrap.current && !wrap.current.contains(e.target as Node) && setOpen(false);
-    document.addEventListener('mousedown', away);
-    document.addEventListener('touchstart', away);
-    return () => (document.removeEventListener('mousedown', away), document.removeEventListener('touchstart', away));
+    if (open) items()[0]?.focus();
   }, [open]);
+  useDismiss(open, wrap, () => setOpen(false), btn);
 
-  const onMenuKey = (e: React.KeyboardEvent) => {
-    const list = items();
-    const i = list.indexOf(document.activeElement as HTMLElement);
-    const to = (n: number) => (e.preventDefault(), list[(n + list.length) % list.length]?.focus());
-    if (e.key === 'ArrowDown') to(i + 1);
-    else if (e.key === 'ArrowUp') to(i - 1);
-    else if (e.key === 'Home') to(0);
-    else if (e.key === 'End') to(list.length - 1);
-    else if (e.key === 'Escape') (e.preventDefault(), close());
-    else if (e.key === 'Tab') setOpen(false);
-  };
+  // Arrows, Home and End walk the rows (menuKeys); Escape and a press outside close it (useDismiss); Tab leaves it.
+  const onMenuKey = (e: React.KeyboardEvent<HTMLElement>) => (menuKeys(e), e.key === 'Tab' && setOpen(false));
   const item = cx(phone ? menuRow.replace('min-h-9', 'min-h-11') : menuRow, phone && 'text-[15px]');
 
   return (

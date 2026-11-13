@@ -5,7 +5,7 @@ import ssh2 from 'ssh2';
 import type { Client as SshClient, ConnectConfig, ParsedKey } from 'ssh2';
 import { redact } from '../../core/secrets.js';
 import { isPrivateIp } from '../../tools/builtin/web.js';
-import { defaultResolver, isPrivateAddress, type Resolver } from './policy.js';
+import { defaultResolver, type Resolver } from './policy.js';
 
 /**
  * Computer mode "remote" (CMP-07): the bot works on the user's own server / VPS over SSH.
@@ -243,7 +243,6 @@ export function validateCredential(kind: unknown, raw: unknown): { kind: RemoteA
 
 // ---------------- target resolution (SSRF guard) ----------------
 
-const blockedIp = (ip: string) => isPrivateAddress(ip) || isPrivateIp(ip);
 export const PRIVATE_MSG =
   'Op deze server mogen bots van leden alleen verbinden met openbare adressen. Dit adres wijst naar een privé-netwerk of naar deze server zelf (SSRF-bescherming). Vraag de eigenaar of een beheerder als je een server in het eigen netwerk wilt gebruiken.';
 
@@ -265,7 +264,7 @@ export async function resolveRemoteHost(host: string, o: { allowPrivate: boolean
     }
   }
   if (!addrs?.length) throw new RemoteRefused('dns', `Kan ${h} niet opzoeken (DNS). Controleer het adres.`);
-  if (!o.allowPrivate && addrs.some(blockedIp)) throw new RemoteRefused('private', PRIVATE_MSG);
+  if (!o.allowPrivate && addrs.some(isPrivateIp)) throw new RemoteRefused('private', PRIVATE_MSG);
   return addrs[0];
 }
 

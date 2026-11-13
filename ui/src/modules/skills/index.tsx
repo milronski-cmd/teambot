@@ -22,8 +22,9 @@ const mod: UIModule = {
     { id: 'template', title: 'Sjabloon en delen', component: AgentTemplateSection },
   ],
   // Members see the policy read-only; owner/admin manage it (enforced server-side).
-  settingsTabs: [{ id: 'uitgevers', title: 'Uitgevers en beleid', component: PublishersSettings }],
-  toolRenderers: { skill_draft: SkillDraftRenderer },
+  settingsTabs: [{ id: 'uitgevers', title: 'Vertrouwde makers', component: PublishersSettings }],
+  // skill_draft: the tool's name before 0.4.4 (conversations from then still show their line).
+  toolRenderers: { skill_save: SkillDraftRenderer, skill_draft: SkillDraftRenderer },
 };
 
 export default mod;

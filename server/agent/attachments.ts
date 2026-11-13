@@ -3,7 +3,8 @@
  *  - a .zip is unpacked next to it in the bot's workspace (limits on size and count, every path kept inside the folder);
  *  - an audio file is written out with the speech recognition on this computer (never a paid service, unless the
  *    owner chose that for attachments: voice module, transcribeAttachment), and a video's sound too where
- *    that engine takes the container (mp4, webm). TeamBot has no video decoder, so a video's picture is not read.
+ *    that engine takes the container (mp4, webm). TeamBot has no video decoder, so a video's picture is not read;
+ *  - the text on an image, only for a model that cannot look at images (readImageText, from agent/chat-loop.ts).
  * The results are plain files beside the upload ("…-uitgepakt/", "….tekst.txt"), so they are made once, every engine
  * (API and CLI) finds them, and agent/history.ts only has to look whether they are there.
  */
@@ -46,6 +47,7 @@ const OFFICE = /\.(docx|xlsx|pptx|odt|ods|odp|epub|jar|apk)$/i;
 export const isZip = (a: { name: string; mime: string }) => (/\.zip$/i.test(a.name) || /^application\/(zip|x-zip-compressed)$/.test(a.mime)) && !OFFICE.test(a.name);
 export const isAudio = (a: { name: string; mime: string }) => /^audio\//.test(a.mime) || /\.(mp3|wav|m4a|ogg|oga|opus|flac|weba)$/i.test(a.name);
 export const isVideo = (a: { name: string; mime: string }) => /^video\//.test(a.mime) || /\.(mp4|mov|webm|mkv|avi|m4v)$/i.test(a.name);
+export const isImage = (a: { name: string; mime: string }) => /^image\//.test(a.mime) || /\.(png|jpe?g|gif|webp|bmp|tiff?)$/i.test(a.name);
 
 /** Where the unpacked files of an uploaded zip live, and where the written-out sound of an audio or video file is. */
 export const unpackedDir = (upload: string) => `${upload}-uitgepakt`;
@@ -158,8 +160,34 @@ export async function prepareAttachments(ctx: Ctx, agent: Agent, userId: string,
 }
 
 /**
- * What the bot reads about an attachment that was made readable (null: it was not): the files of an unpacked zip, or
- * what was said in an audio or video file. What was said is data, like any attachment.
+ * The text on the images of this message, for a model that cannot look at images (agent/chat-loop.ts): read once with
+ * the text recognition on this computer (the OCR of read_document, which fetches its language data itself the first
+ * time) and kept beside the upload, like the words of an audio file. Never fails the turn: an image that could not be
+ * read stays an image the bot is told it cannot see (history.ts).
+ */
+export async function readImageText(ctx: Ctx, agent: Agent, m: Message | null | undefined, signal?: AbortSignal): Promise<void> {
+  const ocr = ctx.services.ocr;
+  for (const a of attachmentRows(ctx, m?.parts?.attachments)) {
+    if (!isImage(a) || signal?.aborted) continue;
+    const local = ensureInWorkspace(agent, a);
+    if (!local || !fs.existsSync(local) || fs.existsSync(transcriptFile(local))) continue;
+    try {
+      if (!ocr || !(await ocr.ensure())) {
+        ctx.log.warn(`[bijlage] ${a.name}: tekst op de afbeelding niet gelezen. ${ocr?.problem?.() || 'Geen tekstherkenning.'}`);
+        return;
+      }
+      const text = String((await ocr.recognize(fs.readFileSync(local))) || '').trim();
+      fs.writeFileSync(transcriptFile(local), text.slice(0, MAX_TRANSCRIPT_CHARS));
+    } catch (e: any) {
+      ctx.log.warn(`[bijlage] ${a.name}: ${String(e?.message || e).split('\n')[0].slice(0, 200)}`);
+    }
+  }
+}
+
+/**
+ * What the bot reads about an attachment that was made readable (null: it was not): the files of an unpacked zip,
+ * what was said in an audio or video file, or the text on an image (readImageText). That text is data, like any
+ * attachment.
  */
 export function preparedNote(agent: Agent, a: { name: string; mime: string; size: number }, local: string | null): string | null {
   if (!local) return null;
@@ -171,10 +199,14 @@ export function preparedNote(agent: Agent, a: { name: string; mime: string; size
     const count = total - (names.length - list.length);
     return `[bijlage: ${a.name} (zip, ${Math.round(a.size / 1024)} kB) — uitgepakt in je werkmap in de map ${path.relative(agent.workspace, dir)} (${count} bestanden): ${list.join(', ')}${total > names.length ? ', …' : ''}.${left}]`;
   }
-  if ((isAudio(a) || isVideo(a)) && fs.existsSync(transcriptFile(local))) {
+  if ((isAudio(a) || isVideo(a) || isImage(a)) && fs.existsSync(transcriptFile(local))) {
     const said = fs.readFileSync(transcriptFile(local), 'utf8').slice(0, MAX_TRANSCRIPT_CHARS);
-    const what = isVideo(a) ? 'video; dit is het uitgeschreven geluid, het beeld is niet bekeken' : 'audio, automatisch uitgeschreven';
-    return `<bijlage naam="${a.name}" pad="${path.relative(agent.workspace, local)}" soort="${what}">\n${said}\n</bijlage>`;
+    const what = isVideo(a)
+      ? 'video; dit is het uitgeschreven geluid, het beeld is niet bekeken'
+      : isImage(a)
+        ? 'afbeelding; dit is de tekst erop, gelezen met tekstherkenning (controleer namen en getallen), het beeld is niet bekeken'
+        : 'audio, automatisch uitgeschreven';
+    return `<bijlage naam="${a.name}" pad="${path.relative(agent.workspace, local)}" soort="${what}">\n${said || '(geen tekst gevonden op deze afbeelding)'}\n</bijlage>`;
   }
   return null;
 }

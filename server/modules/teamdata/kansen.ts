@@ -1,7 +1,8 @@
 import type { Agent, Ctx, ToolDef } from '../../core/types.js';
 import type { TeamData } from './service.js';
-import type { ProjectService } from './projects.js';
+import { type ProjectService, text } from './projects.js';
 import { PROJECT_GROUP as GROUP } from './tools.js';
+import { words } from '../../../shared/i18n-core.js';
 
 /**
  * Kansen (opportunities): a researcher spots what works now, the main bot gives each one a score card, the owner gets
@@ -51,7 +52,6 @@ export interface KansView {
 
 export class KansError extends Error {}
 
-const text = (v: unknown, max: number) => String(v ?? '').replace(/\r/g, '').trim().slice(0, max);
 
 /** "2026-11-03", "3 nov 2026", "03-11-2026" → ISO date, or null. */
 export function parseDate(raw: unknown): string | null {
@@ -111,15 +111,6 @@ export class KansService {
     private projects: ProjectService,
   ) {}
 
-  private teamName(teamId: string | null): string {
-    return (teamId && this.ctx.services.teams?.team?.(teamId)?.name) || '';
-  }
-
-  private teamIds(userId: string): (string | null)[] {
-    const list: { id: string }[] = this.ctx.services.teams?.list?.(userId) || [];
-    return list.length ? list.map((t) => t.id) : [null];
-  }
-
   private changed(userId: string, teamId: string | null) {
     this.ctx.events.emit(userId, 'teamdata.changed', { tables: ['kansen'], by: 'TeamBot', teamId });
   }
@@ -135,7 +126,7 @@ export class KansService {
     return {
       id: r.id,
       teamId,
-      teamName: this.teamName(teamId),
+      teamName: this.projects.teamName(teamId),
       titel: r.titel || '',
       wat: r.wat || '',
       waarom_nu: r.waarom_nu || '',
@@ -157,7 +148,7 @@ export class KansService {
   /** The board: every kans of one team or of all teams. A row without a valid source is never shown. */
   async list(userId: string, teamId?: string | null): Promise<KansView[]> {
     const out: KansView[] = [];
-    for (const tid of teamId ? [teamId] : this.teamIds(userId)) {
+    for (const tid of teamId ? [teamId] : this.projects.teamIds(userId)) {
       const rows = await this.td.rows(userId, 'SELECT * FROM kansen ORDER BY id DESC LIMIT 300', [], true, tid);
       for (const r of rows) {
         const v = this.view(tid, r);
@@ -266,18 +257,6 @@ export class KansService {
   }
 }
 
-/** One kans as plain text (the briefing, the owner's channel, a bot's list). */
-export function kansText(k: KansView, n?: number): string {
-  return [
-    `${n ? `${n}. ` : ''}${k.titel}${k.score !== null ? ` (score ${k.score}/100)` : ''}`,
-    `Wat: ${k.wat}`,
-    `Waarom nu: ${k.waarom_nu}`,
-    `Bronnen: ${k.bronnen.map((b) => `${b.titel ? `${b.titel}, ` : ''}${b.url} (${b.datum})`).join('; ')}`,
-    `Kosten: ${k.kosten} · Risico: ${k.risico}`,
-    `Mini-test: ${k.minitest}`,
-  ].join('\n');
-}
-
 // ------------------------------------------------------------------ bot tools
 
 export function kansTools(svc: KansService, ctx: Ctx): ToolDef[] {
@@ -317,7 +296,7 @@ export function kansTools(svc: KansService, ctx: Ctx): ToolDef[] {
         },
         required: ['titel', 'wat', 'waarom_nu', 'bronnen', 'kosten', 'risico', 'minitest'],
       },
-      summarize: (a) => `Kans melden: “${String(a?.titel || '').slice(0, 80)}”`,
+      summarize: (a) => words('Kans melden: “{0}”', String(a?.titel || '').slice(0, 80)),
       async run(a, t) {
         try {
           const k = await svc.report(t.agent.user_id, home(t.agent), t.agent.name, a);
@@ -340,7 +319,7 @@ export function kansTools(svc: KansService, ctx: Ctx): ToolDef[] {
         properties: { kans: { type: 'number' }, vraag: { type: 'number' }, past: { type: 'number' }, moeite: { type: 'number' }, kosten: { type: 'number' }, risico: { type: 'number' }, toelichting: { type: 'string' }, team: { type: 'string', description: 'Naam van het team van de kans (leeg = je eigen team)' } },
         required: ['kans', 'vraag', 'past', 'moeite', 'kosten', 'risico', 'toelichting'],
       },
-      summarize: (a) => `Kans ${a?.kans} scoren`,
+      summarize: (a) => words('Kans {0} scoren', a?.kans),
       async run(a, t) {
         try {
           const main = teams()?.mainOf?.(t.agent.user_id);
@@ -358,7 +337,7 @@ export function kansTools(svc: KansService, ctx: Ctx): ToolDef[] {
       risk: 'read',
       description: 'Toon het kansenbord: wat er gemeld is, de score, en wat de eigenaar besliste. Kijk hier eerst, zodat je geen kans dubbel meldt.',
       parameters: { type: 'object', properties: {} },
-      summarize: () => 'Kansenbord bekijken',
+      summarize: () => words('Kansenbord bekijken'),
       async run(_a, t) {
         const tms = teams();
         const ids: (string | null)[] = tms?.directableTeams ? tms.directableTeams(t.agent.id) : [null];

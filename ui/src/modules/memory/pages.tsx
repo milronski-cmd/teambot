@@ -12,43 +12,53 @@ import { BotAvatar } from '../../components/BotFace';
 import { ErrorBox, ItemCard, ItemDetail, ItemEditor, ItemList } from './parts';
 import { ALL_TEAMS, type MemItem, defaultTeamFor, fmtDate, memPath, RECORD_LABEL, teamQuery, useMem, useMemTeams, useTeamFilter } from './lib';
 import { ProfileView, RecentLearned } from './learned';
+import { DossierText } from './dossiers';
 import { ComputerOnly, useIsPhoneSession } from '../../shell/computerOnly';
 import { MoreInfo } from '../../components/MoreInfo';
+import { Words } from '../../components/Words';
 
 /**
- * The three places of Geheugen: search and what was learned lately, the memories themselves (about you, per bot,
- * shared: one tab with a switch) and the dossiers. What waits for your judgement shows as one line on every page
- * while something waits. History and storage are rarely needed: they sit behind "Meer opties". Those three open as a
- * page of their own with a way back.
+ * Geheugen is ONE place: the page opens on what TeamBot knows. Two tabs ("Herinneringen" and "Dossiers"); inside
+ * Herinneringen one search box and a small switch (over jou, van je bots, gedeeld, pas geleerd). What waits for your
+ * judgement shows as one line while something waits. History and storage are rarely needed: they sit behind "Meer
+ * opties" and open as a page of their own with a way back. Every older address (#/m/memory/over-jou, …/bots,
+ * …/gedeeld, …/beoordelen, …/geschiedenis, …/opslag, …/item/<id>) still opens its own thing.
  */
 export const TABS = [
-  { id: '', label: 'Overzicht' },
-  { id: 'over-jou', label: 'Herinneringen' },
+  { id: '', label: 'Herinneringen' },
   { id: 'dossiers', label: 'Dossiers' },
 ] as const;
 
-/** The three kinds of memories, as a switch inside the tab "Herinneringen" (each keeps its own link). */
+/** Whose memories: a small switch inside "Herinneringen" (each keeps its own link). */
 const ITEM_VIEWS = [
   { value: 'over-jou', label: 'Over jou' },
   { value: 'bots', label: 'Van je bots' },
   { value: 'gedeeld', label: 'Gedeeld' },
+  { value: 'pas-geleerd', label: 'Pas geleerd' },
 ];
 const isItemView = (tab: string) => ITEM_VIEWS.some((v) => v.value === tab);
 
-/** Pages behind "Meer opties": their own title, and a link back to Geheugen. */
+/** Pages behind "Meer opties" (and the review line): their own title, and a link back to Geheugen. */
 const MORE_PAGES: Record<string, string> = { beoordelen: 'Te beoordelen', geschiedenis: 'Geschiedenis', opslag: 'Opslag en instellingen' };
 
 /** Tabs where the team filter applies ("Over jou" is personal; review and storage show every team). */
-const TEAM_TABS = new Set(['', 'bots', 'dossiers', 'gedeeld', 'geschiedenis']);
+const TEAM_TABS = new Set(['bots', 'dossiers', 'gedeeld', 'geschiedenis']);
 
-/** Header + tab bar shared by every memory page. Each tab is its own route so links and the back button work. */
+/** Header + tab bar shared by every memory page. Each view is its own route so links and the back button work. */
 export function MemoryShell({ tab, children, actions, noTeamFilter }: { tab: string; children: React.ReactNode; actions?: React.ReactNode; noTeamFilter?: boolean }) {
   const ov = useMem<any>('/memory/overview');
   const review = ov.data?.review || 0;
   const [adding, setAdding] = useState(false);
+  const [q, setQ] = useState('');
+  const [query, setQuery] = useState('');
+  const [team] = useTeamFilter();
+  const res = useMem<any>(query ? `/memory/search?q=${encodeURIComponent(query)}${teamQuery(team)}` : null, [query, team]);
+  const { run, busy } = useAsync();
   const more = MORE_PAGES[tab];
-  const mainTab = isItemView(tab) ? 'over-jou' : tab;
+  const items = isItemView(tab);
+  const mainTab = tab === 'dossiers' ? 'dossiers' : '';
   const teamFilter = TEAM_TABS.has(tab) && !noTeamFilter;
+  const s = ov.data?.settings;
   return (
     <Page>
       <PageHeader
@@ -60,40 +70,33 @@ export function MemoryShell({ tab, children, actions, noTeamFilter }: { tab: str
           <>
             {actions}
             {!more && (
-              <>
-                <Menu
-                  label="Meer opties"
-                  variant="secondary"
-                  items={[
-                    { label: review ? t('Te beoordelen ({0})', review) : 'Te beoordelen', icon: <ClipboardCheck />, href: memPath('beoordelen') },
-                    { label: 'Geschiedenis', icon: <History />, href: memPath('geschiedenis') },
-                    { label: 'Opslag en instellingen', icon: <HardDrive />, href: memPath('opslag') },
-                    { label: 'Zelf iets toevoegen', icon: <Plus />, onSelect: () => setAdding(true) },
-                  ]}
-                >
-                  Meer opties
-                </Menu>
-              </>
+              <Menu
+                label="Meer opties"
+                variant="secondary"
+                items={[
+                  { label: 'Zelf iets toevoegen', icon: <Plus />, onSelect: () => setAdding(true) },
+                  { label: 'Geschiedenis', icon: <History />, href: memPath('geschiedenis') },
+                  { label: 'Opslag en instellingen', icon: <HardDrive />, href: memPath('opslag') },
+                ]}
+              >
+                Meer opties
+              </Menu>
             )}
           </>
         }
       />
-      <div className="mx-auto flex max-w-5xl flex-wrap items-center justify-between gap-x-4 gap-y-2 px-4 pt-2 sm:px-6">
-        {!more && (
-          <Tabs
-            value={mainTab}
-            onChange={(v) => navigate(memPath(v))}
-            tabs={TABS.map((x) => ({ id: x.id, label: x.label }))}
-          />
-        )}
-        {teamFilter && <TeamFilter />}
-      </div>
-      {isItemView(tab) && (
-        <div className="mx-auto max-w-5xl px-4 pt-3 sm:px-6">
-          <Segmented label="Welke herinneringen" value={tab} options={ITEM_VIEWS} onChange={(v) => navigate(memPath(v))} />
+      {!more && (
+        <div className="mx-auto flex max-w-5xl flex-wrap items-center justify-between gap-x-4 gap-y-2 px-4 pt-2 sm:px-6">
+          <Tabs value={mainTab} onChange={(v) => navigate(memPath(v))} tabs={TABS.map((x) => ({ id: x.id, label: x.label }))} />
+          {teamFilter && <TeamFilter />}
         </div>
       )}
       <div key={tab} className="tb-in mx-auto max-w-5xl space-y-4 px-4 py-4 sm:px-6">
+        {more && teamFilter && (
+          <div className="flex justify-end">
+            <TeamFilter />
+          </div>
+        )}
         {review > 0 && !more && (
           <a href={memPath('beoordelen')} className="tb-ask flex items-center gap-3 rounded-card border px-4 py-3 text-sm hover:opacity-90" data-testid="memory-review-line">
             <ClipboardCheck className="h-4 w-4 shrink-0 text-warn" aria-hidden />
@@ -103,7 +106,58 @@ export function MemoryShell({ tab, children, actions, noTeamFilter }: { tab: str
             </span>
           </a>
         )}
-        <div>{children}</div>
+        {items && s && (s.paused || s.learnMode !== 'auto') && (
+          <Card className="flex flex-wrap items-center gap-3 border-warn/40 bg-warn-soft p-3 text-sm">
+            <Pause className="h-4 w-4 shrink-0 text-warn" aria-hidden />
+            <span className="min-w-0 flex-1">{s.paused ? 'Automatisch leren is gepauzeerd.' : s.learnMode === 'off' ? 'Leren staat uit: je bots onthouden niets nieuws.' : 'Je bots onthouden alleen wat je ze vraagt te onthouden.'}</span>
+            <Button size="sm" icon={<Play className="h-3.5 w-3.5" />} loading={busy} onClick={() => run(async () => (await api.put('/memory/settings', { paused: false, learnMode: 'auto' }), ov.reload()), 'Automatisch leren staat aan')}>
+              Automatisch leren aanzetten
+            </Button>
+          </Card>
+        )}
+        {items && (
+          <div className="space-y-3">
+            <form
+              className="flex gap-2"
+              role="search"
+              onSubmit={(e) => {
+                e.preventDefault();
+                setQuery(q.trim());
+              }}
+            >
+              <label className="sr-only" htmlFor="mem-ask">
+                Zoek in wat je bots weten
+              </label>
+              <div className="relative min-w-0 flex-1">
+                <Search className="pointer-events-none absolute start-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted" aria-hidden />
+                <Input
+                  id="mem-ask"
+                  type="search"
+                  className="h-11 ps-10 text-[15px]"
+                  placeholder="Zoek in wat je bots weten"
+                  value={q}
+                  onChange={(e) => {
+                    setQ(e.target.value);
+                    if (!e.target.value.trim()) setQuery('');
+                  }}
+                />
+              </div>
+              <Button type="submit" size="lg" disabled={!q.trim()}>
+                Zoeken
+              </Button>
+            </form>
+            {query && <div className="tb-in space-y-3">{res.loading && !res.data ? <SkeletonRows n={3} avatar={false} /> : res.error ? <ErrorBox error={res.error} /> : <SearchResults r={res.data} />}</div>}
+          </div>
+        )}
+        {/* While you search, the results take the place of the list (everything is searched, dossiers too). */}
+        <div className={items && query ? 'hidden' : undefined}>
+          {items && (
+            <div className="mb-3">
+              <Segmented size="sm" label="Welke herinneringen" value={tab} options={ITEM_VIEWS} onChange={(v) => navigate(memPath(v))} />
+            </div>
+          )}
+          {children}
+        </div>
       </div>
       {adding && <ItemEditor onClose={() => setAdding(false)} onSaved={() => setAdding(false)} />}
     </Page>
@@ -128,69 +182,11 @@ function TeamFilter() {
   );
 }
 
-/** Geheugen › Overzicht: ask what the bots know, and see what they learned lately. */
-export function OverviewPage() {
-  const ov = useMem<any>('/memory/overview');
-  const [q, setQ] = useState('');
-  const [query, setQuery] = useState('');
-  const [team] = useTeamFilter();
-  const res = useMem<any>(query ? `/memory/search?q=${encodeURIComponent(query)}${teamQuery(team)}` : null, [query, team]);
-  const { run, busy } = useAsync();
-  if (ov.error)
-    return (
-      <MemoryShell tab="">
-        <ErrorBox error={ov.error} retry={ov.reload} />
-      </MemoryShell>
-    );
-  const s = ov.data?.settings;
+/** Geheugen › Herinneringen › Pas geleerd: what the bots learned lately (with undo), and what is still being processed. */
+export function RecentPage() {
   return (
-    <MemoryShell tab="">
-      <div className="space-y-6">
-        {s && (s.paused || s.learnMode !== 'auto') && (
-          <Card className="flex flex-wrap items-center gap-3 border-warn/40 bg-warn-soft p-3 text-sm">
-            <Pause className="h-4 w-4 shrink-0 text-warn" aria-hidden />
-            <span className="min-w-0 flex-1">{s.paused ? 'Automatisch leren is gepauzeerd.' : s.learnMode === 'off' ? 'Leren staat uit: je bots onthouden niets nieuws.' : 'Je bots onthouden alleen wat je ze vraagt te onthouden.'}</span>
-            <Button size="sm" icon={<Play className="h-3.5 w-3.5" />} loading={busy} onClick={() => run(async () => (await api.put('/memory/settings', { paused: false, learnMode: 'auto' }), ov.reload()), 'Automatisch leren staat aan')}>
-              Automatisch leren aanzetten
-            </Button>
-          </Card>
-        )}
-
-        <div className="space-y-3">
-          <form
-            className="flex gap-2"
-            role="search"
-            onSubmit={(e) => {
-              e.preventDefault();
-              setQuery(q.trim());
-            }}
-          >
-            <label className="sr-only" htmlFor="mem-ask">
-              Zoek in wat je bots weten
-            </label>
-            <div className="relative min-w-0 flex-1">
-              <Search className="pointer-events-none absolute start-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted" aria-hidden />
-              <Input
-                id="mem-ask"
-                type="search"
-                className="h-11 ps-10 text-[15px]"
-                placeholder="Zoek in wat je bots weten"
-                value={q}
-                onChange={(e) => {
-                  setQ(e.target.value);
-                  if (!e.target.value.trim()) setQuery('');
-                }}
-              />
-            </div>
-            <Button type="submit" size="lg" disabled={!q.trim()}>
-              Zoeken
-            </Button>
-          </form>
-          {query && <div className="tb-in space-y-3">{res.loading && !res.data ? <SkeletonRows n={3} avatar={false} /> : res.error ? <ErrorBox error={res.error} /> : <SearchResults r={res.data} />}</div>}
-        </div>
-
-        {!query && <RecentLearned />}
-      </div>
+    <MemoryShell tab="pas-geleerd">
+      <RecentLearned />
     </MemoryShell>
   );
 }
@@ -225,8 +221,8 @@ function SearchResults({ r }: { r: any }) {
         <ResultGroup title="Dossiers">
           {r.dossiers.map((d: any) => (
             <a key={d.id} href={memPath(`dossiers/${d.id}`)} className={resultRow}>
-              <span className="font-medium">{d.title}</span>
-              {d.summary && <span className="block text-muted">{d.summary}</span>}
+              <span className="font-medium" translate="no">{d.title}</span>
+              {d.summary && <span className="block text-muted" translate="no">{d.summary}</span>}
             </a>
           ))}
         </ResultGroup>
@@ -235,7 +231,7 @@ function SearchResults({ r }: { r: any }) {
         <ResultGroup title="Uit dossiers">
           {r.records.map((x: any) => (
             <a key={x.id} href={memPath(`dossiers/${x.dossier_id}`)} className={resultRow}>
-              <span className="font-medium">{x.title}</span>
+              <span className="font-medium" translate="no">{x.title}</span>
               <span className="block text-xs text-muted">
                 {RECORD_LABEL[x.kind]} · {x.dossier_title} · {fmtDate(x.at)}
               </span>
@@ -247,8 +243,8 @@ function SearchResults({ r }: { r: any }) {
         <ResultGroup title="Eerdere gesprekken">
           {r.episodes.map((e: any) => (
             <a key={e.id} href={`#/t/${e.thread_id}`} className={resultRow}>
-              <span className="font-medium">{e.title || 'Gesprek'}</span> <span className="text-xs text-muted">· {fmtDate(e.updated_at)}</span>
-              <span className="line-clamp-2 block text-muted">{stripRefs(e.summary)}</span>
+              {e.title ? <span className="font-medium" translate="no">{e.title}</span> : <span className="font-medium">Gesprek</span>} <span className="text-xs text-muted">· {fmtDate(e.updated_at)}</span>
+              <span className="line-clamp-2 block text-muted" translate="no">{stripRefs(e.summary)}</span>
             </a>
           ))}
         </ResultGroup>
@@ -257,8 +253,8 @@ function SearchResults({ r }: { r: any }) {
         <ResultGroup title="Documenten">
           {r.documents.map((x: any) => (
             <a key={x.id} href={memPath(`dossiers/${x.dossier_id}`)} className={resultRow}>
-              <span className="font-medium">{x.title}</span>
-              <span className="line-clamp-2 block text-muted">{x.excerpt}</span>
+              <span className="font-medium" translate="no">{x.title}</span>
+              <span className="line-clamp-2 block text-muted" translate="no">{x.excerpt}</span>
             </a>
           ))}
         </ResultGroup>
@@ -267,42 +263,66 @@ function SearchResults({ r }: { r: any }) {
   );
 }
 
-const PROFILE_KEY = 'tb_mem_profile_list';
+/**
+ * The text behind one place of memory (about you, one bot, a team's shared knowledge): the dossier the bots keep
+ * themselves and always read, which the owner can change here. For a bot, what the owner told it himself (its
+ * instructions) is shown with it: one view of what this bot was told and what it noted. The notes of the same dossier
+ * (what the owner added by hand, an import, a pinned rule) are the list under it.
+ */
+function PlaceText({ scope, agentId }: { scope: 'about_you' | 'agent' | 'shared'; agentId?: string }) {
+  const [team] = useTeamFilter();
+  const q = new URLSearchParams({ scope, ...(agentId ? { agentId } : {}), ...(scope === 'shared' && team ? { teamId: team } : {}) });
+  const r = useMem<{ dossiers: { id: string; title: string; body: string; body_limit: number }[]; instructions: { text: string; agentId: string } | null }>(`/memory/place?${q}`, [scope, agentId, team]);
+  const { run } = useAsync();
+  if (r.error) return <ErrorBox error={r.error} retry={r.reload} />;
+  if (!r.data) return <SkeletonRows n={2} />;
+  return (
+    <div className="mb-4 space-y-3">
+      {r.data.instructions && (
+        <Card className="space-y-2 p-3">
+          <div className="flex flex-wrap items-center gap-2">
+            <h3 className="text-sm font-semibold">Instructies</h3>
+            <a className="ms-auto text-[13px] font-medium text-muted underline-offset-2 hover:text-fg hover:underline" href={`#/agents/${r.data.instructions.agentId}`}>
+              Aanpassen
+            </a>
+          </div>
+          <p className="whitespace-pre-wrap text-sm" translate="no">
+            {r.data.instructions.text || '—'}
+          </p>
+        </Card>
+      )}
+      {r.data.dossiers.map((d) => (
+        <DossierText
+          key={d.id}
+          title={d.title}
+          saved={d.body}
+          limit={d.body_limit}
+          canEdit
+          onSave={(body) =>
+            void run(async () => {
+              await api.patch(`/memory/dossiers/${d.id}`, { body });
+              r.reload();
+            }, 'Opgeslagen')
+          }
+        />
+      ))}
+    </div>
+  );
+}
 
+/**
+ * Geheugen opens here (#/m/memory/ and #/m/memory/over-jou): what the bots know about you — the text of your dossier,
+ * and the notes with it, grouped. The same notes as a plain list (with filters, archive and bin) are one small link away.
+ */
 export function AboutYouPage() {
-  const [view, setViewState] = useState<'profile' | 'list'>(() => {
-    try {
-      return localStorage.getItem(PROFILE_KEY) === '1' ? 'list' : 'profile';
-    } catch {
-      return 'profile';
-    }
-  });
-  const setView = (v: 'profile' | 'list') => {
-    setViewState(v);
-    try {
-      localStorage.setItem(PROFILE_KEY, v === 'list' ? '1' : '0');
-    } catch {
-      /* private mode */
-    }
-  };
+  const [list, setList] = useState(false);
   return (
     <MemoryShell tab="over-jou">
-      <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
-        <p className="text-sm text-muted">
-          Wat je bots over jou weten. <MoreInfo>Klik op een regel om hem aan te passen of te laten vergeten. Dit wordt nooit vanzelf met anderen gedeeld.</MoreInfo>
-        </p>
-        <Segmented
-          size="sm"
-          label="Weergave"
-          value={view}
-          onChange={setView}
-          options={[
-            { value: 'profile', label: 'Profiel' },
-            { value: 'list', label: 'Lijst' },
-          ]}
-        />
-      </div>
-      {view === 'list' ? (
+      <p className="mb-4 text-sm text-muted">
+        Wat je bots over jou weten. <MoreInfo>Klik op een regel om hem aan te passen of te laten vergeten. Dit wordt nooit vanzelf met anderen gedeeld.</MoreInfo>
+      </p>
+      <PlaceText scope="about_you" />
+      {list ? (
         <ItemList
           base={{ scope: 'about_you' }}
           addDefaults={{ scope: 'about_you' }}
@@ -315,6 +335,11 @@ export function AboutYouPage() {
       ) : (
         <ProfileView />
       )}
+      <p className="mt-4 text-center">
+        <button type="button" className="text-[13px] font-medium text-muted underline-offset-2 hover:text-fg hover:underline" aria-pressed={list} onClick={() => setList(!list)}>
+          {list ? 'Terug naar het overzicht per onderwerp' : 'Filteren, of archief en prullenbak bekijken'}
+        </button>
+      </p>
     </MemoryShell>
   );
 }
@@ -342,6 +367,7 @@ export function BotsPage({ params }: { params: string[] }) {
             Instellingen van deze bot
           </a>
         </div>
+        <PlaceText scope="agent" agentId={agentId} />
         <ItemList base={{ scope: 'agent', agentId }} hideScope addDefaults={{ scope: 'agent', agentId }} empty={<EmptyState icon={<Bot />} title="Deze bot heeft nog geen notities" />} />
       </MemoryShell>
     );
@@ -402,6 +428,7 @@ export function SharedPage() {
                 : 'Alleen wat jij deelt. Bots kunnen iets voorstellen; jij keurt goed.'}
             </MoreInfo>
           </p>
+          <PlaceText scope="shared" />
           <ItemList
             base={{ scope: 'shared' }}
             hideScope
@@ -421,8 +448,10 @@ export function SharedPage() {
               {sharedWithMe.map((d) => (
                 <a key={d.id} href={memPath(`dossiers/${d.id}`)} className="flex flex-wrap items-center gap-x-3 gap-y-1 px-4 py-3 text-sm hover:bg-surface-2">
                   <FolderOpen className="h-4 w-4 shrink-0 text-muted" aria-hidden />
-                  <span className="min-w-0 flex-1 font-medium [overflow-wrap:anywhere]">{d.title}</span>
-                  <span className="text-xs text-muted">van {d.owner_name}</span>
+                  <span className="min-w-0 flex-1 font-medium [overflow-wrap:anywhere]" translate="no">{d.title}</span>
+                  <span className="text-xs text-muted">
+                    <Words text="van {0}" values={[d.owner_name || '']} />
+                  </span>
                   <Badge>{d.role === 'edit' ? 'Bewerken' : 'Lezen'}</Badge>
                 </a>
               ))}
@@ -434,7 +463,7 @@ export function SharedPage() {
             <h2 className="text-sm font-semibold">{teams.multi ? 'Dossiers die alle bots van hun team mogen lezen' : 'Dossiers die al je bots mogen lezen'}</h2>
             <div className="flex flex-wrap gap-2">
               {mineShared.map((d) => (
-                <a key={d.id} href={memPath(`dossiers/${d.id}`)} className="rounded-full border border-line bg-surface px-3 py-1.5 text-sm hover:bg-surface-2">
+                <a key={d.id} href={memPath(`dossiers/${d.id}`)} className="rounded-full border border-line bg-surface px-3 py-1.5 text-sm hover:bg-surface-2" translate="no">
                   {d.title}
                 </a>
               ))}
@@ -448,7 +477,7 @@ export function SharedPage() {
 
 export function ItemPage({ params }: { params: string[] }) {
   return (
-    <MemoryShell tab="over-jou">
+    <MemoryShell tab="item">
       <div className="mb-3">
         <Button size="sm" variant="ghost" onClick={() => history.back()}>
           ← Terug

@@ -57,6 +57,9 @@ export type QualityApi = {
 
 const MAX_FILE_WRITE = 5_000_000;
 
+/** Words a bot uses for the person it works for ("eigenaar", "de gebruiker"), compared with nameKey. */
+const OWNER_WORDS = new Set(['eigenaar', 'deeigenaar', 'owner', 'theowner', 'gebruiker', 'degebruiker', 'user', 'theuser', 'baas', 'debaas', 'mens', 'demens']);
+
 /** Task board, teams/departments, hire proposals and shared room files. */
 export class Board {
   constructor(private s: RoomService) {}
@@ -121,9 +124,13 @@ export class Board {
       const key = nameKey(x);
       const a = agents.find((b) => b.id === x || nameKey(b.name) === key);
       if (a) return { type: 'agent', id: a.id };
-      const u = people.find((p) => p.id === x || nameKey(p.name) === key);
+      // A person by name, by first name ("Sam" for "Sam de Vries") or by the name before the @ of the e-mail.
+      const u = people.find((p) => p.id === x || nameKey(p.name) === key || nameKey(String(p.name).split(/\s+/)[0]) === key || (!!p.email && nameKey(String(p.email).split('@')[0]) === key));
       if (u) return { type: 'user', id: u.id };
     }
+    // "eigenaar", "de gebruiker": the person the bots work for (live, 10 nov: the account was called "Eigenaar" while
+    // the bot knew him by his first name; three task_update calls failed on "Onbekende eigenaar").
+    if (people[0] && tries.some((x) => OWNER_WORDS.has(nameKey(x)))) return { type: 'user', id: people[0].id };
     const inRoom = room ? new Set(this.s.botMembers(room).map((m) => m.ref_id)) : null;
     const byRole = agents.filter((b) => (!inRoom || inRoom.has(b.id)) && b.role && tries.some((x) => nameKey(b.role) === nameKey(x.replace(/^de\s+/i, ''))));
     return byRole.length === 1 ? { type: 'agent', id: byRole[0].id } : null;
@@ -134,7 +141,8 @@ export class Board {
     const bots = room ? this.s.botMembers(room).map((m) => this.s.agentName(m.ref_id)) : this.ctx.store.agents(userId).map((a) => a.name);
     const people = this.ownerPeople(userId, room).map((uid) => this.ctx.store.user(uid)?.name || '');
     const names = [...new Set([...bots, ...people].filter(Boolean))].slice(0, 20);
-    return names.length ? `Onbekende eigenaar: ${ref}. Kies een van: ${names.join(', ')}, of "mij".` : `Onbekende eigenaar: ${ref}`;
+    const owner = this.ctx.store.user(room?.user_id || userId)?.name || 'de eigenaar';
+    return names.length ? `Onbekende eigenaar: ${ref}. Kies een van: ${names.join(', ')}, of "mij". "mij" ben jij zelf (de bot); "eigenaar" is ${owner}, de mens voor wie je werkt.` : `Onbekende eigenaar: ${ref}`;
   }
 
   // ------------------------------------------------------------------ teams (module teams) on the task board
@@ -172,8 +180,11 @@ export class Board {
   }
 
   createTask(o: { userId: string; room: Room | null; teamId?: string | null; data: any; actor: Actor; sourceThreadId?: string | null; sourceMessageId?: string | null }): Task {
-    const title = String(o.data?.title ?? '').trim().slice(0, 200);
+    const whole = String(o.data?.title ?? '').trim();
+    const title = whole.slice(0, 200);
     if (!title) throw bad('Een taak heeft een titel nodig');
+    // A long title (someone typed the whole job in it): nothing is lost, the full text is the description the bot reads.
+    const overflow = whole.length > 200 && !String(o.data?.description ?? '').trim() ? whole : '';
     const status: TaskStatus = TASK_STATUS.includes(o.data?.status) ? o.data.status : 'todo';
     let owner: { type: 'agent' | 'user'; id: string } | null = null;
     if (o.data?.ownerType && o.data?.ownerId) owner = this.checkOwner(o.userId, o.room, o.data.ownerType, o.data.ownerId);
@@ -189,7 +200,7 @@ export class Board {
       room_id: o.room?.id ?? null,
       team_id: o.teamId ?? o.room?.team_id ?? null,
       title,
-      description: String(o.data?.description ?? '').slice(0, 10_000),
+      description: (overflow || String(o.data?.description ?? '')).slice(0, 10_000),
       status,
       owner_type: owner?.type ?? null,
       owner_id: owner?.id ?? null,
@@ -293,11 +304,66 @@ export class Board {
     return upd;
   }
 
+  /**
+   * The owner stopped this bot: a task it had on "Bezig" is not being worked on any more. It goes back to "Te doen",
+   * without the claim ("… werkt eraan"), and stays the bot's own, so starting it again is one step: "Hervatten" in the
+   * bot's chat, or the bot that gave the task gives it again (live, 12 nov: after "Alles stoppen" a task stayed on
+   * "Bezig" with nobody working). `taskId`: the task this turn was started for. While the bot still works in another
+   * conversation only that task is touched: its other tasks may belong to that work.
+   */
+  parkStopped(run: { user_id: string; agent_id: string; id: string }, taskId?: string | null) {
+    const q = this.quality;
+    const busyElsewhere = !!this.ctx.store.one("SELECT id FROM runs WHERE agent_id = ? AND id != ? AND status IN ('queued','running','waiting') LIMIT 1", run.agent_id, run.id);
+    const userId = this.ctx.store.agent(run.agent_id)?.user_id || run.user_id;
+    const rows = this.ctx.store.all<any>("SELECT * FROM room_tasks WHERE user_id = ? AND status = 'doing'", userId).map((r) => this.ctx.store.decode<Task>('room_tasks', r));
+    const actor: Actor = { type: 'user', id: userId, name: this.s.userName(userId) };
+    for (const t of rows) {
+      const holder = q?.holder(t.user_id, 'room', t.id) ?? null;
+      const its = holder ? holder === run.agent_id : t.owner_type === 'agent' && t.owner_id === run.agent_id;
+      if (!its || (busyElsewhere && t.id !== taskId)) continue;
+      q?.release(t.user_id, 'room', t.id, null);
+      this.updateTask(t, { status: 'todo' }, actor);
+    }
+  }
+
   deleteTask(t: Task, actor: Actor) {
     this.ctx.store.remove('room_tasks', t.id);
     this.quality?.remove(t.user_id, 'room', t.id);
     this.s.activity(t.room_id, actor, 'task.deleted', `Taak verwijderd: ${t.title}`, { taskId: t.id });
     this.emitTask(t, true);
+  }
+
+  /**
+   * A person gave a task to one of his own bots: the bot starts on it now (a message from him in the bot's own chat,
+   * queued when the bot is busy), so a task with a bot as owner never just sits as "te doen". Null: nothing to start.
+   */
+  async startForUser(t: Task, u: { id: string; name: string }): Promise<{ agentName: string; mode: string } | null> {
+    if (t.owner_type !== 'agent' || !t.owner_id || t.status !== 'todo') return null;
+    const agent = this.ctx.store.agent(t.owner_id);
+    if (!agent || agent.archived || agent.user_id !== u.id) return null;
+    const text = this.taskBrief(t, null);
+    const thread = this.ctx.chat.threadForAgent(u.id, agent.id);
+    const parts = { kind: 'task_assigned', taskId: t.id };
+    const queue = this.ctx.services.queue;
+    let mode = 'sent';
+    if (queue?.submit) mode = (await queue.submit(thread, { id: u.id, name: u.name }, { content: text, parts }, 'queue'))?.mode || 'sent';
+    else await this.ctx.chat.postUserMessage({ thread, user: { id: u.id, name: u.name }, content: text, parts });
+    this.s.activity(t.room_id, { type: 'user', id: u.id, name: u.name }, 'task.started', `${agent.name} gestart met taak: ${t.title}`, { taskId: t.id, agentId: agent.id });
+    return { agentName: agent.name, mode };
+  }
+
+  /** The task as the bot that has to do it reads it: title, description, "klaar als", deadline and what to do with it. */
+  taskBrief(t: Task, fromBot: string | null): string {
+    const doneWhen = String(this.quality?.view(t.user_id, 'room', t.id).doneWhen || '').trim();
+    return [
+      `${fromBot ? `Taak van ${fromBot} voor jou` : 'Taak voor jou'} op het takenbord: “${t.title}” (taak ${t.id}).`,
+      t.description.trim() ? `\n${t.description.trim()}` : '',
+      doneWhen ? `\nKlaar als: ${doneWhen}` : '',
+      t.deadline ? `Deadline: ${t.deadline}` : '',
+      `\nBegin er nu aan: claim de taak met task_claim, doe het werk en meld hem af met task_done (met bewijs). Lukt het niet, meld hem dan af met outcome "cannot" en de reden.${fromBot ? ` Sluit af met een kort antwoord voor ${fromBot}: wat je deed, het bewijs en wat er nog openstaat.` : ''}`,
+    ]
+      .filter(Boolean)
+      .join('\n');
   }
 
   private taskNotify(t: Task, actor: Actor, created: boolean) {
@@ -532,8 +598,6 @@ export class Board {
           instructions: p.profile.instructions || '',
           provider_id: proposer?.provider_id ?? null,
           model: proposer?.model || '',
-          access_mode: 'ask',
-          tool_groups: ['files', 'web', 'memory', 'team', 'skills'],
         }));
         agentId = a.id;
         this.ctx.audit(userId, 'agent.created', { name: a.name, via: 'hire_proposal' }, a.id);

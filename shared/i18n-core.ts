@@ -159,6 +159,69 @@ export function localizeUsd(s: string, locale: string): string | null {
  */
 const SENTENCE_END = /(?<!(?:^|[\s(])\d{1,2})[.!?]\s+\p{Lu}/u;
 
+/**
+ * TeamBot's own words with someone else's in them, stored so every reader gets them in his own language: a Dutch
+ * template and the values that go in it (a name, a chat title, a routine's name), which are shown as written. The
+ * screen shows it with components/Words.tsx; the dictionary has the template.
+ */
+export interface Words {
+  text: string;
+  values?: WordsValue[];
+}
+
+/**
+ * A value in TeamBot's words: someone's own words (text, shown as written), a number, or TeamBot's words again with
+ * their own values ("Klik op {0}" with "de knop “{0}”" and the button's name), which are translated too.
+ */
+export type WordsValue = string | number | Words;
+
+export const isWords = (v: unknown): v is Words => !!v && typeof v === 'object' && typeof (v as Words).text === 'string';
+
+/**
+ * TeamBot's words with someone's own words in them, as stored: a Dutch template and its values. The one way a step,
+ * a note or a line is made with a name, a path or what a bot wrote in it ("Taak aan {0}: {1}", bot, task). A missing
+ * value is empty text; anything else that is not a number or words becomes text.
+ */
+export function words(text: string, ...values: unknown[]): Words {
+  return values.length ? { text, values: values.map((v) => (v == null ? '' : typeof v === 'number' || isWords(v) ? v : String(v))) } : { text };
+}
+
+/** Words as one Dutch text: what the bot reads, the log and an export (the template filled in, nested words too). */
+export function fillWords(w: Words | string): string {
+  if (typeof w === 'string') return w;
+  return fillSource(w.text, (w.values || []).map((v) => (isWords(v) ? fillWords(v) : v)));
+}
+
+/** Every text value of words changed by `fn` (secrets out, a long value cut), nested words too; templates stay. */
+export function mapOwnWords(w: Words, fn: (s: string) => string): Words {
+  return w.values?.length ? { text: w.text, values: w.values.map((v) => (typeof v === 'string' ? fn(v) : isWords(v) ? mapOwnWords(v, fn) : v)) } : { text: w.text };
+}
+
+/** One piece of a sentence with someone's own words in it: TeamBot's text, or `{ own }`, a value kept as written. */
+export type Piece = string | { own: string };
+
+/**
+ * A source template whose values are someone's own words (a chat title, a routine's name, what a bot wrote), in
+ * pieces: the template in the reader's language, every text value exactly as written. A value is never translated,
+ * also not when it is a Dutch word of the dictionary or fits a pattern (a chat title "Elke werkdag om 9:00 zoek je…"
+ * became "Every werkdag at 9:00 zoek je…"). A number is nobody's words: it stays a number, so it chooses the plural
+ * form. `format` fills a template (the Translator's, or fillSource in Dutch); the text values reach it as markers
+ * without letters, which no dictionary entry or pattern changes. A value that is TeamBot's words again is put in
+ * the same way: its template translated, its own values as written.
+ */
+export function ownPieces(tpl: string, values: WordsValue[], format: (tpl: string, values: (string | number)[]) => string): Piece[] {
+  const marked = values.map((v, i) => (typeof v === 'number' ? v : `⟦${'•'.repeat(i + 1)}⟧`));
+  const out: Piece[] = [];
+  for (const part of format(tpl, marked).split(/(⟦•+⟧)/)) {
+    const m = /^⟦(•+)⟧$/.exec(part);
+    const v = m ? values[m[1].length - 1] : undefined;
+    if (isWords(v)) out.push(...ownPieces(v.text, v.values || [], format));
+    else if (m) out.push({ own: String(v ?? '') });
+    else if (part) out.push(part);
+  }
+  return out;
+}
+
 /** One language's dictionary, compiled. */
 export class Translator {
   private exact = new Map<string, string>();
@@ -329,6 +392,12 @@ export class Translator {
         // An item that starts with an acronym ("CLI-agents", "SSO & SCIM") may stay as it is.
         const items = t.split(', ').map((x) => (/[A-Za-zÀ-ÿ]/.test(x) ? this.find(x, depth + 1) || (/^\p{Lu}{2,}/u.test(x) ? x : '') : x));
         if (items.every(Boolean)) r = items.join(this.locale.startsWith('ar') ? '، ' : ', ');
+      }
+      // A place in the screens ("Instellingen › Meer mogelijkheden › Spraak", shared/places.ts): every step is a title
+      // of its own, so every step translated, or the place stays as is.
+      if (r === undefined && depth < 3 && t.includes(' › ')) {
+        const steps = t.split(' › ').map((x) => this.find(x, depth + 1));
+        if (steps.every(Boolean)) r = steps.join(' › ');
       }
       // A fragment with a separator in front or behind (" · handmatig", ". Bots met …"): the text without it.
       if (r === undefined && depth < 3) {

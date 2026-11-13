@@ -11,7 +11,7 @@ import { approvalEngine, approvalWhat } from './approvalLabels.js';
 import { toolLabel } from './toolLabels.js';
 import { LABEL as FIELD_LABEL } from '../lib/historyText.js';
 import { stripRefs } from '../lib/preview.js';
-import { formatMoney, formatUsd, interfaceLocale, tFragment, tText } from '../lib/format.js';
+import { formatMoney, formatUsd, interfaceLocale, tFragment, tKnown, tText } from '../lib/format.js';
 
 export interface AuditRow {
   id: number;
@@ -100,6 +100,8 @@ const q = (v: unknown, max = 60) => {
   const s = clean(v, max);
   return s ? `“${s}”` : '';
 };
+/** An own rule, quoted: the owner's words as written, a rule in TeamBot's words (a starting rule) in the reader's language. */
+const ruleText = (v: unknown) => q(typeof v === 'string' ? tKnown(v) : v, 160);
 const num = (v: unknown) => (typeof v === 'number' && isFinite(v) ? v : Number(v) || 0);
 /** An amount in a currency the provider gave ("EUR", "USD"; "€"/"$" as symbols), in the reader's notation. */
 const money = (n: number, currency: string) => {
@@ -344,12 +346,12 @@ const EXACT: Record<string, Fn> = {
   // Own rules in plain words (module botrules): a rule that allows more, or removing a strict one, makes a bot looser.
   'botrules.added': (d, x) =>
     d.teamId
-      ? you(tpl`{h} een eigen regel voor alle bots van een team toegevoegd: ${q(d.text, 160) || 'zonder tekst'}`, { category: 'access', tone: d.effect === 'allow' ? 'warn' : undefined })
-      : you(tpl`{h} een eigen regel voor ${x.bot} toegevoegd: ${q(d.text, 160) || 'zonder tekst'}`, { category: 'access', tone: d.effect === 'allow' ? 'warn' : undefined }),
+      ? you(tpl`{h} een eigen regel voor alle bots van een team toegevoegd: ${ruleText(d.text) || 'zonder tekst'}`, { category: 'access', tone: d.effect === 'allow' ? 'warn' : undefined })
+      : you(tpl`{h} een eigen regel voor ${x.bot} toegevoegd: ${ruleText(d.text) || 'zonder tekst'}`, { category: 'access', tone: d.effect === 'allow' ? 'warn' : undefined }),
   'botrules.removed': (d, x) =>
     d.teamId
-      ? you(tpl`{h} een eigen regel voor alle bots van een team weggehaald: ${q(d.text, 160) || 'zonder tekst'}`, { category: 'access', tone: d.effect === 'allow' ? undefined : 'warn' })
-      : you(tpl`{h} een eigen regel voor ${x.bot} weggehaald: ${q(d.text, 160) || 'zonder tekst'}`, { category: 'access', tone: d.effect === 'allow' ? undefined : 'warn' }),
+      ? you(tpl`{h} een eigen regel voor alle bots van een team weggehaald: ${ruleText(d.text) || 'zonder tekst'}`, { category: 'access', tone: d.effect === 'allow' ? undefined : 'warn' })
+      : you(tpl`{h} een eigen regel voor ${x.bot} weggehaald: ${ruleText(d.text) || 'zonder tekst'}`, { category: 'access', tone: d.effect === 'allow' ? undefined : 'warn' }),
 
   // ---- access and security
   'secret.set': (d) => you(tpl`{h} het geheim ${q(d.name, 40) || 'zonder naam'} opgeslagen (de waarde staat versleuteld op de server)`, { category: 'access' }),
@@ -437,6 +439,7 @@ const EXACT: Record<string, Fn> = {
   'free_models.source': (d) =>
     you(d.on === false ? tpl`{h} ${engineName(d.kind) || 'een gratis bron'} uitgezet bij Gratis modellen` : d.on === true ? tpl`{h} ${engineName(d.kind) || 'een gratis bron'} aangezet bij Gratis modellen` : tpl`{h} de sleutel van ${engineName(d.kind) || 'een gratis bron'} vervangen bij Gratis modellen`, { category: 'connections' }),
   'free_models.model_gone': (d) => sys(tpl`{h} een gratis model${d.model ? ` (${clean(d.model, 60)})` : ''} uit de keten gehaald, omdat ${engineName(d.kind) || 'de aanbieder'} het niet meer aanbiedt`, { category: 'connections' }),
+  'localmodels.install': () => you(tpl`{h} Ollama laten installeren op deze computer`, { category: 'connections' }),
   'localmodels.pull': (d) => you(tpl`{h} het lokale model ${q(d.model) || ''} laten downloaden in Ollama`, { category: 'connections' }),
   'localmodels.use': (d) => you(tpl`{h} ${q(d.model) || 'een lokaal model'} gekozen als standaardmodel van Ollama voor nieuwe bots`, { category: 'connections' }),
   'folders.team_set': (d) => you(tpl`{h} de teammap ingesteld${d.path ? `: ${shortPath(d.path)}` : ''}${d.agents === 'all' ? ' (voor alle bots)' : d.agents !== undefined ? ` (voor ${plural(num(d.agents), 'bot', 'bots')})` : ''}${d.from === 'openbot-import' ? ' bij de OpenBot-import' : ''}`, { category: 'connections' }),
@@ -479,6 +482,12 @@ const EXACT: Record<string, Fn> = {
   'routine.paused': (d) => (d.by === 'system' ? sys : you)(tpl`{h} een routine gepauzeerd${d.reason ? `: ${clean(d.reason, 100)}` : ''}`, { category: 'routines' }),
   'routine.resumed': () => you('{h} een routine weer aangezet', { category: 'routines' }),
   'routine.deleted': (d) => you(tpl`{h} de routine ${q(d.name)} verwijderd`, { category: 'routines', tone: 'warn' }),
+  // The clean-up of what TeamBot once made by itself and never produced anything (routines/duties/service.ts), and the work loop (work.ts).
+  'routine.archived': (d) => sys(tpl`{h} de routine ${q(d.name)} opgeruimd: zelf aangemaakt en nooit iets opgeleverd (terug te zetten bij Werk)`, { category: 'routines' }),
+  'routine.restored': (d) => you(tpl`{h} de opgeruimde routine ${q(d.name)} teruggezet`, { category: 'routines' }),
+  'work.parked': (d) => you(tpl`{h} het werk dat klaarlag voor ${clean(d.agent, 60) || 'een bot'} op Nu niet gezet (${plural(num(d.items), 'punt', 'punten')})`),
+  'work.resumed': (d) => you(tpl`{h} ${clean(d.agent, 60) || 'een bot'} het werk dat klaarligt weer laten oppakken`),
+  'work.run': (d) => sys(d.result === 'gewerkt' ? tpl`{h} ${clean(d.agent, 60) || 'een bot'} het werk laten oppakken dat er lag (${plural(num(d.items), 'punt', 'punten')})` : d.result === 'fout' ? tpl`{h} ${clean(d.agent, 60) || 'een bot'} het werk laten oppakken dat er lag; de beurt is afgebroken` : tpl`{h} ${clean(d.agent, 60) || 'een bot'} naar het werk laten kijken dat er lag; er was niets te melden`, d.result === 'fout' ? { tone: 'warn' } : {}),
   'routine.confirmed': () => you('{h} een routine bevestigd zodat hij gaat draaien', { category: 'routines', approval: { text: 'Bevestigd door jou', tone: 'ok' } }),
   'routine.run.manual': () => you('{h} een routine nu laten draaien', { category: 'routines' }),
   'routine.run.after': () => you('{h} een routine ingepland na de reset van de limiet', { category: 'routines' }),
@@ -489,6 +498,9 @@ const EXACT: Record<string, Fn> = {
   'teams.stuck_retry': () => you('{h} vastgelopen werk opnieuw laten proberen'),
   // The main bot's overview of the team (teams/briefing.ts): what was done, what waits for the owner, the top kansen.
   'teams.briefing': (d) => sys(tpl`{h} het overzicht van je team gestuurd${num(d.kansen) ? ` (met ${plural(num(d.kansen), 'kans', 'kansen')})` : ''}`),
+  // The main bot comes to the owner by itself (teams/proactive.ts): in the morning, or when something needs him.
+  'teams.checkin': (d) => sys(d.result === 'said' ? tpl`{h} zich bij je gemeld` : tpl`{h} gekeken of er iets te melden was; er was niets`),
+  'teams.checkin_settings': (d) => you(d.enabled === false ? tpl`{h} het dagelijkse melden van je hoofdbot uitgezet` : tpl`{h} ingesteld wanneer je hoofdbot zich meldt${d.time ? ` (${String(d.time)})` : ''}`),
   'health.watchdog': (d) => you(d.notify === false ? '{h} de melding van de wachter buiten de app uitgezet' : '{h} de melding van de wachter buiten de app aangezet'),
   'routine.not_run': (d) => sys(tpl`{h} gemeld dat een geplande routine-run niet draaide${colon(clean(d.reason, 100))}`, { category: 'routines', tone: 'warn' }),
   'routine.stop_all': (d) => you(tpl`{h} met Alles stoppen ook wachtende routine-runs gestopt${d.cancelled !== undefined ? ` (${plural(num(d.cancelled), 'run', 'runs')})` : ''}`, { category: 'routines' }),
@@ -541,6 +553,7 @@ const EXACT: Record<string, Fn> = {
   'workflow.started': (d) => sys(d.trigger === 'webhook' ? '{h} een workflow gestart via het webadres' : '{h} een workflow gestart'),
   'workflow.resumed': () => you('{h} een workflow die wachtte laten doorgaan'),
   'image.generated': (d) => sys(tpl`{h} een afbeelding gemaakt${d.model ? ` met ${clean(d.model, 60)}` : ''}`),
+  'specialists.source_off': (d) => sys(tpl`{h} bij ${clean(d.agent, 60) || 'een bot'} een leerbron uitgezet die niet over zijn vakgebied gaat${d.label ? ` (${clean(d.label, 80)})` : ''}`),
   'specialists.adopted': (d) => sys(tpl`{h} ${clean(d.agent, 60) || 'een bot'} als specialist ingesteld, omdat de naam of rol een vakgebied noemt`),
   'backup.created': () => you('{h} een back-up gemaakt', { category: 'data' }),
   'backup.restore_staged': () => you('{h} een back-up klaargezet; die wordt teruggezet bij de volgende start', { category: 'data', tone: 'warn' }),

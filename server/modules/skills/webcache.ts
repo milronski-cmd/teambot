@@ -16,6 +16,8 @@ export class WebError extends Error {
     message: string,
     public status: number,
     public code: 'not-found' | 'rate-limited' | 'offline' | 'network' | 'too-large' | 'bad-response',
+    /** Rate limited: when the source may be asked again (ms since 1970). */
+    public until: number | null = null,
   ) {
     super(message);
   }
@@ -40,6 +42,11 @@ export interface CacheOptions {
   force?: boolean;
   /** Give up on this source after this long (default: the downloader's 30 s). */
   timeoutMs?: number;
+  /**
+   * The rate limit this request counts for, when one host has several (GitHub: searching has its own limit per minute,
+   * next to the hourly limit of the rest of its API). Default: the host.
+   */
+  limitKey?: string;
 }
 
 interface Meta {
@@ -186,7 +193,7 @@ export class WebCache {
     fs.rmSync(p.data, { force: true });
   }
 
-  /** Rate-limit state of a host (ms epoch until which it is left alone), for diagnostics and the UI. */
+  /** Rate-limit state of a host or `limitKey` (ms epoch until which it is left alone), for diagnostics and the UI. */
   blockedHost(host: string): number | null {
     const t = this.blockedUntil.get(host);
     return t && t > Date.now() ? t : null;
@@ -229,11 +236,12 @@ export class WebCache {
       if (have) return hit(true, 'Offline: laatst opgehaalde gegevens.');
       throw new WebError('TeamBot werkt offline en dit staat nog niet in de cache.', 503, 'offline');
     }
-    const until = this.blockedUntil.get(host);
+    const bucket = o.limitKey || host;
+    const until = this.blockedUntil.get(bucket);
     if (until && until > Date.now()) {
       const msg = `Limiet bereikt bij ${host}; opnieuw na ${new Date(until).toLocaleTimeString('nl-NL', { hour: '2-digit', minute: '2-digit' })}.`;
       if (have) return hit(true, msg);
-      throw new WebError(msg, 429, 'rate-limited');
+      throw new WebError(msg, 429, 'rate-limited', until);
     }
     const headers: Record<string, string> = { ...(o.headers || {}) };
     if (have && m!.etag && kind !== 'redirect') headers['if-none-match'] = m!.etag;
@@ -253,7 +261,7 @@ export class WebCache {
       throw new WebError(msg, /te groot/i.test(msg) ? 413 : 502, /te groot/i.test(msg) ? 'too-large' : 'network');
     }
     const h = res.headers || {};
-    this.noteRateLimit(host, res.status, h);
+    this.noteRateLimit(bucket, res.status, h);
     if (res.status === 304 && have) {
       this.touch(key, m!);
       return { ...hit(false, null), fetchedAt: new Date().toISOString() };
@@ -261,7 +269,7 @@ export class WebCache {
     if (res.status === 429 || (res.status === 403 && h['x-ratelimit-remaining'] === '0')) {
       const msg = `Limiet bereikt bij ${host}. Probeer het later opnieuw${host === 'api.github.com' ? ' of stel een GitHub-token in (Marktplaats › Bronnen)' : ''}.`;
       if (have) return hit(true, msg);
-      throw new WebError(msg, 429, 'rate-limited');
+      throw new WebError(msg, 429, 'rate-limited', this.blockedHost(bucket));
     }
     if (res.status === 404 || res.status === 410) throw new WebError(`Niet gevonden bij ${host}.`, 404, 'not-found');
     if (res.status >= 400) {

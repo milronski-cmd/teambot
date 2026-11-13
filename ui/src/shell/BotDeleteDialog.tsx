@@ -2,9 +2,10 @@ import { useEffect, useState } from 'react';
 import { api } from '../lib/api';
 import { useApp } from '../lib/store';
 import type { Agent } from '../lib/types';
-import { Button, Field, Input, Modal, Spinner, Toggle, toast, toastError } from '../components/ui';
+import { Button, Field, Input, Modal, Spinner, Toggle, toast, useAsync } from '../components/ui';
 import { t } from '../lib/i18n';
 import { isOwnWorkspace } from '../components/FolderName';
+import { tText } from '../lib/format';
 
 interface Preview {
   threads: number;
@@ -23,11 +24,48 @@ interface Preview {
  * "Bot verwijderen?" with exactly what goes and what stays (counts from GET /agents/:id/delete-preview). Used by the
  * bot editor and the chat menu. A cloud VM of the bot is never deleted silently: the owner chooses explicitly.
  */
+/**
+ * What a delete removes and what it keeps, read from the server first (a bot, a history): the error, a spinner while it
+ * loads, then the two lists and whatever the dialog adds (`children`).
+ */
+export function DeletePreview({ err, ready, goes, stays, children }: { err: string; ready: boolean; goes: string[]; stays: string[]; children?: React.ReactNode }) {
+  if (err) return <p className="text-danger">{err}</p>;
+  if (!ready)
+    return (
+      <div className="flex justify-center py-4">
+        <Spinner />
+      </div>
+    );
+  return (
+    <>
+      <div>
+        <h3 className="mb-1 font-semibold">Dit gaat weg</h3>
+        <ul className="list-disc space-y-0.5 ps-5">
+          {goes.map((x) => (
+            <li key={x}>{x}</li>
+          ))}
+        </ul>
+      </div>
+      <div>
+        <h3 className="mb-1 font-semibold">Dit blijft</h3>
+        <ul className="list-disc space-y-0.5 ps-5 text-muted">
+          {stays.map((x) => (
+            <li key={x} className="break-words">
+              {x}
+            </li>
+          ))}
+        </ul>
+      </div>
+      {children}
+    </>
+  );
+}
+
 export function BotDeleteDialog({ agent, open, onClose, onDeleted }: { agent: Agent | null | undefined; open: boolean; onClose(): void; onDeleted(): void }) {
   const [p, setP] = useState<Preview | null>(null);
   const [err, setErr] = useState('');
   const [deleteFiles, setDeleteFiles] = useState(false);
-  const [busy, setBusy] = useState(false);
+  const { busy, run } = useAsync();
   const [vmDel, setVmDel] = useState<{ vm: { id: string; name: string }; choice: 'keep' | 'delete' | null; typed: string } | null>(null);
   const id = agent?.id;
   useEffect(() => {
@@ -49,21 +87,15 @@ export function BotDeleteDialog({ agent, open, onClose, onDeleted }: { agent: Ag
     };
   }, [open, id]);
   if (!agent) return null;
-  const remove = async () => {
-    setBusy(true);
-    try {
+  const remove = () =>
+    run(async () => {
       if (vmDel?.choice === 'delete') await api.post(`/computers/cloud/vms/${vmDel.vm.id}/delete`, { confirm: vmDel.typed.trim() });
       const r = await api.del<{ filesDeleted: boolean; workspace: string }>(`/agents/${agent.id}${deleteFiles ? '?deleteFiles=1' : ''}`);
       useApp.setState((s) => ({ agents: s.agents.filter((a) => a.id !== agent.id), threads: s.threads.filter((t) => t.agent_id !== agent.id || !!t.room_id) }));
       toast(r.filesDeleted ? `${agent.name} en de werkmap zijn verwijderd` : `${agent.name} is verwijderd. De werkmap met bestanden is bewaard.`, 'ok');
       onClose();
       onDeleted();
-    } catch (e) {
-      toastError(e);
-    } finally {
-      setBusy(false);
-    }
-  };
+    });
   const goes: string[] = p
     ? [
         'de bot zelf: profiel, gezicht, instellingen en geschiedenis',
@@ -87,7 +119,7 @@ export function BotDeleteDialog({ agent, open, onClose, onDeleted }: { agent: Ag
     <Modal
       open={open}
       onClose={onClose}
-      title={`${agent.name} verwijderen?`}
+      title={tText('{0} verwijderen?', agent.name)}
       footer={
         <>
           <Button variant="ghost" onClick={onClose}>
@@ -100,39 +132,13 @@ export function BotDeleteDialog({ agent, open, onClose, onDeleted }: { agent: Ag
       }
     >
       <div className="space-y-3 text-sm">
-        {err ? (
-          <p className="text-danger">{err}</p>
-        ) : !p ? (
-          <div className="flex justify-center py-4">
-            <Spinner />
-          </div>
-        ) : (
-          <>
-            <div>
-              <h3 className="mb-1 font-semibold">Dit gaat weg</h3>
-              <ul className="list-disc space-y-0.5 ps-5">
-                {goes.map((x) => (
-                  <li key={x}>{x}</li>
-                ))}
-              </ul>
-            </div>
-            <div>
-              <h3 className="mb-1 font-semibold">Dit blijft</h3>
-              <ul className="list-disc space-y-0.5 ps-5 text-muted">
-                {stays.map((x) => (
-                  <li key={x} className="break-words">
-                    {x}
-                  </li>
-                ))}
-              </ul>
-            </div>
-            {p.workspaceInData ? (
-              <Toggle checked={deleteFiles} onChange={setDeleteFiles} label="Ook de werkmap met bestanden verwijderen" />
-            ) : (
-              <p className="text-xs text-muted">De werkmap staat buiten de TeamBot-datamap en wordt nooit door TeamBot gewist.</p>
-            )}
-          </>
-        )}
+        <DeletePreview err={err} ready={!!p} goes={goes} stays={stays}>
+          {p?.workspaceInData ? (
+            <Toggle checked={deleteFiles} onChange={setDeleteFiles} label="Ook de werkmap met bestanden verwijderen" />
+          ) : (
+            <p className="text-xs text-muted">De werkmap staat buiten de TeamBot-datamap en wordt nooit door TeamBot gewist.</p>
+          )}
+        </DeletePreview>
         {vmDel && (
           <fieldset className="space-y-2 rounded-lg border border-warn bg-warn-soft p-3">
             <legend className="px-1 font-medium">Cloud-VM {vmDel.vm.name}</legend>

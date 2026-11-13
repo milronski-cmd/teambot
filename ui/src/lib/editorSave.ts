@@ -190,12 +190,6 @@ export function unsavedLabels(fields: string[], sections: string[]): string[] {
   return out;
 }
 
-/** "Naam, Tools en Computer & bestanden" */
-export function listNl(items: string[]): string {
-  if (items.length <= 1) return items.join('');
-  return items.slice(0, -1).join(', ') + ' en ' + items[items.length - 1];
-}
-
 /**
  * Save the dirty sections one after another; a failing section does not stop the others. Returns which saved and
  * which failed (with the error message), so the editor can say exactly what is not stored.

@@ -40,18 +40,18 @@ if (!process.env.TEAMBOT_UI_DIR && path.resolve('dist/ui').includes(`${path.sep}
 }
 
 const browser = await chromium.launch({ channel: process.env.TEAMBOT_E2E_BROWSER || (process.platform === 'win32' ? 'msedge' : 'chrome'), headless: true, env: parentEnv });
-const { createApp } = await import('../../server/app.ts');
+const { createApp } = await import('./server.mjs');
 const app = await createApp({ dataDir: process.env.TEAMBOT_DATA, port, host: '127.0.0.1', mode: 'desktop', quiet: true });
 const token = app.ctx.auth.ensureLocalOwner();
 
 // A fake engine that answers by the step it is asked to do; the checker rejects the first text and accepts the second.
 let checks = 0;
-const TEXT2 = '# Stadsfiets Rood\n\nEen lichte stadsfiets met zeven versnellingen, een stille naafdynamo en een bagagedrager voor 25 kilo. Gemaakt voor elke dag, bij elk weer.';
+const TEXT2 = '# Nieuwe openingstijden\n\nVanaf 1 december zijn we elke werkdag open van 8 tot 18 uur en op zaterdag van 10 tot 14 uur. Bellen kan in die tijden ook.';
 const answer = (asked) => {
-  if (/Zoekwoorden en concurrenten/.test(asked)) return 'Hoofdzoekwoord: rode stadsfiets. Bijzoekwoorden: stadsfiets dames, fiets 7 versnellingen. Titel: Rode stadsfiets kopen.';
-  if (/Producttekst schrijven/.test(asked)) return /AFGEKEURD/.test(asked) ? TEXT2 : 'Rode fiets. Goed.';
-  if (/Kwaliteitscontrole/.test(asked)) return ++checks === 1 ? 'AFGEKEURD: de tekst is te kort en noemt geen eigenschappen.' : `AKKOORD\n\n${TEXT2}`;
-  if (/Klaarzetten in de webshop/.test(asked)) return 'De pagina staat klaar als concept in de webshop: Stadsfiets Rood.';
+  if (/: Opzet maken/.test(asked)) return 'Voor wie: alle vaste contacten. Wat erin moet: de nieuwe tijden per dag, de ingangsdatum en dat bellen in die tijden kan.';
+  if (/: Tekst schrijven/.test(asked)) return /AFGEKEURD/.test(asked) ? TEXT2 : 'We zijn anders open.';
+  if (/: Tekst controleren/.test(asked)) return ++checks === 1 ? 'AFGEKEURD: de tekst is te kort en noemt geen tijden.' : `AKKOORD\n\n${TEXT2}`;
+  if (/: Versturen of plaatsen/.test(asked)) return 'De tekst staat klaar als bestand openingstijden.md in de werkmap.';
   return 'Gedaan.';
 };
 app.ctx.providers.registerKind({
@@ -86,7 +86,7 @@ const call = async (method, p, body) => {
 };
 const prov = await call('POST', '/providers', { kind: 'mock', name: 'Testmodel' });
 const bots = {};
-for (const [name, role] of [['Baas', 'Hoofdbot'], ['SEO & Content', 'Zoekwoorden en teksten'], ['Content Kwaliteit', 'Controleert teksten'], ['Bouwer Sites', 'Bouwt en beheert de webshop'], ['Ads & Shopping', 'Google Ads en Merchant Center']])
+for (const [name, role] of [['Baas', 'Hoofdbot'], ['Onderzoeker', 'Zoekt dingen uit'], ['Schrijver', 'Schrijft teksten'], ['Controleur', 'Controleert teksten op kwaliteit'], ['Klantcontact', 'Beantwoordt vragen en verstuurt berichten']])
   bots[name] = await call('POST', '/agents', { name, role, provider_id: prov.id, model: 'mock-1', access_mode: 'auto' });
 const SHOTS = process.env.TEAMBOT_E2E_SHOTS || '';
 if (SHOTS) fs.mkdirSync(SHOTS, { recursive: true });
@@ -120,47 +120,47 @@ try {
   await hit.click().catch(() => {});
   await page.getByRole('heading', { name: 'Workflows', level: 1 }).waitFor({ timeout: 8000 });
   await page.getByText('Nog geen workflows').waitFor({ timeout: 5000 });
-  await page.getByText('Productpagina van idee tot live').waitFor({ timeout: 5000 });
+  await page.getByText('Tekst schrijven en laten controleren').waitFor({ timeout: 5000 });
   await shot(page, '1-workflows-leeg-met-voorbeelden');
   await axe(page, 'overzicht');
   step('Ctrl+K › “workflow” opent de pagina: lege staat met vier voorbeelden');
 
   // 2. Use an example: the owner's own bots are filled in per step.
-  await page.locator('div', { hasText: /^Productpagina van idee tot live/ }).getByRole('button', { name: 'Gebruiken' }).first().click();
-  await page.getByRole('heading', { name: 'Productpagina van idee tot live', level: 1 }).waitFor({ timeout: 8000 });
+  await page.locator('div', { hasText: /^Tekst schrijven en laten controleren/ }).getByRole('button', { name: 'Gebruiken' }).first().click();
+  await page.getByRole('heading', { name: 'Tekst schrijven en laten controleren', level: 1 }).waitFor({ timeout: 8000 });
   const stepCard = (n) => page.locator(`[data-step="${n}"]`);
   await stepCard(7).waitFor({ timeout: 5000 });
   const chosen = async (n) => stepCard(n).getByLabel('Welke bot').evaluate((el) => el.options[el.selectedIndex].text);
   const picks = [await chosen(1), await chosen(2), await chosen(3), await chosen(6)];
-  if (picks.join('|') !== 'SEO & Content|SEO & Content|Content Kwaliteit|Bouwer Sites') fail(`bots per stap: ${picks.join('|')}`);
+  if (picks.join('|') !== 'Onderzoeker|Schrijver|Controleur|Klantcontact') fail(`bots per stap: ${picks.join('|')}`);
   await shot(page, '2-editor-uit-voorbeeld');
   await axe(page, 'editor');
   step(`voorbeeld gebruikt: 7 stappen, bots gekozen op naam (${picks.join(', ')})`);
 
   // 3. A change is a new version; the earlier one can be put back.
-  await stepCard(5).getByLabel('Wat moet je weten voor je akkoord geeft?').fill('Lees de tekst goed. Daarna gaat hij naar de webshop.');
+  await stepCard(5).getByLabel('Wat moet je weten voor je akkoord geeft?').fill('Lees de tekst goed. Daarna gaat hij naar alle vaste contacten.');
   await page.getByRole('button', { name: 'Opslaan' }).click();
   await page.getByText('Eerdere versies').waitFor({ timeout: 8000 });
   await page.getByText('Eerdere versies').click(); // a fold: open it to see the versions
   await page.getByText('Versie 2', { exact: true }).waitFor({ timeout: 5000 });
   const wf = (await call('GET', '/workflows')).workflows[0];
-  if (wf.version !== 2 || wf.steps[4].note !== 'Lees de tekst goed. Daarna gaat hij naar de webshop.') fail(`na opslaan: versie ${wf.version}, ${JSON.stringify(wf.steps[4])}`);
+  if (wf.version !== 2 || wf.steps[4].note !== 'Lees de tekst goed. Daarna gaat hij naar alle vaste contacten.') fail(`na opslaan: versie ${wf.version}, ${JSON.stringify(wf.steps[4])}`);
   step('stap 5 aangepast en opgeslagen: versie 2, versie 1 staat bij “Eerdere versies”');
 
   // 4. Start with an input; the run page shows the steps live.
   await page.getByRole('button', { name: 'Starten' }).first().click();
   const dlg = page.getByRole('dialog');
-  await dlg.getByLabel('Waar moet de workflow mee werken?').fill('Stadsfiets Rood, 7 versnellingen, naafdynamo');
+  await dlg.getByLabel('Waar moet de workflow mee werken?').fill('Een mail aan alle vaste contacten over de nieuwe openingstijden vanaf 1 december');
   await dlg.getByRole('button', { name: 'Starten' }).click();
   await page.waitForURL(/#\/m\/workflows\/run\//, { timeout: 8000 });
   const card = page.getByRole('group', { name: 'Akkoord voor een workflow' });
   await card.waitFor({ timeout: 30_000 });
-  await page.getByText('Nee, terug naar stap 2: Producttekst schrijven').waitFor({ timeout: 5000 });
+  await page.getByText('Nee, terug naar stap 2: Tekst schrijven').waitFor({ timeout: 5000 });
   const titles = await page.locator('ol > li[data-trace] span.font-semibold').allTextContents();
-  const want = ['1. Zoekwoorden en concurrenten', '2. Producttekst schrijven', '3. Kwaliteitscontrole', '4. Goedgekeurd door de controle?', '2. Producttekst schrijven', '3. Kwaliteitscontrole', '4. Goedgekeurd door de controle?', '5. Jouw akkoord'];
+  const want = ['1. Opzet maken', '2. Tekst schrijven', '3. Tekst controleren', '4. Goedgekeurd door de controle?', '2. Tekst schrijven', '3. Tekst controleren', '4. Goedgekeurd door de controle?', '5. Jouw akkoord'];
   if (titles.map((s) => s.trim()).join('|') !== want.join('|')) fail(`stappen op de runpagina: ${titles.join('|')}`);
-  if (!(await card.getByText('zeven versnellingen', { exact: false }).count())) fail('de kaart toont de tekst niet waar je akkoord op geeft');
-  if (!(await card.getByText('Lees de tekst goed. Daarna gaat hij naar de webshop.').count())) fail('de kaart toont de toelichting van de stap niet');
+  if (!(await card.getByText('elke werkdag open van 8 tot 18 uur', { exact: false }).count())) fail('de kaart toont de tekst niet waar je akkoord op geeft');
+  if (!(await card.getByText('Lees de tekst goed. Daarna gaat hij naar alle vaste contacten.').count())) fail('de kaart toont de toelichting van de stap niet');
   if (!(await page.getByText('Wacht op jou').count())) fail('status “Wacht op jou” ontbreekt');
   await shot(page, '3-run-wacht-op-akkoord');
   await axe(page, 'run');
@@ -180,14 +180,14 @@ try {
   // 6. Approve: the last bot does its step, the result is shown and told.
   await page.getByRole('group', { name: 'Akkoord voor een workflow' }).getByRole('button', { name: 'Akkoord, ga door' }).click();
   await page.getByText('Resultaat', { exact: true }).waitFor({ timeout: 30_000 });
-  await page.getByText('De pagina staat klaar als concept in de webshop: Stadsfiets Rood.').first().waitFor({ timeout: 5000 });
+  await page.getByText('De tekst staat klaar als bestand openingstijden.md in de werkmap.').first().waitFor({ timeout: 5000 });
   if (await page.getByRole('group', { name: 'Akkoord voor een workflow' }).count()) fail('de kaart staat er nog na het akkoord');
   await shot(page, '5-run-klaar');
   const runs = (await call('GET', `/workflows/${wf.id}/runs`)).runs;
   if (runs.length !== 1 || runs[0].status !== 'done') fail(`runs: ${JSON.stringify(runs)}`);
   const notes = await call('GET', '/notifications');
   const list = Array.isArray(notes) ? notes : notes.items || notes.notifications || [];
-  if (!list.some((n) => /Productpagina van idee tot live/.test(n.title || ''))) fail(`geen melding van de workflow: ${JSON.stringify(list.map((n) => n.title))}`);
+  if (!list.some((n) => /Tekst schrijven en laten controleren/.test(n.title || ''))) fail(`geen melding van de workflow: ${JSON.stringify(list.map((n) => n.title))}`);
   step('akkoord gegeven: stap 6 gedaan, resultaat op de pagina en een melding in de bel');
 
   // 7. The work of a step opens as a conversation of that bot, with a way back to the run.
@@ -210,17 +210,17 @@ try {
   const after = (await call('GET', `/workflows/${wf.id}/runs`)).runs;
   if (after[0].status !== 'stopped') fail(`na niet akkoord: ${after[0].status}`);
   const denied = await call('GET', `/workflow-runs/${after[0].id}`);
-  if (denied.trace.at(-1).status !== 'denied' || denied.trace.some((x) => x.title === 'Klaarzetten in de webshop')) fail(`stap 6 liep toch na “Niet akkoord”: ${denied.trace.map((x) => `${x.title}:${x.status}`).join(', ')}`);
-  if (await page.locator('ol > li[data-trace]').getByText('Klaarzetten in de webshop').count()) fail('de runpagina toont stap 6 als gedaan na “Niet akkoord”');
+  if (denied.trace.at(-1).status !== 'denied' || denied.trace.some((x) => x.title === 'Versturen of plaatsen')) fail(`stap 6 liep toch na “Niet akkoord”: ${denied.trace.map((x) => `${x.title}:${x.status}`).join(', ')}`);
+  if (await page.locator('ol > li[data-trace]').getByText('Versturen of plaatsen').count()) fail('de runpagina toont stap 6 als gedaan na “Niet akkoord”');
   step('tweede run: “Niet akkoord, stop” stopt de run; de stap erna is niet gedaan');
 
   // 9. Build one by hand.
   await page.goto(`${app.url}/#/m/workflows/w/nieuw`);
-  await page.getByLabel('Naam', { exact: true }).fill('Ads nakijken');
+  await page.getByLabel('Naam', { exact: true }).fill('Wekelijks nakijken');
   await page.getByRole('button', { name: 'Bot', exact: true }).click();
-  await stepCard(1).getByLabel('Welke bot').selectOption({ label: 'Ads & Shopping' });
+  await stepCard(1).getByLabel('Welke bot').selectOption({ label: 'Onderzoeker' });
   await stepCard(1).getByLabel('Naam van de stap').fill('Cijfers');
-  await stepCard(1).getByLabel('Wat moet de bot doen?').fill('Bekijk de campagnes van deze week.');
+  await stepCard(1).getByLabel('Wat moet de bot doen?').fill('Bekijk de cijfers van deze week.');
   await page.getByRole('button', { name: 'Jouw akkoord', exact: true }).click();
   await page.getByRole('button', { name: 'Opslaan' }).click();
   await page.waitForURL(/#\/m\/workflows\/w\/wfl_/, { timeout: 8000 });
@@ -228,7 +228,7 @@ try {
   await page.getByRole('button', { name: 'vr', exact: true }).click();
   await page.getByRole('button', { name: 'Opslaan' }).click();
   await page.waitForTimeout(600);
-  const mine = (await call('GET', '/workflows')).workflows.find((w) => w.name === 'Ads nakijken');
+  const mine = (await call('GET', '/workflows')).workflows.find((w) => w.name === 'Wekelijks nakijken');
   if (!mine || mine.steps.length !== 2 || mine.schedule.kind !== 'weekly' || mine.schedule.days.join() !== '1,5' || !mine.nextRun) fail(`eigen workflow: ${JSON.stringify(mine)}`);
   await shot(page, '7-eigen-workflow-met-schema');
   step('zelf een workflow gemaakt (bot + akkoord) met een schema op maandag en vrijdag: de volgende run is bekend');
@@ -240,7 +240,7 @@ try {
   await phone.waitForTimeout(600);
   await phone.goto(`${app.url}/#/m/workflows`);
   await phone.getByRole('heading', { name: 'Workflows', level: 1 }).waitFor({ timeout: 8000 });
-  await phone.getByText('Ads nakijken').waitFor({ timeout: 5000 });
+  await phone.getByText('Wekelijks nakijken').waitFor({ timeout: 5000 });
   const wide = await phone.evaluate(() => document.documentElement.scrollWidth > window.innerWidth + 1);
   if (wide) fail('telefoon: het overzicht schuift opzij');
   if (SHOTS) await phone.screenshot({ path: path.join(SHOTS, '8-telefoon-overzicht.png') });

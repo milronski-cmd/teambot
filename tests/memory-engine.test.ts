@@ -5,7 +5,7 @@ import path from 'node:path';
 import { startTestApp } from './helpers.js';
 import { parseJsonObject } from '../server/agent/short-call.js';
 import { claudeOneShotArgs, codexOneShotArgs, openCodeOneShot, pickEngine, setBackoff } from '../server/modules/memory/engine.js';
-import { parseLearnAnswer, groundedShare } from '../server/modules/memory/learn.js';
+import { parseReview, groundedShare } from '../server/modules/memory/learn.js';
 
 test('engine: Claude Code one-shot has no tools, no session, no user settings/MCP and our own system prompt', () => {
   const help = '--tools <tools...> --no-session-persistence --safe-mode --disable-slash-commands --permission-mode (choices: "acceptEdits", "dontAsk", "plan") --permission-prompts --system-prompt[-file]';
@@ -81,16 +81,14 @@ test('engine choice: the bot’s own subscription CLI first; a paid login, a pai
   }
 });
 
-test('learn answer parsing is strict; grounding measures how much comes from the owner', () => {
+test('the review’s answer is parsed strictly; grounding measures how much comes from the owner', () => {
   assert.deepEqual(parseJsonObject('Hier: ```json\n{"a":{"b":"}"}}\n``` klaar {x}'), { a: { b: '}' } });
   assert.equal(parseJsonObject('geen json'), null);
   assert.equal(parseJsonObject('[1,2]'), null);
-  const p = parseLearnAnswer('{"items":[{"content":"Ik woon in Zwolle","type":"weird","evidence":"ik woon in Zwolle","msg":"x1","replaces":"DROP TABLE"},{"content":"x","evidence":"y"},"rommel"]}');
-  assert.equal(p.items.length, 1);
-  assert.equal(p.items[0].type, 'fact');
-  assert.equal(p.items[0].replaces, null);
-  assert.equal(p.items[0].msg, '1');
-  assert.equal(parseLearnAnswer('kapot').ok, false);
+  // The review answers in plain lines ("Dossiernaam: zin"); anything else is no line.
+  const p = parseReview('Eigenaar: Ik woon in Zwolle\nrommel zonder vorm\nx: y\nNIETS');
+  assert.deepEqual(p.lines, [{ dossier: 'Eigenaar', content: 'Ik woon in Zwolle' }]);
+  assert.deepEqual(parseReview('kapot').lines, []);
   assert.ok(groundedShare('Ik woon in Amersfoort', 'ik woon niet meer in Utrecht maar in Amersfoort') === 1);
   assert.ok(groundedShare('Ik ben getrouwd met de koning van Spanje', 'ik woon in Utrecht') < 0.3);
   assert.ok(groundedShare('Antwoord voortaan kort', 'voortaan wil ik kortere antwoorden') >= 0.6, 'stemming slack');

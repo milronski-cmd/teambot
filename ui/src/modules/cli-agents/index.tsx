@@ -1,12 +1,13 @@
 import { useCallback, useEffect, useState } from 'react';
 import { AlertTriangle, ChevronDown, Copy, Download, ExternalLink, KeyRound, LogIn, Plug, RefreshCw, RotateCcw, Terminal, Trash2, Wallet, XCircle } from 'lucide-react';
 import type { UIModule } from '../types';
-import type { Agent, ProviderTestResult } from '../../lib/types';
+import type { ProviderTestResult } from '../../lib/types';
 import { api, on } from '../../lib/api';
 import { useApp } from '../../lib/store';
 import { t, uiLocale } from '../../lib/i18n';
 import { prettyModel } from '../../lib/modelLabel';
-import { askConfirm, Button, Card, EmptyState, Field, Input, Spinner, Textarea, Toggle, cx, timeAgo, toast, useAsync } from '../../components/ui';
+import { firstSentence } from '../../lib/sentence';
+import { askConfirm, Button, Card, CardHead, EmptyState, Field, Input, Spinner, cx, timeAgo, toast, useAsync } from '../../components/ui';
 import { ConnectCard, ConnectResult, type ConnectState } from '../../components/ConnectCard';
 import { MoreInfo } from '../../components/MoreInfo';
 import { FreeStartButton, JobProgress, LocalModelHint, OwnCopy, freeStart, useRuntimeJob, type DeviceLoginView, type RuntimeView } from './runtime';
@@ -62,16 +63,7 @@ interface StatusResponse {
   localModel?: boolean;
 }
 
-const KIND_ENGINE: Record<string, 'claude' | 'codex' | 'acp'> = { 'claude-code': 'claude', 'codex-cli': 'codex' };
-const engineOf = (kind: string) => KIND_ENGINE[kind] || 'acp';
-
-/** Extra flags TeamBot accepts per CLI (mirrors server/modules/cli-agents/catalog.ts). */
-const EXTRA_ARGS: Record<string, string[]> = {
-  'claude-code': ['--fallback-model <model>', '--max-budget-usd <usd>', '--agent <agent>', '--autocompact <auto|tokens>', '--exclude-dynamic-system-prompt-sections'],
-  'codex-cli': ['--oss', '--local-provider <lmstudio|ollama>', '--profile <naam>'],
-  'gemini-cli': ['--sandbox'],
-  'copilot-cli': ['--effort <low|medium|high|xhigh>'],
-};
+// (What a bot on a program may set for that program is on the bot page itself, per kind of AI: pages/agentRows.ts.)
 
 async function copy(text: string) {
   try {
@@ -88,7 +80,7 @@ function Cmd({ cmd, label }: { cmd: string; label?: string }) {
       {label && <div className="mb-0.5 text-xs text-muted">{label}</div>}
       <div className="flex items-start gap-1.5">
         <code className="min-w-0 flex-1 break-all rounded-md bg-surface-2 px-2 py-1.5 font-mono text-xs">{cmd}</code>
-        <Button size="icon" variant="ghost" className="h-7 w-7 shrink-0" aria-label={`Kopieer: ${cmd}`} onClick={() => copy(cmd)}>
+        <Button size="icon" variant="ghost" className="h-7 w-7 shrink-0" aria-label={t('Kopieer: {0}', cmd)} onClick={() => copy(cmd)}>
           <Copy className="h-3.5 w-3.5" />
         </Button>
       </div>
@@ -118,12 +110,13 @@ const LINE: Record<string, string> = {
   'codex-cli': 'Je ChatGPT-abonnement, via het officiële Codex van OpenAI.',
   opencode: 'Gratis modellen zonder account, via OpenCode.',
 };
-const firstSentence = (s: string) => (s.match(/^.*?[.!?](?=\s|$)/)?.[0] || s).trim();
 
 /**
  * One program (Claude Code, Codex, OpenCode …) on the shared connect card: one line and ONE button that does the next
- * step and goes on to the end by itself. Not on this pc → TeamBot installs its own checked copy, then the login starts;
- * not logged in → the login; logged in → connect and test ("Verbinding werkt"). Everything else is under "Meer opties".
+ * step and goes on to the end by itself. The same words as every other row behind "AI toevoegen" (free models, local
+ * models, the search list): "Installeren" (TeamBot installs its own checked copy, then the login starts), "Inloggen",
+ * "Koppelen", and once connected "Testen"; the outcome stands under the card ("Verbinding werkt" or why not).
+ * Everything else is under "Meer opties".
  */
 function CliCard({ it, provider, desktop, onChanged }: { it: CliItem; provider?: { id: string; name: string }; desktop: boolean; onChanged(): void }) {
   const [editPath, setEditPath] = useState(false);
@@ -224,15 +217,16 @@ function CliCard({ it, provider, desktop, onChanged }: { it: CliItem; provider?:
     state = 'on';
     action = (
       <Button size="sm" onClick={test}>
-        Test
+        Testen
       </Button>
     );
   } else if (!it.installed) {
     stateLabel = undefined;
+    // Installs TeamBot's own copy and goes on by itself: the login (Claude Code, Codex), then connect and test.
     if (canOwnCopy)
       action = (
         <Button size="sm" variant="primary" icon={<Download className="h-4 w-4" />} onClick={install}>
-          {it.id === 'opencode' ? 'Installeren en koppelen' : 'Installeren en inloggen'}
+          Installeren
         </Button>
       );
   } else if (loggedOut) {
@@ -247,7 +241,7 @@ function CliCard({ it, provider, desktop, onChanged }: { it: CliItem; provider?:
     state = 'error';
     action = (
       <Button size="sm" variant="primary" onClick={test}>
-        Opnieuw testen
+        Testen
       </Button>
     );
   } else {
@@ -264,6 +258,7 @@ function CliCard({ it, provider, desktop, onChanged }: { it: CliItem; provider?:
   return (
     <ConnectCard
       icon={<Terminal aria-hidden />}
+      tone="violet"
       title={it.label}
       line={line}
       state={state}
@@ -306,8 +301,22 @@ function CliCard({ it, provider, desktop, onChanged }: { it: CliItem; provider?:
               it.install.length > 0 &&
               (
                 <div className="space-y-2">
-                  <div className="flex items-center gap-1.5 text-sm font-medium">
-                    <Download className="h-4 w-4" aria-hidden /> Zelf installeren (officiële opdracht)
+                  {/* One clear way in: TeamBot installs it (with this computer's npm, or with its own Node.js when there is none). */}
+                  {it.canInstall && (
+                    <Button
+                      size="sm"
+                      icon={<Download className="h-4 w-4" />}
+                      loading={save.busy}
+                      onClick={async () =>
+                        (await askConfirm(`TeamBot installeert ${it.label}. Daarna log je zelf in. Doorgaan?`)) &&
+                        save.run(async () => (await api.post(`/cli-agents/${it.id}/install`, { confirm: true }), onChanged()), `${it.label} geïnstalleerd`)
+                      }
+                    >
+                      Installeren
+                    </Button>
+                  )}
+                  <div className={cx('flex items-center gap-1.5 font-medium', it.canInstall ? 'text-xs text-muted' : 'text-sm')}>
+                    {!it.canInstall && <Download className="h-4 w-4" aria-hidden />} {it.canInstall ? 'Of zelf installeren (officiële opdracht)' : 'Zelf installeren (officiële opdracht)'}
                   </div>
                   {it.install.map((l) =>
                     l.note ? (
@@ -319,19 +328,6 @@ function CliCard({ it, provider, desktop, onChanged }: { it: CliItem; provider?:
                     ),
                   )}
                   <p className="text-xs text-muted">Draai dit zelf in een terminal en klik daarna op “Opnieuw zoeken”.</p>
-                  {it.canInstall && (
-                    <Button
-                      size="sm"
-                      variant="secondary"
-                      loading={save.busy}
-                      onClick={async () =>
-                        (await askConfirm(`TeamBot installeert ${it.label}. Daarna log je zelf in. Doorgaan?`)) &&
-                        save.run(async () => (await api.post(`/cli-agents/${it.id}/install`, { confirm: true }), onChanged()), `${it.label} geïnstalleerd`)
-                      }
-                    >
-                      Voor mij installeren (npm)
-                    </Button>
-                  )}
                 </div>
               )}
             {it.installed && it.path && (
@@ -342,7 +338,7 @@ function CliCard({ it, provider, desktop, onChanged }: { it: CliItem; provider?:
             {editPath && (
               <div className="space-y-2">
                 <Field label="Volledig pad naar het programma" hint={it.id === 'claude-code' ? 'Bijv. C:\\Users\\naam\\.local\\bin\\claude.exe' : 'Bijv. C:\\Users\\naam\\AppData\\Roaming\\npm\\' + (it.id.split('-')[0] || 'cli') + '.cmd'}>
-                  <Input value={p} onChange={(e) => setP(e.target.value)} placeholder="Volledig pad" aria-label={`Pad naar ${it.label}`} />
+                  <Input value={p} onChange={(e) => setP(e.target.value)} placeholder="Volledig pad" aria-label={t('Pad naar {0}', it.label)} />
                 </Field>
                 <div className="flex flex-wrap gap-2">
                   <Button size="sm" variant="primary" loading={save.busy} disabled={!p.trim()} onClick={() => savePath(p.trim())}>
@@ -435,10 +431,7 @@ function CustomAcp({ data, onChanged }: { data: StatusResponse; onChanged(): voi
   };
   return (
     <Card className="p-4">
-      <div className="flex items-center gap-2">
-        <Terminal className="h-4 w-4 text-muted" aria-hidden />
-        <h3 className="font-semibold">Eigen ACP-agent</h3>
-      </div>
+      <CardHead as="h3" icon={Terminal} tone="violet" title="Eigen ACP-agent" />
       <p className="mt-1.5 text-sm text-muted">
         Elke agent die het Agent Client Protocol (ACP) over stdio spreekt, bijvoorbeeld een eigen runner. TeamBot opent een sessie in de werkmap van de bot, stuurt toestemmingsverzoeken naar jou en geeft alleen bestanden binnen de werkmap vrij.
       </p>
@@ -452,7 +445,7 @@ function CustomAcp({ data, onChanged }: { data: StatusResponse; onChanged(): voi
                   {p.config?.command} {(p.config?.args || []).join(' ')}
                 </div>
               </div>
-              <Button size="icon" variant="ghost" aria-label={`${p.name} verwijderen`} onClick={() => remove(p.id, p.name)} disabled={del.busy}>
+              <Button size="icon" variant="ghost" aria-label={t('{0} verwijderen', p.name)} onClick={() => remove(p.id, p.name)} disabled={del.busy}>
                 <Trash2 className="h-4 w-4" />
               </Button>
             </li>
@@ -577,111 +570,6 @@ function CliSettings() {
   );
 }
 
-// ---------------------------------------------------------------- bot editor section
-
-const MODE_TEXT: Record<'claude' | 'codex' | 'acp', Record<string, string>> = {
-  claude: {
-    chat: 'Claude Code draait zonder tools (alleen praten).',
-    readonly: 'Plan-modus: Claude Code mag lezen, en niets kan worden goedgekeurd.',
-    ask: 'Elke actie waarvoor Claude Code toestemming nodig heeft, komt bij jou als goedkeuring (ook op je telefoon).',
-    auto: 'Werkt automatisch; acties met impact (pushen, publiceren, verwijderen, verzenden) vragen het jou.',
-    full: 'Alles in de werkmap gaat zonder te vragen; verzenden naar anderen vraagt het jou nog.',
-  },
-  codex: {
-    chat: 'Niet mogelijk: Codex kan niet zonder tools draaien. Kies “Alleen lezen”.',
-    readonly: 'Alleen lezen; er kan niets worden goedgekeurd.',
-    ask: 'Alleen lezen; schrijven en netwerk alleen na jouw goedkeuring.',
-    auto: 'Mag schrijven in de mappen van de bot, zonder netwerk. Wat meer nodig heeft, wordt geweigerd.',
-    full: 'Mag schrijven in de mappen van de bot, met netwerk, zonder te vragen.',
-  },
-  acp: {
-    chat: 'Niet mogelijk: deze CLI kan niet zonder tools draaien. Kies “Alleen lezen”.',
-    readonly: 'Plan-/alleen-lezen-modus waar de CLI die heeft; alleen leesacties worden toegestaan, schrijven geweigerd.',
-    ask: 'Elk toestemmingsverzoek van de CLI komt bij jou als goedkeuring. Bestanden alleen binnen de werkmap.',
-    auto: 'Werkt automatisch; acties met impact vragen het jou.',
-    full: 'Alles in de werkmap zonder te vragen; versturen naar anderen vraagt het jou nog.',
-  },
-};
-
-const MODE_LABEL: Record<string, string> = { chat: 'Alleen chat', readonly: 'Alleen lezen', ask: 'Vraagt toestemming', auto: 'Automatisch', full: 'Volledige toegang' };
-
-const list = (s: string) =>
-  s
-    .split(/[,\n]/)
-    .map((x) => x.trim())
-    .filter(Boolean);
-
-function CliAgentSection({ agent, onChange }: { agent: Agent; onChange(patch: Partial<Agent>): void }) {
-  const providers = useApp((s) => s.providers);
-  const p = providers.find((x) => x.id === agent.provider_id);
-  const cli = (agent.settings?.cli || {}) as Record<string, any>;
-  const [allowed, setAllowed] = useState((cli.allowedTools || []).join(', '));
-  const [denied, setDenied] = useState((cli.disallowedTools || []).join(', '));
-  const [extra, setExtra] = useState((cli.extraArgs || []).join(' '));
-  if (!p || p.type !== 'cli') {
-    return <p className="text-sm text-muted">Geldt alleen voor bots op een programma met je eigen login (Instellingen › Abonnementen).</p>;
-  }
-  const engine = engineOf(p.kind);
-  const set = (patch: Record<string, any>) => onChange({ settings: { ...(agent.settings || {}), cli: { ...cli, ...patch } } });
-  const num = (v: string) => (v === '' ? undefined : Math.max(1, Number(v) || 1));
-  return (
-    <div className="space-y-4 text-sm">
-      <div className="rounded-lg bg-surface-2 px-3 py-2">
-        <div className="font-medium">
-          {p.name} · {MODE_LABEL[agent.access_mode] || agent.access_mode}
-        </div>
-        <div className="mt-0.5 text-muted">{MODE_TEXT[engine][agent.access_mode] || ''}</div>
-      </div>
-      <div className="grid gap-3 sm:grid-cols-3">
-        {engine === 'claude' && (
-          <Field label="Max. stappen per beurt">
-            <Input type="number" min={1} max={500} value={cli.maxTurns ?? ''} placeholder="40" onChange={(e) => set({ maxTurns: num(e.target.value) })} />
-          </Field>
-        )}
-        <Field label="Max. duur (min)">
-          <Input type="number" min={1} max={1440} value={cli.timeoutMin ?? ''} placeholder="60" onChange={(e) => set({ timeoutMin: num(e.target.value) })} />
-        </Field>
-        <Field label="Stoppen na stilte (min)" hint="Telt niet terwijl de bot op jou wacht">
-          <Input type="number" min={1} max={240} value={cli.idleMin ?? ''} placeholder="10" onChange={(e) => set({ idleMin: num(e.target.value) })} />
-        </Field>
-      </div>
-      {(engine === 'claude' || engine === 'codex') && (
-        <div className="space-y-1">
-          <Toggle checked={!!cli.useUserMcp} onChange={(v) => set({ useUserMcp: v })} label={engine === 'codex' ? 'Eigen MCP-servers, plugins en computer-/browsergebruik van Codex toestaan' : 'Eigen MCP-servers van Claude Code gebruiken'} />
-          {cli.useUserMcp && (
-            <p className="flex items-start gap-1.5 text-xs text-warn">
-              <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" /> Tools van die servers volgen het beleid van de CLI zelf{engine === 'codex' ? ' en kunnen zonder goedkeuring van TeamBot handelen' : ''}.
-            </p>
-          )}
-        </div>
-      )}
-      {engine === 'claude' && (
-        <>
-          <div className="space-y-1">
-            <Toggle checked={!!cli.loadUserSettings} onChange={(v) => set({ loadUserSettings: v })} label="Mijn eigen Claude Code-instellingen laden (minder streng)" />
-            {cli.loadUserSettings && (
-              <p className="flex items-start gap-1.5 text-xs text-warn">
-                <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" /> Toestaan-regels uit je instellingen kunnen dan acties goedkeuren zonder TeamBot.
-              </p>
-            )}
-          </div>
-          <Field label="Altijd toegestane tools (vraag-/automatisch-modus)" hint='Claude Code-regels, bijv. Bash(npm test). Ze slaan de goedkeuring over.'>
-            <Textarea rows={2} value={allowed} onChange={(e) => setAllowed(e.target.value)} onBlur={() => set({ allowedTools: list(allowed) })} />
-          </Field>
-          <Field label="Altijd geweigerde tools" hint="Bijv. WebFetch, Bash(git push:*)">
-            <Textarea rows={2} value={denied} onChange={(e) => setDenied(e.target.value)} onBlur={() => set({ disallowedTools: list(denied) })} />
-          </Field>
-        </>
-      )}
-      {EXTRA_ARGS[p.kind] && (
-        <Field label="Extra argumenten" hint={`Alleen toegestaan: ${EXTRA_ARGS[p.kind].join(', ')}`}>
-          <Input value={extra} onChange={(e) => setExtra(e.target.value)} onBlur={() => set({ extraArgs: extra.split(/\s+/).filter(Boolean) })} placeholder={EXTRA_ARGS[p.kind][0].split(' ')[0]} />
-        </Field>
-      )}
-    </div>
-  );
-}
-
 // ---------------------------------------------------------------- inspector tab
 
 interface SessionRow {
@@ -751,7 +639,6 @@ const mod: UIModule = {
   id: 'cli-agents',
   label: 'Abonnementen',
   settingsTabs: [{ id: 'cli', title: 'Abonnementen', component: CliSettings }],
-  agentSections: [{ id: 'cli', title: 'Programma', component: CliAgentSection }],
   inspectorTabs: [{ id: 'cli', title: 'CLI', component: CliSessionsTab }],
 };
 

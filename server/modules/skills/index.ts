@@ -2,13 +2,13 @@ import path from 'node:path';
 import type { Agent, Ctx, Module } from '../../core/types.js';
 import { SkillLibrary, skillMigrations } from './library.js';
 import { WebCache } from './webcache.js';
-import { WebSkills, type Collection } from './websource.js';
+import { WebSkills } from './websource.js';
 import { webRoutes } from './web-routes.js';
 import { Importer } from './importer.js';
 import { Catalogs, mapToFiles } from './catalog.js';
 import { type Fetcher, defaultFetcher } from './fetch.js';
 import { skillRoutes } from './routes.js';
-import { skillTools, systemPromptFor } from './tools.js';
+import { nativeSkillsPrompt, skillTools, systemPromptFor } from './tools.js';
 import { skillChoiceContext, skillMenuRoutes } from './menu.js';
 import { exportTemplate, installTemplate, normalizeTemplate, previewTemplate } from './templates.js';
 import { enforcePolicy, publisherRoutes, publisherSettings, unsignedView } from './publishers.js';
@@ -17,24 +17,26 @@ import { githubAccess } from './curated-source.js';
 import { fromChatRoutes } from './from-chat.js';
 import { fromDocumentRoutes } from './from-document.js';
 import { skillTestMigrations, skillTestRoutes } from './tests.js';
+import { SkillDefaults, skillOfferMigrations } from './defaults.js';
+import { SkillWorkspace } from './workspace.js';
 import type { CuratedSource } from './curated.js';
 
 /**
  * Skills & marketplace: a per-user skill library in the open SKILL.md format (import, scan, versions,
- * trust), progressive disclosure for bots (system prompt lists name + description, `skill_load`
- * loads the instructions), bot-proposed drafts, and a marketplace with bot templates, skills and apps.
+ * trust), the skills of a bot as folders in its work folder for engines that load those themselves and as a list plus
+ * `skill_load` for every other engine, bot-proposed drafts, and a marketplace with bot templates, skills and apps.
  */
 const mod: Module = {
   id: 'skills',
   label: 'Skills & marktplaats',
-  migrations: [...skillMigrations, ...skillTestMigrations],
+  migrations: [...skillMigrations, ...skillTestMigrations, ...skillOfferMigrations],
   init(ctx) {
     let fetcher: Fetcher = defaultFetcher;
     const getFetcher = () => fetcher;
     const lib = new SkillLibrary(ctx);
     const importer = new Importer(ctx, lib);
     const catalogs = new Catalogs(ctx, getFetcher);
-    // Internet sources (GitHub collections, skills.sh), cached on disk so the marketplace also works offline.
+    // The open sources (GitHub search, the skills.sh directory), cached on disk so the marketplace also works offline.
     const web = new WebSkills(ctx, new WebCache(path.join(ctx.config.dataDir, 'cache', 'market-skills'), getFetcher, ctx.log));
     // TeamBot's own catalogue on pinned commits (fetched on install, never bundled; updates only after approval).
     const curated = new CuratedCatalog(
@@ -50,17 +52,53 @@ const mod: Module = {
           head: (repo, force) => web.headCommit(repo, { force }),
         }),
       web.cache,
+      web,
     );
 
-    ctx.tools.registerGroup({ id: 'skills', label: 'Skills', description: 'Ingeschakelde skills laden en nieuwe skills als concept voorstellen', defaultOn: true });
-    for (const t of skillTools(lib)) ctx.tools.register(t);
+    ctx.tools.registerGroup({ id: 'skills', label: 'Skills', description: 'Skills van het team laden, zoeken, toevoegen en zelf vastleggen', defaultOn: true });
+    const workspace = new SkillWorkspace(ctx, lib);
+    for (const t of skillTools(lib, { curated, importer, fetcher: getFetcher, workspace })) ctx.tools.register(t);
 
     ctx.hooks.systemPrompt.push(({ agent }) => systemPromptFor(ctx, lib, agent));
     // A skill picked in the composer ("/name" or "$name"): this turn the bot loads and follows it.
     ctx.hooks.turnContext.push(({ agent, input }) => skillChoiceContext(ctx, lib, agent, input));
 
+    // Every bot has its team's active skills without anyone switching them on: they are on its list (defaults.ts) and
+    // stand as folders in its work folder (workspace.ts). Brought up to date where that answer changes: a skill
+    // installed, changed, trusted, switched or removed (every write of the library), a bot made, changed or moved.
+    const defaults = new SkillDefaults(ctx, lib);
+    lib.offer = (agent) => defaults.offer(agent);
+    const busy = new Set<string>();
+    // Bots that are being removed (the hook below runs right before their row goes): nothing is done for them.
+    const leaving = new Set<string>();
+    const upToDate = (agent: Pick<Agent, 'id' | 'user_id'>) => {
+      // Putting a skill on the list tells "agent.updated" itself: not a second round for the same bot.
+      if (busy.has(agent.id) || leaving.has(agent.id)) return;
+      busy.add(agent.id);
+      try {
+        // Only reads which team and folder the bot has: an archived bot, and one without a team yet, is left alone.
+        const stored = ctx.store.agent(agent.id);
+        if (!stored || stored.archived || stored.user_id !== agent.user_id || !lib.placed(stored)) return;
+        const cur = defaults.offer(stored);
+        if (cur) workspace.sync(cur);
+      } catch (e) {
+        ctx.log.error('[skills] skills of a bot not brought up to date', e);
+      } finally {
+        busy.delete(agent.id);
+      }
+    };
+    const allUpToDate = (userId: string) => {
+      for (const a of ctx.store.agents(userId)) upToDate(a);
+    };
+    lib.onChange = allUpToDate;
+    ctx.events.on('agent.updated', (e) => e.data?.id && e.data?.user_id && upToDate(e.data));
+    ctx.events.on('teams.changed', (e) => e.userId && e.userId !== '*' && allUpToDate(e.userId));
+
     ctx.hooks.agentDeleted.push(({ agentId }) => {
-      for (const m of ctx.store.find<any>('skill_materializations', { agent_id: agentId })) lib.cleanupMaterialization(m);
+      leaving.add(agentId);
+      setImmediate(() => leaving.delete(agentId));
+      defaults.forget({ agentId });
+      workspace.forget(agentId);
       ctx.store.exec("UPDATE skills SET draft_agent_id = NULL WHERE draft_agent_id = ? AND status != 'draft'", agentId);
     });
 
@@ -68,20 +106,7 @@ const mod: Module = {
     skillMenuRoutes(ctx, lib);
     publisherRoutes(ctx);
     // Also before skillRoutes: /skills/:id/file would otherwise match /skills/web/file.
-    webRoutes({
-      ctx,
-      lib,
-      importer,
-      web,
-      isBlocked: (type, catalogId, itemId) => catalogs.isBlocked(type, catalogId, itemId),
-      // While the internet collections are fetched for the first time: TeamBot's own skills, one per category first.
-      starter: (userId) => {
-        const own = catalogs.skills(userId).filter((s) => s.sourceKind === 'builtin');
-        const seen = new Set<string>();
-        const first = own.filter((s) => !seen.has(s.category) && seen.add(s.category));
-        return [...first, ...own.filter((s) => !first.includes(s))].map((s) => ({ catalogId: s.catalogId, id: s.id, title: s.title, description: s.description, category: s.category, version: s.version }));
-      },
-    });
+    webRoutes({ ctx, lib, web, curated, isBlocked: (type, catalogId, itemId) => catalogs.isBlocked(type, catalogId, itemId) });
     // Before skillRoutes too (/skills/:id would match /skills/curated).
     curatedRoutes({ ctx, lib, importer, catalog: curated, isBlocked: (type, catalogId, itemId) => catalogs.isBlocked(type, catalogId, itemId) });
     // "Bewaar als skill" from a conversation (also before skillRoutes: /skills/:id would match /skills/from-chat).
@@ -96,14 +121,34 @@ const mod: Module = {
       /** Stage/commit skills with the regular review rules (used by the OpenBot import). */
       importer,
       catalogs,
-      /** Internet skill sources (open GitHub collections + skills.sh search; off unless configured). */
+      /** The open sources of the marketplace (GitHub search, the skills.sh directory). */
       web,
       /** TeamBot's own catalogue (pinned sources). */
       curated,
       /** Skills (summaries) of a user; `teamId` = what one team has. `teamId` per skill: null = for all teams. */
       list: (userId: string, teamId?: string) => lib.list(userId, { teamId }).map((s) => ({ id: s.id, name: s.name, description: s.description, status: s.status, version: s.version, kind: s.kind, teamId: lib.teamOf(s) })),
-      /** Active skills enabled for a bot (owner-checked). */
+      /** The skills a bot has: the active skills of its team, minus what was taken away from it (library `enabledFor`). */
       enabledFor: (agent: Agent) => lib.enabledFor(agent).map((s) => ({ id: s.id, name: s.name, description: s.description })),
+      /** The skill folders in a bot's work folder up to date, right before a CLI engine starts there. */
+      sync: upToDate,
+      /**
+       * For an engine that loads those folders itself: the bot's instructions with TeamBot's list of skills replaced by
+       * one short rule. Null when the list in them is not the one of now (then nothing is left out).
+       */
+      nativeSystem: (agent: Agent, system: string): string | null => {
+        const list = systemPromptFor(ctx, lib, agent);
+        if (!list) return system;
+        return system.includes(list) ? system.replace(list, () => nativeSkillsPrompt(agent)) : null;
+      },
+      /** Do the bot's skills stand in its work folder? Only in a folder TeamBot made for it (workspace.ts). */
+      inWorkFolder: (agent: Agent) => workspace.owns(agent),
+      /** The bot's skills as a plugin folder for one run of Claude Code, where the work folder cannot serve (workspace.ts). */
+      plugin: (agent: Agent, dir: string) => workspace.plugin(agent, dir),
+      /** An engine loaded a skill itself (its own skill tool, seen in its stream): counted like a `skill_load`. */
+      used: (agent: Agent, name: string) => {
+        const skill = lib.enabledFor(agent).find((s) => s.name === String(name || '').split(':').pop());
+        if (skill) lib.used(agent, skill);
+      },
       exportTemplate: (agent: Agent) => exportTemplate(ctx, lib, agent),
       previewTemplate: (userId: string, raw: any) => {
         const n = normalizeTemplate(raw);
@@ -144,14 +189,12 @@ const mod: Module = {
       setFetcher(f: Fetcher) {
         fetcher = f;
       },
-      /** Test seam: replace the open internet collections. */
-      setCollections(list: Collection[]) {
-        web.collections = list;
-      },
       /** Test seam: replace TeamBot's catalogue (local fixture repositories in tests). */
       setCuratedSources(list: CuratedSource[]) {
         curated.sources = list;
       },
+      /** Every bot has its team's active skills (defaults.ts): `offerAll(userId)` after a change, `upgrade()` at start. */
+      defaults,
     };
   },
 
@@ -163,6 +206,13 @@ const mod: Module = {
       if (n) ctx.log.info?.('[skills] skills filed under their team:', n);
     } catch (e) {
       ctx.log.error('[skills] team upgrade failed', e);
+    }
+    // Bots that exist get the active skills of their team once (and new skills from then on): nothing to switch on.
+    try {
+      const n = ctx.services.skills?.defaults?.upgrade() ?? 0;
+      if (n) ctx.log.info?.('[skills] bots that got the skills of their team:', n);
+    } catch (e) {
+      ctx.log.error('[skills] default skills failed', e);
     }
   },
 };

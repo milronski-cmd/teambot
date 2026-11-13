@@ -1,3 +1,5 @@
+import { PLACE } from '../../../shared/places.js';
+
 /**
  * Self-contained pairing page served at /api/public/mobile/pair (no login, no app bundle needed).
  * The one-time secret travels in the URL fragment (#t=...), so it is never sent to the server in
@@ -49,7 +51,7 @@ a{color:var(--accent)}.hidden{display:none}.code{letter-spacing:.12em;text-trans
       <div id="codeWrap">
         <label for="code">Koppelcode</label>
         <input id="code" class="code" inputmode="text" autocomplete="one-time-code" autocapitalize="characters" spellcheck="false" maxlength="12" placeholder="ABCD-EFGH">
-        <p class="muted">Staat op je computer onder Instellingen → Telefoon.</p>
+        <p class="muted">Staat op je computer onder ${PLACE.phone}.</p>
       </div>
       <p id="linkNote" class="muted hidden">Koppellink gevonden. Je hoeft geen code te typen.</p>
       <label for="name">Naam van dit apparaat</label>

@@ -99,6 +99,11 @@ export function decorateModels(k: ProviderKind | undefined, models: ModelInfo[],
   });
 }
 
+/** What TeamBot knows about one model that is not in its engine's list ("Ander model"): table facts, levels, price. */
+export function oneModelInfo(k: ProviderKind | undefined, cfg: ProviderConfig, model: string): ModelInfo {
+  return k?.type === 'api' ? decorateModels(k, [{ id: model }], cfg.config)[0] : withCapabilities(cfg.kind, k?.reasoningStyle, { id: model, tools: true });
+}
+
 /** Required provider settings (Azure resource, Cloudflare account, Bedrock region). */
 export function checkRequiredFields(k: ProviderKind, base_url: string | undefined, config: any) {
   for (const f of k.fields || []) {
@@ -187,6 +192,12 @@ export function providerRoutes(ctx: Ctx) {
         await autoDefaultProvider(ctx, u.id);
       }
       if (p.kind === 'opencode') p = await ensureFreeDefaultModel(ctx, p, u.id);
+      // A local engine connected without a model of its own: the one that runs well on this pc (the same choice as
+      // "Lokaal zoeken" and the welcome screen, agent/alternatives.ts), never simply the first or the biggest.
+      else if (kk?.billing === 'local' && !p.config?.defaultModel) {
+        const model = await localChatModel(ctx, p);
+        if (model) p = ctx.providers.updateConfig(p.id, u.id, { config: { ...p.config, defaultModel: model } });
+      }
       ctx.events.emit(u.id, 'provider.updated', ctx.providers.view(p, u.id));
       return ctx.providers.view(p, u.id);
     }),
@@ -263,10 +274,9 @@ export function providerRoutes(ctx: Ctx) {
       const u = user(req);
       const cfg = ctx.providers.config(req.params.id as string);
       if (!ctx.providers.canUse(u.id, cfg)) throw bad('Provider niet gevonden');
-      const k = ctx.providers.kind(cfg!.kind);
       const model = str(req.query.model, 200).trim();
       if (!model) throw bad('Geen model');
-      return k?.type === 'api' ? decorateModels(k, [{ id: model }], cfg!.config)[0] : withCapabilities(cfg!.kind, k?.reasoningStyle, { id: model, tools: true });
+      return oneModelInfo(ctx.providers.kind(cfg!.kind), cfg!, model);
     }),
   );
 

@@ -53,12 +53,12 @@ test('a local model (Ollama) uses a memory without citing it: the source is stil
   }
 });
 
-async function fill(t: TestApp, scope: 'about_you' | 'agent', agentId?: string) {
+async function fill(t: TestApp, scope: 'about_you' | 'agent' | 'shared', agentId?: string) {
   await t.api('PUT', '/memory/settings', { quotas: { [scope]: { items: 10, bytes: 100_000 } } });
   for (let i = 0; i < 10; i++) await t.api('POST', '/memory/items', { content: `Vulregel ${i} met unieke inhoud ${i * 7919} ${scope}`, scope, agentId });
 }
 
-test('memory full: learned with patterns or a model → one notice per part per day; said in the chat → told right there', async () => {
+test('memory full: notes over their quota → said in the chat right there; a full dossier → what the review found goes to its archive, one notice per dossier per day', async () => {
   const t = await startTestApp();
   const notes: any[] = [];
   t.app.ctx.events.on('notification', (e: any) => notes.push(e.data));
@@ -69,18 +69,12 @@ test('memory full: learned with patterns or a model → one notice per part per 
     await fill(t, 'about_you');
     const th = await t.api('POST', '/threads', { agentId: a.id });
 
-    // 1. Learned automatically (fixed patterns, right after the run): nothing stored, one notice. The bot knew before
-    //    it answered (live, a local model said "Ik heb het onthouden" while nothing could be stored).
+    // 1. Notes full, but the bot can still put it in the text of the owner's dossier: no "memory is full" for it (it
+    //    would wrongly say nothing can be kept); nothing was dropped, so no notice either.
     t.script.push({ text: 'Leuk!' });
     const leiden = lastUser(await t.say(th.id, 'Ik woon in Leiden.'));
-    assert.match(ctxOf(leiden), /Het geheugen is vol \("Over jou"\): wat de gebruiker nu vertelt, wordt niet onthouden/);
-    assert.ok(!(await t.api('GET', '/memory/items?scope=about_you')).items.some((i: any) => /Leiden/.test(i.content)));
-    assert.equal(full().length, 1, JSON.stringify(notes));
-    assert.match(full()[0].body, /Het geheugen "Over jou" is vol/);
-    assert.equal(full()[0].link, '#/m/memory/opslag');
-    t.script.push({ text: 'Oké' });
-    await t.say(th.id, 'Ik werk bij Bouwmaat.');
-    assert.equal(full().length, 1, 'not again the same day for the same part');
+    assert.doesNotMatch(ctxOf(leiden), /Het geheugen is vol/);
+    assert.equal(full().length, 0, JSON.stringify(notes));
 
     // 2. Said explicitly in the chat: the outcome is under the owner's message and the bot hears it (no extra notice).
     t.script.push({ text: 'Dat lukt niet, het geheugen is vol.' });
@@ -93,22 +87,29 @@ test('memory full: learned with patterns or a model → one notice per part per 
     await t.say(th.id, 'We hebben een pup.');
     const yes = lastUser(await t.say(th.id, 'Ja, doe maar'));
     assert.match(ctxOf(yes), /De gebruiker zei ja op je voorstel om dit te onthouden\. Het quotum voor Over jou is vol/);
-    assert.equal(full().length, 1);
+    assert.equal(full().length, 0);
 
-    // 4. Learned with a (free) model for the bot's own memory, also full: its own notice, with the bot's name.
+    // 4. The review (a free model) finds a work agreement for the team while the team's overview is full: the line is
+    //    kept in the dossier's archive (found with search), and the owner gets one notice for that dossier.
     await freeEngine(t);
     await t.api('PUT', '/memory/settings', { extractor: 'free' });
-    await fill(t, 'agent', a.id);
-    setShortCallFake(() =>
-      JSON.stringify({ items: [{ content: 'Offertes gaan altijd via Jan', type: 'instruction', key: null, about: 'bot', evidence: 'offertes gaan altijd via Jan', msg: '1' }], episode: { summary: 'Over offertes.', decisions: [], actions: [], open_questions: [] } }),
-    );
+    const ov = (await t.api('GET', '/memory/dossiers')).find((d: any) => d.core === 'overview');
+    const filler = Array.from({ length: 70 }, (_, i) => `- Regel ${i} over een lopend project met genoeg woorden om het dossier te vullen, nummer ${i * 7}.`).join('\n').slice(0, ov.body_limit - 10);
+    await t.api('PATCH', `/memory/dossiers/${ov.id}`, { body: filler });
+    setShortCallFake((system) => (/Je bent het geheugen van TeamBot/.test(system) ? 'Overzicht: Offertes gaan altijd via Jan\nSamenvatting: Over offertes.' : ''));
     t.script.push({ text: 'Begrepen.' });
     await t.say(th.id, 'Voor de duidelijkheid: offertes gaan altijd via Jan.');
     const res = await t.api('POST', `/memory/thread/${th.id}/learn`, { agentId: a.id });
     assert.equal(res.method, 'model');
-    assert.equal(res.applied, 0);
-    assert.equal(full().length, 2, JSON.stringify(full()));
-    assert.match(full()[1].body, /Het geheugen van Testbot is vol/);
+    assert.doesNotMatch(String(t.app.ctx.store.get<any>('memory_dossiers', ov.id).body), /Offertes gaan altijd via Jan/);
+    assert.ok(t.app.ctx.store.all<any>("SELECT body FROM memory_records WHERE dossier_id = ? AND kind = 'event'", ov.id).some((r) => /Offertes gaan altijd via Jan/.test(r.body)), 'kept in the archive');
+    assert.equal(full().length, 1, JSON.stringify(full()));
+    assert.match(full()[0].body, /Dossier “Overzicht” is vol/);
+    t.script.push({ text: 'Ok.' });
+    await t.say(th.id, 'En de facturen gaan ook altijd via Jan.');
+    setShortCallFake((system) => (/Je bent het geheugen van TeamBot/.test(system) ? 'Overzicht: Facturen gaan altijd via Jan' : ''));
+    await t.api('POST', `/memory/thread/${th.id}/learn`, { agentId: a.id });
+    assert.equal(full().length, 1, 'not again the same day for the same dossier');
   } finally {
     setShortCallFake(null);
     await t.close();

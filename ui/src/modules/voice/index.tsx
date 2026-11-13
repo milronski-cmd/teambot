@@ -5,7 +5,8 @@ import type { Message } from '../../lib/types';
 import type { UIModule } from '../types';
 import { DictateButton } from './Dictate';
 import { MessageVoice } from './MessageVoice';
-import { LiveCallButton } from './LiveCall';
+import { LiveCallButton, mountCallHost } from './LiveCall';
+import { CallDockAnchor } from './CallBar';
 import { AgentVoiceSection } from './AgentVoice';
 import { CallHistoryPage, VoiceSettingsTab } from './Settings';
 import { MeetingPage } from './Meeting';
@@ -72,7 +73,8 @@ const mod: UIModule = {
     { path: 'vergadering', title: 'Vergadernotities', icon: NotebookPen, nav: true, component: MeetingPage },
   ],
   agentSections: [{ id: 'voice', title: 'Spraak', component: AgentVoiceSection }],
-  composerActions: [DictateButton],
+  // CallDockAnchor shows nothing: it tells the bar of a running call where the message field is.
+  composerActions: [DictateButton, CallDockAnchor],
   chatHeaderActions: [LiveCallButton, GroupCallButton],
   settingsTabs: [{ id: 'spraak', title: 'Spraak', component: VoiceSettingsTab }],
   messageExtras: [MessageVoice],
@@ -81,7 +83,10 @@ const mod: UIModule = {
     const unlock = () => unlockAudio();
     window.addEventListener('pointerdown', unlock, { once: true, capture: true });
     const off = wireAutoRead();
+    // A live call lives next to the app, not inside a chat: it goes on while you switch chats or pages.
+    const offCall = mountCallHost();
     return () => {
+      offCall();
       window.removeEventListener('pointerdown', unlock, { capture: true });
       off();
     };

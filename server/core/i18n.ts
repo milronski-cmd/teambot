@@ -13,7 +13,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { Translator, fill } from '../../shared/i18n-core.js';
 import { isLanguage, localeOf, SOURCE_LANG } from '../../shared/languages.js';
-import { formatBytes, formatUsd } from '../../shared/format.js';
+import { formatBytes, formatList, formatUsd } from '../../shared/format.js';
 
 interface SettingsStore {
   getSetting<T = any>(userId: string, key: string, def: T): T;
@@ -53,6 +53,12 @@ export const nlCount = (n: number, one: string, many: string) => `${n} ${n === 1
  * by hand: `${(n / 1048576).toFixed(1)} MB` gave "1.5 MB" in a Dutch sentence (acceptance round 6: "13.3 KB").
  */
 export const bytesText = (n: number) => formatBytes(n, localeOf(SOURCE_LANG));
+
+/**
+ * A list in a server text, in the source language ("A en B", "A, B en C") through format.ts formatList, never joined
+ * by hand: `.join(' en ')` gave "A en B en C".
+ */
+export const listText = (items: string[]) => formatList(items, localeOf(SOURCE_LANG));
 
 let dirCache: string | null | undefined;
 function dictDir(): string | null {

@@ -60,7 +60,7 @@ function ChannelCard({ b, who, team }: { b: BindingView; who: string; team?: str
       data-testid="channel-card"
       icon={<Icon aria-hidden />}
       title={
-        <a href={`#/m/channels/${b.id}`} className="hover:underline">
+        <a href={`#/m/channels/${b.id}`} className="hover:underline" translate="no">
           {b.name}
         </a>
       }

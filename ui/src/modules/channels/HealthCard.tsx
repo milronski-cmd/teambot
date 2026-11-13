@@ -2,8 +2,8 @@ import { useEffect, useState } from 'react';
 import { Check, Copy, ExternalLink, FlaskConical, KeyRound, Send, X } from 'lucide-react';
 import { api } from '../../lib/api';
 import { t, uiLocale } from '../../lib/i18n';
-import { Badge, Button, Card, cx, timeAgo, useAsync } from '../../components/ui';
-import { copy } from './ConfigForm';
+import { Badge, Button, Card, cx, timeAgo, useAsync, copyText } from '../../components/ui';
+import { MoreInfo } from '../../components/MoreInfo';
 import { newSecretAction, nextStep, testWhere } from './health';
 import { StatusBadge, type BindingDetail } from './shared';
 import { ComputerOnly, useIsPhoneSession } from '../../shell/computerOnly';
@@ -138,7 +138,7 @@ export function HealthCard({ b, reload, onSettings }: { b: BindingDetail; reload
               <code translate="no" className="rounded-lg bg-surface px-3 py-2 font-mono text-xl font-semibold tracking-wider">
                 {test.text}
               </code>
-              <Button size="sm" variant="secondary" icon={<Copy className="h-3.5 w-3.5" />} onClick={() => copy(test.text)}>
+              <Button size="sm" variant="secondary" icon={<Copy className="h-3.5 w-3.5" />} onClick={() => copyText(test.text)}>
                 Kopiëren
               </Button>
             </div>
@@ -175,8 +175,15 @@ export function HealthCard({ b, reload, onSettings }: { b: BindingDetail; reload
         </div>
       )}
 
+      {/* The numbers behind the status stay out of sight until asked for; only a real error shows by itself. */}
+      {h?.lastError && (
+        <p className="min-w-0 break-words text-xs text-muted">
+          Laatste fout: {timeAgo(h.lastError.at)} · {h.lastError.text}
+        </p>
+      )}
       {h && (
-        <dl className="grid grid-cols-1 gap-x-4 gap-y-1 border-t border-line pt-3 text-xs sm:grid-cols-2">
+        <MoreInfo block>
+        <dl className="grid grid-cols-1 gap-x-4 gap-y-1 text-xs sm:grid-cols-2">
           <div className="flex gap-1">
             <dt className="text-muted">Laatst ontvangen:</dt>
             <dd>{h.inAt ? timeAgo(h.inAt) : 'nog niets'}</dd>
@@ -184,10 +191,6 @@ export function HealthCard({ b, reload, onSettings }: { b: BindingDetail; reload
           <div className="flex gap-1">
             <dt className="text-muted">Laatst verstuurd:</dt>
             <dd>{h.outAt ? timeAgo(h.outAt) : 'nog niets'}</dd>
-          </div>
-          <div className="flex min-w-0 gap-1 sm:col-span-2">
-            <dt className="shrink-0 text-muted">Laatste fout:</dt>
-            <dd className="min-w-0 break-words">{h.lastError ? `${timeAgo(h.lastError.at)} · ${h.lastError.text}` : 'geen'}</dd>
           </div>
           <div className="flex flex-wrap gap-1 sm:col-span-2">
             <dt className="text-muted">Afgelopen 24 uur:</dt>
@@ -203,6 +206,7 @@ export function HealthCard({ b, reload, onSettings }: { b: BindingDetail; reload
             </div>
           )}
         </dl>
+        </MoreInfo>
       )}
     </Card>
   );

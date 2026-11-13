@@ -2,12 +2,12 @@ import { randomToken, sha256 } from '../../core/util.js';
 
 export { randomToken, sha256 };
 import { spawn } from 'node:child_process';
-import fs from 'node:fs';
 import path from 'node:path';
 import type { Ctx } from '../../core/types.js';
 import { HttpError, bad } from '../../core/http.js';
 import { redact } from '../../core/secrets.js';
 import { assertPublicUrl } from '../../tools/builtin/web.js';
+import { find as findToolchain, onPath, toolchainOf } from '../../core/runtimes.js';
 import type { KV } from './db.js';
 
 export const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms).unref?.());
@@ -239,11 +239,12 @@ export function slugify(s: string): string {
   return out || 'app';
 }
 
-/** Is a command available on PATH (honest "npx/uvx niet gevonden" in the catalogue). */
-export function commandOnPath(cmd: string): boolean {
-  if (path.isAbsolute(cmd)) return fs.existsSync(cmd);
-  const dirs = String(process.env.PATH || process.env.Path || '').split(path.delimiter).filter(Boolean);
-  const exts = process.platform === 'win32' ? ['', ...(process.env.PATHEXT || '.EXE;.CMD;.BAT;.COM').split(';').map((e) => e.toLowerCase())] : [''];
-  for (const d of dirs) for (const e of exts) if (fs.existsSync(path.join(d, cmd + e))) return true;
-  return false;
+/**
+ * Can this command start here? On PATH, or (npx, uvx, node …, with `dataDir`) TeamBot's own copy of Node or uv
+ * (core/runtimes.ts). False: the catalogue offers "Installeren", which gets that copy.
+ */
+export function commandOnPath(cmd: string, dataDir?: string): boolean {
+  const tc = toolchainOf(cmd);
+  if (tc && dataDir && !path.isAbsolute(cmd)) return !!findToolchain(tc, dataDir);
+  return onPath(cmd);
 }

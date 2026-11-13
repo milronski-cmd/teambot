@@ -1,10 +1,10 @@
 import { useMemo, useState } from 'react';
-import { Bot, CircleStop, Eye, EyeOff, Hand, Monitor, PictureInPicture2, Play, RefreshCw, ShieldCheck, User, X } from 'lucide-react';
+import { Bot, CircleStop, Eye, EyeOff, Hand, Monitor, PictureInPicture2, Play, RefreshCw, ShieldCheck, X } from 'lucide-react';
 import { authUrl } from '../../lib/api';
 import { t } from '../../lib/i18n';
-import { Badge, Button, cx, EmptyState, Modal, Spinner, Tabs, toast } from '../../components/ui';
+import { Badge, Button, EmptyState, Modal, Spinner, Tabs, toast } from '../../components/ui';
 import { computers, fmtTime, openPip, screen, useLive, type ScreenInfo } from './api';
-import { LivePanel } from './LivePanel';
+import { LivePanel, StepList } from './LivePanel';
 
 const DESKTOP_TOOLS = /^(desktop_|takeover|release|stop|desktop_grant)/;
 
@@ -39,7 +39,6 @@ export function DesktopPanel({ agentId, compact = false }: { agentId: string; co
   const [confirmStop, setConfirmStop] = useState(false);
   const [busy, setBusy] = useState(false);
   const steps = useMemo(() => (actions.data || []).filter((a) => DESKTOP_TOOLS.test(a.tool)).slice(0, compact ? 30 : 60), [actions.data, compact]);
-  const [frame, setFrame] = useState<string | null>(null);
   // One signed URL per (re)connect: a re-render never restarts the stream.
   const streamSrc = useMemo(() => authUrl(`/computers/${agentId}/screen/stream?k=${streamKey}`), [agentId, streamKey]);
 
@@ -132,33 +131,8 @@ export function DesktopPanel({ agentId, compact = false }: { agentId: string; co
         {watch && <Button size="sm" variant="ghost" icon={<RefreshCw className="h-4 w-4" />} aria-label="Beeld vernieuwen" onClick={() => setStreamKey((k) => k + 1)} />}
       </div>
 
-      <div>
-        <div className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-muted">Stappen op het bureaublad</div>
-        {!steps.length ? (
-          <p className="text-sm text-muted">Nog geen stappen.</p>
-        ) : (
-          <ul className={cx('divide-y divide-line rounded-xl border border-line', compact && 'max-h-80 overflow-y-auto')}>
-            {steps.map((a) => (
-              <li key={a.id} className="flex items-start gap-2 px-3 py-2 text-sm">
-                {a.actor === 'user' ? <User className="mt-0.5 h-4 w-4 shrink-0 text-warn" aria-label="Gebruiker" /> : <Bot className="mt-0.5 h-4 w-4 shrink-0 text-muted" aria-label="Bot" />}
-                <div className="min-w-0 flex-1">
-                  <div className={cx('break-words', (a.status === 'error' || a.status === 'denied') && 'text-danger')}>{a.summary}</div>
-                  <div className="truncate text-xs text-muted">{fmtTime(a.created_at)}</div>
-                </div>
-                {a.frame && (
-                  <button className="shrink-0 overflow-hidden rounded border border-line" onClick={() => setFrame(a.id)} aria-label="Bekijk scherm bij deze stap">
-                    <img src={authUrl(`/computers/${agentId}/actions/${a.id}/frame`)} alt="" loading="lazy" className="h-9 w-14 object-cover" />
-                  </button>
-                )}
-              </li>
-            ))}
-          </ul>
-        )}
-      </div>
+      <StepList agentId={agentId} title="Stappen op het bureaublad" steps={steps} compact={compact} />
 
-      <Modal open={!!frame} onClose={() => setFrame(null)} title="Scherm bij deze stap" wide>
-        {frame && <img src={authUrl(`/computers/${agentId}/actions/${frame}/frame`)} alt="Schermafbeelding na deze stap" className="w-full rounded-lg border border-line" />}
-      </Modal>
       <Modal
         open={confirmStop}
         onClose={() => setConfirmStop(false)}

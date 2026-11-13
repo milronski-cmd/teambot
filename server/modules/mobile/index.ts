@@ -10,8 +10,9 @@ import { Apns } from './apns.js';
 import { Gateway, type GatewayBind } from './gateway.js';
 import { IrohLink, normalizeRelayUrl } from './iroh.js';
 import { IROH_BASE } from './pairing.js';
-import { interfaces, isLoopbackHost, isTailscaleIp, tailscaleServe, tailscaleServeTargets, tailscaleStatus, type TailscaleInfo } from './reach.js';
-import { Limiter } from './limiter.js';
+import { isLoopbackHost } from '../../core/util.js';
+import { interfaces, isTailscaleIp, tailscaleServe, tailscaleServeTargets, tailscaleStatus, type TailscaleInfo } from './reach.js';
+import { Limiter } from '../../core/util.js';
 import { pairPage } from './page.js';
 import { PhoneStatus } from './status.js';
 import { Presence } from './presence.js';
@@ -29,7 +30,8 @@ export const AUTO_BASE = 'auto';
 
 /**
  * Where to get the iPhone app (0.4.5, step 1 of the card): a public TestFlight or App Store link, set by whoever ships
- * TeamBot (`TEAMBOT_IOS_APP_URL`, https only). Without one the card says the app comes through TestFlight.
+ * TeamBot (`TEAMBOT_IOS_APP_URL`, https only). Without one the card says plainly that the app is not public yet and
+ * where it works without the app; it never links to TestFlight for an invitation that does not exist.
  */
 export function iosAppUrl(raw = process.env.TEAMBOT_IOS_APP_URL): string | null {
   try {
@@ -238,7 +240,7 @@ export class Mobile {
       tunnelTarget,
       policyActive: this.policyActive,
       iroh: isAdmin ? { ...ir, offOnPurpose: this.ctx.store.getSetting<boolean>('', 'mobileIrohOff', false) === true } : { available: ir.available, running: ir.running },
-      /** Step 1 of the card: where to get the iPhone app (null: through TestFlight, no public link). */
+      /** Step 1 of the card: where to get the iPhone app (null: no public link yet). */
       app: { ios: iosAppUrl() },
     };
   }

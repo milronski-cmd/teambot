@@ -3,11 +3,12 @@ import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import type { AgentRunResult, Usage } from '../../core/types.js';
 import { acpContext } from '../usage/parse.js';
+import { withUsage } from '../../agent/budget.js';
 import { redact } from '../../core/secrets.js';
-import { resolveInWorkspace } from '../../tools/builtin/files.js';
+import { fullAccess, resolveInWorkspace } from '../../tools/builtin/files.js';
 import { runTempDir, startProc, type Proc } from './proc.js';
 import { authHint, lastOutput, composePrompt, contextState, earlierTranscript, cleanFacts, errorText, safeAttachments, sessionInstructions, sessionUpdate, workdir, type RunScope, type SessionContext } from './context.js';
-import { acpKindRisk, acpToolSummary, cardPath, commandOf, gate, pathsOf, plainCommand, urlOf, type GateScope } from './permissions.js';
+import { acpAppTool, acpKindRisk, acpToolSummary, cardPath, commandOf, gate, hardBlocks, hardBlocksNote, otherToolRisk, pathsOf, plainCommand, urlOf, type GateScope } from './permissions.js';
 import { RequestError } from '@agentclientprotocol/sdk';
 import { ACP_PROTOCOL_VERSION, acpWire, isWireError, type AcpWire } from './acp-wire.js';
 import type { CliDef } from './catalog.js';
@@ -16,6 +17,7 @@ import { MCP_SERVER_NAME, type BridgeRegistration, type PermissionBridge } from 
 import { teambotTools, toolsNote } from './toolhost.js';
 import { acpActivity, acpFacts, acpPendingTitle, acpPermissionSummary, acpTeambotTool, failedStep } from './activity-labels.js';
 import { normalizePlan } from '../../tools/builtin/plan.js';
+import { PLACE } from '../../../shared/places.js';
 
 /**
  * Generic Agent Client Protocol (ACP) client over stdio. TeamBot is the "client"
@@ -137,7 +139,7 @@ export async function runAcp(s: RunScope, d: AcpDeps): Promise<AgentRunResult> {
     return {
       text: '',
       usage: { input: 0, output: 0 },
-      error: `${d.def.label} voerde eerder een actie uit zonder TeamBot om toestemming te vragen (${flagged.kind}: ${flagged.title}). Daarom draait deze CLI niet meer in "vraagt toestemming" of "alleen lezen". Controleer de instellingen van de CLI en sta hem daarna opnieuw toe via Instellingen › CLI-agents.`,
+      error: `${d.def.label} voerde eerder een actie uit zonder TeamBot om toestemming te vragen (${flagged.kind}: ${flagged.title}). Daarom draait deze CLI niet meer in "vraagt toestemming" of "alleen lezen". Controleer de instellingen van de CLI en sta hem daarna opnieuw toe via ${PLACE.aiPrograms}.`,
     };
   const cwd = workdir(agent);
   const atts = safeAttachments(agent, req.attachments);
@@ -343,7 +345,7 @@ export async function runAcp(s: RunScope, d: AcpDeps): Promise<AgentRunResult> {
         // gated there and counts as asked): stop the run, warn, and refuse this CLI in ask/readonly from now on.
         if (u.status === 'completed' && guarded && !violation && CHANGING_KINDS.has(String(cur.kind)) && !asked.has(u.toolCallId) && !(cur.kind === 'edit' && lastClientWrite >= (cur.startedAt || 0))) {
           const title = String(cur.title || cur.kind).slice(0, 200);
-          violation = `Gestopt: ${d.def.label} voerde een actie uit zonder TeamBot om toestemming te vragen (${cur.kind}: ${title}). Controleer het resultaat in de werkmap. Deze CLI draait niet meer in "vraagt toestemming" of "alleen lezen" tot je hem in Instellingen › CLI-agents opnieuw toestaat.`;
+          violation = `Gestopt: ${d.def.label} voerde een actie uit zonder TeamBot om toestemming te vragen (${cur.kind}: ${title}). Controleer het resultaat in de werkmap. Deze CLI draait niet meer in "vraagt toestemming" of "alleen lezen" tot je hem in ${PLACE.aiPrograms} opnieuw toestaat.`;
           s.ctx.audit(req.userId, 'cli.unapproved_action', { cli: d.def.id, kind: cur.kind, title, mode: agent.access_mode }, agent.id);
           d.markUnsafe?.({ kind: String(cur.kind), title });
           proc.kill(violation);
@@ -407,9 +409,12 @@ export async function runAcp(s: RunScope, d: AcpDeps): Promise<AgentRunResult> {
         // Nobody refused a withdrawn card: the step says so, not "Geweigerd: … Gestopt voordat er toestemming was".
         const onActivity = (title: string, detail?: string) =>
           dropped.signal.aborted && /^Geweigerd: /.test(title) ? s.activity('permission', title.replace(/^Geweigerd: /, 'Kaart ingetrokken: '), `${d.def.label} gaf deze actie op voordat je besliste.`) : gs.onActivity?.(title, detail);
+        // A tool of one of the engine's own apps (an MCP server in its settings) goes to the gate as that app's tool,
+        // under the name Claude Code gives it: it can send or pay, and the owner's rules know it by that name.
+        const app = acpAppTool(tc);
         const g = sameAsAllowed ? { allow: true, message: 'Al toegestaan voor deze actie', asked: false } : carried ? { allow: true, message: 'Al goedgekeurd door de eigenaar', asked: false } : await gate({ ...gs, signal: AbortSignal.any([gs.signal, dropped.signal]), onActivity }, {
-          tool: String(tc.kind || 'other'),
-          risk: acpKindRisk(tc.kind, raw),
+          tool: app || String(tc.kind || 'other'),
+          risk: app ? otherToolRisk(app, raw) : acpKindRisk(tc.kind, raw),
           summary: acpPermissionSummary(tc, paths, cwd),
           input: raw ?? { title: tc.title },
           paths,
@@ -442,15 +447,17 @@ export async function runAcp(s: RunScope, d: AcpDeps): Promise<AgentRunResult> {
         return { content };
       }
       case 'fs/write_text_file': {
-        if (agent.access_mode === 'readonly') throw new RequestError(-32000, 'Geweigerd door TeamBot: deze bot staat op alleen lezen.');
-        const target = resolveInWorkspace(agent, acpPath(String(p?.path || ''), cwd), { write: true });
-        if (agent.access_mode !== 'auto' && agent.access_mode !== 'full' && !approvedPaths.has(NORM(target))) {
-          const g = await gate(gs, { tool: 'edit', risk: 'write', summary: `Bestand schrijven: ${p?.path}`, input: { path: p?.path, bytes: String(p?.content ?? '').length }, paths: [target] });
+        // Every write passes the gate, on every level (the owner's rules about a folder hold for it too), unless the
+        // owner or the gate already allowed this very file for the engine's own permission request in this run.
+        const asked = path.resolve(cwd, acpPath(String(p?.path || ''), cwd));
+        if (!approvedPaths.has(NORM(asked))) {
+          const g = await gate(gs, { tool: 'edit', risk: 'write', summary: `Bestand schrijven: ${p?.path}`, input: { path: p?.path, bytes: String(p?.content ?? '').length }, paths: [asked] });
           if (!g.allow) {
             noteRefusal(`Bestand schrijven: ${p?.path}`, g);
             throw new RequestError(-32000, g.message);
           }
         }
+        const target = resolveInWorkspace(agent, asked, { write: true });
         fs.mkdirSync(path.dirname(target), { recursive: true });
         fs.writeFileSync(target, String(p?.content ?? ''));
         lastClientWrite = Date.now();
@@ -564,7 +571,9 @@ export async function runAcp(s: RunScope, d: AcpDeps): Promise<AgentRunResult> {
         s.activity('session', 'Eerdere context meegegeven', t.count === 1 ? '1 eerder bericht uit deze chat' : `${t.count} eerdere berichten uit deze chat`);
       }
     }
-    const full = sessionInstructions(req.system, toolNames.length ? toolsNote(toolNames, 'acp') : '');
+    // An engine TeamBot cannot make ask for every step: the hard blocks go along in its instructions (permissions.ts hardBlocks).
+    const blocks = hardBlocks({ engine: 'acp', cli: d.def.id, label: d.def.label, level: agent.access_mode });
+    const full = sessionInstructions(req.system, [toolNames.length ? toolsNote(toolNames, 'acp', { full: fullAccess(agent) }) : '', blocks.guarded ? '' : hardBlocksNote(agent, s.ctx.config.dataDir)].filter(Boolean).join('\n\n'));
     const prompt: any[] = [{ type: 'text', text: composePrompt({ system: resumed ? undefined : full, update: resumed ? sessionUpdate(s, d.context, full) : undefined, transcript, prompt: req.prompt, attachments: atts }) }];
     for (const a of atts) {
       if (IMAGE.test(a.mime) && caps.promptCapabilities?.image && a.size < 5_000_000) prompt.push({ type: 'image', mimeType: a.mime, data: fs.readFileSync(a.path).toString('base64') });
@@ -576,12 +585,23 @@ export async function runAcp(s: RunScope, d: AcpDeps): Promise<AgentRunResult> {
     let turn = prompt;
     // Tokens of every prompt in this run (the owner's message and any follow-up turn).
     const used = { input: 0, output: 0, cacheRead: 0, seen: false };
+    // What this run used: the prompts' own counts, else the context fill the agent reported; also when it is stopped
+    // (it goes along with the stop and is counted: agent/budget.ts).
+    const total = async (): Promise<Usage> => {
+      if (used.seen) {
+        if (used.input) usage.input = used.input;
+        usage.output = used.output;
+        usage.cacheRead = used.cacheRead || undefined;
+      }
+      usage.cost = (await d.billing()) === 'api' ? undefined : 0;
+      return usage;
+    };
     try {
       for (;;) {
         try {
           res = await Promise.race([peer.request('session/prompt', { sessionId, prompt: turn }), fatalSeen]);
         } catch (e: any) {
-          if (s.signal.aborted) throw new Error('Gestopt');
+          if (s.signal.aborted) throw withUsage(new Error('Gestopt'), await total());
           if (stderrFatal) {
             // Written before the process is ended below (the SDK writes asynchronously), and a moment for the agent to
             // take it (it stops its silent retries) before TeamBot ends the process anyway.
@@ -617,23 +637,18 @@ export async function runAcp(s: RunScope, d: AcpDeps): Promise<AgentRunResult> {
       s.signal.removeEventListener('abort', onAbort);
     }
     if (violation) return fail(violation);
-    if (s.signal.aborted) throw new Error('Gestopt');
+    if (s.signal.aborted) throw withUsage(new Error('Gestopt'), await total());
     if (res?.stopReason === 'cancelled') {
       // Not stopped by the owner: the CLI ended the turn itself after an action was refused (OpenCode does that, with
       // an empty answer) and no follow-up turn followed. Say so plainly instead of "Gestopt"; not an engine error (no
       // reserve engine).
-      if (!refused) throw new Error('Gestopt');
+      if (!refused) throw withUsage(new Error('Gestopt'), await total());
       const note = `_${d.def.label} stopte deze beurt nadat een actie niet mocht (${refused.slice(0, 200)}). Zeg wat de bot anders moet doen._`;
       const sep = text ? (text.endsWith('\n') ? '\n' : '\n\n') : '';
       s.emit({ type: 'text', delta: sep + note });
       text += sep + note;
     }
-    if (used.seen) {
-      if (used.input) usage.input = used.input;
-      usage.output = used.output;
-      usage.cacheRead = used.cacheRead || undefined;
-    }
-    usage.cost = (await d.billing()) === 'api' ? undefined : 0;
+    await total();
     if (res?.stopReason === 'refusal') s.activity('notice', `${d.def.label} weigerde deze opdracht`);
     if (res?.stopReason === 'max_tokens' || res?.stopReason === 'max_turn_requests') s.activity('max_turns', 'Gestopt: maximum bereikt', String(res.stopReason));
     if (sessionId) d.context?.save(sessionId, contextState(full));

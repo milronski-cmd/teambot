@@ -42,7 +42,7 @@ const home = fs.mkdtempSync(path.join(os.tmpdir(), 'tb-web-notes-home-'));
 Object.assign(process.env, { HOME: home, USERPROFILE: home, APPDATA: path.join(home, 'AppData', 'Roaming'), LOCALAPPDATA: path.join(home, 'AppData', 'Local') });
 delete process.env.TEAMBOT_DATA;
 
-const { createApp } = await import('../../server/app.ts');
+const { createApp } = await import('./server.mjs');
 const { b64u, decryptPayload } = await import('../../server/modules/mobile/webpush.ts');
 const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'tb-web-notes-'));
 const app = await createApp({ dataDir: dir, port: Number(process.env.TEAMBOT_E2E_PORT) || 0, host: '127.0.0.1', mode: 'desktop', quiet: true });

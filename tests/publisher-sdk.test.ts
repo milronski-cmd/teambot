@@ -104,10 +104,10 @@ test('SDK: canonical JSON, semver ranges, keys, signing and tamper detection', (
   assert.equal(sdk.verifyPackage(unsigned.files, {}).state, 'unsigned');
   assert.equal(sdk.verifyPackage(new Map([['SKILL.md', Buffer.from('x')]]), {}).state, 'unsigned', 'no manifest at all');
 
-  const old = makePackage('skill', { 'SKILL.md': skillMd('gamma') }, k, { name: 'gamma', teambot: '>=2.0.0' });
+  const old = makePackage('skill', { 'SKILL.md': skillMd('gamma') }, k, { name: 'gamma', teambot: '>=9.0.0' });
   const inc = sdk.verifyPackage(old.files, { appVersion: '0.1.0' });
   assert.equal(inc.compatible, false);
-  assert.match(inc.incompatible[0], /Vereist TeamBot >=2\.0\.0/);
+  assert.match(inc.incompatible[0], /Vereist TeamBot >=9\.0\.0/);
 
   assert.deepEqual(sdk.findPrivateKeys(new Map([['k.pem', Buffer.from(k.privateKeyPem)], ['a.md', Buffer.from('hoi')]])), ['k.pem']);
 });

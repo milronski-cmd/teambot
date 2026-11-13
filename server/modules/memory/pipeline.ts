@@ -1,36 +1,23 @@
 /**
- * Write pipeline (plan §13 steps 1–10): capture → classify → intent check → normalise/dedup → conflict handling →
- * decide (reject / propose / insert / supersede) → transactional write with version + change record → verify → notify.
- * Background reconciliation lives in lifecycle.ts.
+ * The one way into memory (writeCandidate): always into a dossier. A line of the dossier's text (write.ts) unless it is
+ * a fact with its own source and review date (a knowledge base, a customer's dossier, a card for the owner): that is a
+ * note of its dossier — secrets and planted instructions refused, the one rule for "the same" and "takes the place
+ * of" (same.ts), then insert, new version or a card, with a change record and undo.
  */
 import type { Agent, Message, Run, Thread } from '../../core/types.js';
 import { newId, now } from '../../core/db.js';
 import { budgetOf, spentToday } from '../../agent/budget.js';
+import { isOwnerMessage, ownerOnChannel } from '../../agent/owner-turn.js';
 import type { MemoryService } from './service.js';
 import type { Candidate, ItemType, MemoryItemRow, Outcome, Scope } from './types.js';
 import { ALL_TEAMS, ITEM_TYPES, REVIEW_KINDS, SCOPES, SENSITIVITIES, nextReview, reviewInterval } from './types.js';
 import { detectReviewKind } from './refresh.js';
 import { consolidateNow, doneSignal, isOpenTodo } from './consolidate.js';
-import {
-  canonicalKey,
-  clean,
-  detectSecret,
-  detectSensitivity,
-  excerpt,
-  explicitIntent,
-  firstPerson,
-  guessKey,
-  guessType,
-  heuristicFacts,
-  isCorrection,
-  isInjectionLike,
-  isInstructionLike,
-  maxSensitivity,
-  normalize,
-  ownWords,
-  wantsAllTeams,
-  wantsShared,
-} from './text.js';
+import { compare, findIn } from './same.js';
+import { notesDossier, ownerSaid, writeBody, writeRefusal } from './living.js';
+import { dossierAt, placeOf, writeNote } from './write.js';
+import { canonicalKey, clean, detectSecret, detectSensitivity, excerpt, explicitIntents, firstPerson, guessKey, guessType, isCorrection, isInjectionLike, isInstructionLike, maxSensitivity, normalize, standingIntent, wantsAllTeams, wantsShared } from './text.js';
+import { PLACE } from '../../../shared/places.js';
 
 const CONFIDENCE: Record<string, number> = { user: 0.95, import: 0.7, agent: 0.7, system: 0.8, external: 0.4, customer: 0.8 };
 /** How much a source counts when two notes about the same subject disagree (the owner's own words always win). */
@@ -51,7 +38,14 @@ function quotaFull(svc: MemoryService, c: Candidate, bucket: { user_id: string; 
   return fail('quota', 'quota', message);
 }
 
-/** Run one candidate through the pipeline. Always transactional and idempotent (idemKey). */
+/**
+ * The one way into memory. Always into a dossier: the one the writer names (scope "dossier"), or the core dossier of
+ * the place the note is for — about the owner → his dossier, for the team → its overview, a bot's own → its working
+ * notes (living.ts). There it is a note of that dossier (its place stays on the note: whose it is and who reads it),
+ * which the bots read with the dossier. A lesson is a note of the team's "Lessen".
+ * Secrets never; planted instructions never; the one rule for "the same" and "takes the place of" (same.ts); then
+ * insert, a new version or a card, with a change record and undo. Transactional and idempotent (idemKey).
+ */
 export function writeCandidate(svc: MemoryService, c: Candidate): Outcome {
   const ctx = svc.ctx;
   const content = clean(c.content);
@@ -62,46 +56,49 @@ export function writeCandidate(svc: MemoryService, c: Candidate): Outcome {
   const secret = detectSecret(content);
   if (secret) {
     ctx.audit(c.userId, 'memory.secret_rejected', { scope: c.scope, kind: secret }, c.createdByAgent ?? null);
-    return fail('rejected', 'secret', `Niet opgeslagen: dit lijkt op een ${secret}. Bewaar geheimen in Instellingen › Beveiliging › Opgeslagen geheimen, nooit in het geheugen.`);
+    return fail('rejected', 'secret', `Niet opgeslagen: dit lijkt op een ${secret}. Bewaar geheimen in ${PLACE.vault}, nooit in het geheugen.`);
   }
 
-  // Resolve the bucket (owner, bot, dossier, team) and check write access.
+  // Whose it is (owner, bot, team) and the dossier it goes into; whether this writer may write there.
   let ownerId = c.userId;
   let agentId: string | null = null;
-  let dossierId: string | null = null;
-  // A bot writes (itself, or a module/the learner on its behalf): only in its home team (teams 0.4 B).
+  let teamId: string | null = null;
+  // A bot writes (itself, or a module on its behalf): only in its home team.
   const writer = c.createdBy !== 'user' && c.createdByAgent ? ctx.store.agent(c.createdByAgent) : null;
   const botWriter = writer && writer.user_id === c.userId ? writer : null;
-  let teamId: string | null = null;
-  if (c.scope === 'agent') {
-    const a = ctx.store.agent(c.agentId);
-    if (!a || a.user_id !== c.userId) return fail('invalid', 'agent', 'Bot niet gevonden.');
-    agentId = a.id;
-    teamId = svc.homeTeam(a);
-  } else if (c.scope === 'dossier') {
+  let d: any;
+  if (c.scope === 'dossier') {
     const role = svc.dossierRole(c.userId, c.dossierId);
     if (!role || role === 'read') return fail('invalid', 'dossier', 'Dossier niet gevonden of alleen-lezen.');
-    const d = ctx.store.get<any>('memory_dossiers', c.dossierId!);
+    d = ctx.store.decode<any>('memory_dossiers', ctx.store.get('memory_dossiers', c.dossierId!));
     if (!d || !['active', 'closed'].includes(d.status)) return fail('invalid', 'dossier', 'Dit dossier is gearchiveerd of verwijderd.');
     const refusal = botWriter ? svc.dossierWriteRefusal(botWriter, d.id) : null;
     if (refusal) return fail('invalid', 'team', refusal);
     ownerId = d.user_id;
-    dossierId = d.id;
-  } else if (c.scope === 'shared') {
-    // Shared knowledge is per team: a bot's goes to its home team; the owner chooses a team or "alle teams" (teamId),
-    // and his "onthoud voor alle bots" in a bot's chat goes to that bot's team. Without a choice: the default team.
-    if (botWriter) teamId = svc.homeTeam(botWriter);
-    else if (c.teamId) {
-      if (!svc.validTeam(c.userId, c.teamId)) return fail('invalid', 'team', 'Onbekend team.');
-      teamId = c.teamId;
-    } else if (c.agentId) teamId = svc.homeTeam(c.agentId);
+  } else {
+    const whose = c.scope === 'agent' ? ctx.store.agent(c.agentId) : null;
+    if (c.scope === 'agent') {
+      if (!whose || whose.user_id !== c.userId) return fail('invalid', 'agent', 'Bot niet gevonden.');
+      agentId = whose.id;
+      teamId = svc.homeTeam(whose);
+    } else if (c.scope === 'shared') {
+      // Shared knowledge is per team: a bot's goes to its home team; the owner chooses a team or "alle teams"
+      // (teamId), and what he says in a bot's chat goes to that bot's team. Without a choice: the default team.
+      if (botWriter) teamId = svc.homeTeam(botWriter);
+      else if (c.teamId) {
+        if (!svc.validTeam(c.userId, c.teamId)) return fail('invalid', 'team', 'Onbekend team.');
+        teamId = c.teamId;
+      } else if (c.agentId) teamId = svc.homeTeam(c.agentId);
+    }
+    // A new version stays in the team of the note it replaces (memory_update of knowledge the writer may write).
+    if (c.replacesId && (c.scope === 'agent' || c.scope === 'shared')) {
+      const old = svc.itemRow(c.replacesId);
+      if (old && old.user_id === ownerId && old.scope === c.scope && (old.agent_id ?? null) === agentId) teamId = old.team_id ?? null;
+    }
+    d = ctx.store.tx(() => dossierAt(svc, c.userId, placeOf(c.scope, c.type), { agent: whose, teamId }));
+    if (!d) return fail('invalid', 'dossier', 'Dossier niet gevonden.');
   }
-
-  // A new version stays in the team of the note it replaces (memory_update of knowledge the writer may write).
-  if (c.replacesId && (c.scope === 'agent' || c.scope === 'shared')) {
-    const old = svc.itemRow(c.replacesId);
-    if (old && old.user_id === ownerId && old.scope === c.scope && (old.agent_id ?? null) === agentId) teamId = old.team_id ?? null;
-  }
+  const dossierId: string = d.id;
 
   // Idempotency: the same capture (message, tool call, import line) never writes twice.
   if (c.idemKey) {
@@ -159,9 +156,29 @@ export function writeCandidate(svc: MemoryService, c: Candidate): Outcome {
   // 0.4.5: what the learner found in the bot's own work (its reply after using a tool, or the tool result) is applied
   // directly too, as the bot's note or its dossier's — never an instruction, never with external or injection flags.
   const workOk = fromWork && settings.autoApply === 'own' && c.source.trust === 'agent' && !flags.has('external') && !flags.has('tainted') && !flags.has('injection') && !flags.has('instruction');
-  const workApplies = workOk && (c.scope === 'agent' || c.scope === 'dossier');
+  const workApplies = workOk && (c.scope === 'agent' || c.scope === 'dossier' || c.scope === 'shared');
 
   return ctx.store.tx(() => {
+    // 3b. The text of its dossier is part of what is there (the one rule, same.ts): what the text says already is not
+    // noted again; what the owner says now about something the text says otherwise takes that line's place in the text
+    // (the old line goes to the dossier's archive), so the text and its notes never contradict each other.
+    const body = String(d.body || '');
+    if (body && sensitivity !== 'sensitive') {
+      const lines = body.split('\n');
+      const hit = findIn(content, lines, key);
+      if (hit.verdict === 'same') return { action: 'duplicate', reason: 'in_text', message: `Stond al in dossier “${d.title}” [d:${d.ref}].`, item: null, dossier: { id: d.id, ref: d.ref, title: d.title } };
+      if (hit.verdict === 'replaces' && userSays && !flags.has('external') && !flags.has('injection')) {
+        const mark = /^\s*([-*>]\s+)?/.exec(lines[hit.index])?.[1] || '';
+        lines[hit.index] = mark + content.replace(/\s*\n+\s*/g, ' ');
+        try {
+          // (No chat source: the note itself is the line under his message.)
+          writeBody(svc, d.id, lines.join('\n'), { type: 'user', id: c.userId, reason: c.origin === 'explicit' ? 'explicit' : 'zelf aangepast' });
+        } catch (e: any) {
+          ctx.log.warn(`[memory] regel in dossier “${d.title}” bijwerken mislukt`, e?.message || e);
+        }
+      }
+    }
+
     // 4. Dedup: exact hash in the same bucket.
     const dup = svc.exactDuplicate(ownerId, bucket, hash);
     if (dup) {
@@ -189,19 +206,25 @@ export function writeCandidate(svc: MemoryService, c: Candidate): Outcome {
     if (!conflict && keyNorm) conflict = svc.sameKey(ownerId, bucket, keyNorm);
     let similarHint: MemoryItemRow | null = null;
     if (!conflict) {
-      const sims = svc.similar(ownerId, bucket, content, 3).filter((s) => s.row.status === 'active' || s.row.status === 'proposed');
-      const top = sims[0];
-      if (top && top.sim >= 0.9) {
-        if (top.row.status === 'active') reconfirm(top.row);
-        return { action: 'duplicate', reason: 'similar', message: `Stond al (bijna gelijk) in het geheugen [m:${top.row.ref}].`, item: svc.view(svc.itemRow(top.row.id)) };
+      // The one rule (same.ts) against the facts of this dossier, the closest first: it says the same → nothing new;
+      // it is about the same thing with another value → that fact is the one this may take the place of.
+      let about: MemoryItemRow | null = null;
+      for (const s of svc.similar(ownerId, bucket, content, 8)) {
+        if (s.row.status !== 'active' && s.row.status !== 'proposed') continue;
+        const verdict = compare(content, svc.contentOf(s.row), { neu: key, old: s.row.canonical_key });
+        if (verdict === 'same') {
+          if (s.row.status === 'active') reconfirm(s.row);
+          return { action: 'duplicate', reason: 'similar', message: `Stond al (bijna gelijk) in het geheugen [m:${s.row.ref}].`, item: svc.view(svc.itemRow(s.row.id)) };
+        }
+        if (verdict === 'replaces' && s.row.status === 'active' && !about) about = s.row;
       }
-      if (top && top.sim >= 0.5 && top.row.status === 'active') {
-        // Automatic learning only replaces what it was told is outdated (replacesId) or what has the same key; a merely
-        // similar statement is kept next to it (maintenance merges or resolves it later, reversibly). "De SEO is
-        // bijgewerkt" next to "we moeten de SEO bijwerken" is no conflict: it finishes that task (consolidate.ts).
-        const finishes = doneSignal(content) && isOpenTodo(top.row, svc.contentOf(top.row));
-        if (c.origin === 'user_ui' || finishes || c.compared || ((c.ownStatement || c.learned) && ['auto', 'model'].includes(c.origin))) similarHint = top.row;
-        else conflict = top.row;
+      if (about) {
+        // The owner in Geheugen, a writer that compared the facts itself (a specialist's round) and what was read from
+        // someone's own words keep both: only what is pointed at (replacesId) or has the same key is replaced. "De SEO
+        // is bijgewerkt" next to "we moeten de SEO bijwerken" is no conflict either: it finishes that task.
+        const finishes = doneSignal(content) && isOpenTodo(about, svc.contentOf(about));
+        if (c.origin === 'user_ui' || finishes || c.compared || ((c.ownStatement || c.learned) && ['auto', 'model'].includes(c.origin))) similarHint = about;
+        else conflict = about;
       }
     }
 
@@ -229,7 +252,7 @@ export function writeCandidate(svc: MemoryService, c: Candidate): Outcome {
     // and a bot or tool never overwrites what the owner said himself (a review card: his words win). Something
     // sensitive stays a proposal, as always.
     const pinnedAsk = !!conflict && !!c.learned && conflict.pinned;
-    const learnedReplace = !!conflict && !pinnedAsk && sensitivity !== 'sensitive' && ((c.learned === 'owner' && ownApplies) ||(workOk && (conflict.scope === 'agent' || conflict.scope === 'dossier') && !ownerSaid(svc, conflict)));
+    const learnedReplace = !!conflict && !pinnedAsk && sensitivity !== 'sensitive' && ((c.learned === 'owner' && ownApplies) ||(workOk && (conflict.scope === 'agent' || conflict.scope === 'dossier' || conflict.scope === 'shared') && !ownerSaid(svc, conflict)));
     // Newer and at least as well sourced wins: the same subject (the same key, or the very note the writer pointed
     // at) is never stored twice. A bot's newer note replaces a bot's older one, a specialist's newer source replaces
     // what an older source said — the old version goes to the history, with undo. Still a question for the owner
@@ -261,11 +284,10 @@ export function writeCandidate(svc: MemoryService, c: Candidate): Outcome {
     else if (workApplies) reason = null;
     else if (['auto', 'model', 'import', 'consolidation'].includes(c.origin)) reason = c.origin;
     else if (c.createdBy === 'agent') {
-      if (c.scope === 'about_you') reason = 'about_you';
-      else if (c.scope === 'shared') reason = 'shared';
-      else if (flags.has('tainted')) reason = 'tainted';
-      else if (flags.has('instruction')) reason = 'instruction';
-      else if (settings.botWrites === 'propose') reason = 'bot';
+      // Shared memory by default: what a bot stores about the owner or for its team applies at once, like its own
+      // note. Still a question for the owner: after outside content, and when he chose to review what bots write.
+      if (flags.has('tainted')) reason = 'tainted';
+      else if (settings.botWrites === 'propose') reason = c.scope === 'about_you' ? 'about_you' : c.scope === 'shared' ? 'shared' : 'bot';
     }
     const proposal = reason !== null;
 
@@ -334,7 +356,7 @@ export function writeCandidate(svc: MemoryService, c: Candidate): Outcome {
     });
     svc.bumpMeta(ownerId, { since_consolidation: (svc.meta(ownerId).since_consolidation || 0) + 1 });
     // A new note in a dossier: the dossier is read again (its state, NU), as after any change (reread.ts).
-    if (dossierId && !proposal) svc.markDossierChanged(dossierId);
+    if (c.scope === 'dossier' && !proposal) svc.markDossierChanged(dossierId);
 
     // 9. Verify (read-after-write) and notify.
     const check = svc.itemRow(row.id);
@@ -348,7 +370,7 @@ export function writeCandidate(svc: MemoryService, c: Candidate): Outcome {
         ctx.log.warn('[memory] controleren tegen wat er al staat mislukt', e?.message || e);
       }
     }
-    svc.emit(ownerId, { op: proposal ? 'propose' : 'create', ids: [row.id], scope: c.scope, agentId, dossierId, actor: c.createdBy, actorId: c.createdByAgent ?? null, ref: row.ref, changeId, origin: c.origin });
+    svc.emit(ownerId, { op: proposal ? 'propose' : 'create', ids: [row.id], scope: c.scope, agentId, dossierId: c.scope === 'dossier' ? dossierId : null, actor: c.createdBy, actorId: c.createdByAgent ?? null, ref: row.ref, changeId, origin: c.origin });
     ctx.audit(ownerId, proposal ? 'memory.proposed' : 'memory.created', { ref: row.ref, scope: c.scope, type, origin: c.origin, reason }, c.createdByAgent ?? null);
     const reasonText: Record<string, string> = {
       conflict: 'het botst met wat er al staat',
@@ -372,15 +394,6 @@ export function writeCandidate(svc: MemoryService, c: Candidate): Outcome {
       : `Onthouden [m:${row.ref}].`;
     return { action: proposal ? (conflict ? 'conflict' : 'proposed') : 'inserted', reason: reason || 'ok', message: msg, item: svc.view(check), existing: conflict ? svc.view(conflict) : similarHint ? svc.view(similarHint) : null, changeId };
   });
-}
-
-/**
- * Did the owner say this himself (0.4.5: his words win over a bot or a tool)? His own words (also when the learner
- * took them from a conversation), his own import, or anything he wrote, approved, confirmed, changed or pinned.
- */
-export function ownerSaid(svc: MemoryService, row: MemoryItemRow): boolean {
-  if (row.source_trust === 'user' || row.source_trust === 'import' || row.created_by === 'user') return true;
-  return !!svc.store.one("SELECT 1 FROM memory_changes WHERE record_id = ? AND actor = 'user' AND op IN ('create','approve','confirm','update','pin') AND undone_at IS NULL LIMIT 1", row.id);
 }
 
 /**
@@ -485,12 +498,11 @@ export function approveProposal(svc: MemoryService, userId: string, id: string, 
   if (o.expires_at !== undefined) patch.expires_at = o.expires_at || null;
   if (o.scope && SCOPES.includes(o.scope)) {
     patch.scope = o.scope;
+    const bot = o.scope === 'agent' ? ctx.store.agent(o.agentId || row.agent_id) : null;
     if (o.scope === 'agent') {
-      const a = ctx.store.agent(o.agentId || row.agent_id);
-      if (!a || a.user_id !== userId) throw new Error('Kies een bot');
-      patch.agent_id = a.id;
-      patch.dossier_id = null;
-      patch.team_id = a.id === row.agent_id && row.scope === 'agent' ? row.team_id ?? null : svc.homeTeam(a);
+      if (!bot || bot.user_id !== userId) throw new Error('Kies een bot');
+      patch.agent_id = bot.id;
+      patch.team_id = bot.id === row.agent_id && row.scope === 'agent' ? row.team_id ?? null : svc.homeTeam(bot);
     } else if (o.scope === 'dossier') {
       const role = svc.dossierRole(userId, o.dossierId || row.dossier_id);
       if (role !== 'owner' && role !== 'edit') throw new Error('Kies een dossier');
@@ -499,11 +511,15 @@ export function approveProposal(svc: MemoryService, userId: string, id: string, 
       patch.team_id = null;
     } else {
       patch.agent_id = null;
-      patch.dossier_id = null;
       // Shared: the team the owner chose, else where it was (a bot's proposal: its team), else the default team.
       patch.team_id = o.scope === 'shared' ? (o.teamId && svc.validTeam(userId, o.teamId) ? o.teamId : row.scope === 'shared' || row.scope === 'agent' ? row.team_id ?? null : null) : null;
     }
-  } else if (o.teamId && row.scope === 'shared' && svc.validTeam(userId, o.teamId)) patch.team_id = o.teamId;
+    // The dossier of that place: the note is a note of it.
+    if (o.scope !== 'dossier') patch.dossier_id = ctx.store.tx(() => dossierAt(svc, userId, placeOf(o.scope!, patch.type || row.type), { agent: bot, teamId: patch.team_id }))?.id ?? null;
+  } else if (o.teamId && row.scope === 'shared' && svc.validTeam(userId, o.teamId)) {
+    patch.team_id = o.teamId;
+    patch.dossier_id = ctx.store.tx(() => dossierAt(svc, userId, placeOf('shared', patch.type || row.type), { teamId: o.teamId }))?.id ?? row.dossier_id;
+  }
   return ctx.store.tx(() => {
     const batch = newId('mbt_');
     const before = svc.snapshot('item', id);
@@ -582,28 +598,6 @@ export function setMsgFlags(svc: MemoryService, messageId: string, userId: strin
   );
 }
 
-/** Is this message written by the thread owner in their own words (not external, forwarded or a system note)? */
-export function isOwnerMessage(m: Message | null, thread: Thread): boolean {
-  if (!m || m.role !== 'user' || m.deleted) return false;
-  return (m.author_type === 'user' && m.author_id === thread.user_id) || ownerOnChannel(m, thread);
-}
-
-/**
- * The owner writing to his own bot through a channel (WhatsApp, Telegram, e-mail …): the channel marks the message
- * `isOwner` only for the owner's own verified sender in a one-to-one conversation (channels/manager.ts). His words
- * there count like his words in the app: "onthoud dat …" works and the conversation is learned from.
- */
-export function ownerOnChannel(m: Message | null, thread: Thread | null): boolean {
-  const ch = (m?.parts as any)?.channel;
-  return !!m && !!thread && thread.kind === 'channel' && m.role === 'user' && m.author_type === 'external' && !m.deleted && ch?.isOwner === true && ch?.private !== false && !ch?.outbound;
-}
-
-function ttlFrom(content: string): string | null {
-  const s = normalize(content);
-  const days = /\b(vandaag|vanavond|today|tonight)\b/.test(s) ? 1 : /\b(morgen|tomorrow)\b/.test(s) ? 2 : /\b(deze week|this week)\b/.test(s) ? 7 : /\b(volgende week|next week)\b/.test(s) ? 14 : 0;
-  return days ? new Date(Date.now() + days * 864e5).toISOString() : null;
-}
-
 export function dossierMentioned(svc: MemoryService, userId: string, agentId: string | null, content: string): string | null {
   const n = ' ' + normalize(content) + ' ';
   // In a bot's conversation: only a dossier that bot may read and write (its own team's), never another team's.
@@ -621,95 +615,123 @@ export function dossierMentioned(svc: MemoryService, userId: string, agentId: st
 }
 
 /**
- * Explicit intents in a new user message ("onthoud dat …", "niet onthouden", "vergeet …"). Runs from the messageCreated
- * hook, before the bot answers, so the turn context can tell the bot what was stored.
+ * What the owner says about remembering in a new message, before the bot answers. "Niet onthouden" and "vergeet …" are
+ * his refusal: a flag on the message that holds for the bot's own writing and for the background review alike.
+ * "Onthoud dat …" is written at once, through the one way into memory, so he sees it under his message (with undo) and
+ * the bot is told it is there: about himself in his own dossier, about a dossier he names in that dossier, what he
+ * tells this bot to do ("onthoud dat je …") in that bot's own working notes, and the rest in the team's overview —
+ * what one bot is told about the work, its team knows.
  */
 export function captureExplicit(svc: MemoryService, m: Message, thread: Thread) {
-  if (!isOwnerMessage(m, thread)) return;
-  const intent = explicitIntent(m.content);
-  if (!intent.kind) return;
+  if (!ownerTyped(m, thread)) return;
+  const intents = explicitIntents(m.content);
+  if (!intents.length) return captureStanding(svc, m, thread);
   const userId = thread.user_id;
   const agent = svc.store.agent(thread.agent_id);
   if (agent && !svc.effective(agent).enabled) return;
-  if (intent.kind === 'no_remember') return setMsgFlags(svc, m.id, userId, { nolearn: true });
-  if (intent.kind === 'forget') return setMsgFlags(svc, m.id, userId, { nolearn: true, forget: true });
+  if (intents[0].kind === 'no_remember') return setMsgFlags(svc, m.id, userId, { nolearn: true });
+  if (intents[0].kind === 'forget') return setMsgFlags(svc, m.id, userId, { nolearn: true, forget: true });
   const learn = agent ? svc.effective(agent).learn : svc.userSettings(userId).learnMode;
   if (learn === 'off') return setMsgFlags(svc, m.id, userId, { outcomes: [{ action: 'off', message: 'Leren staat uit; er is niets opgeslagen. De gebruiker kan dit aanzetten in Geheugen › Opslag.' }] });
 
-  let content = intent.content || '';
-  let trust: 'user' | 'external' = 'user';
-  let sourceRef = m.id;
-  if (!content && m.reply_to) {
-    const replied = svc.store.message(m.reply_to);
-    if (replied && replied.thread_id === thread.id && replied.content) {
-      content = clean(replied.content, 1000);
-      sourceRef = replied.id;
-      if (replied.author_type === 'external' || (replied.role === 'user' && replied.author_id !== userId)) trust = 'external';
+  const outcomes: NonNullable<MsgFlags['outcomes']> = [];
+  for (const [i, intent] of intents.entries()) {
+    let content = intent.content || '';
+    let trust: 'user' | 'external' = 'user';
+    let sourceRef = m.id;
+    if (!content && m.reply_to) {
+      const replied = svc.store.message(m.reply_to);
+      if (replied && replied.thread_id === thread.id && replied.content) {
+        content = clean(replied.content, 1000);
+        sourceRef = replied.id;
+        if (replied.author_type === 'external' || (replied.role === 'user' && replied.author_id !== userId)) trust = 'external';
+      }
     }
+    if (!content) return setMsgFlags(svc, m.id, userId, { unclear: true });
+    const out = rememberOne(svc, m, thread, agent, { content, team: intent.team ?? null, trust, sourceRef, idemKey: i ? `x:${m.id}:${i}` : `x:${m.id}` });
+    outcomes.push({ action: out.action, ref: out.item?.ref ?? (out.dossier ? `d:${out.dossier.ref}` : undefined), message: out.message });
   }
-  if (!content) return setMsgFlags(svc, m.id, userId, { unclear: true });
-
-  let scope: Scope;
-  let dossierId: string | null = null;
-  let forcePropose = false;
-  // "voor alle bots" = shared in this bot's team; "voor alle teams" = shared with every team (the owner says so).
-  const teamId = wantsShared(m.content) && wantsAllTeams(m.content) ? ALL_TEAMS : null;
-  if (wantsShared(m.content)) scope = 'shared';
-  else if ((dossierId = dossierMentioned(svc, userId, agent?.id ?? null, content))) scope = 'dossier';
-  else if (firstPerson(content) && !/^(we|wij|ons|onze)\b/i.test(content)) scope = 'about_you';
-  else if (agent) scope = 'agent';
-  else {
-    scope = 'shared';
-    forcePropose = true;
-  }
-  const out = writeCandidate(svc, {
-    userId,
-    content,
-    scope,
-    agentId: agent?.id ?? null,
-    dossierId,
-    teamId,
-    source: { kind: 'message', ref: sourceRef, threadId: thread.id, excerpt: m.content, trust },
-    origin: 'explicit',
-    createdBy: 'user',
-    idemKey: `x:${m.id}`,
-    expiresAt: ttlFrom(content),
-    forcePropose,
-    proposalReason: forcePropose ? 'scope' : undefined,
-  });
-  setMsgFlags(svc, m.id, userId, { outcomes: [{ action: out.action, ref: out.item?.ref, message: out.message }] });
+  setMsgFlags(svc, m.id, userId, { outcomes });
 }
 
-/** Automatic proposals after a run (learn mode "auto"): high-precision patterns in the owner's own message. */
-export function captureAuto(svc: MemoryService, agent: Agent, thread: Thread, run: Run): number {
+/**
+ * One "onthoud …" of the owner, in the place it belongs, and an outcome that says truly where it is. With several teams,
+ * what he says in a team stays in that team (its overview: only that team's bots read it), also what he says about
+ * himself — unless he says it is for all teams ("voor alle teams": his own dossier, which every team reads) or names the
+ * team it is for ("voor ons team Privé").
+ */
+function rememberOne(svc: MemoryService, m: Message, thread: Thread, agent: Agent | null, o: { content: string; team: string | null; trust: 'user' | 'external'; sourceRef: string; idemKey: string }): Outcome {
+  const userId = thread.user_id;
+  const { content, trust, sourceRef } = o;
+  const info = svc.teamInfo(userId);
+  const all = wantsAllTeams(m.content);
+  // The team he names, by its name (as stored: the default team is kept as its own id).
+  const named = o.team && info ? [...info.names].find(([, n]) => normalize(n) === normalize(o.team!))?.[0] ?? null : null;
+  const home = agent ? svc.homeTeam(agent) : null;
+  let scope: Scope;
+  let dossierId: string | null = null;
+  // "voor alle bots" = for this bot's team; "voor alle teams" = for every team (the owner says so).
+  let teamId: string | null = wantsShared(m.content) && all ? ALL_TEAMS : null;
+  if (named) (scope = 'shared'), (teamId = named);
+  else if (wantsShared(m.content)) scope = 'shared';
+  else if ((dossierId = dossierMentioned(svc, userId, agent?.id ?? null, content))) scope = 'dossier';
+  else if (firstPerson(content) && !/^(we|wij|ons|onze)\b/i.test(content)) scope = 'about_you';
+  else scope = agent && /(?:^|[^\p{L}])(?:je|jij|jou|jouw|you|your)(?:[^\p{L}]|$)/iu.test(content) ? 'agent' : 'shared';
+  // Several teams, said in a team, not for all of them: about himself too, it stays in that team.
+  if (scope === 'about_you' && info?.multi && !all && home) (scope = 'shared'), (teamId = home);
+  const where = scope === 'dossier' ? svc.store.decode<any>('memory_dossiers', svc.store.get('memory_dossiers', dossierId!)) : null;
+  const source = { kind: 'message' as const, ref: sourceRef, threadId: thread.id, excerpt: m.content, trust };
+  // In a dossier he names: a line of that dossier's text, like everything else he says.
+  const out: Outcome = where
+    ? (() => {
+        const w = writeNote(svc, { dossier: where, text: `- ${content.replace(/\s*\n+\s*/g, ' ')}`, actor: { type: 'user', id: userId, guard: trust === 'external', idemKey: o.idemKey, reason: 'explicit', source: { threadId: thread.id, ref: sourceRef } }, full: 'archive' });
+        return { action: w.action === 'refused' ? 'rejected' : w.action === 'same' ? 'duplicate' : w.action === 'replaced' ? 'superseded' : 'inserted', reason: w.reason || 'ok', message: w.message, item: null, changeId: w.changeId, dossier: { id: where.id, ref: where.ref, title: where.title } };
+      })()
+    : writeCandidate(svc, { userId, content, scope, agentId: agent?.id ?? null, teamId, source, origin: 'explicit', createdBy: 'user', idemKey: o.idemKey });
+  // Where it is now, as it is (the bot repeats this to the owner).
+  if (info?.multi && !['rejected', 'blocked', 'quota', 'invalid'].includes(out.action)) {
+    const dId = out.item?.dossier_id || out.dossier?.id || null;
+    const d = dId ? svc.store.one<any>('SELECT title, team_id FROM memory_dossiers WHERE id = ?', dId) : null;
+    const team = d?.team_id === ALL_TEAMS ? 'alle teams lezen het' : d?.team_id ? `alleen de bots van team ${svc.teamName(userId, d.team_id)} lezen het` : '';
+    if (d) out.message = `${out.message} Het staat in dossier “${d.title}”${team ? `: ${team}` : ''}.${o.team && !named ? ` (Er is geen team “${clean(o.team, 40)}”.)` : ''}`;
+  }
+  return out;
+}
+
+/** The heading in a bot's working notes under which what the owner told it to do stands, in his words. */
+export const ORDERS = 'Opdrachten van de eigenaar';
+
+/**
+ * The owner tells his bot in its own conversation how it must work from now on ("Vanaf nu is dit je vaste taak: …",
+ * "Voortaan sluit je elke mail af met …"): kept at once, before the bot answers, in that bot's working notes under
+ * "Opdrachten van de eigenaar", in his words — the one place for what a bot was told to do, which it reads in every
+ * turn and follows. No model and no tool call needed, so it works the first time on every kind of AI, also a small one;
+ * the bot is told it is there (and does not store it again), he sees it under his message with undo.
+ */
+function captureStanding(svc: MemoryService, m: Message, thread: Thread) {
+  const content = standingIntent(m.content);
+  if (!content) return;
+  const agent = svc.store.agent(thread.agent_id);
+  if (!agent || agent.user_id !== thread.user_id || svc.audience(thread, thread.user_id) !== 'private') return;
   const eff = svc.effective(agent);
-  if (!eff.enabled || eff.learn !== 'auto') return 0;
-  const input = svc.store.message(run.input_message_id);
-  if (!isOwnerMessage(input, thread) || !['user', 'retry', ...(ownerOnChannel(input, thread) ? ['channel'] : [])].includes(run.trigger)) return 0;
-  const f = msgFlags(svc, input!.id);
-  if (f.nolearn || f.forget || f.outcomes?.length) return 0;
-  let n = 0;
-  heuristicFacts(input!.content).forEach((h, i) => {
-    const scope: Scope = h.aboutUser ? 'about_you' : 'agent';
-    const out = writeCandidate(svc, {
-      userId: thread.user_id,
-      content: h.content,
-      scope,
-      agentId: agent.id,
-      type: h.type,
-      key: h.key,
-      source: { kind: 'message', ref: input!.id, threadId: thread.id, excerpt: input!.content, trust: 'user' },
-      origin: 'auto',
-      createdBy: 'agent',
-      createdByAgent: agent.id,
-      runId: run.id,
-      idemKey: `h:${input!.id}:${i}`,
-      ownStatement: true,
-      learned: 'owner',
-    });
-    if (out.action === 'proposed' || out.action === 'conflict') n++;
-  });
-  return n;
+  if (!eff.enabled || eff.learn === 'off') return;
+  const out = keepOrder(svc, agent, content, { threadId: thread.id, messageId: m.id, excerpt: m.content, idemKey: `x:${m.id}` });
+  setMsgFlags(svc, m.id, thread.user_id, { outcomes: [{ action: out.action, ref: out.item?.ref ?? (out.dossier ? `d:${out.dossier.ref}` : undefined), message: out.message }] });
+}
+
+/**
+ * What the owner told one bot to do (an order in his words, or a correction of that bot's work), in that bot's working
+ * notes under "Opdrachten van de eigenaar": its one place, read in every turn; what it says already is not written again
+ * (the one rule). Full: a note of those working notes until the bot makes them shorter.
+ */
+export function keepOrder(svc: MemoryService, agent: Agent, content: string, o: { threadId: string; messageId: string; excerpt?: string; idemKey: string }): Outcome {
+  const userId = agent.user_id;
+  const actor = { type: 'user' as const, id: userId, idemKey: o.idemKey, reason: 'explicit', source: { threadId: o.threadId, ref: o.messageId } };
+  const w = writeNote(svc, { dossier: notesDossier(svc, agent), text: `- ${content.replace(/\s*\n+\s*/g, ' ')}`, section: ORDERS, actor, full: 'refuse' });
+  if (w.action === 'refused' && w.reason === 'full')
+    return writeCandidate(svc, { userId, content, scope: 'agent', agentId: agent.id, type: 'instruction', source: { kind: 'message', ref: o.messageId, threadId: o.threadId, excerpt: o.excerpt ?? null, trust: 'user' }, origin: 'explicit', createdBy: 'user', idemKey: o.idemKey });
+  const d = w.dossier;
+  return { action: w.action === 'refused' ? 'rejected' : w.action === 'same' ? 'duplicate' : w.action === 'replaced' ? 'superseded' : 'inserted', reason: w.reason || 'ok', message: w.action === 'refused' ? w.message : `In je werknotities gezet onder “${ORDERS}” [d:${d.ref}]: dit volg je voortaan, ook in andere gesprekken.`, item: null, changeId: w.changeId, dossier: { id: d.id, ref: d.ref, title: d.title } };
 }
 
 // ---------------------------------------------------------------------------- model budget (smart learning, see learn.ts)
@@ -723,7 +745,7 @@ export function modelBudgetOk(svc: MemoryService, userId: string, paid = true): 
   const day = new Date().toISOString().slice(0, 10);
   const meta = svc.meta(userId);
   const calls = meta.model_day === day ? meta.model_calls || 0 : 0;
-  if (calls >= s.modelDailyCap) return false;
+  if (s.modelDailyCap > 0 && calls >= s.modelDailyCap) return false;
   if (!paid) return true;
   const { limit } = budgetOf(svc.ctx, userId);
   return !limit || spentToday(svc.ctx, userId) < limit;
@@ -743,5 +765,17 @@ export function runFromOwner(svc: MemoryService, run: Run, thread: Thread): bool
   const input = svc.store.message(run.input_message_id);
   if (!input) return false;
   if (input.role === 'system') return run.trigger === 'resume';
-  return isOwnerMessage(input, thread) && !/^\s*(doorgestuurd van|forwarded from)/i.test(input.content);
+  return ownerTyped(input, thread) && !/^\s*(doorgestuurd van|forwarded from)/i.test(input.content);
+}
+
+// Who counts as the owner is decided in one place (agent/owner-turn.ts); memory's callers import it from here.
+export { isOwnerMessage, ownerOnChannel, ownerSaid };
+
+/**
+ * Words the owner typed himself (owner-turn.ts) — never a routine's message. A routine posts in the conversation as the
+ * owner (routines/engine.ts), but its text is the routine's: memory never takes it as what he said ("onthoud dat",
+ * the background review, "gedaan", a yes on a proposal), also not when its turn is retried after a limit or by hand.
+ */
+export function ownerTyped(m: Message | null, thread: Thread): boolean {
+  return isOwnerMessage(m, thread) && !(m?.parts as any)?.routine;
 }

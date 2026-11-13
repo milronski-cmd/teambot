@@ -12,6 +12,7 @@ import path from 'node:path';
 import type { MemoryService } from './service.js';
 import { addSource, createDossier } from './dossiers.js';
 import { clean, detectSecret, isInjectionLike, normalize } from './text.js';
+import { PLACE } from '../../../shared/places.js';
 
 export const MD_IMPORT_LIMITS = { files: 50, fileChars: 400_000, totalChars: 5_000_000 };
 
@@ -133,7 +134,7 @@ export function importMarkdownDossiers(svc: MemoryService, userId: string, files
     const secret = detectSecret(text);
     if (secret) {
       line.status = 'rejected';
-      line.message = `Niet geïmporteerd: dit bestand lijkt een ${secret} te bevatten. Haal dat eruit (bewaar het in Instellingen › Beveiliging › Opgeslagen geheimen) en probeer het opnieuw.`;
+      line.message = `Niet geïmporteerd: dit bestand lijkt een ${secret} te bevatten. Haal dat eruit (bewaar het in ${PLACE.vault}) en probeer het opnieuw.`;
       continue;
     }
     if (svc.blockedBy(userId, [title, summary].join(' '), null, ['forget'])) {

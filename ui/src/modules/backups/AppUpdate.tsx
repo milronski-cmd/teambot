@@ -2,12 +2,13 @@ import { useEffect, useState } from 'react';
 import { Download, RefreshCw } from 'lucide-react';
 import { api, on } from '../../lib/api';
 import { useApp } from '../../lib/store';
-import { t, uiLocale } from '../../lib/i18n';
+import { t } from '../../lib/i18n';
+import { formatList } from '../../lib/format';
 import { Button, Field, Input, timeAgo, useAsync } from '../../components/ui';
 import { SelectBox as Select } from '../../components/Listbox';
 import { useAdvanced } from '../../shell/advanced';
 import { ComputerOnly, useIsPhoneSession } from '../../shell/computerOnly';
-import type { AppUpdateView, WaitReason } from './types';
+import type { AppUpdateView, WaitReason } from '../../../../shared/appUpdate.js';
 
 /** A reason an update waits, in plain words (desktop/update-idle.ts reasonText says the same in the tray). */
 function reasonText(r: WaitReason): string {
@@ -29,14 +30,6 @@ function reasonText(r: WaitReason): string {
   }
 }
 
-const list = (items: string[]) => {
-  try {
-    return new Intl.ListFormat(uiLocale(), { type: 'conjunction' }).format(items);
-  } catch {
-    return items.join(', ');
-  }
-};
-
 /** What happens with updates now, in one or two sentences. */
 function StatusText({ v }: { v: AppUpdateView }) {
   const s = v.state;
@@ -55,7 +48,7 @@ function StatusText({ v }: { v: AppUpdateView }) {
     return (
       <div className="space-y-1 text-sm">
         <p>{t('Versie {0} staat klaar.', s.version)}</p>
-        {(v.soon || byItself) && v.waitingFor.length > 0 && <p className="text-muted">{t('TeamBot wacht nog, want {0}.', list(v.waitingFor.map(reasonText)))}</p>}
+        {(v.soon || byItself) && v.waitingFor.length > 0 && <p className="text-muted">{t('TeamBot wacht nog, want {0}.', formatList(v.waitingFor.map(reasonText)))}</p>}
         {(v.soon || byItself) && v.waitingFor.length === 0 && <p className="text-muted">TeamBot werkt zichzelf zo bij en start daarna opnieuw.</p>}
         {!v.soon && !byItself && <p className="text-muted">TeamBot installeert hem als je op Nu bijwerken klikt of TeamBot afsluit.</p>}
       </div>

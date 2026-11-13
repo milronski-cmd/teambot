@@ -1,6 +1,6 @@
 import { useId, useState } from 'react';
 import { ChevronDown, RefreshCw } from 'lucide-react';
-import { cx, toastError } from '../../components/ui';
+import { cx, useAsync } from '../../components/ui';
 import { useIsDesktop } from '../../lib/media';
 import { t } from '../../lib/i18n';
 import { capFirst, formatPercent } from '../../lib/format';
@@ -99,7 +99,7 @@ function Bar({ where }: { where: 'sidebar' | 'phone' }) {
   const bar = useLiveUsageBar();
   const refreshAll = useUsageBar((s) => s.refreshAll);
   const [open, setOpenState] = useState(() => readOpen(where));
-  const [busy, setBusy] = useState(false);
+  const { busy, run } = useAsync();
   const titleId = useId();
   const moreId = useId();
   if (!bar || (!bar.engines.length && !bar.sources.length)) return null;
@@ -116,16 +116,7 @@ function Bar({ where }: { where: 'sidebar' | 'phone' }) {
     setOpenState(v);
     saveOpen(where, v);
   };
-  const refresh = async () => {
-    setBusy(true);
-    try {
-      await refreshAll();
-    } catch (err) {
-      toastError(err);
-    } finally {
-      setBusy(false);
-    }
-  };
+  const refresh = () => run(refreshAll);
   const text = phone ? 'text-[13px] leading-6' : 'text-[11.5px] leading-[18px]';
 
   return (

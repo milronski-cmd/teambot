@@ -264,39 +264,97 @@ const NO_REMEMBER_RE =
 const FORGET_RE =
   /\b(vergeet|wis|verwijder)\b(?! niet)\s+(?:(?:maar|alsjeblieft|even)\s+)?(dat|wat|alles|mijn|het feit|uit je geheugen)\b|\buit je geheugen\b|\bforget (that|what|about|everything|my)\b/i;
 
+/** "voor ons team Privé:", "voor team Werk:", "alleen voor het team Verkoop:": the team it is for, by its name. */
+const TEAM_AUDIENCE_RE = /^(?:alleen\s+|ook\s+)?voor\s+(?:ons\s+|onze\s+|mijn\s+|het\s+|de\s+)?team\s+([^:,.!?]{1,40}?)\s*(?::\s*|,\s*|\s+(?=dat\s))/i;
+/** "over mij persoonlijk:", "over mezelf:": what follows is about the owner (not who it is for). */
+const ABOUT_ME_RE = /^over\s+(?:mij|mezelf|mijzelf)(?:\s+persoonlijk)?\s*[:,]\s*/i;
+
 export interface ExplicitIntent {
   kind: 'remember' | 'no_remember' | 'forget' | null;
   content?: string;
+  /** The team the owner named for it ("voor ons team Privé"), as he wrote it. */
+  team?: string | null;
+}
+
+/** One "onthoud …" clause: what to remember and the team it is for (null: not one). */
+function rememberClause(line: string): ExplicitIntent | null {
+  const m = line.trim().replace(/^(?:en|ook|en ook)\s+(?=\S)/i, '').match(REMEMBER_RE);
+  if (!m) return null;
+  // Who it is for and "ook" are not part of the fact: "Onthoud ook dat …", "Onthoud voor al mijn bots: …",
+  // "Onthoud alleen voor jezelf, niet voor mijn andere bots: …", "Onthoud voor ons team Privé: …".
+  let body = m[2];
+  let dat = /dat/i.test(m[1] || '');
+  const team = body.match(TEAM_AUDIENCE_RE);
+  if (team) body = body.slice(team[0].length);
+  const aud = team ? null : body.match(AUDIENCE_RE);
+  if (aud) body = body.slice(aud[0].length);
+  const me = body.match(ABOUT_ME_RE);
+  if (me) body = body.slice(me[0].length);
+  const lead = body.match(/^(?:ook|nog)\s+(dat\s+)?/i) || (aud || team ? body.match(/^(dat\s+)/i) : null);
+  if (lead) {
+    body = body.slice(lead[0].length);
+    if (lead[1]) dat = true;
+  }
+  // Only the fact itself: stop at the end of its sentence or where a new instruction starts
+  // ("Onthoud dat X. Zoek daarna …", "onthoud dat X en zoek dan …").
+  const rest = firstClause(body);
+  // "Onthoud dat maar", "onthoud het dan": what to remember is elsewhere (the reply or the bot's question).
+  if (/^(?:(?:dit|dat|this|that|het|maar|dan|even|wel|graag|alsjeblieft)\s*)+[.!]?$/i.test(rest) || rest.length < 3) return { kind: 'remember', content: '' };
+  return { kind: 'remember', content: tidyClause(rest, dat), ...(team ? { team: team[1].trim() } : {}) };
 }
 
 /** Detect "onthoud dat ..." / "niet onthouden" / "vergeet ..." in the user's own words (quotes/code/forwards ignored). */
 export function explicitIntent(raw: string): ExplicitIntent {
+  return explicitIntents(raw)[0] || { kind: null };
+}
+
+/**
+ * Every "onthoud …" of a message, each with its own audience ("Onthoud voor ons team Privé: … En onthoud over mij
+ * persoonlijk: …" is two), or the one refusal ("niet onthouden", "vergeet …"). Empty: none.
+ */
+export function explicitIntents(raw: string): ExplicitIntent[] {
   const own = ownWords(raw);
-  if (!own) return { kind: null };
-  if (NO_REMEMBER_RE.test(own)) return { kind: 'no_remember' };
-  if (FORGET_RE.test(own)) return { kind: 'forget' };
+  if (!own) return [];
+  if (NO_REMEMBER_RE.test(own)) return [{ kind: 'no_remember' }];
+  if (FORGET_RE.test(own)) return [{ kind: 'forget' }];
+  const out: ExplicitIntent[] = [];
   for (const line of own.split(/\n+/)) {
-    const m = line.trim().match(REMEMBER_RE);
-    if (!m) continue;
-    // Who it is for and "ook" are not part of the fact: "Onthoud ook dat …", "Onthoud voor al mijn bots: …",
-    // "Onthoud alleen voor jezelf, niet voor mijn andere bots: …".
-    let body = m[2];
-    let dat = /dat/i.test(m[1] || '');
-    const aud = body.match(AUDIENCE_RE);
-    if (aud) body = body.slice(aud[0].length);
-    const lead = body.match(/^(?:ook|nog)\s+(dat\s+)?/i) || (aud ? body.match(/^(dat\s+)/i) : null);
-    if (lead) {
-      body = body.slice(lead[0].length);
-      if (lead[1]) dat = true;
+    // A new "onthoud" after the end of a sentence starts its own clause.
+    for (const part of line.split(/(?<=[.!?])\s+(?=(?:en\s+|ook\s+)?(?:onthoud|onthou|noteer|remember)\b)/i)) {
+      const c = rememberClause(part);
+      if (c && (c.content || !out.length)) out.push(c);
+      if (out.length >= 4) return out;
     }
-    // Only the fact itself: stop at the end of its sentence or where a new instruction starts
-    // ("Onthoud dat X. Zoek daarna …", "onthoud dat X en zoek dan …").
-    const rest = firstClause(body);
-    // "Onthoud dat maar", "onthoud het dan": what to remember is elsewhere (the reply or the bot's question).
-    if (/^(?:(?:dit|dat|this|that|het|maar|dan|even|wel|graag|alsjeblieft)\s*)+[.!]?$/i.test(rest) || rest.length < 3) return { kind: 'remember', content: '' };
-    return { kind: 'remember', content: tidyClause(rest, dat) };
   }
-  return { kind: null };
+  // (An empty "onthoud dat maar" next to a real one says nothing more.)
+  return out.length > 1 ? out.filter((c) => c.content) : out;
+}
+
+/** "Voortaan …", "vanaf nu …", "je vaste taak is …": how this bot must work from now on. */
+const STANDING_RE =
+  /(?:^|[^\p{L}])(?:voortaan|vanaf nu|van nu af(?: aan)?|in het vervolg|vanaf vandaag|(?:je|jouw) vaste (?:taak|werk|rol)|(?:je|jouw) (?:taak|rol) is|from now on|going forward|from today on|your (?:job|task|role) is)(?:[^\p{L}]|$)/iu;
+const YOU_RE = /(?:^|[^\p{L}])(?:je|jij|jou|jouw|jezelf|u|you|your|yourself)(?:[^\p{L}]|$)/iu;
+/** Only a new name ("voortaan heet je Max"): that is the bot's own setting, not a task. */
+const ONLY_NAME_RE = /^(?:\S+\s+){0,3}(?:heet je|je heet|jouw naam is|je naam is|your name is|you are called)\s+\S+(?:\s+\S+)?\s*[.!]?$/i;
+
+/**
+ * The owner tells this bot how it must work from now on ("Vanaf nu is dit je vaste taak: …", "Voortaan sluit je elke
+ * mail af met …"): his words from that sentence on, or null. A question, a sentence that is not about "you" (news about
+ * the work: "voortaan vergaderen we op dinsdag") and only a new name are not.
+ */
+export function standingIntent(raw: string): string | null {
+  const own = ownWords(raw);
+  if (!own || own.length > 1500) return null;
+  const ss = sentences(own);
+  const i = ss.findIndex((s) => STANDING_RE.test(s) && !s.trim().endsWith('?'));
+  if (i < 0) return null;
+  const part = ss
+    .slice(i)
+    .filter((s) => !s.trim().endsWith('?'))
+    .join(' ')
+    .replace(/^(?:nee|oké?|ok|goed|prima|top|dus|en|ja)[,!.]?\s+/i, '');
+  if (!YOU_RE.test(part) || ONLY_NAME_RE.test(part)) return null;
+  return clean(part, 600);
 }
 
 const FINITE = new Set(

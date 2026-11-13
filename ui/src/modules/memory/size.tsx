@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
-import { Card, Field, Input, Select } from '../../components/ui';
+import { Ruler } from 'lucide-react';
+import { Card, Field, Input, Select, CardHead } from '../../components/ui';
 import { t } from '../../lib/i18n';
 import { ErrorBox, Loading, Meter } from './parts';
 import { useMem } from './lib';
@@ -21,7 +22,7 @@ export function SizeCard({ settings, save }: { settings: any; save(patch: any): 
   };
   return (
     <Card className="space-y-3 p-4">
-      <h2 className="text-sm font-semibold">Doelomvang</h2>
+      <CardHead icon={Ruler} title="Doelomvang" />
       <p className="text-xs text-muted">Wordt een deel te groot, dan gaat het minst waardevolle naar het archief; met één klik terug te zetten.</p>
       {r.error && <ErrorBox error={r.error} retry={r.reload} />}
       {!r.error && !r.data && <Loading />}

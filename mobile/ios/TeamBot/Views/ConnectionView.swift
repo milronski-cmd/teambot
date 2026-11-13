@@ -17,30 +17,23 @@ struct ConnectionView: View {
         let copy = ProblemCopy.make(problem, pairing: pairing, phone: model.network, last: model.last)
         NavigationStack {
             ScrollView {
-                VStack(spacing: 16) {
-                    Image(systemName: copy.icon)
-                        .font(.system(size: 44))
-                        .foregroundStyle(.secondary)
-                        .accessibilityHidden(true)
-                    Text(copy.title)
-                        .font(.title3.bold())
-                        .multilineTextAlignment(.center)
-                    Text(copy.body)
-                        .multilineTextAlignment(.center)
-                        .foregroundStyle(.secondary)
-                    ForEach(Array(copy.actions.enumerated()), id: \.element) { index, action in
-                        actionButton(action, primary: index == 0)
+                VStack(spacing: Theme.gapLarge) {
+                    StateHeader(title: copy.title, message: copy.body, badge: copy.icon, sleeping: true)
+                    VStack(spacing: Theme.gapSmall) {
+                        ForEach(Array(copy.actions.enumerated()), id: \.element) { index, action in
+                            actionButton(action, primary: index == 0)
+                        }
                     }
                     if !copy.tips.isEmpty {
-                        VStack(alignment: .leading, spacing: 10) {
+                        VStack(alignment: .leading, spacing: 12) {
                             ForEach(copy.tips, id: \.self) { tip in
                                 Label(tip, systemImage: "lightbulb")
                                     .font(.callout)
+                                    .foregroundStyle(Theme.ink)
                                     .frame(maxWidth: .infinity, alignment: .leading)
                             }
                         }
-                        .padding(14)
-                        .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 12))
+                        .tbCard()
                     }
                     VStack(spacing: 4) {
                         if let at = model.last?.connectedAt {
@@ -49,13 +42,12 @@ struct ConnectionView: View {
                         Text("Zolang er geen verbinding is, wordt er niets verstuurd.")
                     }
                     .font(.footnote)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(Theme.muted)
                     .multilineTextAlignment(.center)
                 }
-                .padding(24)
-                .frame(maxWidth: 520)
-                .frame(maxWidth: .infinity)
+                .tbColumn()
             }
+            .tbCanvas()
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
                     Button {
@@ -83,16 +75,19 @@ struct ConnectionView: View {
             perform(action)
         } label: {
             if action == .retry && model.checking {
-                ProgressView()
+                HStack(spacing: Theme.gapSmall) {
+                    ProgressView()
+                    Text("Verbinden met je pc…")
+                }
             } else {
-                Text(action.title).frame(maxWidth: 280)
+                Text(action.title)
             }
         }
         .disabled(action == .retry && model.checking)
         if primary {
-            button.buttonStyle(.borderedProminent).controlSize(.large)
+            button.buttonStyle(PrimaryButtonStyle())
         } else {
-            button.buttonStyle(.bordered)
+            button.buttonStyle(SecondaryButtonStyle())
         }
     }
 

@@ -358,7 +358,7 @@ function decodePng(buf: Buffer): { w: number; h: number; ch: number; px: Buffer 
 }
 
 test(
-  'vault login on a local test site: approval, TeamBot fills (incl. TOTP), the model never sees a secret; deny, always, phishing, failures',
+  'vault login on a local test site: a login given to the bot asks nothing, TeamBot fills (incl. TOTP), the model never sees a secret; another bot’s login, a choice between accounts, phishing, failures',
   { skip: installed.length ? false : 'Geen Edge/Chrome/Chromium gevonden op dit apparaat', timeout: 240_000 },
   async () => {
     const { srv, hits, posted } = testSite();
@@ -374,17 +374,11 @@ test(
       const entry = await t.api('POST', '/computers/vault', { label: 'Testwinkel', origins: base, username: USER, password: PASS, totp: TOTP_SECRET });
       const th = await t.api('POST', '/threads', { agentId: a.id });
 
-      // 1) through the runner: the bot asks, the owner approves, TeamBot fills password + TOTP
+      // 1) through the runner: the owner gave this login to his bots, so nothing is asked: TeamBot fills password + TOTP
       t.script.push({ toolCalls: [{ name: 'browser_request_login', args: { url: base + '/login', reason: 'bestellingen bekijken' } }] }, { text: 'Gelukt.' });
       await t.api('POST', `/threads/${th.id}/messages`, { content: 'log in bij de testwinkel' });
-      const ask = await waitFor(async () => (await t.api('GET', '/approvals')).find((x: any) => x.tool === 'browser_vault_login'), 30_000);
-      assert.equal(ask.kind, 'question');
-      assert.equal(ask.risk, 'danger');
-      assert.match(ask.summary, new RegExp(`Operations wil inloggen op 127\\.0\\.0\\.1:${port} als ${USER.replace('.', '\\.')}`));
-      assert.deepEqual(ask.options, [`Inloggen als ${USER}`, 'Zelf inloggen', 'Niet nu']);
-      assert.ok(!posted.length, 'nothing is filled or sent before the approval');
-      await t.api('POST', `/approvals/${ask.id}`, { decision: 'approve', answer: ask.options[0] });
       await t.waitIdle(th.id, 90_000);
+      assert.deepEqual((await t.api('GET', '/approvals?status=all')).filter((x: any) => x.tool === 'browser_vault_login' || x.tool === 'browser_request_login'), [], 'no card: the bot never sees the password');
       assert.ok(posted.some((p) => p.path === '/login' && p.email === USER && p.password === PASS), 'the site received the login');
       assert.ok(posted.some((p) => p.path === '/2fa' && /^\d{6}$/.test(p.code)), 'and a TOTP code');
       assert.ok(hits.includes('GET /dashboard'));
@@ -436,24 +430,48 @@ test(
       };
       const logOut = () => svc.sessionOf(t.app.ctx.store.agent(a.id)!)!.context.clearCookies();
 
-      // 2) deny: nothing is filled, nothing posted
+      // 2) a login the owner limited to another bot is not this bot's: no vault, the owner logs in himself (or not)
+      const other = await t.agent({ name: 'Inkoop', tool_groups: ['files'] });
+      await t.api('PUT', `/computers/vault/${entry.id}`, { agent_ids: [other.id] });
       await logOut();
       posted.length = 0;
-      let r = await withAnswer({ url: base + '/login' }, () => ({ decision: 'approve', answer: 'Niet nu' }));
-      assert.match(r.out.text, /niet goedgekeurd/);
-      assert.equal(posted.length, 0);
+      let r = await withAnswer({ url: base + '/login' }, (x) => {
+        assert.equal(x.tool, 'browser_request_login', 'falls back to "log in yourself"');
+        return { decision: 'approve', answer: 'Niet nu' };
+      });
+      assert.equal(posted.length, 0, 'nothing of another bot’s login is filled');
+      assert.match((await call('browser_request_login', { url: base + '/login', method: 'kluis' })).text, /geen login/);
       const s = svc.sessionOf(t.app.ctx.store.agent(a.id)!)!;
       assert.equal(await s.active.inputValue('#p'), '', 'password field still empty');
+      // given to this bot by name: again nothing asked
+      await t.api('PUT', `/computers/vault/${entry.id}`, { agent_ids: [a.id, other.id] });
+      r = await withAnswer({ url: base + '/login' }, null);
+      assert.match(r.out.text, /^Ingelogd/, r.out.text);
+      await t.api('PUT', `/computers/vault/${entry.id}`, { agent_ids: [] });
 
-      // 3) "always for this bot on this site": next time no question
+      // 3) two accounts for this site: the owner picks one (a choice, not a permission); "always" remembers it
+      const second = await t.api('POST', '/computers/vault', { label: 'Tweede account', origins: base, username: 'tweede@example.com', password: 'nog-een-wachtwoord-1' });
+      await logOut();
+      posted.length = 0;
+      r = await withAnswer({ url: base + '/login' }, (x) => {
+        assert.equal(x.tool, 'browser_vault_login');
+        assert.equal(x.kind, 'question');
+        assert.equal(x.risk, 'read');
+        assert.match(x.summary, new RegExp(`Operations wil inloggen op 127\\.0\\.0\\.1:${port}\\. Met welk account\\?`));
+        assert.deepEqual(x.options, [`Inloggen als ${USER}`, 'Inloggen als tweede@example.com', 'Zelf inloggen', 'Niet nu']);
+        return { decision: 'approve', answer: 'Niet nu' };
+      });
+      assert.match(r.out.text, /niet goedgekeurd/);
+      assert.equal(posted.length, 0, 'nothing is filled before the choice');
       r = await withAnswer({ url: base + '/login' }, (q) => ({ decision: 'always', answer: q.options[0] }));
       assert.match(r.out.text, /^Ingelogd/);
-      assert.equal((await t.api('GET', '/computers/vault'))[0].grants.length, 1);
+      const grantsOf = async () => (await t.api('GET', '/computers/vault')).find((e: any) => e.id === entry.id).grants.length;
+      assert.equal(await grantsOf(), 1);
       await logOut();
       const before = (await t.api('GET', '/approvals?status=all')).length;
       r = await withAnswer({ url: base + '/login' }, null);
       assert.match(r.out.text, /^Ingelogd/, r.out.text);
-      assert.equal((await t.api('GET', '/approvals?status=all')).length, before, 'no new approval');
+      assert.equal((await t.api('GET', '/approvals?status=all')).length, before, 'the choice is remembered');
       // a phone can never grant "always"
       const owner = t.app.ctx.auth.owner()!;
       const phone = t.app.ctx.auth.createSession(owner.id, 'device', 'Telefoon', 365).token;
@@ -464,7 +482,8 @@ test(
       assert.equal((await asUser(t, phone, 'POST', `/approvals/${q.id}`, { decision: 'always', answer: q.options[0] })).status, 403);
       assert.equal((await asUser(t, phone, 'POST', `/approvals/${q.id}`, { decision: 'approve', answer: 'Niet nu' })).status, 200);
       await pend;
-      assert.equal((await t.api('GET', '/computers/vault'))[0].grants.length, 0);
+      assert.equal(await grantsOf(), 0);
+      await t.api('DELETE', `/computers/vault/${second.id}`);
 
       // 4) phishing guard: an identical login page on another origin (same host, other port) → no vault, manual flow
       const fake = testSite();
@@ -485,7 +504,7 @@ test(
 
       // 5) wrong password: "mislukt", fields emptied again
       await t.api('PUT', `/computers/vault/${entry.id}`, { password: 'fout-wachtwoord-123' });
-      r = await withAnswer({ url: base + '/login' }, (x) => ({ decision: 'approve', answer: x.options[0] }));
+      r = await withAnswer({ url: base + '/login' }, null);
       assert.equal(r.out.isError, true);
       assert.match(r.out.text, /^Mislukt: .*accepteerde de inloggegevens niet/);
       assert.doesNotMatch(r.out.text, /fout-wachtwoord|sanne/);
@@ -494,24 +513,24 @@ test(
 
       // 6) two-step sign-in (username, then password) on another entry
       await t.api('PUT', `/computers/vault/${entry.id}`, { totp: null });
-      r = await withAnswer({ url: base + '/stap1' }, (x) => ({ decision: 'approve', answer: x.options[0] }));
+      r = await withAnswer({ url: base + '/stap1' }, null);
       assert.match(r.out.text, /^Ingelogd/, r.out.text);
       assert.ok(hits.includes('GET /klaar'));
 
       // 7) a sign-up / change-password form is never filled
       posted.length = 0;
-      r = await withAnswer({ url: base + '/registreren' }, (x) => ({ decision: 'approve', answer: x.options[0] }));
+      r = await withAnswer({ url: base + '/registreren' }, null);
       assert.match(r.out.text, /account te maken/);
       assert.equal(posted.length, 0);
 
       // 8) a site that puts the password in the URL: stopped, and the bot never sees the value
-      r = await withAnswer({ url: base + '/oud' }, (x) => ({ decision: 'approve', answer: x.options[0] }));
+      r = await withAnswer({ url: base + '/oud' }, null);
       assert.match(r.out.text, /adres van de pagina/);
       const back = await call('browser_back', {});
       assert.ok(!back.text.includes(PASS) && !back.text.includes(encodeURIComponent(PASS)), 'scrubbed from later tool results');
 
       // 9) single-page app: the username field stays on the page, but masked and hidden from the bot
-      r = await withAnswer({ url: base + '/app' }, (x) => ({ decision: 'approve', answer: x.options[0] }));
+      r = await withAnswer({ url: base + '/app' }, null);
       assert.match(r.out.text, /^Ingelogd/, r.out.text);
       const sess = svc.sessionOf(t.app.ctx.store.agent(a.id)!)!;
       assert.equal(await sess.active.inputValue('#u'), USER, 'the username is really in the page');
@@ -533,7 +552,7 @@ test(
 
       // nothing of this leaked into logs, audit, step log or the database
       const all = dumpDb(t) + logs.join('\n');
-      for (const sec of [PASS, TOTP_SECRET, 'fout-wachtwoord-123']) assert.ok(!all.includes(sec), sec);
+      for (const sec of [PASS, TOTP_SECRET, 'fout-wachtwoord-123', 'nog-een-wachtwoord-1']) assert.ok(!all.includes(sec), sec);
     } finally {
       await t.close();
       srv.close();

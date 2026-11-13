@@ -10,96 +10,22 @@ import type { Broker } from '../tools/broker.js';
 import type { ProviderRegistry } from '../providers/registry.js';
 import type { RunManager } from '../agent/runs.js';
 import type { ChatService } from '../agent/chat.js';
+import type { StepFact } from '../../shared/seen.js';
+import type { AccessMode, Agent, AttachmentRef, ModelInfo, PlanStep, ProviderKindInfo, ProviderTestResult, Thread, ToolCall } from '../../shared/types.js';
+import type { Words } from '../../shared/i18n-core.js';
 
-/** full = "Volledige toegang": the owner's explicit opt-in; normal actions without asking (see Broker.decide). */
-export type AccessMode = 'chat' | 'readonly' | 'ask' | 'auto' | 'full';
+/** The JSON shapes the page reads too: shared/types.ts. */
+export type { AccessMode, Agent, AttachmentRef, Billing, Decision, ModelInfo, PlanStep, ProviderField, ProviderTestResult, Role, Thread, ThreadKind, ToolCall, ToolGroup, User } from '../../shared/types.js';
+
 /**
  * What a `danger` tool does, for "Volledige toegang": local (files, own desktop) runs without asking, external
  * (sends or publishes to someone else) asks unless the owner also allowed that, payment always asks.
  */
 export type ToolImpact = 'local' | 'external' | 'payment';
 export type ToolRisk = 'read' | 'write' | 'exec' | 'danger';
-export type Decision = 'allow' | 'ask' | 'deny';
-export type Role = 'owner' | 'admin' | 'member';
 
-export interface User {
-  id: string;
-  email: string | null;
-  name: string;
-  role: Role;
-  disabled: boolean;
-  settings: Record<string, any>;
-  created_at: string;
-}
-
-export interface Agent {
-  id: string;
-  user_id: string;
-  name: string;
-  avatar: string;
-  color: string;
-  role: string;
-  description: string;
-  instructions: string;
-  provider_id: string | null;
-  model: string;
-  reasoning: string;
-  access_mode: AccessMode;
-  workspace: string;
-  tool_groups: string[];
-  tool_policy: Record<string, Decision>;
-  skills: string[];
-  fallback: { provider_id: string; model: string } | null;
-  /** What a new message does while the bot works: wait in the queue, steer the running turn, or interrupt it. */
-  busy_policy: 'queue' | 'steer' | 'interrupt';
-  settings: Record<string, any>;
-  pinned: boolean;
-  archived: boolean;
-  sort: number;
-  created_at: string;
-  updated_at: string;
-}
-
-export type ThreadKind = 'chat' | 'room' | 'routine' | 'delegation' | 'channel';
-
-export interface Thread {
-  id: string;
-  user_id: string;
-  agent_id: string | null;
-  room_id: string | null;
-  kind: ThreadKind;
-  title: string;
-  parent_id: string | null;
-  provider_state: Record<string, any>;
-  meta: Record<string, any>;
-  pinned: boolean;
-  archived: boolean;
-  created_at: string;
-  updated_at: string;
-}
-
-export interface ToolCall {
-  id: string;
-  name: string;
-  args: any;
-  status?: 'pending' | 'running' | 'done' | 'error' | 'denied' | 'waiting';
-  approvalId?: string;
-  summary?: string;
-}
-
-export interface AttachmentRef {
-  id: string;
-  name: string;
-  mime: string;
-  size: number;
-}
-
-/** What a step touched, in data (for "Wat heeft deze bot gezien en gedaan" and the bot's files in the side panel). */
-export interface StepFact {
-  op: 'read' | 'write' | 'delete' | 'web' | 'search' | 'exec' | 'app';
-  /** Full path, URL, command, search query or app name. */
-  target: string;
-}
+/** What a step touched, in data: shared/seen.ts (the page shows it under "Wat heeft deze bot gezien en gedaan"). */
+export type { StepFact };
 
 export interface ActivityItem {
   kind: string;
@@ -109,6 +35,17 @@ export interface ActivityItem {
   facts?: StepFact[];
   /** A CLI step that has not finished yet (its title says what the bot wants to do); the loop guard waits for it. */
   pending?: boolean;
+  /** The title as TeamBot's words with values (a TeamBot tool's step): shown in the reader's language, values as written. */
+  words?: Words;
+  /** What a command of a CLI engine printed (its start and its end): for the second look before "klaar", not shown as a line. */
+  out?: string;
+}
+
+/** A long output short: its start and its end (a test run ends with its counts). */
+export function headAndTail(text: string, max: number): string {
+  const t = String(text || '').trim();
+  const head = Math.floor(max * 0.35);
+  return t.length <= max ? t : `${t.slice(0, head)} … ${t.slice(-(max - head))}`;
 }
 
 export interface Usage {
@@ -118,11 +55,13 @@ export interface Usage {
   cost?: number;
   /** Estimated value at list price (USD) when `cost` is covered by a subscription (e.g. Claude Code's total_cost_usd). */
   value?: number;
+  /** The tokens are TeamBot's estimate, not the engine's count (a call that stopped before the engine said). */
+  estimated?: boolean;
 }
 
 export interface MessageParts {
   toolCalls?: ToolCall[];
-  toolResult?: { toolCallId: string; name: string; isError?: boolean };
+  toolResult?: { toolCallId: string; name: string; isError?: boolean; via?: string };
   attachments?: AttachmentRef[];
   reasoning?: string;
   raw?: { provider: string; data: any };
@@ -181,34 +120,6 @@ export interface Run {
 
 // ---------- Providers ----------
 
-/** Who pays: free (no account/key needed or a free model), subscription (your own CLI login), paid (per use), local (own hardware). */
-export type Billing = 'free' | 'subscription' | 'paid' | 'local';
-
-export interface ModelInfo {
-  id: string;
-  label?: string;
-  billing?: Billing;
-  context?: number;
-  vision?: boolean;
-  tools?: boolean;
-  reasoning?: boolean;
-  /** USD per 1M tokens [input, output], from the provider's own model list (when it publishes prices). */
-  price?: [number, number];
-  /** Free to use (free model or free tier of the provider). */
-  free?: boolean;
-  /** Thinking levels this model takes (C-11): [] = none to choose, undefined = unknown. */
-  reasoningLevels?: string[];
-  defaultReasoning?: string;
-  /** Where tools/vision/context come from when not from the engine itself (dated table). */
-  capSource?: string;
-  capChecked?: string;
-  /** Local models (C-13): memory per token of context (bytes, estimate), the context the server loaded it with, and
-   *  whether the server fixes the window at start (llama.cpp). */
-  memPerToken?: number;
-  loadedContext?: number;
-  contextFixed?: boolean;
-}
-
 export type ContentPart = { type: 'text'; text: string } | { type: 'image'; mime: string; data: string };
 
 export interface ChatMsg {
@@ -258,20 +169,6 @@ export interface ChatResult {
   images?: { mime: string; data: string }[];
 }
 
-/** Outcome of "Test verbinding": a free check (model list, key/credit endpoint) with a plain-language fix hint. */
-export interface ProviderTestResult {
-  ok: boolean;
-  detail: string;
-  /** What to do about a failure, in Dutch. */
-  hint?: string;
-  /** Error category (auth, quota, rate_limit, model, network, ...). */
-  category?: string;
-  /** The key itself was checked (not only a public model list). */
-  verified?: boolean;
-  /** Credit / limit info when the provider exposes it for free. */
-  credit?: string;
-}
-
 export interface AgentRunRequest {
   model: string;
   system: string;
@@ -285,12 +182,6 @@ export interface AgentRunRequest {
   threadId: string;
   runId: string;
   userId: string;
-}
-
-/** One step of a bot's plan (plan card in the chat). */
-export interface PlanStep {
-  text: string;
-  status: 'pending' | 'in_progress' | 'completed';
 }
 
 export type AgentEvent =
@@ -334,56 +225,14 @@ export interface ProviderConfig {
   created_at: string;
 }
 
-export interface ProviderKind {
-  id: string;
-  label: string;
-  type: 'api' | 'cli';
+export interface ProviderKind extends ProviderKindInfo {
   /** How the provider takes a thinking level (openai-compat ReasoningStyle); null = it takes none. */
   reasoningStyle?: string | null;
-  group?: 'cloud' | 'local' | 'cli' | 'custom' | 'free';
-  baseUrl?: string;
-  needsKey: boolean;
-  keyOptional?: boolean;
-  keyUrl?: string;
-  keyPlaceholder?: string;
-  docsUrl?: string;
-  description: string;
-  authNote?: string;
-  billingNote?: string;
-  /** Typical billing of this engine (shown as a label; a CLI's actual login decides in the end). */
-  billing?: Billing;
-  models?: string[];
-  defaultModel?: string;
-  /** Section on the Providers page: free, via your subscription, local, with an API key. */
-  section?: 'free' | 'subscription' | 'local' | 'key';
-  /** Honest one-line cost summary (free-tier limits included) and the date it was checked. */
-  costNote?: string;
-  costCheckedAt?: string;
-  pricingUrl?: string;
-  /** Extra settings this provider needs (Azure resource, Cloudflare account, Bedrock region, ...). */
-  fields?: ProviderField[];
-  /** Label for the secret field when it is not a plain API key. */
-  keyLabel?: string;
-  /** Not verified against the vendor's current docs: shown as "experimenteel". */
-  experimental?: boolean;
-  /** The service stopped on this date: hidden from "add", existing connections explain it. */
-  retired?: string;
   /** Preferred default models, best first (server-side only; the first one in the live list wins). */
   recommend?: (string | RegExp)[];
   create(cfg: ProviderConfig, key: string | null, ctx: Ctx): ProviderAdapter;
   /** `baseUrl`: where a local server was found (it may run on an older default port). */
   detect?(ctx: Ctx): Promise<{ installed: boolean; version?: string; loggedIn?: boolean; detail?: string; baseUrl?: string }>;
-}
-
-export interface ProviderField {
-  /** Stored as cfg.config[key] (or cfg.base_url when key is "base_url"). */
-  key: string;
-  label: string;
-  placeholder?: string;
-  hint?: string;
-  required?: boolean;
-  /** Fixed choices (rendered as a select). */
-  options?: { value: string; label: string }[];
 }
 
 // ---------- Tools ----------
@@ -440,22 +289,35 @@ export interface ToolDef {
    * cannot, and the call is logged like any other. Must be cheap and synchronous; an error counts as false.
    */
   internalFor?(args: any): boolean;
-  /** `t.agent` is there when TeamBot knows the bot (the approval card), e.g. to name what lies outside its folders. */
-  summarize?(args: any, t?: { agent: Agent }): string;
+  /**
+   * The step's line: `words(template, ...values)` (shared/i18n-core.ts), so the owner reads TeamBot's words in his
+   * language and the names, paths and texts in it as written; a plain string is shown as it is. `t.agent` is there
+   * when TeamBot knows the bot (the approval card), e.g. to name what lies outside its folders.
+   */
+  summarize?(args: any, t?: { agent: Agent }): string | Words;
   /** Name of the app behind this tool (tools of connected apps), for plain-language progress lines ("Gebruikt Notion"). */
   app?: string;
+  /**
+   * Never in the list a model gets with every call, whatever the tool's name (tools/selection.ts): the bot reaches it
+   * through tools_find and tools_call. Set by a provider on the copy it hands a bot that needs the tool now and then.
+   */
+  onDemand?: boolean;
   run(args: any, t: ToolContext): Promise<string | ToolOutput>;
 }
 
-export interface ToolGroup {
-  id: string;
-  label: string;
-  description: string;
-  defaultOn?: boolean;
-  always?: boolean;
-}
-
 export type ToolProvider = (agent: Agent, thread: Thread) => ToolDef[] | Promise<ToolDef[]>;
+
+/**
+ * What a bot must know to use a part of its tools well (how its browser works, the tables of the team database). It is
+ * in the system prompt while that part's tools are listed; when they are on demand it comes with what `tools_find`
+ * finds (tools/selection.ts), so it costs nothing in the steps that never touch the part.
+ */
+export interface PartGuide {
+  /** Part ids: a tool group ("browser", "team:data"), or "app:*" for the connected apps. */
+  parts: string[];
+  /** Stable text for this bot (no timestamps), or nothing when it does not apply. */
+  text(a: { agent: Agent; thread: Thread; userId: string }): string | null | undefined | Promise<string | null | undefined>;
+}
 
 // ---------- Hooks / modules ----------
 
@@ -482,6 +344,12 @@ export interface Hooks {
    * bot's own usage cap in tokens (usage module). Throw a BudgetError to pause the bot. Optional (`??= []`).
    */
   beforeAnyModelCall?: Array<(a: { agent: Agent; userId: string; midRun: boolean; tz?: string }) => void>;
+  /**
+   * "Alles stoppen" (RunManager.stopAll, from the app and from the tray): what waits to start by itself in a part's
+   * own queue is stopped too (a routine run or a message waiting for its next attempt, a bot message waiting for its
+   * recipient, a workflow between two steps). Called right after the runs are stopped. Optional (`??= []`).
+   */
+  stopAll?: Array<(a: { userId: string }) => void>;
 }
 
 export interface Migration {

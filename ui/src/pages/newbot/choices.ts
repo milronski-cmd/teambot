@@ -67,5 +67,11 @@ export function rankChoices(list: EngineChoice[], preferred?: string | null): En
   return sorted;
 }
 
-/** The standard working rules every new bot starts with (editable under "Meer opties"). */
-export const DEFAULT_RULES = '- Antwoord kort en concreet in de taal van de gebruiker.\n- Vraag door als de opdracht onduidelijk is.\n- Zeg eerlijk wanneer je iets niet weet of niet kunt; verzin geen resultaat.';
+/**
+ * A new bot starts at "Volledige toegang", also for sending to others: it does its work without a question per step.
+ * Paying always asks (server/tools/broker.ts). Only the owner of this installation may give that (server/api/agents.ts
+ * checks and logs it); anyone else starts at "Automatisch".
+ */
+export function startAccess(role: string | undefined, settings: Record<string, any> = {}): { access_mode: 'full' | 'auto'; settings: Record<string, any> } {
+  return role === 'owner' ? { access_mode: 'full', settings: { ...settings, fullAccessExternal: true } } : { access_mode: 'auto', settings };
+}

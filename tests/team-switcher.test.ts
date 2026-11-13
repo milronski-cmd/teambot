@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { botInView, effectiveTeam, hiddenTaskKeys, homeMap, mainIdOf, roomInView, taskTeamOf, botIdsByName, tilesWithMain, type TeamLite } from '../ui/src/shell/teamFilter.js';
-import { settingsGroupOf, settingsHostOf, staticEntries } from '../ui/src/lib/palette.js';
+import { settingsHostOf, settingsParentOf, staticEntries } from '../ui/src/lib/palette.js';
 
 /** The team switcher (0.4, package A3): what a chosen team shows, and what stays visible. */
 const teams: TeamLite[] = [
@@ -58,12 +58,10 @@ test('task board: a task belongs to its team, else to its bot; tasks without a t
   assert.equal(hiddenTaskKeys(board, rows, '', teams).size, 0, 'Alle teams hides nothing');
 });
 
-test('Instellingen: Teams under Bots en teams; module tabs have a row of their own, none is left under Algemeen by accident', () => {
-  assert.equal(settingsGroupOf('teams-teams').title, 'Bots en teams');
-  assert.equal(settingsGroupOf('free-models-gratis').title, 'AI-diensten');
-  assert.equal(settingsGroupOf('backups-app').title, 'Privacy en back-ups');
+test('Instellingen: the full module pages sit under Meer mogelijkheden, none is left under a first row by accident', () => {
+  assert.equal(settingsParentOf('teams-teams').title, 'Meer mogelijkheden');
   const elsewhere = ['teams-teams', 'free-models-gratis', 'backups-app', 'routines-routines', 'usage-limits', 'cli-agents-cli', 'mobile-telefoon', 'folders-teammap'];
-  for (const id of elsewhere) assert.notEqual(settingsGroupOf(id).title, 'Algemeen', id);
+  for (const id of elsewhere) assert.notEqual(settingsParentOf(id).title, 'Algemeen', id);
   // #/m/teams/<id> (the switcher's "Teams beheren") is shown inside Instellingen with Teams marked; the palette lists
   // Teams once, as a setting in its group.
   assert.equal(settingsHostOf('teams/'), 'teams-teams');
@@ -71,6 +69,6 @@ test('Instellingen: Teams under Bots en teams; module tabs have a row of their o
   const found = staticEntries(mods).filter((i) => i.title === 'Teams');
   assert.deepEqual(
     found.map((i) => [i.kind, i.subtitle]),
-    [['setting', 'Instellingen · Bots en teams']],
+    [['setting', 'Instellingen']],
   );
 });

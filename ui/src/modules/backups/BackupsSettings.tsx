@@ -1,15 +1,16 @@
 import { useEffect, useState } from 'react';
-import { DatabaseBackup, Download, RotateCcw, Trash2 } from 'lucide-react';
+import { CalendarClock, DatabaseBackup, Download, History, PackageOpen, RotateCcw, Trash2 } from 'lucide-react';
 import { api, authUrl, on } from '../../lib/api';
 import { useApp } from '../../lib/store';
 import { t } from '../../lib/i18n';
 import { formatBytes, formatDateTime } from '../../lib/format';
-import { askConfirm, Badge, Button, Card, EmptyState, Select, Spinner, Toggle, timeAgo, toast, toastError, useAsync } from '../../components/ui';
+import { askConfirm, Badge, Button, Card, CardHead, EmptyState, Spinner, Toggle, timeAgo, toast, toastError, useAsync } from '../../components/ui';
 import { desktopBridge, type BackupItem, type BackupJob, type BackupsView, type UpdatesView } from './types';
 import { UpdatesCard } from './UpdatesCard';
 import { OffsiteCard } from './OffsiteCard';
 import { useIsPhoneSession } from '../../shell/computerOnly';
 import { MoreInfo } from '../../components/MoreInfo';
+import { MoreOptions } from '../../components/MoreOptions';
 import { Dropdown, SettingRow, SettingsSection, SwitchRow, useSave } from '../../components/SettingControls';
 
 /** What a backup is, in words. */
@@ -26,12 +27,17 @@ function contentLabel(b: BackupItem): string {
   return b.includesWork ? 'alles, met werkmappen' : 'alles, zonder werkmappen';
 }
 
+/** The back-ups shown before "Alle … tonen". */
+const FIRST = 4;
+
 /**
- * Instellingen › Back-ups: back-up now (with or without work folders, size shown), a daily automatic back-up
- * (keep N), restore with one click (the desktop app restarts by itself), what is and is not in a back-up, and the
- * updates of TeamBot itself with the way back.
+ * Instellingen › Back-ups. The first view answers "is my data safe" and has one main button: the last back-up and
+ * whether the next one comes by itself, "Nu een back-up maken", then the list to restore from ("Terugzetten") and the
+ * daily switch. The copy on a second place and the updates of TeamBot itself are calm cards below; how many to keep,
+ * work folders in the automatic back-up and what is in a back-up are behind "Meer opties".
  */
-export function BackupsSettings() {
+/** `simple` (Instellingen › Beveiliging en back-ups): make a back-up and put one back. The rest is the full page under Geavanceerd. */
+export function BackupsSettings({ simple }: { simple?: boolean } = {}) {
   const me = useApp((s) => s.me);
   // Restoring and downloading a database are admin routes: on the computer only (server/modules/mobile/policy.ts).
   const phone = useIsPhoneSession();
@@ -40,6 +46,7 @@ export function BackupsSettings() {
   const [err, setErr] = useState('');
   const [withWork, setWithWork] = useState(false);
   const [job, setJob] = useState<BackupJob | null>(null);
+  const [all, setAll] = useState(false);
   const a = useAsync();
   const bridge = desktopBridge();
   const load = (fresh = false) =>
@@ -75,6 +82,8 @@ export function BackupsSettings() {
   const work = sum(['optional']);
   const busy = !!job && (job.phase === 'database' || job.phase === 'files');
   const pct = job && job.total ? Math.min(100, Math.round((job.done / job.total) * 100)) : 0;
+  const last = d.items.reduce<BackupItem | null>((m, b) => (!m || b.createdAt > m.createdAt ? b : m), null);
+  const shown = all ? d.items : d.items.slice(0, FIRST);
   const saveSettings = (patch: Partial<BackupsView['settings']>) =>
     api.put<BackupsView['settings']>('/backups/settings', patch).then((s) => setD((cur) => (cur ? { ...cur, settings: s } : cur)));
 
@@ -119,20 +128,16 @@ export function BackupsSettings() {
       )}
 
       <Card className="space-y-4 p-5">
-        <div className="space-y-0.5">
-          <div className="flex items-center gap-2">
-            <DatabaseBackup className="h-4 w-4" aria-hidden />
-            <h2 className="text-[15px] font-bold tracking-tight">Back-up maken</h2>
-          </div>
-          <p className="text-xs text-muted">
-            Alles van TeamBot, op deze computer.{' '}
-            <MoreInfo>Een back-up bevat al je gegevens en blijft op deze computer.</MoreInfo>
-          </p>
-        </div>
-        <Toggle
-          checked={withWork}
-          onChange={setWithWork}
-          label={work ? t('Ook de werkmappen van bots en de bestanden van groepen ({0})', formatBytes(work)) : 'Ook de werkmappen van bots en de bestanden van groepen'}
+        <CardHead
+          icon={DatabaseBackup}
+          tone="amber"
+          title="Back-up maken"
+          hint={
+            <>
+              {last ? t('Laatste back-up: {0}.', formatDateTime(last.createdAt)) : 'Je hebt nog geen back-up.'} {d.settings.auto ? 'Elke dag komt er vanzelf een bij.' : 'Automatische back-ups staan uit.'}{' '}
+              <MoreInfo>Een back-up bevat al je gegevens en blijft op deze computer.</MoreInfo>
+            </>
+          }
         />
         <div className="flex flex-wrap items-center gap-3">
           <Button
@@ -159,21 +164,15 @@ export function BackupsSettings() {
             <div className="text-xs text-muted">{job!.phase === 'database' ? 'Database kopiëren…' : t('Bestanden kopiëren… {0}%', pct)}</div>
           </div>
         )}
+        {!simple && <Toggle
+          checked={withWork}
+          onChange={setWithWork}
+          label={work ? t('Ook de werkmappen van bots en de bestanden van groepen ({0})', formatBytes(work)) : 'Ook de werkmappen van bots en de bestanden van groepen'}
+        />}
       </Card>
 
-      <SettingsSection
-        title="Automatisch"
-        info="Automatische back-ups worden gemaakt terwijl TeamBot draait."
-        isDefault={d.settings.auto && d.settings.keep === 7 && !d.settings.includeWork}
-        onReset={() => saveSettings({ auto: true, keep: 7, includeWork: false })}
-      >
-        <AutoRows settings={d.settings} save={saveSettings} />
-      </SettingsSection>
-
-      {owner && !phone && d.offsite && <OffsiteCard v={d.offsite} onChanged={(o) => (o ? setD((cur) => (cur ? { ...cur, offsite: o } : cur)) : load())} onRestore={restore} />}
-
       <Card className="space-y-2 p-5">
-        <h2 className="text-[15px] font-bold tracking-tight">Je back-ups</h2>
+        <CardHead icon={History} tone="amber" title="Je back-ups" />
         {d.lastRestore && (
           <p className="text-sm text-muted">
             {t('Laatst teruggezet op {0}. Vergeten herinneringen bleven vergeten en de zoekfuncties zijn opnieuw opgebouwd.', formatDateTime(d.lastRestore.appliedAt))}
@@ -183,7 +182,7 @@ export function BackupsSettings() {
           <p className="text-sm text-muted">Nog geen back-ups.</p>
         ) : (
           <ul className="divide-y divide-line">
-            {d.items.map((b) => (
+            {shown.map((b) => (
               <li key={b.name} className="flex flex-wrap items-center gap-x-2 gap-y-1 py-2.5 text-sm">
                 <span className="min-w-0 flex-1 basis-56">
                   <span className="block font-medium">
@@ -223,56 +222,88 @@ export function BackupsSettings() {
             ))}
           </ul>
         )}
+        {d.items.length > FIRST && (
+          <Button size="sm" variant="ghost" aria-expanded={all} onClick={() => setAll(!all)}>
+            {all ? 'Minder tonen' : t('Alle {0} tonen', d.items.length)}
+          </Button>
+        )}
       </Card>
 
-      <Card className="space-y-3 p-5">
-        <h2 className="text-[15px] font-bold tracking-tight">Wat zit erin, en wat niet</h2>
-        <ul className="space-y-1 text-sm">
-          {plan
-            .filter((p) => p.exists && p.kind !== 'excluded' && !p.id.startsWith('master.key'))
-            .map((p) => (
-              <li key={p.id} className="flex flex-wrap justify-between gap-x-3">
-                <span>
-                  {p.label}
-                  {p.kind === 'optional' && <span className="text-muted"> · alleen als je dat kiest</span>}
-                </span>
-                <span className="text-muted">{formatBytes(p.bytes)}</span>
-              </li>
-            ))}
-        </ul>
-        <div className="space-y-1 text-sm">
-          <div className="font-semibold">Niet in een back-up</div>
-          <p className="text-xs text-muted">
-            Browserprofielen, logbestanden en installatiebestanden.{' '}
-            <MoreInfo block>
-              <ul className="list-disc space-y-1 ps-5">
-                {plan
-                  .filter((p) => p.exists && p.kind === 'excluded')
-                  .map((p) => (
-                    <li key={p.id}>
-                      {p.label}: {p.reason}
-                    </li>
-                  ))}
-                <li>Mappen buiten TeamBot die je een bot hebt gegeven (bijvoorbeeld een eigen projectmap): maak daar zelf een back-up van.</li>
-              </ul>
-            </MoreInfo>
-          </p>
-        </div>
-        <p className="rounded-lg bg-surface-2 px-3 py-2 text-sm">{d.keys.text}</p>
-      </Card>
+      {!simple && (
+        <>
+      <SettingsSection icon={CalendarClock} tone="amber" title="Automatisch" info="Automatische back-ups worden gemaakt terwijl TeamBot draait.">
+        <AutoSwitch settings={d.settings} save={saveSettings} />
+      </SettingsSection>
+
+      {owner && !phone && d.offsite && <OffsiteCard v={d.offsite} onChanged={(o) => (o ? setD((cur) => (cur ? { ...cur, offsite: o } : cur)) : load())} onRestore={restore} />}
 
       {u && <UpdatesCard v={u} onChanged={() => load()} showNewsLink live />}
+
+      <MoreOptions>
+        <SettingsSection
+          icon={CalendarClock}
+          tone="amber"
+          title="Automatische back-ups"
+          isDefault={d.settings.auto && d.settings.keep === 7 && !d.settings.includeWork}
+          onReset={() => saveSettings({ auto: true, keep: 7, includeWork: false })}
+        >
+          <AutoRows settings={d.settings} save={saveSettings} />
+        </SettingsSection>
+
+        <Card className="space-y-3 p-5">
+          <CardHead icon={PackageOpen} tone="amber" title="Wat zit erin, en wat niet" />
+          <ul className="space-y-1 text-sm">
+            {plan
+              .filter((p) => p.exists && p.kind !== 'excluded' && !p.id.startsWith('master.key'))
+              .map((p) => (
+                <li key={p.id} className="flex flex-wrap justify-between gap-x-3">
+                  <span>
+                    {p.label}
+                    {p.kind === 'optional' && <span className="text-muted"> · alleen als je dat kiest</span>}
+                  </span>
+                  <span className="text-muted">{formatBytes(p.bytes)}</span>
+                </li>
+              ))}
+          </ul>
+          <div className="space-y-1 text-sm">
+            <div className="font-semibold">Niet in een back-up</div>
+            <p className="text-xs text-muted">
+              Browserprofielen, logbestanden en installatiebestanden.{' '}
+              <MoreInfo block>
+                <ul className="list-disc space-y-1 ps-5">
+                  {plan
+                    .filter((p) => p.exists && p.kind === 'excluded')
+                    .map((p) => (
+                      <li key={p.id}>
+                        {p.label}: {p.reason}
+                      </li>
+                    ))}
+                  <li>Mappen buiten TeamBot die je een bot hebt gegeven (bijvoorbeeld een eigen projectmap): maak daar zelf een back-up van.</li>
+                </ul>
+              </MoreInfo>
+            </p>
+          </div>
+          <p className="rounded-lg bg-surface-2 px-3 py-2 text-sm">{d.keys.text}</p>
+        </Card>
+      </MoreOptions>
+        </>
+      )}
     </div>
   );
 }
 
-/** Automatic back-ups: on/off, how many to keep, with or without work folders. Every change saves at once. */
+/** The daily automatic back-up on or off (saved at once); the rest of it is under "Meer opties" (AutoRows). */
+function AutoSwitch({ settings, save: put }: { settings: BackupsView['settings']; save(p: Partial<BackupsView['settings']>): Promise<unknown> }) {
+  const save = useSave();
+  return <SwitchRow checked={settings.auto} onChange={(v) => void save(put({ auto: v }))} setting="backups.auto" />;
+}
+
+/** Automatic back-ups, the rarely changed part: how many to keep, with or without work folders. Every change saves at once. */
 function AutoRows({ settings, save: put }: { settings: BackupsView['settings']; save(p: Partial<BackupsView['settings']>): Promise<unknown> }) {
   const save = useSave();
   return (
     <>
-      <SwitchRow checked={settings.auto} onChange={(v) => void save(put({ auto: v }))} label="Elke dag automatisch een back-up maken" />
-      <SettingRow label="Bewaar de laatste">
+      <SettingRow setting="backups.keep">
         <Dropdown
           id="backup-keep"
           value={String(settings.keep)}
@@ -281,7 +312,7 @@ function AutoRows({ settings, save: put }: { settings: BackupsView['settings']; 
           options={[3, 5, 7, 14, 30].map((n) => ({ value: String(n), label: t('{0, plural, one {# back-up} other {# back-ups}}', n) }))}
         />
       </SettingRow>
-      <SwitchRow checked={settings.includeWork} disabled={!settings.auto} onChange={(v) => void save(put({ includeWork: v }))} label="Ook werkmappen en groepsbestanden in de automatische back-up" />
+      <SwitchRow checked={settings.includeWork} disabled={!settings.auto} onChange={(v) => void save(put({ includeWork: v }))} setting="backups.includeWork" />
     </>
   );
 }

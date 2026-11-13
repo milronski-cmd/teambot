@@ -2,6 +2,7 @@ import express from 'express';
 import type { Ctx, Module, ToolDef } from '../../core/types.js';
 import { HttpError, ah, bad, str, user } from '../../core/http.js';
 import { WorkflowEngine } from './engine.js';
+import { words } from '../../../shared/i18n-core.js';
 
 /**
  * Workflows (PARITEIT 9.8): a chain of steps that several bots do one after another, with a check that can send the
@@ -35,7 +36,7 @@ function tools(engine: WorkflowEngine): ToolDef[] {
     risk: 'read',
     description: 'Toon de workflows van de gebruiker: vaste ketens van stappen die meerdere bots na elkaar doen (met controle en akkoord van de gebruiker).',
     parameters: { type: 'object', properties: {} },
-    summarize: () => 'Workflows bekijken',
+    summarize: () => words('Workflows bekijken'),
     async run(_a, t) {
       return describe(t.userId) || 'Er zijn nog geen workflows.';
     },
@@ -47,8 +48,8 @@ function tools(engine: WorkflowEngine): ToolDef[] {
     internal: true,
     description:
       'Start een workflow van de gebruiker. De stappen lopen op de achtergrond; de gebruiker krijgt een melding als de workflow klaar is of op zijn akkoord wacht. Je krijgt het resultaat dus niet terug in dit gesprek: zeg dat de workflow gestart is.',
-    parameters: { type: 'object', properties: { name: { type: 'string', description: 'Naam van de workflow (zie workflow_list)' }, input: { type: 'string', description: 'Waar de workflow mee moet werken, bijv. het product of het onderwerp' } }, required: ['name'] },
-    summarize: (a) => `Workflow “${String(a.name || '').slice(0, 80)}” starten`,
+    parameters: { type: 'object', properties: { name: { type: 'string', description: 'Naam van de workflow (zie workflow_list)' }, input: { type: 'string', description: 'Waar de workflow mee moet werken, bijv. de opdracht, het onderwerp of het bericht' } }, required: ['name'] },
+    summarize: (a) => words('Workflow “{0}” starten', String(a.name || '').slice(0, 80)),
     async run(a, t) {
       if (inWorkflow(t)) return { text: 'Vanuit een stap van een workflow kun je geen workflow starten.', isError: true };
       const want = String(a.name || '').trim().toLowerCase();
@@ -78,14 +79,16 @@ function tools(engine: WorkflowEngine): ToolDef[] {
       properties: { name: { type: 'string' }, description: { type: 'string', description: 'Eén zin: wat de workflow oplevert' }, steps: { type: 'array', items: { type: 'object' } } },
       required: ['name', 'steps'],
     },
-    summarize: (a) => `Workflow “${String(a.name || '').slice(0, 80)}” opslaan (${Array.isArray(a.steps) ? a.steps.length : 0} stappen)`,
+    summarize: (a) => words('Workflow “{0}” opslaan ({1, plural, one {# stap} other {# stappen}})', String(a.name || '').slice(0, 80), Array.isArray(a.steps) ? a.steps.length : 0),
     async run(a, t) {
       if (inWorkflow(t)) return { text: 'Vanuit een stap van een workflow kun je geen workflows maken.', isError: true };
       try {
         const name = String(a.name || '').trim();
         const existing = engine.list(t.userId).find((x) => x.name.toLowerCase() === name.toLowerCase());
         const w = existing ? engine.update(t.userId, existing.id, { steps: a.steps, ...(a.description ? { description: a.description } : {}) }) : engine.create(t.userId, { name, description: a.description, steps: a.steps }, t.agent.name);
-        return `Workflow “${w.name}” is ${existing ? 'bijgewerkt' : 'gemaakt'} (versie ${w.version}, ${w.steps.length} stappen). De gebruiker bekijkt en start hem op #/m/workflows/w/${w.id}.`;
+        // One whole sentence per case, never "bijgewerkt"/"gemaakt" as a value.
+        if (existing) return `Workflow “${w.name}” is bijgewerkt (versie ${w.version}, ${w.steps.length} stappen). De gebruiker bekijkt en start hem op #/m/workflows/w/${w.id}.`;
+        return `Workflow “${w.name}” is gemaakt (versie ${w.version}, ${w.steps.length} stappen). De gebruiker bekijkt en start hem op #/m/workflows/w/${w.id}.`;
       } catch (e: any) {
         return { text: e?.message || 'Kon de workflow niet opslaan.', isError: true };
       }

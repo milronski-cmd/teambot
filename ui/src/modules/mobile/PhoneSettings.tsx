@@ -71,7 +71,7 @@ function InstallSection({ phoneOnly }: { phoneOnly?: boolean }) {
     .filter((s) => !phoneOnly || s.id !== 'desktop')
     .sort((a, b) => (a.id === plat ? -1 : b.id === plat ? 1 : 0));
   return (
-    <Section icon={<Download className="h-5 w-5" />} title="Web-app op je telefoon" actions={standalone ? <Badge tone="ok">Geïnstalleerd op dit apparaat</Badge> : undefined}>
+    <Section icon={Download} title="Web-app op je telefoon" actions={standalone ? <Badge tone="ok">Geïnstalleerd op dit apparaat</Badge> : undefined}>
       {can && !standalone && (
         <Button variant="primary" onClick={() => pwa.promptInstall().catch(toastError)} icon={<Download className="h-4 w-4" />}>
           Installeer TeamBot
@@ -100,7 +100,7 @@ function ThisDevice({ device }: { device: Device | null }) {
   const [confirm, setConfirm] = useState(false);
   const { busy, run } = useAsync();
   return (
-    <Section icon={<Smartphone className="h-5 w-5" />} title="Dit apparaat" subtitle={device ? `${device.name} · ${platformLabel(device.platform)} · gekoppeld ${timeAgo(device.created_at)}` : undefined}>
+    <Section icon={Smartphone} title="Dit apparaat" subtitle={device ? `${device.name} · ${platformLabel(device.platform)} · gekoppeld ${timeAgo(device.created_at)}` : undefined}>
       <p className="text-sm text-muted">
         Deze telefoon kan bijna alles wat je computer kan. <MoreInfo>Chatten, bots maken, AI koppelen, instellingen wijzigen, routines maken en één keer goedkeuren.</MoreInfo>
       </p>
@@ -174,7 +174,7 @@ function DraftsLink() {
  * notification switch, and everything else (an address of your own, Tailscale, telefoon-toegang, the TeamBot connection
  * and its relay, notification details, the web app) in one "Meer opties" at the bottom.
  */
-function ComputerPhone() {
+function ComputerPhone({ simple }: { simple?: boolean }) {
   const [reach, setReach] = useState<Reach | null>(null);
   const loadReach = useCallback(() => {
     api
@@ -198,6 +198,9 @@ function ComputerPhone() {
   return (
     <>
       <PairCard pair={pair} reach={reach} setReach={setReach} devices={devices.list} devicesError={devices.err} reloadDevices={devices.load} />
+      {/* The short page (Instellingen › Telefoon) is the QR code and nothing else; the rest is under Geavanceerd. */}
+      {simple ? null : (
+        <>
       <Card className="px-4" data-testid="phone-alerts">
         {push.err && <Note tone="danger">{push.err}</Note>}
         {!push.info && !push.err && <Spinner className="my-3" />}
@@ -212,19 +215,21 @@ function ComputerPhone() {
         <TailscaleQuick reach={reach} setReach={setReach} />
         <ReachSection reach={reach} setReach={setReach} reload={loadReach} />
         {push.info && (
-          <Section icon={<Bell className="h-5 w-5" />} title="Pushmeldingen" subtitle={pushSubtitle}>
+          <Section icon={Bell} tone="orange" title="Pushmeldingen" subtitle={pushSubtitle}>
             <PushDetails push={push} act={act} isDevice={false} />
           </Section>
         )}
         <InstallSection phoneOnly />
       </MoreOptions>
+        </>
+      )}
     </>
   );
 }
 
 // ------------------------------------------------------------------ tab
 
-export function PhoneSettings() {
+export function PhoneSettings({ simple }: { simple?: boolean } = {}) {
   const [self, setSelf] = useState<{
     kind: string;
     device: Device | null;
@@ -238,14 +243,14 @@ export function PhoneSettings() {
   }, []);
   if (err) return <Note tone="danger">Kon de telefooninstellingen niet laden: {err}</Note>;
   if (!self) return <Spinner />;
-  return <div className="space-y-5">{self.kind === 'device' ? <PhoneView device={self.device} /> : <ComputerPhoneWrap />}</div>;
+  return <div className="space-y-5">{self.kind === 'device' ? <PhoneView device={self.device} /> : <ComputerPhoneWrap simple={simple} />}</div>;
 }
 
-function ComputerPhoneWrap() {
+function ComputerPhoneWrap({ simple }: { simple?: boolean }) {
   return (
     <>
-      <DraftsLink />
-      <ComputerPhone />
+      {!simple && <DraftsLink />}
+      <ComputerPhone simple={simple} />
     </>
   );
 }

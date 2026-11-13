@@ -1,8 +1,8 @@
 import { useEffect, useState } from 'react';
-import { AlertTriangle, CheckCircle2, KeyRound } from 'lucide-react';
+import { AlertTriangle, CheckCircle2, KeyRound, ShieldCheck } from 'lucide-react';
 import { api } from '../../lib/api';
 import { t, translate } from '../../lib/i18n';
-import { Card, Spinner, cx } from '../../components/ui';
+import { Card, CardHead, Spinner, cx } from '../../components/ui';
 import { PrivacyBadge, PrivacyDetail, type AgentPrivacy, type PrivacyLabel } from './Privacy';
 
 /**
@@ -71,7 +71,7 @@ export function WhatLeavesYourPc() {
   if (err)
     return (
       <Card className="p-5">
-        <h2 className="text-[15px] font-bold tracking-tight">Wat verlaat je pc?</h2>
+        <CardHead icon={ShieldCheck} tone="rose" title="Wat verlaat je pc?" />
         <p className="mt-2 text-sm text-danger">{err}</p>
       </Card>
     );
@@ -89,10 +89,7 @@ export function WhatLeavesYourPc() {
   const warnings = exp?.findings.filter((f) => f.level !== 'info') || [];
   return (
     <Card className="space-y-5 p-5" id="wat-verlaat-je-pc" data-testid="what-leaves">
-      <div className="space-y-1">
-        <h2 className="text-[15px] font-bold tracking-tight">Wat verlaat je pc?</h2>
-        <p className="text-sm text-muted">Per bot zie je welke AI-dienst zijn gesprekken krijgt. De rest blijft op deze computer.</p>
-      </div>
+      <CardHead icon={ShieldCheck} tone="rose" title="Wat verlaat je pc?" hint="Per bot zie je welke AI-dienst zijn gesprekken krijgt. De rest blijft op deze computer." />
 
       <section className="space-y-2" aria-labelledby="wvp-bots">
         <h3 id="wvp-bots" className="text-sm font-bold">
@@ -148,6 +145,9 @@ export function WhatLeavesYourPc() {
             {t('Als een bot zoekt, gaat alleen de zoekterm naar {0}.', SEARCH[o.search] ? translate(SEARCH[o.search]) : o.search)}{' '}
             {o.jinaReader ? 'Lukt het ophalen van een webpagina niet, dan gaat het adres naar Jina Reader.' : 'Webpagina’s die hij leest, haalt TeamBot zelf op.'}
           </Row>
+          <Row on title="Zoeken in de marktplaats" href="#/m/skills/skills?bron=open">
+            Zoek jij onder Open naar een skill, of zoekt een bot er een met skill_find, dan gaan alleen de zoekwoorden naar GitHub, skills.sh en ClawHub. Een skill die je toevoegt, haalt TeamBot daar op.
+          </Row>
           <Row on={o.channels > 0} title="Kanalen" href="#/m/channels">
             {o.channels > 0 ? t('{0, plural, one {# kanaal gekoppeld: berichten gaan via die dienst.} other {# kanalen gekoppeld: berichten gaan via die diensten.}}', o.channels) : 'Geen kanaal gekoppeld.'}
           </Row>
@@ -173,7 +173,7 @@ export function WhatLeavesYourPc() {
             TeamBot stuurt niets naar de makers: geen statistieken en geen foutrapporten. Een diagnosebestand maak en deel je alleen zelf.
           </Row>
           {d.mode === 'desktop' && (
-            <Row on={false} title="Zoeken naar updates" href="#/settings/general">
+            <Row on={false} title="Zoeken naar updates" href="#/settings/backups">
               Alleen als je een updatekanaal instelt; dan vraagt TeamBot daar af en toe of er een nieuwe versie is.
             </Row>
           )}

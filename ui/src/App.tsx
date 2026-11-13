@@ -79,7 +79,17 @@ function Routed({ parts }: { parts: string[] }) {
 
 function OfflineBar() {
   const online = useApp((s) => s.online);
-  if (online) return null;
+  // Only when the connection stays away: not at every start or every return to the app, while it is still connecting.
+  const [late, setLate] = useState(false);
+  useEffect(() => {
+    if (online) {
+      setLate(false);
+      return;
+    }
+    const t = setTimeout(() => setLate(true), 4000);
+    return () => clearTimeout(t);
+  }, [online]);
+  if (online || !late) return null;
   return (
     <div className="flex items-center justify-center gap-2 bg-warn-soft px-3 py-1.5 text-xs font-medium text-warn" role="status">
       <WifiOff className="h-3.5 w-3.5 shrink-0" /> Geen verbinding met TeamBot. Berichten worden niet live bijgewerkt; opnieuw verbinden…

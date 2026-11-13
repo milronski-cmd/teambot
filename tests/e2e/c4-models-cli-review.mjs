@@ -43,16 +43,22 @@ const axe = async (page, where) => {
   });
   if (v.length) fail(`a11y ${where}: ${v.join(' | ')}`);
 };
-/** A tab of the bot page (a tab with unsaved changes carries a dot: "Meer niet opgeslagen"). */
-const showTab = (page, name) => page.getByRole('tab', { name: new RegExp(`^${name}( niet opgeslagen)?$`) }).click();
+/** The bot page is one page now: the old tab "Meer" is the fold "Meer mogelijkheden" (opened here), Overzicht is the page itself. */
+const showTab = (page) => page.evaluate(() => document.querySelectorAll('details').forEach((x) => (x.open = true)));
 /**
- * "Denken, drukte en reserve-engines" is a section on the tab Meer, behind "Meer opties". The bot editor remembers
- * open sections: open it only when it is closed.
+ * "Denken en drukte" is a row under Meer mogelijkheden (the reserve moved to the first level, under AI en model). The
+ * bot editor remembers open sections: open it only when it is closed.
  */
 const openEngineSection = async (page) => {
   await showTab(page, 'Meer');
   await page.evaluate(() => document.querySelectorAll('details').forEach((x) => (x.open = true)));
-  const btn = page.getByRole('button', { name: /Denken, drukte en reserve-engines/ });
+  const btn = page.getByRole('button', { name: /^Denken en drukte/ });
+  if ((await btn.getAttribute('aria-expanded')) !== 'true') await btn.click();
+};
+/** The row "Over het model" under Meer mogelijkheden (model facts and, for Ollama/LM Studio, the context window). */
+const openModelRow = async (page) => {
+  const btn = page.getByRole('button', { name: /^Over het model/ });
+  await btn.waitFor({ timeout: 20000 });
   if ((await btn.getAttribute('aria-expanded')) !== 'true') await btn.click();
 };
 /** TeamBot's own dropdown (components/Listbox.tsx): the texts of its options (it opens, reads, and closes again). */
@@ -147,7 +153,7 @@ Object.assign(process.env, {
 });
 delete process.env.Path;
 
-const { createApp } = await import('../../server/app.ts');
+const { createApp } = await import('./server.mjs');
 const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'tb-e2e-c4-'));
 const app = await createApp({ dataDir: dir, port: 0, host: '127.0.0.1', mode: 'desktop', quiet: true });
 const token = app.ctx.auth.ensureLocalOwner();
@@ -182,17 +188,21 @@ try {
 
   // ---------------------------------------------------------------- free path: welcome without any AI, Ollama setup
   await page.getByRole('button', { name: 'Gratis starten' }).waitFor({ timeout: 20000 });
-  const hint = page.getByTestId('local-model-hint');
-  if ((await hint.innerText().catch(() => '')) !== 'Met een lokaal model (Ollama) werkt het ook offline en zonder daglimiet. Ollama instellen') fail('vrij pad: welkom zegt niet in één regel wat een lokaal model oplevert');
-  if ((await hint.getByRole('link', { name: 'Ollama instellen' }).getAttribute('href')) !== '#/settings/providers?koppel=ollama') fail('vrij pad: link naar de Ollama-instelling ontbreekt');
+  // Without a local model here, Ollama is a choice of its own with "Installeren" (it opens Ollama's installer; the
+  // newcomer check follows it until Ollama runs).
+  const local = page.getByTestId('start-local-missing');
+  if (!/Met een lokaal model werkt het ook offline en zonder daglimiet\./.test(await local.innerText().catch(() => '')) || !(await local.getByRole('button', { name: 'Ollama installeren' }).count())) fail('vrij pad: welkom biedt Ollama niet aan met "Installeren" en wat een lokaal model oplevert');
   await shot(page, 'e-00-welkom-gratis-starten.png');
-  await hint.getByRole('link', { name: 'Ollama instellen' }).click();
+  // The steps in the settings (Andere AI koppelen › Ollama) stay as they were.
+  await page.goto(`${app.url}/#/settings/providers?koppel=ollama`);
   const ollamaSetup = page.getByTestId('ollama-setup');
   await ollamaSetup.waitFor({ timeout: 20000 });
-  if (!/draait nog niet[\s\S]*Ollama downloaden[\s\S]*Opnieuw zoeken/.test(await ollamaSetup.innerText()) || (await ollamaSetup.getByRole('link', { name: /Ollama downloaden/ }).getAttribute('href')) !== 'https://ollama.com/download') fail('vrij pad: de Ollama-instelling zegt niet in één regel hoe je Ollama krijgt');
+  // One line: it does not run here, one button that installs it (tests/e2e/local-install.mjs follows the install), and
+  // "Opnieuw zoeken" for whoever installed it himself.
+  if (!/draait nog niet op deze computer/.test(await ollamaSetup.innerText()) || (await ollamaSetup.getByTestId('ollama-install').count()) !== 1 || (await ollamaSetup.getByRole('button', { name: 'Opnieuw zoeken' }).count()) !== 1 || (await ollamaSetup.getByRole('link', { name: /downloaden/i }).count())) fail(`vrij pad: de Ollama-instelling zegt niet in één regel hoe je Ollama krijgt: ${(await ollamaSetup.innerText()).replace(/\s+/g, ' ')}`);
   await axe(page, 'Ollama koppelen (nog niet geïnstalleerd)');
   await page.keyboard.press('Escape');
-  step('vrij pad: welkom met "Gratis starten" en één regel over een lokaal model; "Ollama instellen" opent de stappen');
+  step('vrij pad: welkom met "Gratis starten" en Ollama als keuze met "Installeren"; de stappen bij Andere AI koppelen › Ollama blijven');
 
   // ---------------------------------------------------------------- C-07: CLI page, Gratis starten, own copy, login
   await page.goto(`${app.url}/#/settings/cli-agents-cli`);
@@ -220,13 +230,13 @@ try {
   if (!(await page.getByText('(door TeamBot geïnstalleerd)').count())) fail('C-07: "Programma: … (eigen kopie van TeamBot)" ontbreekt');
   await ocCard.scrollIntoViewIfNeeded();
   await shot(page, 'e-02-opencode-eigen-kopie.png');
-  // Codex in one go: ONE button installs the own copy and starts the login with a device code inside TeamBot.
+  // Codex in one go: ONE button ("Installeren") installs the own copy and starts the login with a device code inside TeamBot.
   const cx = page.getByTestId('cli-codex-cli');
   await cx.scrollIntoViewIfNeeded();
-  await cx.getByRole('button', { name: 'Installeren en inloggen' }).click();
+  await cx.getByRole('button', { name: 'Installeren', exact: true }).click();
   const login = page.getByTestId('login-codex-cli');
   await login.getByText('WXYZ-12345').waitFor({ timeout: 45000 });
-  step('C-07: "Installeren en inloggen" installeerde de eigen Codex-kopie en begon zelf met inloggen');
+  step('C-07: "Installeren" installeerde de eigen Codex-kopie en begon zelf met inloggen');
   if (!(await login.getByRole('link', { name: /de inlogpagina/ }).getAttribute('href'))?.startsWith('https://auth.openai.com/')) fail('C-07: inloglink ontbreekt');
   await login.scrollIntoViewIfNeeded();
   await shot(page, 'e-03-codex-inloggen.png');
@@ -277,7 +287,8 @@ try {
   // ---------------------------------------------------------------- C-01/C-11/C-13: model facts, levels, context window
   const ol = await api('POST', '/providers', { kind: 'ollama', base_url: ollamaUrl });
   const lokaal = await api('POST', '/agents', { name: 'Lokaal', provider_id: ol.id, model: 'denker:latest', access_mode: 'ask' });
-  await page.goto(`${app.url}/#/agents/${lokaal.id}`);
+  await page.goto(`${app.url}/#/agents/${lokaal.id}?tab=meer`);
+  await openModelRow(page);
   const facts = page.getByTestId('model-facts');
   await facts.waitFor({ timeout: 20000 });
   const factText = await facts.innerText();
@@ -285,7 +296,8 @@ try {
   for (const want of ['Tools:', 'ja', 'Afbeeldingen:', 'nee', '131.072 tokens', 'nu geladen met 8K', 'uit, aan', 'gratis']) if (!factText.includes(want)) fail(`C-01: modelgegevens missen "${want}": ${factText}`);
   const ctxSel = page.getByTestId('context-window').getByRole('combobox', { name: 'Contextvenster' });
   const opts = await optionTexts(page, ctxSel);
-  if (!opts.some((o) => /16K tokens \(aanbevolen\) · ±2,1 GB geheugen/.test(o))) fail('C-13: geen geheugenschatting bij 16K: ' + opts.join(' | '));
+  // "Vanzelf (aanbevolen)" first (TeamBot picks a window the bot fits in), then every size with what it costs in memory.
+  if (!/^Vanzelf \(aanbevolen\)/.test(opts[0] || '') || !opts.some((o) => /^16K tokens · ±2,1 GB geheugen/.test(o))) fail('C-13: geen Vanzelf bovenaan of geen geheugenschatting bij 16K: ' + opts.join(' | '));
   await pick(page, ctxSel, '65536');
   await page.getByText(/Een groot venster gebruikt veel extra geheugen/).waitFor({ timeout: 10000 });
   const saved = (await api('GET', '/providers')).find((p) => p.id === ol.id).config.contextWindows;
@@ -304,7 +316,8 @@ try {
   // C-01: OpenAI API models have their facts from OpenAI's own pages; an unknown one stays "onbekend".
   const oa = await api('POST', '/providers', { kind: 'openai', base_url: openaiUrl, apiKey: 'sk-e2e-niet-echt' });
   const oaBot = await api('POST', '/agents', { name: 'OpenAI-bot', provider_id: oa.id, model: 'gpt-6.1-terra', access_mode: 'ask' });
-  await page.goto(`${app.url}/#/agents/${oaBot.id}`);
+  await page.goto(`${app.url}/#/agents/${oaBot.id}?tab=meer`);
+  await openModelRow(page);
   const oaFacts = page.getByTestId('model-facts');
   await oaFacts.waitFor({ timeout: 20000 });
   await page.waitForFunction(() => /1[.,]050[.,]000 tokens/.test(document.querySelector('[data-testid="model-facts"]')?.textContent || ''), null, { timeout: 15000 }).catch(() => {});
@@ -316,7 +329,8 @@ try {
 
   const cc = await api('POST', '/providers', { kind: 'claude-code', config: { path: path.join(here, '..', 'fixtures', 'cli-agents-fake-claude.mjs') } });
   const ccBot = await api('POST', '/agents', { name: 'Claude', provider_id: cc.id, model: 'claude-opus-4-6', access_mode: 'ask' });
-  await page.goto(`${app.url}/#/agents/${ccBot.id}`);
+  await page.goto(`${app.url}/#/agents/${ccBot.id}?tab=meer`);
+  await openModelRow(page);
   await page.getByTestId('model-facts').waitFor({ timeout: 60000 });
   await openEngineSection(page);
   // claude-opus-4-6 is not in the engine's list ("Ander model"): the server still knows its levels.
@@ -386,12 +400,24 @@ try {
   const cardText = await card.innerText();
   if (!cardText.startsWith('Claude wil')) fail('A-37: de kaart noemt de bot niet: ' + cardText.split('\n')[0]);
   if (/Gevraagd door Claude Code/.test(cardText) || !/via Claude Code/.test(cardText)) fail('A-37: de engine hoort alleen klein op de kaart: ' + cardText.replace(/\n/g, ' | '));
+  // The steps of an answer are one closed chip ("3 stappen · <the step it is on>"); opening it shows every step.
+  const openSteps = async () => {
+    for (const b of await page.locator('[data-testid="steps"] > button[aria-expanded="false"]').all()) await b.click().catch(() => {});
+  };
+  await openSteps();
   await page.getByText('Wil perm.txt schrijven').first().waitFor({ timeout: 10000 });
   if (await page.getByText('Schreef perm.txt').count()) fail('Q-12: de stap staat al in de verleden tijd terwijl de kaart nog wacht');
   await shot(page, 'e-09-kaart-claude-code.png');
   await axe(page, 'goedkeuringskaart van een Claude Code-bot');
   await card.getByRole('button', { name: 'Eén keer toestaan' }).click();
-  await page.getByText('Schreef perm.txt').first().waitFor({ timeout: 20000 });
+  {
+    const end = Date.now() + 20000;
+    while (!(await page.getByText('Schreef perm.txt').count()) && Date.now() < end) {
+      await openSteps();
+      await page.waitForTimeout(300);
+    }
+    if (!(await page.getByText('Schreef perm.txt').count())) throw new Error('Q-12: na toestaan staat de stap niet als "Schreef perm.txt" in de stappen');
+  }
   step('A-37/Q-12: kaart "Claude wil …" met "via Claude Code" klein; stap "Wil perm.txt schrijven" tot het resultaat er is, daarna "Schreef perm.txt"');
   await api('PUT', '/engine-chain/settings', { weeklyReserve: 85 });
 
@@ -555,7 +581,8 @@ try {
   await phone.getByTestId('cli-opencode').waitFor({ timeout: 20000 });
   if (!(await fits(phone))) fail('telefoon: CLI-pagina breder dan het scherm');
   await shot(phone, 'e-04-cli-telefoon.png', { fullPage: false });
-  await phone.goto(`${app.url}/#/agents/${lokaal.id}`);
+  await phone.goto(`${app.url}/#/agents/${lokaal.id}?tab=meer`);
+  await openModelRow(phone);
   await phone.getByTestId('model-facts').waitFor({ timeout: 20000 });
   await phone.getByTestId('context-window').scrollIntoViewIfNeeded();
   if (!(await fits(phone))) fail('telefoon: bot-editor breder dan het scherm');

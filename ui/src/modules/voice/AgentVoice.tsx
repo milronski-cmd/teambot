@@ -17,7 +17,7 @@ function BotLanguageVoice({ lang, local }: { lang: string; local: LocalView }) {
   let text: string;
   if (!pick) text = t('Deze bot praat {0}. Daarvoor is er nog geen gratis lokale stem: de stem van je browser of systeem leest voor.', langName(lang));
   else if (pick.status === 'installed') text = t('Deze bot praat {0}: hij leest voor met de gratis stem {1} op je pc, ook in een gesprek.', langName(lang), pick.label);
-  else text = t('Deze bot praat {0}. Download de stem {1} bij Instellingen › Spraak.', langName(lang), pick.label);
+  else text = t('Deze bot praat {0}. Download de stem {1} bij Instellingen › Meer mogelijkheden › Spraak.', langName(lang), pick.label);
   return (
     <div className="rounded-lg bg-surface-2 px-3 py-2 text-xs text-muted" role="status">
       {text}

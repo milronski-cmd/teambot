@@ -7,9 +7,35 @@ import { sanitizeAgentForMember } from './member-policy.js';
 import { budgetOf, nextDay, spentToday } from '../agent/budget.js';
 import { isLanguage } from '../../shared/languages.js';
 import { scrubValues } from '../core/secrets.js';
+import { SETTINGS, type SettingDef } from '../../shared/settings.js';
 
-/** Settings a member may change for themselves. */
-const USER_SETTINGS = new Set(['defaultProvider', 'defaultModel', 'timezone', 'language', 'botLanguage', 'dailyBudgetUsd', 'search', 'theme', 'notifications', 'voice', 'attachmentSpeech', 'onboarded', 'ui', 'closedFolders']);
+/**
+ * Settings a member may change for themselves (PUT /settings). What each is in the screens, and the values it takes,
+ * is in shared/settings.ts (a bot finds it there through teambot_find).
+ */
+// (`theme`, `notifications` and `onboarded` were accepted here and read nowhere: notifications have their own
+// preferences. Sending them is harmless: unknown keys are skipped. The theme is `ui.theme`.)
+export const USER_SETTINGS = new Set(['defaultProvider', 'defaultModel', 'timezone', 'language', 'botLanguage', 'dailyBudgetUsd', 'search', 'voice', 'attachmentSpeech', 'ui', 'closedFolders']);
+
+/**
+ * `ui` is merged, not replaced: `{ ui: { botStyle: 'felt' } }` changes the style and keeps the colour, the theme and the
+ * rest (a bot sends one field; two devices never undo each other). A field with fixed values (shared/settings.ts) takes
+ * only those. A theme that is set (by a bot, or through the API) gets a new `themeAt`, so every device takes it over
+ * (ui/src/shell/accentSync.ts); a screen that sends its whole `ui` back with the same `themeAt` changes nothing there.
+ */
+function mergeUi(prev: unknown, next: unknown): Record<string, unknown> {
+  if (!next || typeof next !== 'object' || Array.isArray(next)) throw bad('ui moet een object zijn, bijvoorbeeld { "botStyle": "felt" }.');
+  const old = prev && typeof prev === 'object' && !Array.isArray(prev) ? (prev as Record<string, unknown>) : {};
+  const out: Record<string, unknown> = { ...old, ...(next as Record<string, unknown>) };
+  for (const [id, d] of Object.entries(SETTINGS as Record<string, SettingDef>)) {
+    if (d.call !== 'PUT /settings' || !d.field?.startsWith('ui.') || !d.choices || !(d.field.slice(3) in (next as object))) continue;
+    const v = (next as Record<string, unknown>)[d.field.slice(3)];
+    if (v !== null && !d.choices.some((c) => c.value === v)) throw bad(`Onbekende waarde voor ${d.title} (${id}): kies uit ${d.choices.map((c) => `${JSON.stringify(c.value)} (${c.label})`).join(', ')}.`);
+  }
+  const n = next as Record<string, unknown>;
+  if (n.theme !== undefined && (n.themeAt === undefined || n.themeAt !== old.themeAt)) out.themeAt = new Date().toISOString();
+  return out;
+}
 
 export function miscRoutes(ctx: Ctx) {
   const api = ctx.api;
@@ -51,11 +77,41 @@ export function miscRoutes(ctx: Ctx) {
   api.post('/stop-all', ah(async (req) => ({ stopped: ctx.runs.stopAll(user(req).id) })));
 
   // ---- settings ----
+  /**
+   * ONE "Standaardmodel": the default model of the default AI connection (its `config.defaultModel`, the value
+   * Instellingen › AI-diensten shows). A model chosen under "Standaarden voor nieuwe bots" is written there, so the two
+   * screens can no longer disagree. Only for a connection that is not the user's own (a shared one he may not change)
+   * the choice stays his own setting `defaultModel`; a value stored there by an older version keeps working until the
+   * next choice.
+   */
+  const defaultConnection = (userId: string) => {
+    const id = ctx.store.getSetting<string | null>(userId, 'defaultProvider', null);
+    try {
+      return id ? ctx.providers.config(id) : null;
+    } catch {
+      return null;
+    }
+  };
+  const foldDefaultModel = (userId: string) => {
+    const model = ctx.store.getSetting<string>(userId, 'defaultModel', '');
+    const cfg = defaultConnection(userId);
+    if (!model || typeof model !== 'string' || !cfg || cfg.user_id !== userId) return;
+    try {
+      if (cfg.config?.defaultModel !== model) ctx.providers.updateConfig(cfg.id, userId, { config: { defaultModel: model } });
+      ctx.store.setSetting(userId, 'defaultModel', '');
+    } catch {
+      /* the connection refused: the user's own value stays and keeps working */
+    }
+  };
+  const settingsView = (userId: string): Record<string, any> => {
+    const s = ctx.store.settings(userId);
+    return { ...s, defaultModel: s.defaultModel || defaultConnection(userId)?.config?.defaultModel || '' };
+  };
   api.get(
     '/settings',
     ah(async (req) => {
       const u = user(req);
-      const s = ctx.store.settings(u.id);
+      const s = settingsView(u.id);
       return { ...s, timezone: s.timezone || Intl.DateTimeFormat().resolvedOptions().timeZone };
     }),
   );
@@ -94,10 +150,15 @@ export function miscRoutes(ctx: Ctx) {
           ctx.store.setSetting(u.id, k, { v: 2, provider, url, jinaReader: s.jinaReader === undefined ? prev.jinaReader === true : s.jinaReader === true });
           continue;
         }
+        if (k === 'ui') {
+          ctx.store.setSetting(u.id, k, mergeUi(ctx.store.getSetting(u.id, 'ui', null), v));
+          continue;
+        }
         ctx.store.setSetting(u.id, k, v);
       }
-      ctx.events.emit(u.id, 'settings.updated', ctx.store.settings(u.id));
-      return ctx.store.settings(u.id);
+      foldDefaultModel(u.id);
+      ctx.events.emit(u.id, 'settings.updated', settingsView(u.id));
+      return settingsView(u.id);
     }),
   );
   // Instellingen › Zoeken: the chosen source as TeamBot reads it, which own keys exist (yes/no, never the key) and which

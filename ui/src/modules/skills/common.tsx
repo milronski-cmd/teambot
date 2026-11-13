@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { formatBytes } from '../../lib/format';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { AlertTriangle, BadgeCheck, CheckCircle2, ChevronDown, ChevronRight, FileCode2, FileText, Globe, Info, KeyRound, PenLine, ShieldAlert, ShieldCheck, ShieldOff, ShieldQuestion, ShieldX, Terminal, Wrench } from 'lucide-react';
@@ -7,8 +8,9 @@ import { BotPicker } from '../../components/BotPicker';
 import { api } from '../../lib/api';
 import { t } from '../../lib/i18n';
 import { useApp } from '../../lib/store';
-import type { Candidate, CommitResult, Finding, Level, PermissionDiff, Permissions, PolicyDecision, ScanFileView, SignatureView, StagingView, Substance } from './api';
-import { SOURCE_TYPES, formatBytes } from './api';
+import type { Candidate, CommitResult, Level, ScanFileView, StagingView, Substance } from './api';
+import type { Finding, PermissionDiff, Permissions, PolicyDecision, SignatureView } from '../../../../shared/skills.js';
+import { SOURCE_TYPES } from './api';
 
 // ---------------------------------------------------------------- publisher signatures
 
@@ -438,7 +440,7 @@ function CandidateCard({ c, selected, onToggle, result }: { c: Candidate; select
     <Card className={cx('space-y-3 p-4', blocked && 'opacity-80')}>
       <div className="flex flex-wrap items-start gap-3">
         <label className="mt-0.5 flex items-center">
-          <input type="checkbox" className="h-4 w-4 accent-[var(--color-accent)]" checked={selected && !blocked} disabled={blocked} onChange={(e) => onToggle(e.target.checked)} aria-label={`${c.name || 'skill'} selecteren`} />
+          <input type="checkbox" className="h-4 w-4 accent-[var(--color-accent)]" checked={selected && !blocked} disabled={blocked} onChange={(e) => onToggle(e.target.checked)} aria-label={t('{0} selecteren', c.name || 'skill')} />
         </label>
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-2">
@@ -554,7 +556,6 @@ export function AgentPicker({ value, onChange, label = 'Direct inschakelen voor'
 export function CandidatesReview({ staging, onDone, doneLabel = 'Klaar' }: { staging: StagingView; onDone?: (results: CommitResult[]) => void; doneLabel?: string }) {
   const installable = (c: Candidate) => !c.errors.length && !c.policy.blocked;
   const [sel, setSel] = useState<string[]>(() => staging.candidates.filter((c) => installable(c) && c.action !== 'unchanged').map((c) => c.key));
-  const [agents, setAgents] = useState<string[]>([]);
   const [ack, setAck] = useState(false);
   const [confirm, setConfirm] = useState(false);
   const [override, setOverride] = useState(false);
@@ -574,7 +575,6 @@ export function CandidatesReview({ staging, onDone, doneLabel = 'Klaar' }: { sta
       const r = await api.post<{ results: CommitResult[] }>('/skills/import/commit', {
         stagingId: staging.stagingId,
         keys: chosen.map((c) => c.key),
-        enableFor: agents,
         acknowledge: ack,
         confirmPermissions: confirm,
         overridePolicy: override,
@@ -611,7 +611,7 @@ export function CandidatesReview({ staging, onDone, doneLabel = 'Klaar' }: { sta
       </div>
       {!finished && (
         <Card className="space-y-3 p-4">
-          <AgentPicker value={agents} onChange={setAgents} />
+          <p className="text-sm text-muted">Na installeren kunnen alle bots van je team de skill meteen gebruiken, scripts inbegrepen.</p>
           {needAck && (
             <label className="flex items-start gap-2 text-sm">
               <input type="checkbox" className="mt-0.5 h-4 w-4" checked={ack} onChange={(e) => setAck(e.target.checked)} />
@@ -636,7 +636,7 @@ export function CandidatesReview({ staging, onDone, doneLabel = 'Klaar' }: { sta
           {needOverride && <PolicyOverride checked={override} onChange={setOverride} />}
           {thin.length > 0 && (
             <p className="text-xs text-warn">
-              Let op: {thin.length === 1 ? `“${thin[0].name}” doet` : `${thin.length} gekozen skills doen`} zelf weinig (zie hierboven). Je kunt {thin.length === 1 ? 'hem' : 'ze'} toch installeren.
+              {thin.length === 1 ? t('Let op: “{0}” doet zelf weinig (zie hierboven). Je kunt hem toch installeren.', thin[0].name) : t('Let op: {0} gekozen skills doen zelf weinig (zie hierboven). Je kunt ze toch installeren.', thin.length)}
             </p>
           )}
           <div className="flex flex-wrap justify-end gap-2">

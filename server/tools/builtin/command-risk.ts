@@ -4,11 +4,11 @@ import type { ToolImpact, ToolRisk } from '../../core/types.js';
 import { isInside as within, KEY_PATH } from './files.js';
 
 /**
- * Risk of one shell command for TeamBot's own terminal tool (run_command): approval only where it counts. A command
- * that sends, publishes, pushes or deletes outside the Prullenbak is "danger" (asks a human, also in "Automatisch");
- * everything else is a normal "exec". Same list as the CLI permission gate (server/modules/cli-agents/permissions.ts
- * DANGER_CMD), plus deleting single files: a shell delete bypasses the trash, so it is never a silent, reversible
- * change. Best effort: a command can hide what it does; the terminal tool stays off by default.
+ * Risk of one shell command, the ONE list for TeamBot's own terminal tool (run_command) and for the commands of every
+ * CLI engine (modules/cli-agents/permissions.ts): approval only where it counts. A command that sends,
+ * publishes, pushes or deletes outside the Prullenbak is "danger" (asks a human, also in "Automatisch"); everything
+ * else is a normal "exec". Deleting a single file counts too: a shell delete bypasses the trash, so it is never a
+ * silent, reversible change. Best effort: a command can hide what it does; the terminal tool stays off by default.
  */
 const OUTWARD = [
   /\bgit\s+push\b/i,
@@ -17,7 +17,6 @@ const OUTWARD = [
   /\b(curl|wget|http|xh)\b.*(\s-X\s*(POST|PUT|PATCH|DELETE)|\s--data|\s-d\s|\s-F\s|--upload-file|--form|\s-T\s)/i,
   /\b(Invoke-WebRequest|Invoke-RestMethod|iwr|irm)\b.*-Method\s+(Post|Put|Patch|Delete)/i,
   /\b(ssh|scp|sftp|rsync)\s+[^|;&]*\w@[\w.-]+/i,
-  /\b(sendmail|mailx?|Send-MailMessage)\b/i,
   /\bkubectl\s+(apply|delete|create|scale|rollout)\b|\bterraform\s+(apply|destroy)\b/i,
   /\b(aws|az|gcloud)\s+\S+\s+(delete|create|deploy|put|rm|cp)\b/i,
   /\bvercel\b.*--prod|\bnetlify\s+deploy\b|\bfly\s+deploy\b|\bfirebase\s+deploy\b/i,
@@ -37,15 +36,105 @@ const LOCAL_DESTRUCTIVE = [
   /\[(System\.)?IO\.File\]::Delete\(/i,
 ];
 
-export function shellCommandRisk(cmd: string): ToolRisk {
-  const c = String(cmd || '');
-  return OUTWARD.some((r) => r.test(c)) || LOCAL_DESTRUCTIVE.some((r) => r.test(c)) ? 'danger' : 'exec';
+/**
+ * Sends a message to a person. On "Volledige toegang" this is the only kind of command that counts as "to others"
+ * (asks unless the owner allowed sending, and his rule about important messages is checked). Pushing code, deploying,
+ * publishing a package, calling an API or working on a server over ssh is the bot's ordinary work there: the owner's
+ * choice (12 nov): "only money and messages to customers ask; going live does not".
+ */
+export function mailsSomeone(cmd: string): boolean {
+  const c = commandText(cmd);
+  return /\bSend-MailMessage\b/i.test(c) || MAIL_PROGRAM.test(c);
+}
+/**
+ * A mail program where a command starts (also inside `bash -c "…"`), never the word in an argument: `grep "the account
+ * e-mail" tests` and `cat mail.txt` mail nobody (seen live: a bot on "Volledige toegang" waited four times for a card).
+ */
+const MAIL_PROGRAM = new RegExp(String.raw`(?:^|[;&|(){\n\r\`]\s*|\s-(?:c|Command)\s+["']\s*|\b(?:sudo|xargs|nohup|env|cmd(?:\.exe)?\s+\/c)\s+)(?:[\w.~/\\:-]*[\\/])?(?:sendmail|mailx?|msmtp|mutt|swaks|mailsend)(?:\.exe)?(?=\s|$)`, 'i');
+
+/**
+ * The command without the text it types into a file or a program (the body of a heredoc: `cat >> a.ts <<'EOF' … EOF`):
+ * that text is content, not a command. A heredoc a shell reads (`bash <<EOF`) stays, it is run.
+ */
+function commandText(cmd: string): string {
+  return String(cmd || '').replace(/^([^\n]*?)<<-?[ \t]*(["']?)([A-Za-z_]\w*)\2([^\n]*)\n[\s\S]*?\n[ \t]*\3[ \t]*(?=\n|$)/gm, (all, before: string, _q: string, _tag: string, after: string) =>
+    /(?:^|[;&|(]\s*|\bsudo\s+)(?:(?:ba|z|da|k)?sh|pwsh|powershell)(?:\.exe)?(?=\s|$)/i.test(`${before} ${after}`) ? all : `${before}${after}`,
+  );
 }
 
-/** For "Volledige toegang": only local destruction (in the bot's folders) runs without asking; anything outward asks. */
-export function shellCommandImpact(cmd: string): ToolImpact {
+/** The fixed blocklist below "Volledige toegang" (and for a shared bot): system-wide damage, in any mode. */
+const HARDLINE = [
+  /\bformat(\.com)?\s+[a-z]:/i,
+  /\brm\s+-[a-z]*r[a-z]*f?[a-z]*\s+(\/|~|\$HOME|\/\*)(\s|$)/i,
+  /Remove-Item\s+.*-Recurse.*\s+(C:\\|~|\$env:USERPROFILE)\s*$/i,
+  /\bmkfs\./i,
+  /\bdd\s+if=.*of=\/dev\//i,
+  /:\(\)\s*\{\s*:\|:&\s*\};:/,
+  /\bshutdown\b|\bStop-Computer\b|\bRestart-Computer\b/i,
+  /\bvssadmin\s+delete\b|\bbcdedit\b|\bcipher\s+\/w/i,
+  /\breg\s+delete\s+HKLM/i,
+];
+
+const START = String.raw`(?:^|[;&|(]\s*|\b(?:sudo|cmd(?:\.exe)?\s+\/c)\s+)`;
+const END = String.raw`\s*(?:$|[;&|)])`;
+const Q = `["']?`;
+/** The whole of a drive, the user profile or the home folder as the target of a delete (never a folder inside it). */
+function wholeTargets(home: string): string {
+  const esc = (s: string) => s.replace(/[.*+?^${}()|[\]\\/]/g, '\\$&');
+  const profile = home
+    ? '|' +
+      home
+        .replace(/[\\/]+$/, '')
+        .split(/[\\/]/)
+        .map(esc)
+        .join(String.raw`[\\/]`) +
+      String.raw`[\\/]?\*?`
+    : '';
+  return String.raw`(?:[A-Za-z]:[\\/]?\*?(?:\.\*)?|~[\\/]?\*?|\$env:USERPROFILE[\\/]?\*?|\$\{?HOME\}?[\\/]?\*?|%USERPROFILE%[\\/]?\*?|%HOMEDRIVE%[\\/]?\*?|\/\*?${profile})`;
+}
+
+/**
+ * What stays refused on "Volledige toegang": only a command that wipes the machine beyond repair by an obvious
+ * accident. Anchored on the command and on the whole target, so a word in an argument or a path never trips it:
+ *  1. `format C:` (the system drive), `Format-Volume -DriveLetter C`, `Clear-Disk`;
+ *  2. a recursive delete of a whole drive, the user profile or the home folder: `rm -rf /`, `rm -rf ~`,
+ *     `Remove-Item -Recurse C:\`, `rd /s /q C:\`, `del /s /q C:\*`;
+ *  3. writing straight over a disk: `mkfs.* /dev/…`, `dd … of=/dev/sd…`.
+ * Nothing else: shutdown, the registry, bcdedit, a delete of any folder inside the profile all run.
+ */
+export function fullHardline(cmd: string, o: { home?: string; systemDrive?: string } = {}): boolean {
   const c = String(cmd || '');
-  return OUTWARD.some((r) => r.test(c)) ? 'external' : 'local';
+  const home = o.home ?? (process.env.USERPROFILE || process.env.HOME || '');
+  const sys = (o.systemDrive ?? process.env.SystemDrive ?? 'C:').replace(/[^A-Za-z]/g, '').slice(0, 1) || 'C';
+  const T = wholeTargets(home);
+  const tests = [
+    new RegExp(String.raw`${START}format(?:\.com)?\s+(?:\/\S+\s+)*${sys}:`, 'i'),
+    new RegExp(String.raw`\bFormat-Volume\b[^;|&]*-DriveLetter\s+${Q}${sys}\b`, 'i'),
+    /\bClear-Disk\b/i,
+    new RegExp(String.raw`${START}rm\s+(?:-{1,2}[\w-]+\s+)*-[a-z]*r[a-z]*\s+(?:-{1,2}[\w-]+\s+)*${Q}${T}${Q}${END}`, 'i'),
+    new RegExp(String.raw`\b(?:Remove-Item|ri|rm|del|rmdir|rd)\b(?=[^;|&]*\s-(?:Recurse|r)\b)[^;|&]*?\s(?:-(?:Path|LiteralPath)\s+)?${Q}${T}${Q}(?=\s+-|${END})`, 'i'),
+    new RegExp(String.raw`${START}(?:rd|rmdir)\s+(?:\/[sq]\s+)*\/s\s+(?:\/[sq]\s+)*${Q}${T}${Q}${END}`, 'i'),
+    new RegExp(String.raw`${START}(?:del|erase)\s+(?:\/[a-z]\s+)*\/s\s+(?:\/[a-z]\s+)*${Q}${T}${Q}${END}`, 'i'),
+    /\bmkfs\.\w+\s+(?:-\S+\s+)*\/dev\//i,
+    /\bdd\b[^;|&]*\bof=\/dev\/(?:sd|hd|nvme|disk|mmcblk|vd)/i,
+  ];
+  return tests.some((r) => r.test(c));
+}
+
+/** Is this command refused outright? `full`: the bot is on "Volledige toegang" (only `fullHardline`). */
+export function isHardline(cmd: string, full = false): boolean {
+  const c = String(cmd || '');
+  return full ? fullHardline(c) : HARDLINE.some((r) => r.test(c)) || fullHardline(c);
+}
+
+export function shellCommandRisk(cmd: string): ToolRisk {
+  const c = commandText(cmd);
+  return OUTWARD.some((r) => r.test(c)) || mailsSomeone(c) || LOCAL_DESTRUCTIVE.some((r) => r.test(c)) ? 'danger' : 'exec';
+}
+
+/** For "Volledige toegang" (the only level that looks at impact): only a command that mails someone is "to others". */
+export function shellCommandImpact(cmd: string): ToolImpact {
+  return mailsSomeone(cmd) ? 'external' : 'local';
 }
 
 /** Folders any program may read (the system's own), besides the bot's folders and the temp folder. */
@@ -62,7 +151,8 @@ function systemDirs(): string[] {
  * and `..` escapes), and the subset that are key files or TeamBot's own data. Claude Code, the ACP engines and
  * TeamBot's own terminal tool run commands without a sandbox on Windows, so in "Automatisch" and "Volledige toegang"
  * a command that reaches outside goes to a human, and one that names a key folder is refused ("Eigen werkplek"). Not
- * a sandbox: a command can still hide a path. Used by the CLI gate (modules/cli-agents/permissions.ts) and shell.ts.
+ * a sandbox: a command can still hide a path. Used by the permission gate (tools/gate.ts) for every command, whichever
+ * way it arrives, and by the terminal tool itself when it runs (shell.ts).
  */
 export function commandPaths(cmd: string, o: { roots: string[]; dataDir?: string; home?: string; cwd?: string; whole?: { closed: string[] } | null }): { outside: string[]; keys: string[] } {
   const home = o.home || process.env.USERPROFILE || process.env.HOME || '';

@@ -3,6 +3,8 @@ import os from 'node:os';
 import path from 'node:path';
 import type { ToolDef } from '../../core/types.js';
 import { registerAttachment } from './files.js';
+import { PARKED_TEXT } from '../broker.js';
+import { words } from '../../../shared/i18n-core.js';
 
 const FIELD_TYPES = ['text', 'textarea', 'number', 'select', 'checkbox', 'date', 'email'];
 
@@ -20,7 +22,7 @@ export function coreTools(): ToolDef[] {
         properties: { question: { type: 'string' }, options: { type: 'array', items: { type: 'string' } } },
         required: ['question'],
       },
-      summarize: (a) => String(a.question),
+      summarize: (a) => words('{0}', a.question),
       async run(a, t) {
         const r = await t.ctx.broker.request({
           userId: t.thread.user_id,
@@ -34,7 +36,9 @@ export function coreTools(): ToolDef[] {
           risk: 'read',
           options: Array.isArray(a.options) ? a.options.map(String).slice(0, 8) : undefined,
           signal: t.signal,
+          park: true,
         });
+        if (r.parked) return PARKED_TEXT;
         if (!r.approved) return 'De gebruiker wilde deze vraag niet beantwoorden.';
         return `Antwoord van de gebruiker: ${r.answer ?? '(leeg)'}`;
       },
@@ -45,7 +49,7 @@ export function coreTools(): ToolDef[] {
       risk: 'read',
       description: 'Stuur de gebruiker een korte melding (pushmelding op desktop/telefoon), bijv. als een lange taak klaar is.',
       parameters: { type: 'object', properties: { title: { type: 'string' }, message: { type: 'string' } }, required: ['message'] },
-      summarize: (a) => `Melding: ${a.message}`,
+      summarize: (a) => words('Melding: {0}', a.message),
       async run(a, t) {
         t.ctx.events.emit(t.thread.user_id, 'notification', {
           title: String(a.title || t.agent.name),
@@ -85,7 +89,7 @@ export function coreTools(): ToolDef[] {
         },
         required: ['title', 'fields'],
       },
-      summarize: (a) => String(a.title),
+      summarize: (a) => words('{0}', a.title),
       async run(a, t) {
         const fields = (Array.isArray(a.fields) ? a.fields : []).slice(0, 20).map((f: any) => ({
           name: String(f.name || '').replace(/[^\w-]/g, '_').slice(0, 40) || 'veld',
@@ -132,7 +136,7 @@ export function coreTools(): ToolDef[] {
         properties: { title: { type: 'string' }, html: { type: 'string', description: 'Complete HTML-pagina' } },
         required: ['title', 'html'],
       },
-      summarize: (a) => `Preview: ${a.title}`,
+      summarize: (a) => words('Preview: {0}', a.title),
       async run(a, t) {
         const html = String(a.html || '');
         if (!html.trim()) return { text: 'Lege HTML.', isError: true };

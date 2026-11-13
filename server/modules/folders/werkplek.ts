@@ -3,7 +3,7 @@ import path from 'node:path';
 import type { Agent, Ctx } from '../../core/types.js';
 import { isRestricted } from '../../api/member-policy.js';
 import { isInside as inside } from '../../tools/builtin/files.js';
-import { getTeamFolder, type TeamFolder } from './index.js';
+import { documentsFor, getTeamFolder, TEAM_KEY, type TeamFolder } from './index.js';
 
 /**
  * "Eigen werkplek" (0.4.5): every new bot gets its own folder under its team's folder (Documenten\TeamBot\Teammap\Mila),
@@ -35,6 +35,13 @@ export function safeFolderName(name: string): string {
 }
 
 const norm = (p: string) => (process.platform === 'win32' ? path.resolve(p).toLowerCase() : path.resolve(p));
+
+/**
+ * A folder of TeamBot's own data (a bot's private work folder, a shared bot's copy …), not a desk in a team folder.
+ * A TeamBot with a data folder of its own keeps its team folders in that data folder too (`documentsFor`): those are
+ * team folders like any other.
+ */
+const inOwnData = (ctx: Ctx, p: string) => inside(p, ctx.config.dataDir) && !inside(p, documentsFor(ctx));
 
 /** The team folder a new bot belongs to: its home team's, else the default team's (only read-write ones). */
 function folderOf(ctx: Ctx, userId: string, data: Partial<Agent>): TeamFolder | null {
@@ -82,7 +89,7 @@ export function werkplekFor(ctx: Ctx, userId: string, data: Partial<Agent>): str
  */
 export function followName(ctx: Ctx, agent: Agent): string | null {
   const cur = agent.workspace;
-  if (!cur || inside(cur, ctx.config.dataDir)) return null;
+  if (!cur || inOwnData(ctx, cur)) return null;
   const tf = folderOf(ctx, agent.user_id, agent);
   if (!tf || norm(path.dirname(cur)) !== norm(tf.path)) return null;
   const want = safeFolderName(agent.name);
@@ -104,11 +111,32 @@ export function followName(ctx: Ctx, agent: Agent): string | null {
  * folder). The bot may look there, never write: its own desk and the team folder itself are for that.
  */
 export function colleagueWerkplek(ctx: Ctx, agent: Agent, real: string): Agent | null {
-  const data = ctx.config.dataDir;
   for (const a of ctx.store.agents(agent.user_id, { archived: true })) {
-    if (a.id === agent.id || !a.workspace || inside(a.workspace, data)) continue;
+    if (a.id === agent.id || !a.workspace || inOwnData(ctx, a.workspace)) continue;
     if (inside(agent.workspace, a.workspace)) continue; // this bot works inside the other's folder (set by the owner)
     if (inside(real, a.workspace)) return a;
   }
   return null;
+}
+
+/** The folders of the owner's teams (without the teams module: the one team folder). Only reads. */
+function teamFolderPaths(ctx: Ctx, userId: string): string[] {
+  const teams = ctx.services.teams;
+  if (teams?.list && teams.teamFolder) return teams.list(userId).flatMap((t: { id: string }) => teams.teamFolder(t.id)?.path || []);
+  const t = ctx.store.getSetting<any>(userId, TEAM_KEY, null);
+  return typeof t?.path === 'string' && t.path.trim() ? [t.path] : [];
+}
+
+/**
+ * Is the bot's work folder its own werkplek: a folder right under one of its owner's team folders that no other bot
+ * uses? That is what every bot made in the screens or through the API gets (`werkplekFor`), so TeamBot keeps things
+ * of the bot there itself, like in a private work folder in its data (the bot's skills as folders: skills/workspace.ts).
+ * Not the team folder itself, not a folder the owner gave several bots, not a shared bot's copy.
+ */
+export function isWerkplek(ctx: Ctx, agent: Agent): boolean {
+  const ws = agent.workspace;
+  if (!ws || agent.settings?.sharedRun) return false;
+  const parent = norm(path.dirname(ws));
+  if (!teamFolderPaths(ctx, agent.user_id).some((p) => norm(p) === parent)) return false;
+  return !ctx.store.agents(agent.user_id, { archived: true }).some((a) => a.id !== agent.id && !!a.workspace && norm(a.workspace) === norm(ws));
 }

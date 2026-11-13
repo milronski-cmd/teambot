@@ -12,6 +12,7 @@ import { type BossPick, type Source, type SpecialistPick, isCustomerRoutine, pic
 import { type TeamLike, currentMain, mainBotBridge, specialistsBridge, teamDataBridge, teamsBridge } from './bridges.js';
 import { type Ledger, emptyLedger, importedChannels, mergeLedger, undoImport, undoPlan } from './undo.js';
 import { STANDARD } from '../teamdata/schema.js';
+import { PLACE } from '../../../shared/places.js';
 
 export type EngineStatus = 'ready' | 'connect' | 'reconnect' | 'missing' | 'unknown';
 export type WorkspaceChoice = 'reference' | 'copy' | 'new';
@@ -487,12 +488,12 @@ export class OpenBotImport {
     if (skipped.length) notImported.push({ what: skipped.length === 1 ? '1 skill van OpenBot zelf' : `${skipped.length} skills van OpenBot zelf`, why: 'Beheerd door OpenBot of onder de OpenBot-licentie. Je eigen skills komen wel mee; zoek voor de rest een alternatief in de TeamBot-marktplaats.' });
     if (snap.workflows) notImported.push({ what: 'Workflows', why: snap.workflows === 1 ? '1 workflow wordt niet overgenomen; TeamBot heeft (nog) geen workflow-canvas.' : `${snap.workflows} workflows worden niet overgenomen; TeamBot heeft (nog) geen workflow-canvas.` });
     notImported.push({ what: 'De takenlijst en browserprofielen van OpenBot', why: 'De gedeelde teamtabellen (taken, beslissingen …) komen wel mee als je ze aanvinkt.' });
-    if (snap.phonePaired) notImported.push({ what: 'Je telefoonkoppeling', why: 'Koppel je telefoon opnieuw via Instellingen → Telefoon.' });
+    if (snap.phonePaired) notImported.push({ what: 'Je telefoonkoppeling', why: `Koppel je telefoon opnieuw via ${PLACE.phone}.` });
     // Own providers (e.g. LM Studio) that no bot uses: nothing to link for the bots; the owner adds one when he wants it.
     const usedProviders = new Set(snap.agents.flatMap((a) => [a.provider, ...a.backups.map((b) => b.provider)]).map(engineKey));
     const unused = snap.customProviders.filter((p) => !usedProviders.has(engineKey(p.id)) && !usedProviders.has(engineKey(p.name)));
     if (unused.length) notImported.push({ what: `Eigen AI-dienst: ${unused.map((p) => p.name || p.id).join(', ')}`, why: 'Geen bot gebruikt hem. Koppel hem zo nodig zelf bij AI-diensten (er is geen sleutel nodig voor een lokale dienst).' });
-    notImported.push({ what: 'Instellingen van de OpenBot-app zelf', why: 'Venster, logokleur, op de achtergrond doordraaien en wakker blijven stel je in TeamBot zelf in (Instellingen › Algemeen; wakker blijven bij Routines).' });
+    notImported.push({ what: 'Instellingen van de OpenBot-app zelf', why: `Venster, logokleur, op de achtergrond doordraaien en wakker blijven stel je in TeamBot zelf in (${PLACE.look}; wakker blijven bij Routines).` });
 
     return {
       stagingId: st.id,
@@ -751,7 +752,8 @@ export class OpenBotImport {
       const cur = currentMain(this.ctx, userId);
       let why = '';
       if (!mb) why = 'De hoofdbot staat in deze TeamBot niet aan.';
-      else if (cur && cur.id !== agentId) why = `Je hebt al een hoofdbot (${cur.name}) en er kan er maar één zijn.`;
+      // A main bot TeamBot picked by itself from the bots of this very import (teams `autoMain`) is no choice of the owner.
+      else if (cur && cur.id !== agentId && ![...createdNow].some((k) => agentIdByOb.get(k) === cur.id)) why = `Je hebt al een hoofdbot (${cur.name}) en er kan er maar één zijn.`;
       else {
         try {
           const r = mb.set(userId, agentId);

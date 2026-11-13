@@ -8,6 +8,7 @@ import { answers, msgs, settle, sleep, team, until } from './team-mock.js';
 import { analyse, isLogAppend, normParams, SqlRefused } from '../server/modules/teamdata/sql.js';
 import { parseOptions } from '../server/modules/teamdata/schema.js';
 import { columnsFromSql, type TeamData } from '../server/modules/teamdata/service.js';
+import { fillWords } from '../shared/i18n-core.js';
 
 /** Team database: statement rules, options parsing, bot tools, ownership, isolation, decisions that wake the bot. */
 
@@ -163,11 +164,15 @@ test('team tools through a bot: team_tables, team_query answers "welke beslissin
     );
     const th = await t.api('POST', '/threads', { agentId: baas.id });
     await t.say(th.id, 'Welke beslissingen staan open?');
-    // The bot knows the team database from its system prompt.
-    assert.match(m.calls.find((c) => c.bot === 'Baas')!.req.system, /## Teamdatabase/);
-    assert.ok(m.calls[0].req.tools.some((x) => x.name === 'team_query') && m.calls[0].req.tools.some((x) => x.name === 'team_execute'));
+    // The bot has the team database's tools on demand (tools/selection.ts); how the database works comes with its first
+    // use, not in the prompt of every step.
+    const has = (await t.app.ctx.tools.forAgent(t.app.ctx.store.agent(baas.id)!, t.app.ctx.store.thread(th.id)!)).map((x) => x.name);
+    assert.ok(has.includes('team_query') && has.includes('team_execute'));
+    assert.match(m.calls[0].req.tools.find((x) => x.name === 'tools_find')!.description, /teamdatabase: team_tables, team_query, team_execute/);
+    assert.doesNotMatch(m.calls.find((c) => c.bot === 'Baas')!.req.system, /## Teamdatabase/);
     const tablesOut = toolResults(t, th.id, 'team_tables')[0].content;
     assert.match(tablesOut, /### beslissingen — 3 rijen — vaste tabel/);
+    assert.match(tablesOut, /## Teamdatabase\nJe team deelt één database/);
     const out = toolResults(t, th.id, 'team_query')[0].content;
     assert.match(out, /^2 rijen\./); // "1 rij" / "2 rijen", not "rij(en)"
     assert.match(out, /Google Ads-test na 15 november\?/);
@@ -343,9 +348,9 @@ test('approval cards and steps describe team database actions in words, without 
     const exec = t.app.ctx.tools.get('team_execute')!;
     const query = t.app.ctx.tools.get('team_query')!;
     // Round-2 acceptance: a card read "Teamdatabase toevoegen aan logboek — INSERT INTO logboek (agent, site, …) VALUES (?,?,…)".
-    assert.equal(exec.summarize!({ sql: 'INSERT INTO logboek (agent, site, wat, waarom, bewijs, terugdraaien) VALUES (?,?,?,?,?,?)' }), 'Teamdatabase toevoegen aan logboek');
-    assert.equal(exec.summarize!({ sql: 'DELETE FROM taken' }), 'Teamdatabase verwijderen uit taken (alle rijen)');
-    assert.doesNotMatch(query.summarize!({ sql: 'SELECT * FROM beslissingen WHERE status = ?' }), /SELECT|WHERE/);
+    assert.equal(fillWords(exec.summarize!({ sql: 'INSERT INTO logboek (agent, site, wat, waarom, bewijs, terugdraaien) VALUES (?,?,?,?,?,?)' })), 'Teamdatabase toevoegen aan logboek');
+    assert.equal(fillWords(exec.summarize!({ sql: 'DELETE FROM taken' })), 'Teamdatabase verwijderen uit taken (alle rijen)');
+    assert.doesNotMatch(fillWords(query.summarize!({ sql: 'SELECT * FROM beslissingen WHERE status = ?' })), /SELECT|WHERE/);
   } finally {
     await t.close();
   }
@@ -408,8 +413,8 @@ test('Vraagt toestemming: a change in the team folder gives one card; the logboo
     assert.match(calls[0].summary, /toevoegen aan logboek/);
     const tdlog = t.app.ctx.store.all<any>("SELECT actor_type, actor_name, verb, table_name FROM teamdata_audit WHERE table_name = 'logboek' AND error IS NULL ORDER BY id");
     assert.deepEqual({ ...tdlog[0] }, { actor_type: 'agent', actor_name: 'Ada', verb: 'INSERT', table_name: 'logboek' });
-    // The bot is told that a logbook line needs no separate approval.
-    assert.match(m.calls[0].req.system, /logregel vraagt .* geen aparte toestemming/);
+    // The bot is told that a logbook line needs no separate approval (with its first use of the team database).
+    assert.match(toolResults(t, th.id, 'team_execute')[0].content, /logregel vraagt .* geen aparte toestemming/);
 
     // Read-only bots still cannot write a logbook line.
     const lezer = await m.bot('Lezer', { access_mode: 'readonly' });

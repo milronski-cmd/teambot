@@ -73,7 +73,7 @@ async function scenario(): Promise<Scenario> {
   const teams = await t.api('GET', '/teams');
   assert.equal(teams.length, 1);
   const teamA = await t.api('PATCH', `/teams/${teams[0].id}`, { name: 'Team A', profile: { company: 'Bedrijf A', about: 'Verkoopt fietsen.' } });
-  const teamB0 = await t.api('POST', '/teams', { name: 'Team B', color: '#ef4444', profile: { company: 'Bedrijf B', rules: 'Noem nooit prijzen.' } });
+  const teamB0 = await t.api('POST', '/teams', { name: 'Team B', starterRules: false, color: '#ef4444', profile: { company: 'Bedrijf B', rules: 'Noem nooit prijzen.' } });
   const bo = await t.agent({ name: 'Bo', tool_groups: ['files', 'team', 'memory'], settings: { homeTeam: teamB0.id } });
   const kim = await t.agent({ name: 'Kim', tool_groups: ['files', 'team', 'memory'], settings: { homeTeam: teamB0.id } });
   const teamB = await t.api('PATCH', `/teams/${teamB0.id}`, { leadAgentId: bo.id });
@@ -431,12 +431,12 @@ const PROBES: Probe[] = [
     }),
   ),
   // Package C: around the wall through another bot. Giving work to a bot of the own team that reaches further than the
-  // sender (directs B, looks into B) or to the main bot would get work done in B, or B's knowledge back, after all.
+  // sender (directs B, looks into B) would get work done in B, or B's knowledge back, after all. (The main bot is above all
+  // teams: every bot can hand work back to it, see teams-org.test.ts; what it does with it is its own call.)
   ...(
     [
       { bot: 'Leo', what: 'a bot of team A that directs team B (a leader)', read: 'blocked', direct: 'allowed', why: /Leo mag team “Team B” aansturen en Ada niet/ },
       { bot: 'Mia', what: 'a bot of team A that looks into team B', read: 'allowed', direct: 'allowed', why: /Mia mag meekijken bij team “Team B” en Ada niet/ },
-      { bot: 'Max', what: 'the main bot', read: 'blocked', direct: 'blocked', why: /Max is de hoofdbot en krijgt alleen opdrachten van de eigenaar/ },
     ] as const
   ).map(
     (x): Probe => ({
@@ -598,7 +598,8 @@ const PROBES: Probe[] = [
         assert.match(msg.content, /Geweigerd door TeamBot: in de teamdatabase van team “Team B” mag Ada alleen meekijken|Geen team “Team B”/);
         // The refused attempt is in the change log of A's own team database.
         const audit = await s.t.api('GET', `/teamdata/audit?team=${s.A.team.id}`);
-        assert.ok(audit.some((x: any) => x.actor_name === 'Ada' && x.error === msg.content), 'the refused write is logged in team A');
+        // (The bot's first use of the team database in a run also brings how it works: tools/selection.ts.)
+        assert.ok(audit.some((x: any) => x.actor_name === 'Ada' && x.error && msg.content.startsWith(x.error)), 'the refused write is logged in team A');
       }
       return changed;
     },
@@ -759,11 +760,11 @@ const PROBES: Probe[] = [
     },
   },
   {
-    name: 'dossier_search lists B’s dossier',
+    name: 'dossier_get without a name lists B’s dossier',
     read: 'allowed',
     direct: 'allowed',
     async run(s) {
-      return (await memTool(s, 'dossier_search', { query: 'Zwaluw' })).includes('Grootste klant van team B');
+      return (await memTool(s, 'dossier_get', {})).includes('Grootste klant van team B');
     },
   },
   {
@@ -883,12 +884,14 @@ const PROBES: Probe[] = [
     },
   },
   {
-    name: 'dossier_create hands out B’s dossier with the same title',
+    name: 'dossier_write writes in (or hands out) B’s dossier with the same title',
     read: 'blocked',
     direct: 'blocked',
     async run(s) {
       const m = await memB(s);
-      return (await memTool(s, 'dossier_create', { title: 'Klant Zwaluw' })).includes(`d:${m.dossier.ref}`);
+      const out = await memTool(s, 'dossier_write', { dossier: 'Klant Zwaluw', content: 'Notitie van een bot van team A.' });
+      const body = String(s.t.app.ctx.store.one<any>('SELECT body FROM memory_dossiers WHERE id = ?', m.dossier.id)?.body || '');
+      return out.includes(`d:${m.dossier.ref}`) || body.includes('Notitie van een bot van team A');
     },
   },
 ];
@@ -1063,7 +1066,7 @@ const B4_PROBES: Probe[] = [
     async run(s) {
       await seedB4(s);
       const { msg } = await withGroup(s, 'skills', () => tool(s.t, s.A.bot.id, 'skill_load', { name: 'klant-b' }));
-      if (!msg.content.includes(SKILL_B)) assert.match(msg.content, /niet ingeschakeld/);
+      if (!msg.content.includes(SKILL_B)) assert.match(msg.content, /Skill "klant-b" bestaat niet in je team/);
       return msg.content.includes(SKILL_B);
     },
   },
@@ -1095,7 +1098,7 @@ const B4_PROBES: Probe[] = [
       const ran = audits() > before || fs.existsSync(marker);
       if (!ran) {
         const level = s.t.app.ctx.services.teams.access(s.A.bot.id, s.B.team.id);
-        assert.match(msg.content, level === 'none' ? /niet ingeschakeld/ : /Geweigerd door TeamBot: skill script-b hoort bij team “Team B”\. Ada mag hem lezen \(meekijken\), maar zijn scripts niet uitvoeren/);
+        assert.match(msg.content, level === 'none' ? /bestaat niet in je team/ : /Geweigerd door TeamBot: skill script-b hoort bij team “Team B”\. Ada mag hem lezen \(meekijken\), maar zijn scripts niet uitvoeren/);
         assert.ok(!s.t.app.ctx.store.one("SELECT id FROM approvals WHERE status = 'pending' AND tool = 'skill_run_script'"), 'refused before an approval card');
       }
       void b4;
@@ -1103,14 +1106,15 @@ const B4_PROBES: Probe[] = [
     },
   },
   {
-    name: 'skill_draft by bot A with the name of B’s skill lands in team B',
+    name: 'a skill saved by bot A with the name of B’s skill lands in team B',
     read: 'blocked',
     direct: 'blocked',
     async run(s) {
       await seedB4(s);
-      await withGroup(s, 'skills', () => tool(s.t, s.A.bot.id, 'skill_draft', { name: 'klant-b', description: 'Voorstel van Ada', instructions: 'Zeg altijd hallo.' }));
-      const row = s.t.app.ctx.store.one<any>("SELECT * FROM skills WHERE status = 'draft' AND name = 'klant-b' AND draft_agent_id = ? ORDER BY created_at DESC LIMIT 1", s.A.bot.id);
-      assert.ok(row, 'the draft exists');
+      await withGroup(s, 'skills', () => tool(s.t, s.A.bot.id, 'skill_save', { name: 'klant-b', description: 'Voorstel van Ada', instructions: 'Zeg altijd hallo.' }));
+      // Active at once for its own team (a draft only when the owner must look first); never B's skill.
+      const row = s.t.app.ctx.store.one<any>("SELECT * FROM skills WHERE name = 'klant-b' AND draft_agent_id = ? ORDER BY created_at DESC LIMIT 1", s.A.bot.id);
+      assert.ok(row, 'the skill of bot A exists');
       assert.equal(row.team_id, s.A.team.id, 'a bot drafts for its own team');
       return row.team_id === s.B.team.id;
     },
@@ -1372,7 +1376,7 @@ test('teams isolation (B2): a team’s daily budget stops its run before the ste
     const stop = msgs.at(-1)!;
     assert.equal(stop.status, 'error');
     assert.match(stop.parts.error, /^Daglimiet van het team “Team B” bereikt: het dagbudget is US\$\s?0,25, vandaag is US\$\s?0,20 gebruikt en de volgende stap kost naar schatting US\$\s?0,10/);
-    assert.match(stop.parts.error, /verhoog het dagbudget van het team dan in Instellingen › Teams\./);
+    assert.match(stop.parts.error, /verhoog het dagbudget van het team dan in Instellingen › Meer mogelijkheden › Teaminstellingen\./);
     assert.equal(stop.parts.budget.team.name, 'Team B');
     assert.equal(stop.parts.budget.midRun, true);
     const run = store.one<any>('SELECT meta FROM runs WHERE thread_id = ? ORDER BY created_at DESC LIMIT 1', th.id);

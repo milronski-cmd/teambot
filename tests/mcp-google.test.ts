@@ -115,17 +115,22 @@ test('Google: one login connects it, the test proves each service, and disconnec
     const conn = s.connection;
     assert.equal(conn.transport, 'builtin');
     assert.deepEqual(conn.agents, [bot.id], 'connected means the bots can use it');
-    assert.equal(conn.allow_actions, false, 'read-only until the owner allows actions');
+    assert.equal(conn.allow_actions, true, 'the owner’s app is not read-only (mcp/defaults.ts); what a bot may do is its access level');
+    // The rest of this test is about an app whose actions are off.
+    await t.api('POST', `/mcp/connections/${conn.id}/actions`, { enabled: false });
 
     // In one go: straight after the login the bot has the reading tools and can use them; sending mail is not offered.
     const th = await t.api('POST', '/threads', { agentId: bot.id });
     let offered: string[] = [];
     t.script.push({ toolCalls: [{ name: 'mcp_google_gsc_search_analytics', args: { site: 'sc-domain:voorbeeld.nl' } }], check: (req) => (offered = req.tools.map((x) => x.name)) }, { text: 'klaar' });
     await t.say(th.id, 'Op welke zoekwoorden worden we gevonden volgens Search Console?');
-    assert.ok(offered.includes('mcp_google_gsc_search_analytics') && offered.includes('mcp_google_gsc_sites'), offered.join(','));
-    assert.ok(!offered.includes('mcp_google_gmail_send'), 'no actions before the owner allows them');
-    const loader = t.requests.at(-1)!.tools.find((x) => x.name === 'tools_load');
-    assert.ok(!loader || /Merchant Center/.test(JSON.stringify(loader)), 'what was left out is named, per service');
+    // The tools of an app are found on demand (tools/selection.ts): the bot reads which apps it has where it looks for
+    // tools, and has exactly the reading tools.
+    assert.ok(offered.includes('tools_find') && offered.includes('tools_call'), offered.join(','));
+    const has = (await t.app.ctx.tools.forAgent(t.app.ctx.store.agent(bot.id)!, t.app.ctx.store.thread(th.id)!)).map((x) => x.name);
+    assert.ok(has.includes('mcp_google_gsc_search_analytics') && has.includes('mcp_google_gsc_sites'), has.join(','));
+    assert.ok(!has.includes('mcp_google_gmail_send'), 'no actions before the owner allows them');
+    assert.match(t.requests.at(-1)!.tools.find((x) => x.name === 'tools_find')!.description, /app [^:;]*Search Console[^:;]*: [^;]*search_analytics/, 'the apps are named, per service, with their tools');
     assert.match(t.app.ctx.store.messages(th.id).filter((m) => m.role === 'tool').at(-1)!.content, /kaarsen kopen/);
 
     // The ordinary read test of Apps: the built-in server lists its tools, with the right risks.

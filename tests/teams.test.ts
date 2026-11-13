@@ -8,6 +8,10 @@ import { createApp } from '../server/app.js';
 import { modules as allModules } from '../server/modules/index.js';
 import { agentRootList } from '../server/tools/builtin/files.js';
 
+// These tests are about bots that are not the main bot: without this the first bot would be it (teams `autoMain`,
+// covered in works-right-away.test.ts).
+process.env.TEAMBOT_TEST_NO_AUTO_MAIN = '1';
+
 test('fresh install starts empty; the first bot creates the default team; one team adds no team text to prompts', async () => {
   const t = await startTestApp();
   try {
@@ -186,6 +190,36 @@ test('business profile: in the turn context of the team’s bots, repeated only 
     const ctx2 = t.app.ctx.store.messages(th2.id).find((m) => m.role === 'user')!.parts?.context || '';
     assert.match(ctx2, /Bedrijf: Shop BV/);
     assert.doesNotMatch(ctx2, /Bakkerij Jansen/);
+  } finally {
+    await t.close();
+  }
+});
+
+test('a bot lands in the team it was made for whoever asks first, and a bot that is being deleted gets no team again', async () => {
+  const t = await startTestApp();
+  try {
+    const ctx = t.app.ctx;
+    const userId = ctx.auth.owner()!.id;
+    const teams = ctx.services.teams;
+    await t.agent({ name: 'Ada' });
+    const second = await t.api('POST', '/teams', { name: 'Tweede' });
+    // A module asks for the team of a new bot before the teams module heard of it (a listener that runs earlier, or a
+    // bot made in the store): the bot still lands in the team it was made for, not in the default team for good.
+    const bo = ctx.store.createAgent(userId, { name: 'Bo', settings: { homeTeam: second.id } });
+    assert.equal(teams.teamOf(bo.id), second.id, 'the team named in settings.homeTeam');
+    ctx.events.emit(userId, 'agent.updated', bo);
+    assert.equal(teams.teamOf(bo.id), second.id);
+
+    // A module that still asks for the bot's team while it is being deleted (after the teams module let it go, before
+    // its row is gone) must not write it back into the team: the team could never be emptied.
+    const asked: (string | null)[] = [];
+    const off = ctx.events.on('teams.changed', () => void asked.push(teams.teamOf(bo.id)));
+    await t.api('DELETE', `/agents/${bo.id}`);
+    off();
+    assert.ok(asked.length > 0, 'a module asked during the deletion');
+    assert.equal(ctx.store.all('SELECT agent_id FROM team_bots WHERE agent_id = ?', bo.id).length, 0, 'no row left behind');
+    await t.api('DELETE', `/teams/${second.id}`);
+    assert.deepEqual((await t.api('GET', '/teams')).map((x: any) => x.name), ['Mijn team'], 'the empty team can go');
   } finally {
     await t.close();
   }

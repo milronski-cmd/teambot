@@ -3,6 +3,7 @@ import type { Agent, StepFact, ToolDef } from '../../core/types.js';
 import { agentRootList } from '../../tools/builtin/files.js';
 import { toolLabel } from '../../../shared/toolLabels.js';
 import { MCP_SERVER_NAME } from './bridge.js';
+import { CALL_NAME } from '../../tools/selection.js';
 import { commandOf, pathsOf, plainCommand } from './permissions.js';
 
 /**
@@ -42,6 +43,8 @@ export const base = (p: string) => {
     .join('/');
 };
 const words = (s: string) => s.replace(/[-_]+/g, ' ').trim();
+/** An app of the engine by the name the owner knows: "claude_ai_Gmail" (a claude.ai connector) → "Gmail". */
+const appWords = (server: string) => words(server.replace(/^claude_ai_/i, ''));
 
 /**
  * A step as the owner reads it: the bot's own working folder is shown without its path (an internal id, or the
@@ -67,19 +70,29 @@ export function teambotLabel(tool: string, running: boolean, apps?: AppNames): s
   return toolLabel({ name: tool }, running);
 }
 
+/**
+ * The TeamBot tool a step is about: a tool outside the engine's list is used through `tools_call` (tools/selection.ts),
+ * and the step is about the tool that call names.
+ */
+function teambotTool(tool: string, input: any): { tool: string; input: any } {
+  const inner = tool === CALL_NAME && typeof input?.name === 'string' ? input.name.trim().replace(/^mcp__teambot__/i, '') : '';
+  return /^[a-zA-Z0-9_-]{1,64}$/.test(inner) ? { tool: inner, input: input?.args ?? {} } : { tool, input };
+}
+
 /** "mcp__teambot__memory_update" → TeamBot's own label; "mcp__github__x" → "Gebruikte github". '' = hidden. */
-function mcpLabel(name: string, running: boolean, apps?: AppNames): string | null {
+function mcpLabel(name: string, running: boolean, apps?: AppNames, input?: any): string | null {
   const m = /^mcp__([^_].*?)__(.+)$/.exec(name);
   if (!m) return null;
-  const [, server, tool] = m;
+  const server = m[1];
+  const tool = server === MCP_SERVER_NAME ? teambotTool(m[2], input).tool : m[2];
   // The plan card shows plan_update itself; a step per update would only repeat it.
   if (server === MCP_SERVER_NAME) return tool === 'permission_prompt' || tool === 'plan_update' ? '' : teambotLabel(tool, running, apps);
-  return `${running ? 'Gebruikt' : 'Gebruikte'} ${words(server)}`;
+  return `${running ? 'Gebruikt' : 'Gebruikte'} ${appWords(server)}`;
 }
 
 export function cliActivity(tool: string, input: any, apps?: AppNames): string | null {
   if (HIDDEN.has(tool)) return null;
-  const mcp = mcpLabel(tool, false, apps);
+  const mcp = mcpLabel(tool, false, apps, input);
   if (mcp !== null) return mcp || null;
   const p = pathsOf(input)[0];
   const cmd = commandOf(input);
@@ -191,7 +204,7 @@ export function deniedWhat(denials: { tool_name?: string; tool_input?: any }[], 
 
 /** `cliActivity` for a step whose result is not in yet: TeamBot's own tools in the present tense, the rest as wish. */
 export function cliPending(tool: string, input: any, apps?: AppNames): string | null {
-  const mcp = mcpLabel(tool, true, apps);
+  const mcp = mcpLabel(tool, true, apps, input);
   if (mcp !== null) return mcp || null;
   const past = cliActivity(tool, input, apps);
   return past === null ? null : pendingTitle(past);
@@ -228,7 +241,11 @@ export function teambotFacts(name: string, args: any, app?: string): StepFact[] 
 export function cliFacts(tool: string, input: any, apps?: AppNames): StepFact[] | undefined {
   if (HIDDEN.has(tool)) return undefined;
   const m = /^mcp__([^_].*?)__(.+)$/.exec(tool);
-  if (m) return m[1] === MCP_SERVER_NAME ? teambotFacts(m[2], input, apps?.get(m[2])) : [{ op: 'app', target: words(m[1]) }];
+  if (m && m[1] === MCP_SERVER_NAME) {
+    const own = teambotTool(m[2], input);
+    return teambotFacts(own.tool, own.input, apps?.get(own.tool));
+  }
+  if (m) return [{ op: 'app', target: appWords(m[1]) }];
   const paths = pathsOf(input);
   switch (tool) {
     case 'Read':
@@ -384,7 +401,7 @@ function codeModeLabel(raw: unknown, running = false): string | null {
   const call = codeModeCall(raw);
   if (call === 'search') return running ? 'Zoekt een TeamBot-functie op' : 'Zocht een TeamBot-functie op';
   if (!call) return null;
-  return call.server === MCP_SERVER_NAME ? teambotLabel(call.tool, running) : `${running ? 'Gebruikt' : 'Gebruikte'} ${words(call.server)}`;
+  return call.server === MCP_SERVER_NAME ? teambotLabel(call.tool, running) : `${running ? 'Gebruikt' : 'Gebruikte'} ${appWords(call.server)}`;
 }
 
 /** "teambot_skill_load", "mcp__teambot__skill_load" → "skill_load" (how ACP agents title a call of TeamBot's tools). */

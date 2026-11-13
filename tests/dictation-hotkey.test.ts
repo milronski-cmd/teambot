@@ -3,7 +3,8 @@
 // Also: the key combination parser/settings and the in-process dictation service the shell uses.
 import { test, after } from 'node:test';
 import assert from 'node:assert/strict';
-import { DictationMachine, HOLD_MS, MAX_MS, type InsertResult, type OverlayView } from '../desktop/dictation-machine.js';
+import { DictationMachine, FINISH_MAX_MS, HOLD_MS, MAX_MS, START_MAX_MS, type InsertResult, type OverlayView } from '../desktop/dictation-machine.js';
+import { OVERLAY_HEIGHT, OVERLAY_STALE_MS, OVERLAY_WIDTH, overlayBounds } from '../desktop/dictation-overlay.js';
 import { insertText, type ClipSnapshot, type PasteResult } from '../desktop/dictation-insert.js';
 import { dictationClipboard, PRIVATE_FORMATS, rawType } from '../desktop/dictation-clipboard.js';
 import { DEFAULT_HOTKEY, parseHotkey } from '../server/modules/voice/hotkey.js';
@@ -43,7 +44,7 @@ const flush = async () => {
   for (let i = 0; i < 5; i++) await new Promise((r) => setImmediate(r));
 };
 
-function rig(o: { text?: string; password?: boolean; startError?: string; keyWatch?: boolean; insert?: InsertResult } = {}) {
+function rig(o: { text?: string; password?: boolean; startError?: string; keyWatch?: boolean; insert?: InsertResult; hangStart?: boolean; hangStop?: boolean } = {}) {
   const c = clock();
   const log: string[] = [];
   const views: OverlayView[] = [];
@@ -56,9 +57,11 @@ function rig(o: { text?: string; password?: boolean; startError?: string; keyWat
         log.push('start');
         onText = t;
         if (o.startError) throw new Error(o.startError);
+        if (o.hangStart) await new Promise(() => {});
       },
       async stop() {
         log.push('stop');
+        if (o.hangStop) await new Promise(() => {});
         return o.text ?? 'Hallo, dit is een test.';
       },
       cancel: () => log.push('cancel'),
@@ -195,6 +198,83 @@ test('hotkey: Esc throws it away; password field refused; nothing heard; errors;
     await flush();
     assert.match(r.last().text!, /administrator/);
   }
+});
+
+test('hotkey: the pill never stays hanging — a lost microphone, a hanging start or hanging write-out all close it', async () => {
+  const hidden = (r: ReturnType<typeof rig>) => r.last().text === '(hidden)';
+  {
+    // The microphone goes away while recording: stop, say why briefly, hide; nothing is pasted, Esc is given back.
+    const r = rig();
+    r.m.press();
+    await flush();
+    await r.c.advance(100);
+    r.release();
+    await flush();
+    assert.equal(r.m.phase, 'recording');
+    r.m.fail('De microfoon is weggevallen.');
+    assert.equal(r.m.phase, 'message');
+    assert.match(r.last().text!, /weggevallen/);
+    assert.ok(r.log.includes('cancel') && r.log[r.log.length - 2] === 'esc off', r.log.join(','));
+    await r.c.advance(3000);
+    assert.equal(r.m.phase, 'idle');
+    assert.ok(hidden(r), 'hidden after the message');
+    assert.deepEqual(r.inserted, []);
+    // Nothing left running: a long time later still hidden, and a new dictation works.
+    await r.c.advance(MAX_MS + 1000);
+    assert.ok(hidden(r));
+    r.m.fail('nog een keer');
+    assert.equal(r.m.phase, 'idle', 'fail while idle does nothing');
+    r.m.press();
+    await flush();
+    assert.equal(r.m.phase, 'recording');
+  }
+  {
+    // Opening the microphone hangs.
+    const r = rig({ hangStart: true });
+    r.m.press();
+    await flush();
+    assert.equal(r.m.phase, 'starting');
+    await r.c.advance(START_MAX_MS + 10);
+    assert.equal(r.m.phase, 'message');
+    assert.match(r.last().text!, /reageerde niet/);
+    await r.c.advance(3000);
+    assert.equal(r.m.phase, 'idle');
+    assert.ok(hidden(r));
+  }
+  {
+    // Writing out hangs.
+    const r = rig({ hangStop: true, keyWatch: false });
+    r.m.press();
+    await flush();
+    await r.c.advance(1000);
+    r.m.press();
+    await flush();
+    assert.equal(r.m.phase, 'finishing');
+    await r.c.advance(FINISH_MAX_MS + 10);
+    assert.equal(r.m.phase, 'message');
+    assert.match(r.last().text!, /duurde te lang/);
+    await r.c.advance(3000);
+    assert.equal(r.m.phase, 'idle');
+    assert.ok(hidden(r));
+    assert.deepEqual(r.inserted, []);
+  }
+  // The window's own limit is longer than any single step, so it only ever fires when something really hangs.
+  assert.ok(OVERLAY_STALE_MS > FINISH_MAX_MS && OVERLAY_STALE_MS > START_MAX_MS);
+});
+
+test('hotkey: the pill is small and sits bottom centre, just above the taskbar, on the screen it is asked for', () => {
+  assert.ok(OVERLAY_WIDTH <= 420 && OVERLAY_HEIGHT <= 56);
+  // A second screen to the right, taskbar at the bottom.
+  const wa = { x: 1920, y: 0, width: 2560, height: 1392 };
+  const b = overlayBounds(wa);
+  assert.equal(b.x + b.width / 2, wa.x + wa.width / 2, 'centred');
+  assert.ok(b.y + b.height <= wa.y + wa.height && b.y + b.height >= wa.y + wa.height - 24, 'at the bottom of the work area');
+  assert.ok(b.y > wa.y + wa.height * 0.9, 'never over the middle');
+  // A very small screen (1920x480 bar display) and a narrow one: inside the screen.
+  const small = overlayBounds({ x: 0, y: 0, width: 1920, height: 440 });
+  assert.ok(small.y >= 440 - 70 && small.y + small.height <= 440);
+  const narrow = overlayBounds({ x: 0, y: 0, width: 320, height: 568 });
+  assert.ok(narrow.x >= 0 && narrow.x + narrow.width <= 320);
 });
 
 test('hotkey: without a key watcher (not Windows) it toggles; a second tap while starting finishes right after', async () => {

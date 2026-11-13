@@ -22,7 +22,7 @@ const port = Number(process.env.TEAMBOT_E2E_PORT) || 0;
 if (port === 4747 || port === 4748) throw new Error('4747/4748 zijn van de geïnstalleerde TeamBot');
 const browser = await chromium.launch({ channel: process.env.TEAMBOT_E2E_BROWSER || (process.platform === 'win32' ? 'msedge' : 'chrome'), headless: true });
 const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'tb-e2e-chatfolders-'));
-const { createApp } = await import('../../server/app.ts');
+const { createApp } = await import('./server.mjs');
 const { mockAdapter } = await import('../helpers.ts');
 const app = await createApp({ dataDir: dir, port, host: '127.0.0.1', mode: 'desktop', quiet: true });
 const token = app.ctx.auth.ensureLocalOwner();
@@ -34,7 +34,9 @@ const call = async (method, p, body) => {
 };
 const prov = await call('POST', '/providers', { kind: 'mock', name: 'Testmodel' });
 const bots = {};
-for (const name of ['Ada', 'Bas', 'Cor']) bots[name] = await call('POST', '/agents', { name, role: 'Test', provider_id: prov.id, model: 'mock-1', access_mode: 'auto' });
+// The first bot of a fresh TeamBot becomes the main bot: a tile above the list, with no row to file in a folder. Ada,
+// Bas and Cor are ordinary bots with a row in the list.
+for (const name of ['Mila', 'Ada', 'Bas', 'Cor']) bots[name] = await call('POST', '/agents', { name, role: 'Test', provider_id: prov.id, model: 'mock-1', access_mode: 'auto' });
 const threadOf = (name) => app.ctx.chat.threadForAgent(owner.id, bots[name].id);
 const SHOTS = process.env.TEAMBOT_E2E_SHOTS || '';
 if (SHOTS) fs.mkdirSync(SHOTS, { recursive: true });

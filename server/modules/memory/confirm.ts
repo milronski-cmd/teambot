@@ -17,7 +17,7 @@
 import type { Message, Thread } from '../../core/types.js';
 import type { MemoryService } from './service.js';
 import type { MemoryItemRow, Scope } from './types.js';
-import { approveProposal, dossierMentioned, isOwnerMessage, runTainted, setMsgFlags, writeCandidate } from './pipeline.js';
+import { approveProposal, dossierMentioned, ownerTyped, runTainted, setMsgFlags, writeCandidate } from './pipeline.js';
 import { clean, containment, firstPerson, isFiniteVerb, normalize, ownWords, sentences, tidyClause, tokens, wantsShared } from './text.js';
 import { usableMemoryTools } from './context.js';
 
@@ -220,7 +220,7 @@ function askedProposals(svc: MemoryService, answer: Message, userId: string): Me
  * Returns true when the message was such a reply (then nothing else is captured from it).
  */
 export function captureConfirmation(svc: MemoryService, m: Message, thread: Thread): boolean {
-  if (!isOwnerMessage(m, thread) || !thread.agent_id || svc.audience(thread, thread.user_id) !== 'private') return false;
+  if (!ownerTyped(m, thread) || !thread.agent_id || svc.audience(thread, thread.user_id) !== 'private') return false;
   if (!isConfirmation(m.content)) return false;
   const agent = svc.store.agent(thread.agent_id);
   if (!agent || agent.user_id !== thread.user_id) return false;

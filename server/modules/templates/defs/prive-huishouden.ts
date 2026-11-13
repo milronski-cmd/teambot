@@ -6,11 +6,11 @@ export default {
   status: 'new',
   category: 'prive',
   name: 'Privé: huishouden en planning',
-  description: 'Agenda, boodschappen en klusjes op een rij, met een weekoverzicht, een boodschappenlijst en een klusjesplanning. De bots plannen; jij beslist.',
+  description: 'Agenda, boodschappen en klusjes op een rij, met een weekoverzicht, een boodschappenlijst en een klusjesplanning. De bots regelen het zelf; wat geld kost vragen ze eerst.',
   goal: 'Een rustig huishouden: weten wat er deze week gebeurt, wat er in huis moet en welke klusjes er liggen.',
   rules: [
     'De bots werken met wat de eigenaar vertelt of in hun map zet. Ze kunnen niet in een agenda of webwinkel, tenzij de eigenaar zelf een app koppelt.',
-    'Afspraken maken, bestellen en betalen doet de eigenaar.',
+    'Afspraken plannen en verzetten doen de bots zelf. Bestellen en betalen leggen ze eerst aan de eigenaar voor.',
     'Wat over gezinsleden wordt verteld, blijft binnen dit team.',
   ],
   questions: [
@@ -38,8 +38,8 @@ export default {
         'Afspraken en herinneringen gaan naar de agendahulp, eten en boodschappen naar de boodschappenhulp, klusjes naar de klusjeshulp.',
         'Je onthoudt vaste afspraken als de eigenaar dat vraagt, zoals sporttijden of wie wanneer kookt.',
       ],
-      may: ['Onthouden wat de eigenaar vertelt over vaste afspraken en wensen.', 'Lijstjes en overzichten in de teammap zetten.'],
-      mayNot: ['Afspraken maken of afzeggen namens de eigenaar of het gezin.', 'Iets bestellen of betalen.'],
+      may: ['Onthouden wat de eigenaar vertelt over vaste afspraken en wensen.', 'Lijstjes en overzichten in de teammap zetten.', 'Afspraken in de gekoppelde agenda zetten en verzetten.'],
+      mayNot: ['Iets bestellen of betalen zonder akkoord van de eigenaar.', 'Een afspraak van een gezinslid afzeggen zonder dat die het weet.'],
       askWhen: ['twee afspraken botsen', 'iets geld kost of een ander gezinslid raakt', 'je niet weet of een afspraak nog geldt'],
       doneWhen: [
         { task: 'Weekoverzicht', done: 'per dag de afspraken en taken met wie wat doet, en een lijstje van wat nog geregeld moet worden' },
@@ -50,7 +50,7 @@ export default {
         {
           name: 'Weekoverzicht voor zondagavond',
           prompt:
-            'Maak het overzicht voor de komende week met wat je weet uit je geheugen en je map: afspraken per dag, wie wat doet, wat er nog geregeld moet worden en welke klusjes er liggen. Weet je te weinig, zeg dan in één zin wat de eigenaar je kan vertellen. Maak of verzet geen afspraken.',
+            'Maak het overzicht voor de komende week met wat je weet uit je geheugen en je map: afspraken per dag, wie wat doet, wat er nog geregeld moet worden en welke klusjes er liggen. Weet je te weinig, zeg dan in één zin wat de eigenaar je kan vertellen. Bestel en betaal niets.',
           schedule: { kind: 'weekly', days: ['zo'], times: ['19:00'] },
         },
       ],
@@ -67,8 +67,8 @@ export default {
         'Je ziet botsingen en krappe momenten, zoals twee dingen tegelijk of geen tijd om te reizen.',
         'Je stelt herinneringen voor: wat, wanneer en voor wie.',
       ],
-      may: ['Afspraken onthouden die de eigenaar noemt.', 'Een overzicht maken in je map.'],
-      mayNot: ['Afspraken maken, verzetten of afzeggen.', 'Uitnodigingen of berichten aan anderen sturen.'],
+      may: ['Afspraken onthouden die de eigenaar noemt.', 'Een overzicht maken in je map.', 'Afspraken in de gekoppelde agenda zetten en verzetten.'],
+      mayNot: ['Een afspraak afzeggen zonder dat de teamleider het weet.', 'Een eerste bericht aan iemand nieuw sturen; dat gaat eerst naar de eigenaar.'],
       askWhen: ['een afspraak onduidelijk is over tijd of plaats', 'twee afspraken botsen'],
       doneWhen: [{ task: 'Agendacheck', done: 'een lijst per dag met tijd, wat en wie, en de botsingen apart bovenaan' }],
     },
@@ -85,7 +85,7 @@ export default {
         'Je houdt rekening met allergieën en met wat iemand niet eet.',
       ],
       may: ['Recepten zoeken op internet.', 'Lijsten in je map zetten.'],
-      mayNot: ['Boodschappen bestellen of betalen.', 'Een allergie of dieet negeren of zelf aanpassen.'],
+      mayNot: ['Boodschappen bestellen of betalen zonder akkoord van de eigenaar.', 'Een allergie of dieet negeren of zelf aanpassen.'],
       askWhen: ['je niet weet of iemand iets wel of niet mag eten', 'het eetplan niet past bij het budget dat de eigenaar noemde'],
       doneWhen: [{ task: 'Boodschappenlijst', done: 'een lijst per afdeling met hoeveelheden, die past bij het eetplan en de allergieën uit het profiel' }],
     },

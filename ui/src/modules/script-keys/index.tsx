@@ -3,7 +3,7 @@ import { KeyRound, Plus, Trash2 } from 'lucide-react';
 import { api, on } from '../../lib/api';
 import { t } from '../../lib/i18n';
 import type { Agent } from '../../lib/types';
-import { Badge, Button, Field, Input, Spinner, askConfirm, toast, toastError } from '../../components/ui';
+import { Badge, Button, Field, Input, Spinner, askConfirm, toast, toastError, useAsync } from '../../components/ui';
 import { SelectBox as Select } from '../../components/Listbox';
 import { ComputerOnly, useIsPhoneSession } from '../../shell/computerOnly';
 import type { UIModule } from '../types';
@@ -37,7 +37,7 @@ function AgentScriptKeys({ agent }: { agent: Agent; onChange(p: Partial<Agent>):
   const [value, setValue] = useState('');
   const [label, setLabel] = useState('');
   const [forTeam, setForTeam] = useState(false);
-  const [busy, setBusy] = useState(false);
+  const { busy, run } = useAsync();
   const load = () =>
     api
       .get<AgentKeys>(`/script-keys/agents/${agent.id}`)
@@ -63,8 +63,7 @@ function AgentScriptKeys({ agent }: { agent: Agent; onChange(p: Partial<Agent>):
   if (!data) return <Spinner />;
 
   const add = async () => {
-    setBusy(true);
-    try {
+    await run(async () => {
       await api.post('/script-keys', { name, value, label, ...(forTeam && data.team ? { team_id: data.team.id } : { agent_id: agent.id }) });
       setName('');
       setValue('');
@@ -73,11 +72,7 @@ function AgentScriptKeys({ agent }: { agent: Agent; onChange(p: Partial<Agent>):
       setAdding(false);
       toast('Sleutel opgeslagen', 'ok');
       load();
-    } catch (e) {
-      toastError(e);
-    } finally {
-      setBusy(false);
-    }
+    });
   };
   const give = async (id: string) => {
     if (!id) return;

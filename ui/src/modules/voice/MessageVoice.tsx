@@ -51,7 +51,7 @@ function SpeakButton({ message: m }: { message: Message }) {
       if (r.engine === 'off') toast('Voorlezen staat uit voor deze bot (bot-instellingen › Spraak).');
       if (r.localMissing && !hintedLocal) {
         hintedLocal = true;
-        toast(`Voorgelezen met de browserstem. ${r.localMissing}. Gratis lokale stemmen staan bij Instellingen › Spraak.`);
+        toast(`Voorgelezen met de browserstem. ${r.localMissing}. Gratis lokale stemmen staan bij Instellingen › Meer mogelijkheden › Spraak.`);
       }
       if (r.truncated) toast('Alleen het begin is voorgelezen; de rest staat in het gesprek.');
     } catch (e) {
@@ -59,7 +59,8 @@ function SpeakButton({ message: m }: { message: Message }) {
     }
   };
   return (
-    <div>
+    // Close under the time of the message, its icon in line with the text (the button's own padding is pulled back).
+    <div className="-ms-1 -mt-2.5 coarse:-mt-4">
       <Button
         variant="ghost"
         size="sm"

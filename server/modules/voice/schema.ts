@@ -45,4 +45,13 @@ ALTER TABLE voice_calls ADD COLUMN end_reason TEXT;
 ALTER TABLE voice_calls ADD COLUMN summary TEXT;
 `,
   },
+  {
+    // The old built-in limits of a live call ($1 and 30 minutes) are gone: a stored value that still equals the old
+    // default becomes 0 = no limit. A value the owner chose himself stays.
+    id: 'voice-003',
+    sql: `
+UPDATE settings SET value = json_set(value, '$.priceCapUsd', 0) WHERE key = 'voice' AND json_valid(value) AND json_extract(value, '$.priceCapUsd') = 1;
+UPDATE settings SET value = json_set(value, '$.maxMinutes', 0) WHERE key = 'voice' AND json_valid(value) AND json_extract(value, '$.maxMinutes') = 30;
+`,
+  },
 ];

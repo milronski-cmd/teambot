@@ -2,6 +2,7 @@ import { execFile } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import { safeEnv } from '../../tools/builtin/shell.js';
+import type { Gpu, GpuVendor, Hardware } from '../../../shared/localModels.js';
 
 /**
  * What this pc has for local models: memory, video card(s) and video memory. No new dependencies: Node's own `os`,
@@ -10,34 +11,8 @@ import { safeEnv } from '../../tools/builtin/shell.js';
  * Linux reads AMD video memory from /sys; macOS on Apple silicon shares the main memory with the GPU.
  */
 
-export type GpuVendor = 'nvidia' | 'amd' | 'intel' | 'apple' | 'other';
-
-export interface Gpu {
-  name: string;
-  vendor: GpuVendor;
-  /** Video memory in bytes; null = unknown. */
-  vram: number | null;
-  /** The figure is exact (nvidia-smi, the driver's 64-bit value, /sys); false = Windows' 32-bit field (at most 4 GB). */
-  exact: boolean;
-  /** A video card of its own, not the graphics built into the processor. */
-  dedicated: boolean;
-  driver?: string;
-}
-
-export interface Hardware {
-  platform: string;
-  /** Bytes. */
-  ram: number;
-  ramFree: number;
-  cpu: string;
-  cores: number;
-  gpus: Gpu[];
-  /** Apple silicon: the GPU uses the main memory. */
-  unified: boolean;
-  /** Where the video-card facts came from. */
-  sources: string[];
-  checkedAt: string;
-}
+/** The shape of what it finds: shared/localModels.ts (the card on the Providers page shows the same). */
+export type { Hardware };
 
 /** Windows' 32-bit AdapterRAM: a card with 4 GB or more reports (about) this. */
 const ADAPTER_RAM_CAP = 4 * 1024 ** 3 - 2 * 1024 ** 2;

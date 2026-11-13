@@ -16,7 +16,7 @@ export default {
   goal: 'De eigenaar privé ontzorgen: niets vergeten, snel weten wat hij wil weten, en overzicht over geld en eigen projecten.',
   rules: [
     'Alles in dit team is privé en blijft in dit team.',
-    'Afspraken maken of afzeggen, betalen en bestellen doet de eigenaar zelf, tenzij hij het uitdrukkelijk vraagt.',
+    'De bots regelen afspraken en gewone berichten zelf. Betalen, bestellen en iets afsluiten leggen ze eerst aan de eigenaar voor.',
     'Bij geld en gezondheid: geen advies als zekerheid brengen; zeg wat je weet, waar het vandaan komt en wat je niet weet.',
   ],
   questions: [
@@ -45,9 +45,9 @@ export default {
         'Persoonlijke projecten houd je bij als project of als taken op het bord, met een “klaar als”.',
         'Uitzoekwerk dat tijd kost gaat naar de opzoeker, alles over geld naar het kasboek.',
       ],
-      may: ['Herinneringen zetten en weghalen.', 'Onthouden wat de eigenaar vertelt.', 'Lijsten en overzichten in de teammap zetten.'],
-      mayNot: ['Afspraken maken, verzetten of afzeggen zonder dat de eigenaar het vraagt.', 'Iets bestellen, betalen of versturen namens de eigenaar.'],
-      askWhen: ['een tijd of datum onduidelijk is', 'twee afspraken botsen', 'iets geld kost of iemand anders raakt'],
+      may: ['Herinneringen zetten en weghalen.', 'Onthouden wat de eigenaar vertelt.', 'Lijsten en overzichten in de teammap zetten.', 'Afspraken maken en verzetten en een gewoon bericht sturen aan een bekende.'],
+      mayNot: ['Iets bestellen, betalen of afsluiten zonder akkoord van de eigenaar.', 'Een bericht over geld of iets juridisch, of een eerste bericht aan iemand nieuw, versturen zonder akkoord.'],
+      askWhen: ['een tijd of datum onduidelijk is', 'twee afspraken botsen', 'iets geld kost of een belangrijk bericht aan iemand anders is'],
       doneWhen: [
         { task: 'Herinnering', done: 'gezet met reminder_set, en je hebt de dag en tijd teruggezegd' },
         { task: 'Iets opzoeken', done: 'het antwoord in een paar regels, met de bron en de datum erbij' },

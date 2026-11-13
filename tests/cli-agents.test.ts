@@ -8,7 +8,8 @@ import { startTestApp, type TestApp } from './helpers.js';
 import { buildClaudeArgs, claudeStatusText, readableReset, type ClaudeFeatures } from '../server/modules/cli-agents/claude.js';
 import { acpPath, fatalStderrError, pickAcpMode } from '../server/modules/cli-agents/acp.js';
 import { checkExtraArgs, defById, installLines } from '../server/modules/cli-agents/catalog.js';
-import { claudeToolRisk, commandRisk, gate, isHardline } from '../server/modules/cli-agents/permissions.js';
+import { claudeToolRisk, commandRisk, gate } from '../server/modules/cli-agents/permissions.js';
+import { isHardline } from '../server/tools/builtin/command-risk.js';
 import { CODEX_ASK_NOTE, codexExecArgs } from '../server/modules/cli-agents/codex.js';
 import { cmdQuote } from '../server/modules/cli-agents/proc.js';
 import { contextState, contextUpdate, promptSections } from '../server/modules/cli-agents/context.js';
@@ -343,7 +344,7 @@ test('claude auto mode: writes auto-approved, danger still asks, outside workspa
     await t.api('POST', `/threads/${th.id}/messages`, { content: 'SCENARIO:danger' });
     const ap = await until(async () => (await t.api('GET', '/approvals')).find((x: any) => x.status === 'pending'), 10_000, 'danger approval');
     assert.equal(ap.risk, 'danger');
-    assert.equal(ap.tool, 'claude-code:Bash:danger');
+    assert.equal(ap.tool, 'claude-code:Bash', 'one name per tool: what the owner chose for Bash holds for every command');
     await t.api('POST', `/approvals/${ap.id}`, { decision: 'deny' });
     await t.waitIdle(th.id);
     const audit = t.app.ctx.store.all<any>("SELECT * FROM audit WHERE kind = 'cli.permission'");
@@ -673,8 +674,8 @@ test('codex: exec for readonly/auto with strict sandbox, app-server approvals fo
     assert.equal(flag(L[1].argv, '-s'), 'workspace-write');
     assert.ok(L[1].argv.includes('resume'));
     assert.doesNotMatch(L[1].prompt, /<teambot_instructies>/);
-    assert.match(L[1].prompt, /<teambot_instructies_update>[\s\S]*memory_remember/, 'readonly → auto: the resumed session learns it may save to memory now');
-    assert.doesNotMatch(L[0].prompt, /memory_remember/, 'readonly never named memory_remember');
+    assert.match(L[1].prompt, /<teambot_instructies_update>[\s\S]*dossier_write/, 'readonly → auto: the resumed session learns it may save to memory now');
+    assert.doesNotMatch(L[0].prompt, /dossier_write/, 'readonly never named dossier_write');
 
     await t.api('PATCH', `/agents/${a.id}`, { access_mode: 'ask' });
     await t.api('POST', `/threads/${th.id}/messages`, { content: 'met goedkeuring' });

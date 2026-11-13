@@ -129,12 +129,6 @@ export function resolveSkillLicense(o: { skillFiles: FileMap; frontmatter?: stri
   return { spdx: null, label: 'Geen licentie gevonden', status: 'unknown', source: 'none' };
 }
 
-export function licenseReason(l: LicenseInfo): string | null {
-  if (l.status === 'open') return null;
-  if (l.status === 'restricted') return `De licentie (${l.label}) staat hergebruik niet vrij toe; daarom installeert TeamBot deze skill niet vanaf internet. Bekijk de voorwaarden bij de bron.`;
-  return 'Geen open licentie gevonden. Zonder licentie houdt de maker alle rechten; daarom installeert TeamBot deze skill niet vanaf internet. Vraag de maker om een licentie.';
-}
-
 // ------------------------------------------------------------------ categories
 
 /** Keyword-based categories for internet items (the sources themselves have none). Labels are TeamBot's own. */

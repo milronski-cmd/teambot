@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import express from 'express';
 import type { Agent, Ctx, Thread } from '../../core/types.js';
-import { HttpError, ah, bad, notFound, own, str, user } from '../../core/http.js';
+import { HttpError, ah, bad, notFound, own, sendOwnFile, str, user } from '../../core/http.js';
 import { newId, now } from '../../core/db.js';
 import { canSeeThread } from '../../api/threads.js';
 import {
@@ -23,12 +23,13 @@ import {
 } from './catalog.js';
 import { MAX_AUDIO_BYTES, checkAudio, toVtt } from './audio.js';
 import { getSettings, sanitizeAgentVoice, saveSettings, storedSettings, voiceLanguage } from './settings.js';
-import { PIPER_RUNTIME, needsPiper, recommendedSttId, recommendedVoices } from './local/catalog.js';
+import { PIPER_RUNTIME, needsPiper, recommendedSttId, recommendedVoices, totalSize } from './local/catalog.js';
+import { sttBackend } from './local/engine.js';
 import { sttModelLanguage } from '../../../shared/voiceLanguage.js';
 import { providerSummary, resolveEndpoint } from './providers.js';
 import { LOCAL_PROVIDER_NAME, defaultSttModel, transcribe } from './stt.js';
 import { fixedBotLanguage, resolveTts, speak } from './tts.js';
-import { localVoice } from './local/service.js';
+import { localVoice, mb } from './local/service.js';
 import { STT_RATE } from './local/pcm.js';
 import { createRealtimeSession } from './realtime.js';
 import { createGeminiSession, geminiEndpoint } from './gemini.js';
@@ -38,6 +39,7 @@ import { HOTKEY_PRESETS, hotkeyLabel } from './hotkey.js';
 import { addCallCost, askAgent, createCall, endCall, ownCall, recordEvents, runResult, view } from './calls.js';
 import { deleteClipAudio, deleteTtsRows, runRetention } from './retention.js';
 import { rateLimit } from './usage.js';
+import { PLACE } from '../../../shared/places.js';
 
 /** What works right now for this user, and who receives the audio. */
 export function voiceStatus(ctx: Ctx, userId: string) {
@@ -86,6 +88,38 @@ export function voiceStatus(ctx: Ctx, userId: string) {
     call: { engine: s.call.engine, localReady: stt.ready },
     providers: providerSummary(ctx, userId),
   };
+}
+
+/**
+ * A call that takes turns has to hear you first: null when its speech recognition works, otherwise a 409 that says
+ * what is missing and which button fixes it (no call is recorded as "active" that cannot hear you). The browser's own
+ * recogniser is checked by the page; the voice falls back to the browser's, so it never blocks a call.
+ */
+export function callSttProblem(ctx: Ctx, userId: string): HttpError | null {
+  const s = getSettings(ctx, userId);
+  if (s.stt.engine === 'browser') return null;
+  if (s.stt.engine === 'local') {
+    const lv = localVoice(ctx);
+    const p = lv.sttProblem(s.stt.localModel);
+    if (!p) return null;
+    const m = lv.models.model(s.stt.localModel);
+    // Not downloaded yet: the call screen's own button fetches it, then the call starts.
+    if (m && !lv.models.installed(m.id) && !sttBackend().problem())
+      return new HttpError(
+        409,
+        `Het gesprek kan nog niet starten: de gratis spraakherkenning is nog niet gedownload (${mb(totalSize(m))}). Tik in het belscherm op "Klaarmaken en bellen": dat downloadt hem en start daarna het gesprek.`,
+        'voice_local_missing',
+      );
+    return new HttpError(409, `Het gesprek kan nog niet starten: ${p}`, 'voice_local_missing');
+  }
+  if (resolveEndpoint(ctx, userId, s.stt.providerId)) return null;
+  return new HttpError(
+    409,
+    s.stt.providerId
+      ? `Het gesprek kan nog niet starten: de gekozen spraakprovider is niet (meer) beschikbaar. Kies een andere bij ${PLACE.voice}.`
+      : `Het gesprek kan nog niet starten: spraakherkenning via een spraakdienst is gekozen, maar er is geen OpenAI-sleutel of eigen spraakserver. Kies de gratis spraakherkenning bij ${PLACE.voice}, of koppel een dienst bij ${PLACE.ai}.`,
+    'voice_stt_missing',
+  );
 }
 
 /**
@@ -251,7 +285,7 @@ export function routes(ctx: Ctx) {
       const u = user(req);
       rateLimit(u.id, 'stt-stream', 60);
       const s = getSettings(ctx, u.id);
-      if (s.stt.engine !== 'local') throw bad('Live dicteren werkt met de lokale spraakherkenning (Instellingen › Spraak).');
+      if (s.stt.engine !== 'local') throw bad(`Live dicteren werkt met de lokale spraakherkenning (${PLACE.voice}).`);
       const lv = localVoice(ctx);
       const problem = lv.sttProblem(s.stt.localModel);
       if (problem) throw new HttpError(409, problem, 'voice_local_missing');
@@ -423,9 +457,7 @@ export function routes(ctx: Ctx) {
       const c = visibleClip(user(req).id, req.params.id as string);
       const att = ctx.store.get<any>('attachments', c.attachment_id);
       if (!att || c.audio_deleted || !fs.existsSync(att.path)) throw notFound('De audio is verwijderd (het transcript blijft bewaard)');
-      await new Promise<void>((resolve, reject) =>
-        res.sendFile(att.path, { headers: { 'content-type': att.mime, 'cache-control': 'private, max-age=3600', 'x-content-type-options': 'nosniff' } }, (err) => (err && !res.headersSent ? reject(err) : resolve())),
-      );
+      await sendOwnFile(res, att.path, { headers: { 'content-type': att.mime, 'cache-control': 'private, max-age=3600', 'x-content-type-options': 'nosniff' } });
     }),
   );
 
@@ -535,9 +567,7 @@ export function routes(ctx: Ctx) {
       const row = ctx.store.get<any>('voice_tts', req.params.id as string);
       if (!row || row.user_id !== u.id || !fs.existsSync(row.path)) throw notFound('Audio niet gevonden');
       ctx.store.exec('UPDATE voice_tts SET last_used_at = ? WHERE id = ?', now(), row.id);
-      await new Promise<void>((resolve, reject) =>
-        res.sendFile(row.path, { headers: { 'content-type': row.mime, 'cache-control': 'private, max-age=86400', 'x-content-type-options': 'nosniff' } }, (err) => (err && !res.headersSent ? reject(err) : resolve())),
-      );
+      await sendOwnFile(res, row.path, { headers: { 'content-type': row.mime, 'cache-control': 'private, max-age=86400', 'x-content-type-options': 'nosniff' } });
     }),
   );
 
@@ -622,6 +652,7 @@ export function routes(ctx: Ctx) {
       const u = user(req);
       const b = req.body || {};
       const s = getSettings(ctx, u.id);
+      const notReady = callSttProblem(ctx, u.id);
       if (b.group) {
         // Group voice call: recorded on the group thread (for the history), with the lead (or first bot) as bot.
         const t = ctx.store.thread(str(b.threadId, 60));
@@ -632,12 +663,14 @@ export function routes(ctx: Ctx) {
         // "agent" with their id in ref_id (round 6: such a group call was never recorded, 404 "Deze groep heeft geen bot").
         const botId = room.lead_agent_id || ctx.store.find<any>('room_members', { room_id: room.id, kind: 'agent' }, { order: 'sort' }).find((m) => m.ref_id)?.ref_id;
         const lead = own(req, botId ? ctx.store.agent(botId) : null, 'Deze groep heeft geen bot');
+        if (notReady) throw notReady;
         const call = createCall(ctx, { userId: u.id, agentId: lead.id, threadId: t.id, kind: 'halfduplex', mode: 'group', keepTranscript: true, priceCap: s.priceCapUsd });
         ctx.audit(u.id, 'voice.call.started', { callId: call.id, kind: 'halfduplex', group: room.id }, lead.id);
         return call;
       }
       const agent = own(req, ctx.store.agent(str(b.agentId, 60)), 'Bot niet gevonden');
       const thread = callThread(u.id, agent, b.threadId);
+      if (notReady) throw notReady;
       const call = createCall(ctx, { userId: u.id, agentId: agent.id, threadId: thread.id, kind: 'halfduplex', mode: 'agent', keepTranscript: true, priceCap: s.priceCapUsd });
       ctx.audit(u.id, 'voice.call.started', { callId: call.id, kind: 'halfduplex' }, agent.id);
       return call;

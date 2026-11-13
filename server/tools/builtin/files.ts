@@ -3,10 +3,73 @@ import path from 'node:path';
 import type { Agent, Ctx, ToolDef } from '../../core/types.js';
 import { newId, now } from '../../core/db.js';
 import { MAX_HITS, searchFiles } from './search.js';
+import { words } from '../../../shared/i18n-core.js';
 
 const PROTECTED = /([\\/]\.ssh([\\/]|$)|[\\/]\.gnupg([\\/]|$)|[\\/]\.aws([\\/]|$)|master\.key$|local-token$|[\\/]\.env(\.[^\\/]*)?$)/i;
-/** Key files and folders no bot may touch (keys, logins, browser passwords/cookies, TeamBot's key), in any mode. */
-export const KEY_PATH = /([\\/]\.(ssh|gnupg|aws|azure|kube|password-store)([\\/]|$)|[\\/]\.git-credentials$|[\\/]_?\.?netrc$|[\\/]\.docker[\\/]config\.json$|[\\/]\.config[\\/](gh|gcloud)([\\/]|$)|[\\/]\.codex[\\/]auth\.json$|[\\/]\.claude[\\/]\.credentials\.json$|[\\/]opencode[\\/]auth\.json$|master\.key$|local-token$|[\\/]Microsoft[\\/](Credentials|Protect)([\\/]|$)|[\\/](Login Data|Cookies|Web Data|Local State|logins\.json|key4\.db|cookies\.sqlite)$)/i;
+/** The same without `.env`: a bot on "Volledige toegang" builds apps and reads and writes their .env files. */
+const PROTECTED_KEYS = /([\\/]\.ssh([\\/]|$)|[\\/]\.gnupg([\\/]|$)|[\\/]\.aws([\\/]|$)|master\.key$|local-token$)/i;
+/**
+ * Key files and folders no bot may touch (keys, logins, password managers, browser passwords/cookies, TeamBot's key),
+ * in any mode, on every kind of AI. Where they live on this computer: `keyPlaces`.
+ */
+export const KEY_PATH = /([\\/]\.(ssh|gnupg|aws|azure|kube|password-store|terraform\.d)([\\/]|$)|[\\/]\.git-credentials$|[\\/]_?\.?netrc$|[\\/]\.(vault-token|pgpass)$|[\\/]\.docker[\\/]config\.json$|[\\/]\.config[\\/](gh|gcloud)([\\/]|$)|[\\/]\.codex[\\/]auth\.json$|[\\/]\.claude[\\/]\.credentials\.json$|[\\/]opencode[\\/]auth\.json$|master\.key$|local-token$|[\\/]Microsoft[\\/](Credentials|Protect)([\\/]|$)|[\\/]Roaming[\\/]Bitwarden([\\/]|$)|[\\/]Local[\\/]1Password([\\/]|$)|[\\/](Login Data|Login Data For Account|Cookies|Web Data|Local State|logins\.json|key4\.db|cookies\.sqlite|signons\.sqlite)$)/i;
+
+const existsPath = (p: string) => {
+  try {
+    fs.lstatSync(p);
+    return true;
+  } catch {
+    return false;
+  }
+};
+
+/**
+ * Where the files of KEY_PATH are on this computer, for an engine whose own sandbox needs real paths instead of a
+ * pattern (Codex, cli-agents/codex-sandbox.ts): only places that exist and that KEY_PATH itself refuses, so what such
+ * a sandbox shuts and what the gate refuses come from this one list. Small targets where possible (a sandbox sets a
+ * rule per path, and a large tree takes long). Not covered: a file with a key name elsewhere on the disk (KEY_PATH
+ * refuses it anywhere; a list of places cannot name it).
+ */
+export function keyPlaces(o: { home: string; env?: NodeJS.ProcessEnv; platform?: NodeJS.Platform; codexHome?: string }): string[] {
+  const env = o.env || process.env;
+  const win = (o.platform || process.platform) === 'win32';
+  const h = (...p: string[]) => path.join(o.home, ...p);
+  const out: string[] = [];
+  const add = (p: string) => {
+    if (KEY_PATH.test(p) && existsPath(p)) out.push(p);
+  };
+  for (const p of ['.ssh', '.gnupg', '.aws', '.azure', '.kube', '.password-store', '.terraform.d', '.vault-token', '.git-credentials', '.netrc', '_netrc', '.pgpass', '.docker/config.json', '.config/gh', '.config/gcloud', '.claude/.credentials.json', '.local/share/opencode/auth.json']) add(h(...p.split('/')));
+  add(path.join(o.codexHome || env.CODEX_HOME || h('.codex'), 'auth.json'));
+  if (win) {
+    const roaming = env.APPDATA || h('AppData', 'Roaming');
+    const local = env.LOCALAPPDATA || h('AppData', 'Local');
+    for (const p of [path.join(roaming, 'Microsoft', 'Credentials'), path.join(roaming, 'Microsoft', 'Protect'), path.join(local, 'Microsoft', 'Credentials'), path.join(roaming, 'Bitwarden'), path.join(local, '1Password')]) add(p);
+    // Chromium browsers: the encryption key (Local State) and per profile the logins, cookies and form data.
+    const chromium = [path.join(local, 'Google', 'Chrome', 'User Data'), path.join(local, 'Microsoft', 'Edge', 'User Data'), path.join(local, 'BraveSoftware', 'Brave-Browser', 'User Data'), path.join(local, 'Vivaldi', 'User Data'), path.join(local, 'Chromium', 'User Data'), path.join(roaming, 'Opera Software', 'Opera Stable')];
+    for (const ud of chromium) {
+      if (!existsPath(ud)) continue;
+      add(path.join(ud, 'Local State'));
+      let profiles: string[] = [];
+      try {
+        profiles = fs.readdirSync(ud).filter((n) => n === 'Default' || /^Profile \d+$/.test(n));
+      } catch {
+        /* unreadable */
+      }
+      if (existsPath(path.join(ud, 'Login Data'))) profiles.push('.');
+      for (const pr of profiles) for (const f of ['Login Data', 'Login Data For Account', 'Cookies', path.join('Network', 'Cookies'), 'Web Data']) add(path.join(ud, pr, f));
+    }
+    for (const base of [path.join(roaming, 'Mozilla', 'Firefox', 'Profiles'), path.join(roaming, 'Thunderbird', 'Profiles')]) {
+      let profiles: string[] = [];
+      try {
+        profiles = fs.readdirSync(base);
+      } catch {
+        continue;
+      }
+      for (const pr of profiles) for (const f of ['logins.json', 'key4.db', 'cookies.sqlite', 'signons.sqlite']) add(path.join(base, pr, f));
+    }
+  }
+  return out;
+}
 const SKIP_DIRS = new Set(['node_modules', '.git', '.venv', '__pycache__', 'dist', '.next', '.cache']);
 
 /** A folder a bot may use. The first root of an agent is always its own workspace (read-write). */
@@ -70,6 +133,13 @@ export function setWholeComputer(fn: WholeComputer): () => void {
     if (wholeProvider === fn) wholeProvider = null;
   };
 }
+/**
+ * "Volledige toegang" as the owner means it: no built-in block, limit or question. Never for a shared bot in a member's
+ * conversation (agent/shared.ts lowers that one to "Vragen" anyway).
+ */
+export function fullAccess(agent: Pick<Agent, 'access_mode' | 'settings'> | null | undefined): boolean {
+  return !!agent && agent.access_mode === 'full' && !agent.settings?.sharedRun;
+}
 export function wholeComputer(agent: Agent): { closed: string[] } | null {
   if (!wholeProvider || agent.access_mode !== 'full' || agent.settings?.sharedRun || agent.settings?.ownFoldersOnly === true) return null;
   try {
@@ -78,6 +148,24 @@ export function wholeComputer(agent: Agent): { closed: string[] } | null {
   } catch {
     return null; // fail-safe: the bot's own folders only
   }
+}
+
+/**
+ * What stays shut for this bot on every level, besides the key files: TeamBot's own data and the folders the owner
+ * closed (the list "Volledige toegang" keeps shut, `wholeComputer`). On a lower level the gate refuses everything
+ * outside the bot's folders anyway; an engine whose sandbox reads more than that (Codex, codex-sandbox.ts) needs the
+ * list itself.
+ */
+export function shutFolders(agent: Agent, dataDir: string): string[] {
+  let closed: string[] = [];
+  try {
+    closed = (wholeProvider?.({ ...agent, access_mode: 'full', settings: { ...(agent.settings || {}), ownFoldersOnly: false } })?.closed || []).filter((p) => typeof p === 'string' && p.trim());
+  } catch {
+    closed = [];
+  }
+  const out = new Map<string, string>();
+  for (const p of [dataDir, ...closed]) if (p && path.isAbsolute(p)) out.set(norm(path.resolve(p)), path.resolve(p));
+  return [...out.values()];
 }
 
 /** Root filters can only remove roots or lower them to read-only; a filter that throws keeps only the work folder. */
@@ -226,7 +314,7 @@ export function isProtectedPath(p: string): boolean {
  * Resolve `p` (absolute, or relative to the first root) inside one of `roots`; refuses escapes (incl. symlinks)
  * and secret files. With `write`, the most specific root that contains the path must be read-write.
  */
-export function resolveInRoots(roots: AgentRoot[], p: string | undefined, o: { write?: boolean } = {}): string {
+export function resolveInRoots(roots: AgentRoot[], p: string | undefined, o: { write?: boolean; envFiles?: boolean } = {}): string {
   if (!roots.length) throw new Error('Deze bot heeft geen werkmap');
   const target = p && path.isAbsolute(p) ? path.resolve(p) : path.resolve(roots[0].path, p || '.');
   const real = realish(target);
@@ -235,7 +323,7 @@ export function resolveInRoots(roots: AgentRoot[], p: string | undefined, o: { w
     const allowed = roots.map((r) => r.path).join(' ; ');
     throw new Error(roots.length === 1 ? `Pad valt buiten de toegestane werkmap: ${p}. Toegestaan: ${allowed}` : `Pad valt buiten de toegestane werkmap en extra mappen: ${p}. Toegestaan: ${allowed}`);
   }
-  if (PROTECTED.test(real)) throw new Error(`Dit pad is beschermd (geheimen/sleutels): ${p}`);
+  if ((o.envFiles ? PROTECTED_KEYS : PROTECTED).test(real)) throw new Error(`Dit pad is beschermd (geheimen/sleutels): ${p}`);
   if (o.write) {
     const own = hits.sort((a, b) => realish(b.path).length - realish(a.path).length)[0];
     if (own.mode === 'ro') throw new Error(`Deze map is alleen-lezen voor deze bot: ${own.label} (${own.path}). Schrijf in je werkmap of vraag de eigenaar om schrijfrechten.`);
@@ -254,11 +342,21 @@ export function resolveInWorkspace(agent: Agent, p: string | undefined, o: { wri
   if (whole && abs && !roots.some((r) => isInside(realish(abs), realish(r.path)))) {
     // Outside the bot's folders, on a bot with the whole computer: everything except keys and closed folders.
     const real = realish(abs);
-    if (PROTECTED.test(real) || KEY_PATH.test(real)) throw new Error(`Dit pad is beschermd (geheimen/sleutels): ${p}`);
+    // A project's .env is ordinary work on "Volledige toegang"; the real key store stays shut.
+    if (PROTECTED_KEYS.test(real) || KEY_PATH.test(real)) throw new Error(`Dit pad is beschermd (geheimen/sleutels): ${p}`);
     const shut = whole.closed.find((c) => isInside(real, realish(c)));
     if (shut) throw new Error(`Deze map is dicht voor bots (sleutels of gegevens van TeamBot): ${shut}`);
     target = abs;
-  } else target = resolveInRoots(roots, p, o);
+  } else {
+    target = resolveInRoots(roots, p, { ...o, envFiles: fullAccess(agent) });
+    if (whole) {
+      // A folder the owner closed stays closed when it lies inside one of the bot's folders (a closed folder that
+      // contains the bot's folder, such as TeamBot's data, does not shut that folder).
+      const real = realish(target);
+      const shut = whole.closed.find((c) => isInside(real, realish(c)) && !roots.some((r) => isInside(realish(r.path), realish(c))));
+      if (shut) throw new Error(`Deze map is dicht voor bots (sleutels of gegevens van TeamBot): ${shut}`);
+    }
+  }
   if (pathGuards.length) {
     const real = realish(target);
     for (const g of pathGuards) {
@@ -330,6 +428,35 @@ const refuseWrite = (a: any, t: { agent: Agent }): string | null => {
   }
 };
 
+/**
+ * A read that can never succeed (a key file, TeamBot's own data, a folder the owner closed, a path outside the bot's
+ * folders) is refused before anything is asked too, like a write and like a read of a CLI engine: with a rule of the
+ * owner "vraag eerst voordat je iets leest" he got a card for a read that was then refused anyway.
+ */
+const refuseRead = (a: any, t: { agent: Agent }): string | null => {
+  try {
+    resolveInWorkspace(t.agent, a?.path);
+    return null;
+  } catch (e: any) {
+    return `Geweigerd door TeamBot: ${String(e?.message || e)}`;
+  }
+};
+
+/**
+ * The same `refuse` for a tool elsewhere that reads the file (or the list of files) named in `field` of its
+ * arguments: a document to read, a file to upload, import or attach. Refused before anything is asked.
+ */
+export const refuseReadOf =
+  (field: string) =>
+  (a: any, t: { agent: Agent }): string | null => {
+    const v = a?.[field];
+    for (const p of Array.isArray(v) ? v : [v]) if (typeof p === 'string' && p.trim()) {
+      const why = refuseRead({ path: p }, t);
+      if (why) return why;
+    }
+    return null;
+  };
+
 export function fileTools(): ToolDef[] {
   return [
     {
@@ -341,7 +468,8 @@ export function fileTools(): ToolDef[] {
         type: 'object',
         properties: { path: { type: 'string', description: 'Map relatief aan de werkmap (standaard "."), of een volledig pad in een van je extra mappen of de teammap (zie Mappen).' }, recursive: { type: 'boolean' } },
       },
-      summarize: (a) => `Bestanden bekijken: ${a.path || '.'}`,
+      summarize: (a) => words('Bestanden bekijken: {0}', a.path || '.'),
+      refuse: refuseRead,
       async run(a, t) {
         const dir = resolveInWorkspace(t.agent, a.path);
         if (!fs.existsSync(dir)) {
@@ -369,7 +497,8 @@ export function fileTools(): ToolDef[] {
       risk: 'read',
       description: 'Lees een tekstbestand uit de werkmap. Optioneel offset (regelnummer, 1 = eerste) en limit (aantal regels).',
       parameters: { type: 'object', properties: { path: { type: 'string', description: PATH_HELP }, offset: { type: 'number' }, limit: { type: 'number' } }, required: ['path'] },
-      summarize: (a) => `Lezen: ${a.path}`,
+      summarize: (a) => words('Lezen: {0}', a.path),
+      refuse: refuseRead,
       async run(a, t) {
         const f = resolveInWorkspace(t.agent, a.path);
         if (!fs.existsSync(f) || fs.statSync(f).isDirectory()) {
@@ -394,7 +523,7 @@ export function fileTools(): ToolDef[] {
       risk: 'write',
       description: 'Maak of overschrijf een bestand in de werkmap met de opgegeven inhoud. Mappen worden automatisch aangemaakt.',
       parameters: { type: 'object', properties: { path: { type: 'string', description: PATH_HELP }, content: { type: 'string' } }, required: ['path', 'content'] },
-      summarize: (a) => `Schrijven: ${a.path} (${String(a.content ?? '').length} tekens)`,
+      summarize: (a) => words('Schrijven: {0} ({1} tekens)', a.path, String(a.content ?? '').length),
       refuse: refuseWrite,
       async run(a, t) {
         const f = resolveInWorkspace(t.agent, a.path, { write: true });
@@ -416,7 +545,7 @@ export function fileTools(): ToolDef[] {
         properties: { path: { type: 'string', description: PATH_HELP }, old_text: { type: 'string' }, new_text: { type: 'string' }, replace_all: { type: 'boolean' } },
         required: ['path', 'old_text', 'new_text'],
       },
-      summarize: (a) => `Bewerken: ${a.path}`,
+      summarize: (a) => words('Bewerken: {0}', a.path),
       refuse: refuseWrite,
       async run(a, t) {
         const f = resolveInWorkspace(t.agent, a.path, { write: true });
@@ -439,7 +568,8 @@ export function fileTools(): ToolDef[] {
       risk: 'read',
       description: 'Zoek tekst (of een reguliere expressie) in bestanden in de werkmap. Geeft bestand:regel: inhoud.',
       parameters: { type: 'object', properties: { query: { type: 'string' }, path: { type: 'string' }, regex: { type: 'boolean' }, glob: { type: 'string', description: 'bijv. *.ts' } }, required: ['query'] },
-      summarize: (a) => `Zoeken: "${a.query}"`,
+      summarize: (a) => words('Zoeken: "{0}"', a.query),
+      refuse: refuseRead,
       async run(a, t) {
         const root = resolveInWorkspace(t.agent, a.path);
         if (!String(a.query ?? '')) return { text: 'Geef een zoekterm op.', isError: true };
@@ -463,7 +593,7 @@ export function fileTools(): ToolDef[] {
       riskFor: () => (trashCount > 0 ? 'write' : 'danger'),
       description: 'Verwijder een bestand of lege map in de werkmap. Het gaat naar de prullenbak van TeamBot, waar de gebruiker het kan terughalen.',
       parameters: { type: 'object', properties: { path: { type: 'string' } }, required: ['path'] },
-      summarize: (a) => (trashCount > 0 ? `Naar de prullenbak: ${a.path}` : `VERWIJDEREN: ${a.path}`),
+      summarize: (a) => words(trashCount > 0 ? 'Naar de prullenbak: {0}' : 'VERWIJDEREN: {0}', a.path),
       refuse: refuseWrite,
       async run(a, t) {
         const f = resolveInWorkspace(t.agent, a.path, { write: true });
@@ -507,7 +637,8 @@ export function fileTools(): ToolDef[] {
       risk: 'read',
       description: 'Stuur een bestand uit de werkmap als bijlage naar de gebruiker in de chat (downloadbaar, ook op de telefoon).',
       parameters: { type: 'object', properties: { path: { type: 'string' } }, required: ['path'] },
-      summarize: (a) => `Bestand delen: ${a.path}`,
+      summarize: (a) => words('Bestand delen: {0}', a.path),
+      refuse: refuseRead,
       async run(a, t) {
         const f = resolveInWorkspace(t.agent, a.path);
         if (!fs.existsSync(f) || fs.statSync(f).isDirectory()) return { text: 'Bestand niet gevonden', isError: true };

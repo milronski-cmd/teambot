@@ -13,6 +13,7 @@ import type { RoomService } from './service.js';
 import type { Delegation, Room } from './types.js';
 import { exportTeam, installTeam, normalizeTeam, previewTeam } from './packages.js';
 import { TEAM_TEMPLATES, teamTemplate } from './team-templates.js';
+import { PLACE } from '../../../shared/places.js';
 
 const p = (req: Request, k: string) => String((req.params as any)[k] ?? '');
 
@@ -117,31 +118,6 @@ export function roomRoutes(ctx: Ctx, s: RoomService, board: Board) {
   api.get('/rooms/defaults', ah(async (req) => s.userDefaults(user(req).id)));
   api.put('/rooms/defaults', ah(async (req) => s.setUserDefaults(user(req).id, req.body || {})));
 
-  api.get(
-    '/rooms/inbox',
-    ah(async (req) => {
-      const u = user(req);
-      const rows = ctx.store.all<any>('SELECT * FROM room_inbox WHERE user_id = ? ORDER BY read, created_at DESC LIMIT 200', u.id).map((r) => ctx.store.decode('room_inbox', r));
-      return { items: rows, unread: rows.filter((r: any) => !r.read).length };
-    }),
-  );
-  api.post(
-    '/rooms/inbox/read-all',
-    ah(async (req) => {
-      ctx.store.exec('UPDATE room_inbox SET read = 1 WHERE user_id = ?', user(req).id);
-      ctx.events.emit(user(req).id, 'rooms.inbox', {});
-      return { ok: true };
-    }),
-  );
-  api.post(
-    '/rooms/inbox/:id/read',
-    ah(async (req) => {
-      ctx.store.exec('UPDATE room_inbox SET read = 1 WHERE id = ? AND user_id = ?', p(req, 'id'), user(req).id);
-      ctx.events.emit(user(req).id, 'rooms.inbox', {});
-      return { ok: true };
-    }),
-  );
-
   // ---- hire proposals ----
   api.get('/rooms/proposals', ah(async (req) => board.proposals(user(req).id)));
   api.get('/rooms/proposals/:id', ah(async (req) => board.proposal(p(req, 'id'), user(req).id)));
@@ -189,7 +165,7 @@ export function roomRoutes(ctx: Ctx, s: RoomService, board: Board) {
         // Withdrawn by a person: the sender is not woken, but finds a note in its conversation.
         const ok = s.orch.cancel(d!, `Ingetrokken door ${user(req).name}`);
         const parent = ctx.store.thread(d!.parent_thread_id);
-        if (ok && parent) s.systemMessage(parent, `${user(req).name} trok het bericht van ${s.agentName(d!.from_agent_id)} aan ${s.agentName(d!.to_agent_id)} in; daar komt geen antwoord meer op.`, { kind: 'delegation_cancelled', delegationId: d!.id });
+        if (ok && parent) s.systemMessage(parent, `${user(req).name} trok het bericht van ${s.agentName(d!.from_agent_id)} aan ${s.agentName(d!.to_agent_id)} in; daar komt geen antwoord meer op.`, { kind: 'delegation_cancelled', delegationId: d!.id, note: { text: '{0} trok het bericht van {1} aan {2} in; daar komt geen antwoord meer op.', values: [user(req).name, s.agentName(d!.from_agent_id), s.agentName(d!.to_agent_id)] } });
         return { ok };
       }
       // A running turn is cancelled; a subtask that waits for bots it passed the work on to is stopped with them.
@@ -256,10 +232,23 @@ export function roomRoutes(ctx: Ctx, s: RoomService, board: Board) {
       const b = req.body || {};
       const room = b.roomId ? s.require(String(b.roomId), u.id, 'member').room : null;
       const teamId = b.teamId ? s.ownTeam(room?.user_id || u.id, String(b.teamId)).id : null;
-      return board.taskView(board.createTask({ userId: u.id, room, teamId, data: b, actor: actorOf(req), sourceThreadId: b.sourceThreadId || null, sourceMessageId: b.sourceMessageId || null }));
+      const task = board.createTask({ userId: u.id, room, teamId, data: b, actor: actorOf(req), sourceThreadId: b.sourceThreadId || null, sourceMessageId: b.sourceMessageId || null });
+      // A task for one of your bots starts that bot (start: false = only put it on the board).
+      const started = b.start === false ? null : await board.startForUser(task, u).catch(() => null);
+      return { ...board.taskView(board.task(task.id) || task), started };
     }),
   );
-  api.patch('/rooms/tasks/:id', ah(async (req) => board.taskView(board.updateTask(taskFor(req), req.body || {}, actorOf(req)))));
+  api.patch(
+    '/rooms/tasks/:id',
+    ah(async (req) => {
+      const before = taskFor(req);
+      const upd = board.updateTask(before, req.body || {}, actorOf(req));
+      // Given to (another) bot while it still has to be done: that bot starts on it.
+      const given = upd.owner_type === 'agent' && !!upd.owner_id && upd.owner_id !== before.owner_id;
+      const started = given && req.body?.start !== false ? await board.startForUser(upd, user(req)).catch(() => null) : null;
+      return { ...board.taskView(board.task(upd.id) || upd), started };
+    }),
+  );
   // A person decides about a task that waits ("te controleren", "kon niet"): approve it, or send it back to the bot.
   api.post('/rooms/tasks/:id/approve', ah(async (req) => board.taskView(board.updateTask(taskFor(req), { status: 'done' }, actorOf(req)))));
   api.post(
@@ -474,7 +463,7 @@ Zet de taak op Bezig, werk hem af en meld hem af met bewijs. Lukt het niet, meld
       const { room } = R(req, 'owner');
       let uid = str(req.body?.userId, 80);
       if (!uid && req.body?.email) uid = ctx.store.one<any>('SELECT id FROM users WHERE email = ?', str(req.body.email, 200).trim().toLowerCase())?.id || '';
-      if (!uid) throw bad('Onbekende gebruiker. Wie nog geen account heeft, kan via een uitnodigingscode (Instellingen › Gebruikers) lid worden van deze server.');
+      if (!uid) throw bad(`Onbekende gebruiker. Wie nog geen account heeft, kan via een uitnodigingscode (${PLACE.users}) lid worden van deze server.`);
       s.invite(room, user(req).id, uid, req.body?.role === 'guest' ? 'guest' : 'member');
       return s.view(s.room(room.id)!, user(req).id);
     }),

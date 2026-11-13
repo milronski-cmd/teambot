@@ -1,6 +1,6 @@
 import type React from 'react';
-import { Copy } from 'lucide-react';
-import { Button, Card, cx, toast } from '../../components/ui';
+import type { LucideIcon } from 'lucide-react';
+import { Card, CardHead, cx, type Tone } from '../../components/ui';
 
 export interface Candidate {
   kind: string;
@@ -56,7 +56,7 @@ export interface Reach {
     /** Switched off on purpose: the card does not switch it on again by itself. */
     offOnPurpose?: boolean;
   };
-  /** Where to get the iPhone app (TEAMBOT_IOS_APP_URL); null: through TestFlight. */
+  /** Where to get the iPhone app (TEAMBOT_IOS_APP_URL); null: there is no public link (the card says so). */
   app?: { ios: string | null };
 }
 export interface Device {
@@ -114,8 +114,6 @@ export interface PushInfo {
 
 /** POST /mobile/pair with this base: TeamBot picks how the phone reaches this computer (the TeamBot connection first). */
 export const AUTO = 'auto';
-/** The TestFlight app in the App Store (Apple's own app for test versions). */
-export const TESTFLIGHT_APP = 'https://apps.apple.com/app/testflight/id899247664';
 /** A code that expired while the page was open is renewed by itself this many times (5 minutes each), then a button. */
 export const MAX_RENEW = 6;
 
@@ -131,19 +129,10 @@ export const isLoopbackUrl = (u: string) => {
 };
 export const linkButton = 'inline-flex h-9 shrink-0 items-center gap-2 rounded-[10px] border border-line bg-surface-2 px-3.5 text-sm font-semibold text-fg hover:bg-surface-3 coarse:h-11';
 
-export function Section({ icon, title, subtitle, children, actions, testId }: { icon: React.ReactNode; title: string; subtitle?: React.ReactNode; children: React.ReactNode; actions?: React.ReactNode; testId?: string }) {
+export function Section({ icon, tone = 'blue', title, subtitle, children, actions, testId }: { icon: LucideIcon; tone?: Tone; title: string; subtitle?: React.ReactNode; children: React.ReactNode; actions?: React.ReactNode; testId?: string }) {
   return (
     <Card className="overflow-hidden" data-testid={testId}>
-      <div className="flex flex-wrap items-start justify-between gap-3 border-b border-line px-4 py-3">
-        <div className="flex min-w-0 items-start gap-2.5">
-          <div className="mt-0.5 text-accent">{icon}</div>
-          <div className="min-w-0">
-            <h2 className="font-semibold">{title}</h2>
-            {subtitle && <p className="mt-0.5 text-sm text-muted">{subtitle}</p>}
-          </div>
-        </div>
-        {actions && <div className="flex flex-wrap gap-2">{actions}</div>}
-      </div>
+      <CardHead className="border-b border-line px-4 py-3" icon={icon} tone={tone} title={title} hint={subtitle} action={actions && <div className="flex flex-wrap gap-2">{actions}</div>} />
       <div className="space-y-3 px-4 py-4">{children}</div>
     </Card>
   );
@@ -159,20 +148,3 @@ export function Note({ tone = 'neutral', children }: { tone?: 'neutral' | 'warn'
   return <div className={cx('rounded-lg px-3 py-2 text-sm', t)}>{children}</div>;
 }
 
-export async function copy(text: string) {
-  try {
-    await navigator.clipboard.writeText(text);
-    toast('Gekopieerd', 'ok');
-  } catch {
-    toast('Kopiëren lukt hier niet; selecteer de tekst en kopieer handmatig', 'danger');
-  }
-}
-
-export function Command({ text }: { text: string }) {
-  return (
-    <div className="flex items-center gap-2 rounded-lg border border-line bg-surface-2 px-2 py-1.5">
-      <code className="min-w-0 flex-1 overflow-x-auto whitespace-nowrap font-mono text-xs">{text}</code>
-      <Button size="sm" variant="ghost" onClick={() => copy(text)} aria-label="Kopieer opdracht" icon={<Copy className="h-3.5 w-3.5" />} />
-    </div>
-  );
-}

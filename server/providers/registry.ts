@@ -1,6 +1,7 @@
 import type { Agent, Ctx, ProviderAdapter, ProviderConfig, ProviderKind } from '../core/types.js';
 import { newId, now } from '../core/db.js';
 import { bad } from '../core/http.js';
+import { PLACE } from '../../shared/places.js';
 
 /** A per-bot check on a provider (e.g. teams: a key set to "alleen dit team"): a reason in Dutch, or null. */
 export type BotGuard = (agent: Agent, cfg: ProviderConfig) => string | null;
@@ -59,7 +60,7 @@ export class ProviderRegistry {
     if (!k) throw bad(`Onbekend providertype: ${cfg.kind}`);
     const key = this.getCtx().secrets.get(cfg.secret_id);
     if (cfg.secret_id && key === null && k.needsKey && !k.keyOptional)
-      throw bad(`De opgeslagen API-sleutel van "${cfg.name}" kan niet meer worden ontsleuteld (bijv. na een nieuwe Windows-installatie). Voer de sleutel opnieuw in via Instellingen → AI-diensten → Sleutel.`);
+      throw bad(`De opgeslagen API-sleutel van "${cfg.name}" kan niet meer worden ontsleuteld (bijv. na een nieuwe Windows-installatie). Voer de sleutel opnieuw in via ${PLACE.ai} › Sleutel.`);
     return k.create(cfg, key, this.getCtx());
   }
 

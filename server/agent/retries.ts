@@ -147,6 +147,28 @@ export class Retries {
     if (r?.meta?.limitRetryAt && !r.meta.limitRetried) ctx.store.updateRun(r.id, { meta: { ...r.meta, limitRetried: true } });
   }
 
+  /**
+   * "Alles stoppen": what was planned to go on by itself does not (a message that would be tried again after its
+   * limit, important work that would resume). The chat had said it would: the pause card now says it will not (as
+   * after "Niet hervatten"), a planned retry gets one line. Returns how many were dropped.
+   */
+  stopPlanned(userId: string): number {
+    const ctx = this.getCtx();
+    let n = 0;
+    for (const id of [...this.retryTimers.keys()]) {
+      const r = ctx.store.run(id);
+      if (!r || r.user_id !== userId || r.meta?.limitRetried) continue;
+      this.cancelLimitRetry(id);
+      n++;
+      const thread = ctx.store.thread(r.thread_id);
+      if (!thread) continue;
+      const card = typeof r.meta?.paused?.eventId === 'string' ? ctx.store.message(r.meta.paused.eventId) : null;
+      if (card?.parts?.pause) ctx.chat.emitMessage(thread, ctx.store.updateMessage(card.id, { parts: { ...card.parts, pause: { ...card.parts.pause, state: 'cancelled', doneAt: now() } } }), 'message.updated');
+      else ctx.chat.addEvent(thread, 'Je hebt alles gestopt: er wordt niet meer vanzelf opnieuw geprobeerd. Stuur een bericht om verder te gaan.', { kind: 'limit_wait' });
+    }
+    return n;
+  }
+
   armRetry(runId: string, at: number) {
     const ctx = this.getCtx();
     clearTimeout(this.retryTimers.get(runId));

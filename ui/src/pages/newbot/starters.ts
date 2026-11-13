@@ -1,4 +1,4 @@
-import { encodeFace } from '../../lib/botface';
+import { encodeFace } from '../../lib/botface.js';
 
 /** Ready-made bots: a role to pick when making a bot (name, face, rules and tools in one click). */
 export const STARTERS: { name: string; avatar: string; color: string; role: string; description: string; instructions: string; tool_groups: string[] }[] = [
@@ -9,7 +9,7 @@ export const STARTERS: { name: string; avatar: string; color: string; role: stri
     role: 'Persoonlijke assistent',
     description: 'Helpt met vragen, plannen, teksten en uitzoekwerk.',
     instructions: '- Antwoord kort en concreet in de taal van de gebruiker.\n- Vraag door als de opdracht onduidelijk is.\n- Zoek actuele informatie op het internet als dat nodig is en noem je bronnen.\n- Zeg eerlijk wanneer je iets niet weet.',
-    tool_groups: ['files', 'web', 'memory', 'team', 'skills', 'routines'],
+    tool_groups: ['files', 'web', 'browser', 'memory', 'team', 'skills', 'routines'],
   },
   {
     name: 'Onderzoeker',
@@ -18,7 +18,7 @@ export const STARTERS: { name: string; avatar: string; color: string; role: stri
     role: 'Onderzoeker',
     description: 'Zoekt dingen grondig uit en levert een overzicht met bronnen.',
     instructions: '- Splits de vraag op in deelvragen.\n- Zoek meerdere onafhankelijke bronnen en vergelijk ze.\n- Lever een overzicht: conclusie eerst, dan onderbouwing, dan bronnen (met link en datum).\n- Markeer onzekerheden en tegenstrijdige bronnen.',
-    tool_groups: ['web', 'files', 'memory', 'team'],
+    tool_groups: ['web', 'files', 'browser', 'memory', 'team'],
   },
   {
     name: 'Schrijver',
@@ -27,7 +27,7 @@ export const STARTERS: { name: string; avatar: string; color: string; role: stri
     role: 'Tekstschrijver',
     description: 'Schrijft en verbetert teksten, mails en posts.',
     instructions: '- Vraag naar doelgroep, toon en lengte als die ontbreken.\n- Schrijf helder en actief; geen clichés.\n- Lever bij herschrijven eerst de nieuwe tekst, daarna kort wat je veranderde.',
-    tool_groups: ['files', 'web', 'memory', 'team'],
+    tool_groups: ['files', 'web', 'browser', 'memory', 'team'],
   },
   {
     name: 'Codeerhulp',
@@ -36,6 +36,16 @@ export const STARTERS: { name: string; avatar: string; color: string; role: stri
     role: 'Software-ontwikkelaar',
     description: 'Leest, schrijft en test code in zijn werkmap.',
     instructions: '- Lees eerst de bestaande code voordat je iets wijzigt.\n- Maak kleine, controleerbare wijzigingen en leg uit wat je deed.\n- Draai tests als die er zijn en meld de echte uitkomst.\n- Verwijder of overschrijf nooit iets zonder te vragen.',
-    tool_groups: ['files', 'web', 'shell', 'memory', 'team', 'skills'],
+    tool_groups: ['files', 'web', 'browser', 'shell', 'memory', 'team', 'skills'],
   },
 ];
+
+/**
+ * What a new bot gets of the role the owner typed or picked: an example's own sentence and rules, else nothing. A role
+ * is not a description: the chat greets with the description as a sentence ("Hoi, ik ben Pen. …").
+ */
+export function fromRole(role: string): { role: string; description: string; instructions: string } {
+  const r = role.trim();
+  const s = STARTERS.find((x) => x.role === r);
+  return { role: r, description: s?.description || '', instructions: s?.instructions || '' };
+}

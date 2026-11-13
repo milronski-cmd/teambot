@@ -17,6 +17,8 @@ import { SmartTurn, type TurnDetector } from './turn.js';
 import { VAD_DEFAULTS, sileroVad, type VoiceActivity } from './vad.js';
 import { agentBrain } from './brain.js';
 import type { CallModeRegistry } from './mode.js';
+import { PLACE } from '../../../../shared/places.js';
+import { words } from '../../../../shared/i18n-core.js';
 
 export const DUPLEX_WS = '/ws/voice';
 
@@ -65,7 +67,7 @@ export function duplexStatus(ctx: Ctx, userId: string) {
   let ttsProblem: string | null = null;
   try {
     const r = resolveTts(ctx, userId, null);
-    ttsProblem = r.engine === 'local' ? null : r.localMissing || 'Kies een gratis stem op deze computer (Instellingen › Spraak).';
+    ttsProblem = r.engine === 'local' ? null : r.localMissing || `Kies een gratis stem op deze computer (${PLACE.voice}).`;
   } catch (e: any) {
     ttsProblem = String(e?.message || e);
   }
@@ -80,7 +82,7 @@ function voiceFor(ctx: Ctx, userId: string, agentId: string): { voice: Voice; la
   const lv = localVoice(ctx);
   const agent = ctx.store.agent(agentId);
   const r = resolveTts(ctx, userId, agent && agent.user_id === userId ? agent : null);
-  if (r.engine !== 'local') throw bad(r.localMissing || 'Het gratis live gesprek spreekt met een gratis stem op deze computer. Kies of download er een bij Instellingen › Spraak.');
+  if (r.engine !== 'local') throw bad(r.localMissing || `Het gratis live gesprek spreekt met een gratis stem op deze computer. Kies of download er een bij ${PLACE.voice}.`);
   const c = localVoiceChoice(ctx, r, '', null);
   lv.tts().warm?.(lv.synthRequest(c.voiceId, '', c.speaker, c.speed));
   return {
@@ -191,7 +193,7 @@ function endCallTool(ctx: Ctx): ToolDef {
       },
       required: ['reason'],
     },
-    summarize: (a) => `Ophangen: ${String(a?.reason || '').slice(0, 80)}`,
+    summarize: (a) => words('Ophangen: {0}', String(a?.reason || '').slice(0, 80)),
     async run(args, t) {
       const call = ctx.store.one<any>("SELECT id FROM voice_calls WHERE thread_id = ? AND mode = 'duplex' AND status = 'active' ORDER BY started_at DESC LIMIT 1", t.thread.id);
       const session = call ? state(ctx).sessions.get(call.id) : null;

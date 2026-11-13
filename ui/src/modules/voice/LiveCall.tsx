@@ -1,13 +1,15 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { createRoot } from 'react-dom/client';
+import { create } from 'zustand';
 import { useShallow } from 'zustand/react/shallow';
-import { AlertTriangle, Download, Hand, KeyRound, Mic, MicOff, Phone, PhoneOff, Radio, ShieldCheck } from 'lucide-react';
+import { AlertTriangle, Download, KeyRound, Mic, Phone, Radio, ShieldCheck, X } from 'lucide-react';
 import { api, on, postOnUnload } from '../../lib/api';
 import { stripRefs } from '../../lib/preview';
 import { t } from '../../lib/i18n';
 import { formatSeconds } from '../../lib/format';
 import { prettyModel } from '../../lib/modelLabel';
 import { agentById, useApp } from '../../lib/store';
-import { Badge, Button, Field, Input, Modal, Select, Spinner, Toggle, cx, toastError } from '../../components/ui';
+import { Button, Field, Input, Modal, Select, Spinner, Toggle, cx, toast, toastError } from '../../components/ui';
 import { BotAvatar } from '../../components/BotFace';
 import { type CallView, type LiveMode, type SttEngine, type VoiceInfo, clock, loadVoice, mb, money, range, saveVoice, useVoice } from './api';
 import { browserSttNote, browserSttSupported, closeMic, echoCancellationActive, micProblem, openMic } from './audio';
@@ -24,6 +26,7 @@ import { TalkButton, TalkFace, useTalkKey } from './TalkUI';
 import { langName } from './VoiceFields';
 import { botSpeechLanguage } from './language';
 import { DuplexCallView } from './DuplexCall';
+import { CallBar, CallShell } from './CallBar';
 import { type DuplexStatus, duplexStatus } from './duplex';
 
 /**
@@ -58,18 +61,58 @@ interface SessionInfo {
   provider?: { id: string; name: string };
 }
 
+/**
+ * The one call of this window. It lives outside the chat (CallHost, its own root on the page), so it goes on while you
+ * switch to another chat or page; the bar stays in view there.
+ */
+const useCall = create<{ call: { threadId: string; agentId: string; n: number } | null }>(() => ({ call: null }));
+let callSeq = 0;
+
 /** Chat header: "Live praten" — opens the call dialog. Only for chats with one bot. */
 export function LiveCallButton({ threadId, agentId }: { threadId: string; agentId: string | null }) {
-  const [open, setOpen] = useState(false);
+  const active = useCall((s) => !!s.call && s.call.threadId === threadId);
   if (!agentId) return null;
   return (
-    <>
-      <Button variant="ghost" size="icon" aria-label="Live praten" title="Live praten (spraak)" onClick={() => setOpen(true)}>
-        <Phone className="h-4 w-4" />
-      </Button>
-      {open && <CallDialog threadId={threadId} agentId={agentId} onClose={() => setOpen(false)} />}
-    </>
+    <Button
+      variant="ghost"
+      size="icon"
+      aria-label="Live praten"
+      title="Live praten (spraak)"
+      className={active ? 'text-ok' : undefined}
+      onClick={() => {
+        if (useCall.getState().call) return toast(t('Er loopt al een gesprek. Hang eerst op (de balk onderaan).'));
+        useCall.setState({ call: { threadId, agentId, n: ++callSeq } });
+      }}
+    >
+      <Phone className="h-4 w-4" />
+    </Button>
   );
+}
+
+function CallHost() {
+  const call = useCall((s) => s.call);
+  if (!call) return null;
+  return <CallDialog key={call.n} threadId={call.threadId} agentId={call.agentId} onClose={() => useCall.setState({ call: null })} />;
+}
+
+/**
+ * Started once by the module (index.tsx init): a root of its own next to the app, so a call is not part of the chat
+ * that started it and survives navigation. Signing out removes it (and hangs up).
+ */
+export function mountCallHost(): () => void {
+  const el = document.createElement('div');
+  el.setAttribute('data-tb-call-host', '');
+  document.body.appendChild(el);
+  const root = createRoot(el);
+  root.render(<CallHost />);
+  return () => {
+    useCall.setState({ call: null });
+    // Not during a render of the app itself.
+    setTimeout(() => {
+      root.unmount();
+      el.remove();
+    }, 0);
+  };
 }
 
 /** Is a kind of call usable now? (cloud: a key; free: speech recognition on this pc or in the browser). */
@@ -205,14 +248,37 @@ function CallDialog({ threadId, agentId, onClose }: { threadId: string; agentId:
 
   if (stage === 'summary' && summary)
     return (
-      <Modal
-        open
-        onClose={onClose}
-        title="Gesprek beëindigd"
-        footer={
-          <>
+      <CallShell label="Gesprek beëindigd">
+        <div className="space-y-2 p-3 text-sm">
+          <div className="flex items-center justify-between gap-2">
+            <div className="font-semibold">Gesprek beëindigd</div>
+            <Button variant="ghost" size="icon" aria-label="Sluiten" className="-me-1 -mt-1" onClick={onClose}>
+              <X className="h-4 w-4" />
+            </Button>
+          </div>
+          {summary.error && (
+            <div className="flex gap-2 rounded-lg bg-danger-soft p-2.5 text-danger" role="alert">
+              <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+              <span>{summary.error}</span>
+            </div>
+          )}
+          {summary.reason && <div className="rounded-lg bg-surface-2 p-2.5">{summary.reason}</div>}
+          {summary.call && (
+            <div className="text-muted">
+              Duur {clock(summary.call.duration_sec)} · kosten {summary.call.kind === 'realtime' ? `≈ ${money(summary.call.cost)}` : summary.call.cost ? `≈ ${money(summary.call.cost)} (spraak)` : 'alleen de gewone botkosten'}
+              {summary.call.asks ? ` · ${t('{0, plural, one {# verzoek} other {# verzoeken}} aan {1}', summary.call.asks, agent?.name || '')}` : ''}
+            </div>
+          )}
+          {summary.call?.summary && <div className="scroll-thin max-h-32 overflow-y-auto">{summary.call.summary}</div>}
+          {summary.call?.kind === 'realtime' && (
+            <div className="text-muted">
+              {summary.call.keep_transcript ? 'Het transcript staat in dit gesprek.' : 'Het transcript is niet bewaard.'} {summary.call.mode === 'agent' ? 'Het verslag en wat de bot deed staan in de chat.' : ''}
+            </div>
+          )}
+          <div className="flex flex-wrap justify-end gap-2">
             {(summary.kind === 'realtime' || summary.kind === 'gemini') && summary.error && (ready.duplex || hdReady) && (
               <Button
+                size="sm"
                 onClick={() => {
                   setKind(ready.duplex ? 'duplex' : 'halfduplex');
                   setSummary(null);
@@ -222,34 +288,12 @@ function CallDialog({ threadId, agentId, onClose }: { threadId: string; agentId:
                 Gratis gesprek proberen
               </Button>
             )}
-            <Button variant="primary" onClick={onClose}>
+            <Button size="sm" variant="primary" onClick={onClose}>
               {summary.error ? 'Verder in tekst' : 'Sluiten'}
             </Button>
-          </>
-        }
-      >
-        <div className="space-y-3 text-sm">
-          {summary.error && (
-            <div className="flex gap-2 rounded-lg bg-danger-soft p-3 text-danger">
-              <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
-              <span>{summary.error}</span>
-            </div>
-          )}
-          {summary.reason && <div className="rounded-lg bg-surface-2 p-3">{summary.reason}</div>}
-          {summary.call && (
-            <div className="text-muted">
-              Duur {clock(summary.call.duration_sec)} · kosten {summary.call.kind === 'realtime' ? `≈ ${money(summary.call.cost)}` : summary.call.cost ? `≈ ${money(summary.call.cost)} (spraak)` : 'alleen de gewone botkosten'}
-              {summary.call.asks ? ` · ${t('{0, plural, one {# verzoek} other {# verzoeken}} aan {1}', summary.call.asks, agent?.name || '')}` : ''}
-            </div>
-          )}
-          {summary.call?.summary && <div>{summary.call.summary}</div>}
-          {summary.call?.kind === 'realtime' && (
-            <div className="text-muted">
-              {summary.call.keep_transcript ? 'Het transcript staat in dit gesprek.' : 'Het transcript is niet bewaard.'} {summary.call.mode === 'agent' ? 'Het verslag en wat de bot deed staan in de chat.' : ''}
-            </div>
-          )}
+          </div>
         </div>
-      </Modal>
+      </CallShell>
     );
 
   /**
@@ -280,6 +324,8 @@ function CallDialog({ threadId, agentId, onClose }: { threadId: string; agentId:
   const needDownload = kind === 'halfduplex' && !hdReady && localStt;
   const needDuplex = kind === 'duplex' && !ready.duplex;
   const dxDownload = (dx?.sttProblem || dx?.ttsProblem ? download || 0 : 0) + (dx?.download || 0);
+  // A problem a download does not fix (no free voice for this language, the engine cannot run here): said as it is.
+  const dxOther = dx && !download ? dx.sttProblem || dx.ttsProblem : null;
   const dxGot = dx ? dx.parts.reduce((n, p) => n + (p.status === 'installed' ? 0 : p.received || 0), 0) : 0;
   const primary = needKey ? (
     <Button variant="primary" icon={<KeyRound className="h-4 w-4" />} disabled={saving || !inited || !!mic} onClick={saveKey}>
@@ -303,7 +349,7 @@ function CallDialog({ threadId, agentId, onClose }: { threadId: string; agentId:
     <Modal
       open
       onClose={onClose}
-      title={`Praten met ${agent?.name || 'bot'}`}
+      title={t('Praten met {0}', agent?.name || 'bot')}
       footer={
         <>
           <Button variant="ghost" onClick={onClose}>
@@ -357,10 +403,11 @@ function CallDialog({ threadId, agentId, onClose }: { threadId: string; agentId:
                 <>Tegelijk praten en luisteren met {agent?.name} zelf, zonder sleutel en zonder abonnement. Onderbreken door te praten; {agent?.name} kan zelf ophangen. Alles blijft op deze computer.</>
               ) : (
                 <>
-                  {dx?.problem ? t('Nog niet klaar: {0}', dx.problem) + ' ' : ''}
-                  {dxDownload
-                    ? t('Gratis en privé op je pc. Eénmalige download ({0}).', mb(dxDownload))
-                    : 'Gratis en privé op je pc. Eénmalige download.'}
+                  {dxOther
+                    ? t('Nog niet klaar: {0}', dxOther)
+                    : dxDownload
+                      ? t('Nog niet klaar. Eénmalige download ({0}): spraakherkenning, stem en gesprekshulp. “Klaarmaken en bellen” downloadt het en start daarna het gesprek. Gratis en privé op je pc.', mb(dxDownload))
+                      : 'Gratis en privé op je pc.'}
                 </>
               )}
             </Choice>
@@ -381,7 +428,7 @@ function CallDialog({ threadId, agentId, onClose }: { threadId: string; agentId:
                     : 'Gratis en privé op je pc. Eénmalige download.'}
                 </>
               ) : (
-                <>Kies eerst spraakherkenning (lokaal, OpenAI, een eigen spraakserver of de browser) bij Instellingen › Spraak.</>
+                <>Kies eerst spraakherkenning (lokaal, OpenAI, een eigen spraakserver of de browser) bij Instellingen › Meer mogelijkheden › Spraak.</>
               )}
             </Choice>
             )}
@@ -468,11 +515,14 @@ function CallDialog({ threadId, agentId, onClose }: { threadId: string; agentId:
                   </Select>
                 </Field>
               )}
-              <div className="text-xs text-muted">
-                {t('Stopt automatisch bij {0} of na {1, plural, one {# minuut} other {# minuten}}.', money(info.settings.priceCapUsd), info.settings.maxMinutes)}
-              </div>
+              {/* Only when the owner set a limit himself (0 = none, the default). */}
+              {info.settings.priceCapUsd > 0 && info.settings.maxMinutes > 0 && (
+                <div className="text-xs text-muted">
+                  {t('Stopt automatisch bij {0} of na {1, plural, one {# minuut} other {# minuten}}.', money(info.settings.priceCapUsd), info.settings.maxMinutes)}
+                </div>
+              )}
               <Toggle checked={keep} onChange={setKeep} label={<span>Transcript bewaren in dit gesprek</span>} />
-              {info.settings.realtime.sendContext && <div className="text-xs text-muted">De laatste berichten gaan mee naar de spraakdienst (uit te zetten bij Instellingen › Spraak).</div>}
+              {info.settings.realtime.sendContext && <div className="text-xs text-muted">De laatste berichten gaan mee naar de spraakdienst (uit te zetten bij Instellingen › Meer mogelijkheden › Spraak).</div>}
             </div>
           )}
         </div>
@@ -680,7 +730,7 @@ function ActiveCall(props: {
           }
         } else {
           const call = await api.post<CallView>('/voice/calls', { agentId, threadId });
-          const s: SessionInfo = { call, mode: 'agent', priceCapUsd: call.price_cap, maxMinutes: 30 };
+          const s: SessionInfo = { call, mode: 'agent', priceCapUsd: call.price_cap, maxMinutes: 0 };
           r.session = s;
           setSession(s);
           r.connectedAt = Date.now();
@@ -752,14 +802,14 @@ function ActiveCall(props: {
       if (!c) return;
       const sec = (Date.now() - c) / 1000;
       setElapsed(sec);
-      const max = ref.current.session?.maxMinutes || 30;
-      if (sec >= max * 60) hangup('De maximale gespreksduur is bereikt.');
+      const max = ref.current.session?.maxMinutes || 0;
+      if (max > 0 && sec >= max * 60) hangup('De maximale gespreksduur is bereikt.');
     }, 1000);
     return () => {
       clearInterval(tick);
       window.removeEventListener('beforeunload', onUnload);
       document.removeEventListener('visibilitychange', onVis);
-      // Leaving the chat/closing the dialog hangs up immediately.
+      // The call does not belong to a chat: only closing it (or signing out, which removes the host) hangs up.
       r.pendingEnd = window.setTimeout(() => !r.ended && hangup(), 0);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -834,17 +884,14 @@ function ActiveCall(props: {
     setHolding(false);
     setHint(null);
     ref.current.hd?.setTalk(m);
-    // Remembered for the next call (Instellingen › Spraak shows the same choice).
+    // Remembered for the next call (Instellingen › Meer mogelijkheden › Spraak shows the same choice).
     saveVoice({ call: { talk: m } }).catch(() => {});
   };
 
   useEffect(() => {
-    const f = (e: KeyboardEvent) => e.key === 'Escape' && hangup();
-    window.addEventListener('keydown', f);
-    // The space bar talks here: a text field that still had the focus would get the spaces instead.
+    // Hold-to-talk: the space bar talks, and the "Start" button that still had the focus would be pressed by it.
+    // (No Esc to hang up: the chat behind the bar is in use, Esc belongs to whatever you are doing there.)
     (document.activeElement as HTMLElement | null)?.blur?.();
-    return () => window.removeEventListener('keydown', f);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const live = state !== 'connecting' && !paused;
@@ -853,144 +900,136 @@ function ActiveCall(props: {
   // The same model as in the chat: a spoken turn is a normal run of the bot (the last answer says which model wrote it).
   const shownModel = kind === 'halfduplex' ? timing.model || agent?.model || '' : '';
 
+  const kindLine = cloud
+    ? `${kind === 'gemini' ? 'Live via Gemini' : 'Live via OpenAI Realtime'}${session?.model ? ` · ${session.model}` : ''} · ${props.mode === 'agent' ? 'bot bedienen' : 'direct'}`
+    : `${props.sttEngine === 'local' ? 'Gratis gesprek' : 'Bellen zonder Realtime'} · ${talk === 'hold' ? 'ingedrukt houden om te praten' : props.bargeIn ? 'handsfree, onderbreken door te praten' : 'handsfree'}`;
+  const hasAlerts = (warn && cloud) || (work === 'bot' && !approvals.length) || paused || !!notice || !!hint || approvals.length > 0;
+
+  // A compact bar above the message field, not a window: the chat behind it stays in use (CallBar.tsx).
   return (
-    <div className="fixed inset-0 z-50 flex items-stretch justify-center bg-black/50 sm:items-center sm:p-4" role="dialog" aria-modal="true" aria-label={`Gesprek met ${name}`}>
-      <div className="flex max-h-full w-full flex-col bg-surface sm:max-w-md sm:rounded-2xl sm:border sm:border-line sm:shadow-xl">
-        <div className="flex items-center gap-2 border-b border-line px-4 py-2.5 text-xs text-muted">
-          <Badge tone="accent">AI</Badge>
-          <span className="min-w-0 flex-1 truncate">
-            {cloud
-              ? `${kind === 'gemini' ? 'Live via Gemini' : 'Live via OpenAI Realtime'}${session?.model ? ` · ${session.model}` : ''} · ${props.mode === 'agent' ? 'bot bedienen' : 'direct'}`
-              : `${props.sttEngine === 'local' ? 'Gratis gesprek' : 'Bellen zonder Realtime'} · ${talk === 'hold' ? 'ingedrukt houden om te praten' : props.bargeIn ? 'handsfree, onderbreken door te praten' : 'handsfree'}`}
-          </span>
-          <span className="flex items-center gap-1 font-medium text-danger" aria-label={muted || paused ? 'Microfoon uit' : 'Microfoon aan'}>
-            <span className={cx('h-2 w-2 rounded-full', muted || paused ? 'bg-muted' : 'animate-pulse bg-danger')} />
-            {muted || paused ? 'mic uit' : 'mic aan'}
-          </span>
-        </div>
-
-        <div className="flex flex-col items-center gap-2 px-4 pt-6">
-          <TalkFace bot={agent || { name }} status={ind.status} size={104} level={level} showWord={false} />
-          <div className="text-lg font-semibold">{name}</div>
-          {/* Who listens, thinks or speaks: always in words, next to the bot's own name and face. */}
-          <div className={cx('flex min-h-6 items-center gap-2 text-center text-base font-medium', ind.status === 'listening' ? 'text-ok' : ind.status === 'waiting' ? 'text-warn' : 'text-fg')} role="status" aria-live="polite">
-            {shownState === 'connecting' || ind.status === 'thinking' ? <Spinner /> : null}
-            {ind.text}
+    <CallBar
+      label={`Gesprek met ${name}`}
+      face={<TalkFace bot={agent || { name }} status={ind.status} size={30} level={level} showWord={false} />}
+      status={
+        <>
+          {shownState === 'connecting' || ind.status === 'thinking' ? <Spinner /> : null}
+          <span className="line-clamp-2">{ind.text}</span>
+        </>
+      }
+      tone={ind.status === 'listening' ? 'ok' : ind.status === 'waiting' ? 'warn' : undefined}
+      meta={
+        <>
+          <span className="font-mono">{clock(elapsed)}</span>
+          {cloud ? (cap > 0 ? ` · ${t('≈ {0} van max {1}', money(cost), money(cap))}` : ` · ≈ ${money(cost)}`) : ''} · {cloud ? (kind === 'gemini' ? 'Gemini' : 'OpenAI') : name}
+        </>
+      }
+      // OpenAI Realtime sends the microphone over WebRTC: no level to show there (a dot says the microphone is on).
+      level={kind === 'realtime' ? undefined : level}
+      muted={muted}
+      micOff={paused}
+      onMute={toggleMute}
+      onInterrupt={interrupt}
+      onHangup={() => hangup()}
+      // Hold-to-talk on a phone needs its button (a computer has the space bar).
+      defaultOpen={holdTalk && touch}
+      alerts={
+        hasAlerts ? (
+          <div className="scroll-thin max-h-48 space-y-2 overflow-y-auto px-2.5 pt-2">
+            {warn && cloud && (
+              <div className="flex items-center gap-2 rounded-lg bg-warn-soft px-3 py-2 text-xs text-warn">
+                <AlertTriangle className="h-4 w-4 shrink-0" /> Bijna bij het prijsplafond ({money(cap)}). Het gesprek stopt daar automatisch.
+              </div>
+            )}
+            {work === 'bot' && !approvals.length && (
+              <div className="flex items-center gap-2 rounded-lg bg-surface-2 px-3 py-2 text-xs" role="status">
+                <Spinner /> {t('{0} werkt eraan. Praat gerust door; het resultaat komt vanzelf.', name)}
+              </div>
+            )}
+            {paused && (
+              <div className="flex items-center justify-between gap-2 rounded-lg bg-surface-2 px-3 py-2 text-xs">
+                <span>Gepauzeerd: de app was op de achtergrond, de microfoon staat uit.</span>
+                <Button size="sm" variant="primary" onClick={resume}>
+                  Doorgaan
+                </Button>
+              </div>
+            )}
+            {notice && (
+              <div className="flex items-start justify-between gap-2 rounded-lg bg-danger-soft px-3 py-2 text-xs text-danger">
+                <span>{notice}</span>
+                <button className="underline" onClick={() => setNotice(null)}>
+                  Sluiten
+                </button>
+              </div>
+            )}
+            {hint && (
+              <div className="flex items-start justify-between gap-2 rounded-lg bg-surface-2 px-3 py-2 text-xs text-muted" role="status">
+                <span>{hint}</span>
+                <button className="underline" onClick={() => setHint(null)}>
+                  Sluiten
+                </button>
+              </div>
+            )}
+            {approvals.map((a) => (
+              <div key={a.id} className="rounded-lg border border-warn bg-warn-soft p-2.5 text-xs">
+                <div className="font-medium text-warn">{a.kind === 'question' ? `${name} heeft een vraag` : `${name} vraagt toestemming`}</div>
+                <div className="mt-0.5 line-clamp-3 text-fg">{stripRefs(a.summary)}</div>
+                {a.kind === 'tool' && cloud && props.mode === 'agent' && <div className="mt-1 text-muted">{t('Zeg duidelijk “ja” of “nee”, of tik hieronder. Een ja geldt één keer.')}</div>}
+                {a.kind === 'tool' ? (
+                  <div className="mt-2 flex justify-end gap-2">
+                    <Button size="sm" variant="ghost" onClick={() => api.post(`/approvals/${a.id}`, { decision: 'deny' }).catch(toastError)}>
+                      Weigeren
+                    </Button>
+                    <Button size="sm" variant="primary" onClick={() => api.post(`/approvals/${a.id}`, { decision: 'approve' }).catch(toastError)}>
+                      Eén keer toestaan
+                    </Button>
+                  </div>
+                ) : (
+                  <div className="mt-1 text-muted">Beantwoord de vraag in het chatgesprek.</div>
+                )}
+              </div>
+            ))}
           </div>
-          {shownModel && <div className="text-[11px] text-muted">{t('Model: {0}, hetzelfde als in de chat', prettyModel(shownModel))}</div>}
-          <div className="font-mono text-xs text-muted">
-            {clock(elapsed)}
-            {cloud ? ` · ${t('≈ {0} van max {1}', money(cost), money(cap))}` : ''}
-          </div>
-          {kind === 'halfduplex' && (timing.sttMs !== undefined || timing.botMs !== undefined) && (
-            <div className="text-[11px] text-muted" aria-label="Vertraging">
-              {[
-                timing.sttMs !== undefined ? t('herkenning {0}', formatSeconds(timing.sttMs)) : null,
-                timing.firstSoundMs !== undefined ? t('eerste klank na {0}', formatSeconds(timing.firstSoundMs)) : null,
-                timing.botMs !== undefined ? t('{0} klaar na {1}', name, formatSeconds(timing.botMs)) : null,
-              ]
-                .filter(Boolean)
-                .join(' · ')}
-            </div>
-          )}
-        </div>
-
-        <div className="space-y-2 px-4 pt-3">
-          {warn && cloud && (
-            <div className="flex items-center gap-2 rounded-lg bg-warn-soft px-3 py-2 text-xs text-warn">
-              <AlertTriangle className="h-4 w-4 shrink-0" /> Bijna bij het prijsplafond ({money(cap)}). Het gesprek stopt daar automatisch.
-            </div>
-          )}
-          {work === 'bot' && !approvals.length && (
-            <div className="flex items-center gap-2 rounded-lg bg-surface-2 px-3 py-2 text-xs" role="status">
-              <Spinner /> {t('{0} werkt eraan. Praat gerust door; het resultaat komt vanzelf.', name)}
-            </div>
-          )}
-          {paused && (
-            <div className="flex items-center justify-between gap-2 rounded-lg bg-surface-2 px-3 py-2 text-xs">
-              <span>Gepauzeerd: de app was op de achtergrond, de microfoon staat uit.</span>
-              <Button size="sm" variant="primary" onClick={resume}>
-                Doorgaan
-              </Button>
-            </div>
-          )}
-          {notice && (
-            <div className="flex items-start justify-between gap-2 rounded-lg bg-danger-soft px-3 py-2 text-xs text-danger">
-              <span>{notice}</span>
-              <button className="underline" onClick={() => setNotice(null)}>
-                Sluiten
-              </button>
-            </div>
-          )}
-          {hint && (
-            <div className="flex items-start justify-between gap-2 rounded-lg bg-surface-2 px-3 py-2 text-xs text-muted" role="status">
-              <span>{hint}</span>
-              <button className="underline" onClick={() => setHint(null)}>
-                Sluiten
-              </button>
-            </div>
-          )}
-          {approvals.map((a) => (
-            <div key={a.id} className="rounded-lg border border-warn bg-warn-soft p-2.5 text-xs">
-              <div className="font-medium text-warn">{a.kind === 'question' ? `${name} heeft een vraag` : `${name} vraagt toestemming`}</div>
-              <div className="mt-0.5 line-clamp-3 text-fg">{stripRefs(a.summary)}</div>
-              {a.kind === 'tool' && cloud && props.mode === 'agent' && <div className="mt-1 text-muted">{t('Zeg duidelijk “ja” of “nee”, of tik hieronder. Een ja geldt één keer.')}</div>}
-              {a.kind === 'tool' ? (
-                <div className="mt-2 flex justify-end gap-2">
-                  <Button size="sm" variant="ghost" onClick={() => api.post(`/approvals/${a.id}`, { decision: 'deny' }).catch(toastError)}>
-                    Weigeren
-                  </Button>
-                  <Button size="sm" variant="primary" onClick={() => api.post(`/approvals/${a.id}`, { decision: 'approve' }).catch(toastError)}>
-                    Eén keer toestaan
-                  </Button>
-                </div>
-              ) : (
-                <div className="mt-1 text-muted">Beantwoord de vraag in het chatgesprek.</div>
-              )}
-            </div>
-          ))}
-        </div>
-
-        <div ref={box} className="scroll-thin mx-4 mt-3 min-h-28 flex-1 space-y-1.5 overflow-y-auto rounded-xl bg-surface-2 p-3 text-sm sm:max-h-64" aria-label="Live ondertiteling">
-          {!captions.length && <div className="text-center text-xs text-muted">{live ? 'Ondertiteling verschijnt hier.' : 'Even geduld…'}</div>}
-          {captions.map((c) => (
-            <div key={c.id} className={cx(!c.final && 'opacity-60')}>
-              <span className="font-medium">{c.role === 'user' ? 'Jij' : name}: </span>
-              {c.text}
-            </div>
-          ))}
-        </div>
-
-        {holdTalk && (
-          <div className="flex flex-col items-center gap-1 px-4 pt-4">
-            <TalkButton holding={holding} disabled={muted || paused || state === 'connecting'} onPress={press} onRelease={release} keyboard={!touch} />
-            <div className="text-[11px] text-muted">{holding ? t('Laat los als je klaar bent') : touch ? t('Ingedrukt houden en praten') : t('Ingedrukt houden of de spatiebalk')}</div>
-          </div>
-        )}
-        <div className="flex items-center justify-center gap-3 px-4 pb-[max(1rem,var(--safe-bottom))] pt-4">
-          <Button variant="secondary" className="h-12 w-12 justify-center rounded-full" aria-label={muted ? 'Microfoon aanzetten' : 'Dempen'} title={muted ? 'Microfoon aanzetten' : 'Dempen'} aria-pressed={muted} onClick={toggleMute}>
-            {muted ? <MicOff className="h-5 w-5" /> : <Mic className="h-5 w-5" />}
-          </Button>
-          <Button variant="secondary" className="h-12 w-12 justify-center rounded-full" aria-label="Onderbreken" title="Onderbreken (stopt het antwoord)" onClick={interrupt}>
-            <Hand className="h-5 w-5" />
-          </Button>
-          <Button variant="danger" className="h-14 w-14 justify-center rounded-full" aria-label="Ophangen" title="Ophangen" onClick={() => hangup()}>
-            <PhoneOff className="h-6 w-6" />
-          </Button>
-        </div>
-        {kind === 'halfduplex' && (
-          <div className="flex justify-center px-4 pb-2">
-            <Toggle checked={talk === 'handsfree'} onChange={(x) => changeTalk(x ? 'handsfree' : 'hold')} label={<span className="text-xs">Handsfree (zonder knop: een pauze beëindigt je beurt)</span>} />
-          </div>
-        )}
-        <div className="px-4 pb-3 text-center text-[11px] text-muted">
-          {cloud
-            ? `Je stem gaat rechtstreeks naar ${session?.provider?.name || (kind === 'gemini' ? 'Google' : 'OpenAI')} (je eigen API-sleutel). De stem die je hoort is door AI gegenereerd.`
-            : props.sttEngine === 'local'
-              ? 'Je stem wordt op je pc omgezet in tekst; de bot antwoordt zoals in de chat. De stem is door AI gemaakt.'
-              : `Je stem gaat naar ${props.sttEngine === 'browser' ? 'de spraakdienst van je browser' : 'je spraakprovider'} voor tekst; de bot antwoordt zoals in de chat.`}
-        </div>
+        ) : null
+      }
+    >
+      <div className="text-[11px] text-muted">
+        {kindLine}
+        {shownModel ? ` · ${t('Model: {0}, hetzelfde als in de chat', prettyModel(shownModel))}` : ''}
       </div>
-    </div>
+      {kind === 'halfduplex' && (timing.sttMs !== undefined || timing.botMs !== undefined) && (
+        <div className="text-[11px] text-muted" aria-label="Vertraging">
+          {[
+            timing.sttMs !== undefined ? t('herkenning {0}', formatSeconds(timing.sttMs)) : null,
+            timing.firstSoundMs !== undefined ? t('eerste klank na {0}', formatSeconds(timing.firstSoundMs)) : null,
+            timing.botMs !== undefined ? t('{0} klaar na {1}', name, formatSeconds(timing.botMs)) : null,
+          ]
+            .filter(Boolean)
+            .join(' · ')}
+        </div>
+      )}
+      <div ref={box} className="scroll-thin max-h-40 min-h-12 space-y-1.5 overflow-y-auto rounded-xl bg-surface-2 p-2.5 text-sm" aria-label="Live ondertiteling">
+        {!captions.length && <div className="text-center text-xs text-muted">{live ? 'Ondertiteling verschijnt hier.' : 'Even geduld…'}</div>}
+        {captions.map((c) => (
+          <div key={c.id} className={cx(!c.final && 'opacity-60')}>
+            <span className="font-medium">{c.role === 'user' ? 'Jij' : name}: </span>
+            {c.text}
+          </div>
+        ))}
+      </div>
+      {holdTalk && (
+        <div className="flex flex-col items-center gap-1">
+          <TalkButton holding={holding} disabled={muted || paused || state === 'connecting'} onPress={press} onRelease={release} keyboard={!touch} />
+          <div className="text-[11px] text-muted">{holding ? t('Laat los als je klaar bent') : touch ? t('Ingedrukt houden en praten') : t('Ingedrukt houden of de spatiebalk')}</div>
+        </div>
+      )}
+      {kind === 'halfduplex' && <Toggle checked={talk === 'handsfree'} onChange={(x) => changeTalk(x ? 'handsfree' : 'hold')} label={<span className="text-xs">Handsfree (zonder knop: een pauze beëindigt je beurt)</span>} />}
+      <div className="text-[11px] text-muted">
+        {cloud
+          ? `Je stem gaat rechtstreeks naar ${session?.provider?.name || (kind === 'gemini' ? 'Google' : 'OpenAI')} (je eigen API-sleutel). De stem die je hoort is door AI gegenereerd.`
+          : props.sttEngine === 'local'
+            ? 'Je stem wordt op je pc omgezet in tekst; de bot antwoordt zoals in de chat. De stem is door AI gemaakt.'
+            : `Je stem gaat naar ${props.sttEngine === 'browser' ? 'de spraakdienst van je browser' : 'je spraakprovider'} voor tekst; de bot antwoordt zoals in de chat.`}
+      </div>
+    </CallBar>
   );
 }

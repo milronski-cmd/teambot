@@ -1,7 +1,7 @@
 import path from 'node:path';
+import { editDistance } from '../../../shared/editDistance.js';
 import YAML from 'yaml';
 import { splitFrontmatter } from './format.js';
-import { MARKETING_PUBLISHERS, MARKETING_REPOS } from './curated-marketing.js';
 
 /**
  * Import rules for skills from TeamBot's own catalogue (research 2026-11-09: scanners can be bypassed, so the rules
@@ -187,17 +187,28 @@ function verify(text: string, want: string, repaired: boolean): DescriptionFix {
 // ------------------------------------------------------------------ publishers
 
 /**
- * GitHub organisations and people whose skills or MCP servers are widely used (research 2026-11-09), lower case.
- * Not a trust list: it is what look-alike names are compared with.
+ * The companies among the known publishers below: what they publish is their own standard skill. The owner's rule for
+ * what a bot picks (tools.ts `skill_find`): a skill from the community with many stars, not a big company's standard.
+ */
+export const COMPANY_PUBLISHERS = [
+  'anthropics', 'openai', 'microsoft', 'google', 'google-gemini', 'googleworkspace', 'googleapis', 'github', 'vercel', 'vercel-labs', 'cloudflare', 'supabase',
+  'stripe', 'shopify', 'huggingface', 'getsentry', 'expo', 'upstash', 'modelcontextprotocol', 'wordpress', 'automattic', 'woocommerce', 'makenotion', 'linear',
+  'atlassian', 'slackapi', 'posthog', 'resend', 'elevenlabs', 'n8n-io', 'brave', 'tavily-ai', 'firecrawl', 'exa-labs', 'semgrep', 'bitwarden', 'box', 'wix',
+  'webflow', 'larksuite', 'heygen-com', 'remotion-dev', 'snyk', 'cisco-ai-defense', 'docker', 'hashicorp', 'mongodb', 'redis', 'neondatabase', 'prisma',
+  'figma', 'canva', 'notion',
+];
+
+/**
+ * GitHub organisations and people whose skills or MCP servers are widely used (research 2026-11-09 and 2026-11-12),
+ * lower case; every owner of a source in TeamBot's catalogue (curated.ts) is in it. Not a trust list: it is what
+ * look-alike names are compared with.
  */
 export const KNOWN_PUBLISHERS = [
-  'anthropics', 'openai', 'microsoft', 'google', 'google-gemini', 'googleworkspace', 'googleapis', 'github', 'vercel', 'vercel-labs', 'cloudflare', 'supabase',
-  'stripe', 'shopify', 'huggingface', 'getsentry', 'expo', 'upstash', 'modelcontextprotocol', 'agentskills', 'agentsmd', 'obra', 'mattpocock', 'addyosmani',
-  'coreyhaines31', 'agricidaniel', 'blader', 'othmanadi', 'kepano', 'wshobson', 'trailofbits', 'browser-use', 'paperclipai', 'jina-ai', 'nickclyde',
-  'taylorwilsdon', 'wordpress', 'automattic', 'woocommerce', 'makenotion', 'linear', 'atlassian', 'slackapi', 'posthog', 'resend', 'elevenlabs', 'n8n-io',
-  'brave', 'tavily-ai', 'firecrawl', 'exa-labs', 'semgrep', 'bitwarden', 'box', 'wix', 'webflow', 'larksuite', 'heygen-com', 'k-dense-ai', 'remotion-dev',
-  'snyk', 'cisco-ai-defense', 'playwright', 'puppeteer', 'docker', 'hashicorp', 'mongodb', 'redis', 'neondatabase', 'prisma', 'figma', 'canva', 'notion',
-  ...MARKETING_PUBLISHERS,
+  ...COMPANY_PUBLISHERS,
+  'agentskills', 'agentsmd', 'obra', 'mattpocock', 'addyosmani', 'coreyhaines31', 'agricidaniel', 'blader', 'othmanadi', 'kepano', 'wshobson', 'trailofbits',
+  'browser-use', 'paperclipai', 'jina-ai', 'nickclyde', 'taylorwilsdon', 'k-dense-ai', 'playwright', 'puppeteer', 'zubair-trabzada', 'alirezarezvani',
+  'obsidianmd', 'phuryn', 'sawyerhood', 'czlonkowski', 'sergebulaev', 'lackeyjb', 'wondelai', 'kappaemme-git', 'jezweb', 'growthenginenowoslawski', '40rty-ai',
+  'leonxlnx', 'mvanhorn', 'nicobailon', 'nidhinjs',
 ];
 
 /** Distinctive repository names: the same name under another owner is a copy or a fake. */
@@ -215,9 +226,19 @@ export const KNOWN_REPOS: Record<string, string> = {
   'github-mcp-server': 'github',
   'duckduckgo-mcp-server': 'nickclyde',
   'google_workspace_mcp': 'taylorwilsdon',
-  'obsidian-skills': 'kepano',
+  // Moved from kepano to the Obsidian organisation (the old address redirects).
+  'obsidian-skills': 'obsidianmd',
   'agent-browser': 'vercel-labs',
-  ...MARKETING_REPOS,
+  'geo-seo-claude': 'zubair-trabzada',
+  'web-quality-skills': 'addyosmani',
+  'pm-skills': 'phuryn',
+  'dev-browser': 'sawyerhood',
+  'n8n-skills': 'czlonkowski',
+  'linkedin-skills': 'sergebulaev',
+  'playwright-skill': 'lackeyjb',
+  coldoutboundskills: 'growthenginenowoslawski',
+  'shopify-admin-skills': '40rty-ai',
+  'scientific-agent-skills': 'k-dense-ai',
 };
 
 export interface PublisherCheck {
@@ -227,21 +248,6 @@ export interface PublisherCheck {
   like?: string;
   /** Plain Dutch explanation (look-alike only). */
   reason?: string;
-}
-
-export function editDistance(a: string, b: string): number {
-  if (a === b) return 0;
-  const prev = Array.from({ length: b.length + 1 }, (_, i) => i);
-  for (let i = 1; i <= a.length; i++) {
-    let diag = prev[0];
-    prev[0] = i;
-    for (let j = 1; j <= b.length; j++) {
-      const up = prev[j];
-      prev[j] = Math.min(prev[j] + 1, prev[j - 1] + 1, diag + (a[i - 1] === b[j - 1] ? 0 : 1));
-      diag = up;
-    }
-  }
-  return prev[b.length];
 }
 
 /** Compare a GitHub owner (and optionally the repository name) with known publishers. */
@@ -271,9 +277,14 @@ export function checkPublisher(ownerRaw: string, repoRaw?: string, known: string
   return { owner, status: 'unknown' };
 }
 
-/** The GitHub owner and repository of an import source (github.com URL or "owner/repo…" label), if any. */
+/**
+ * The owner and repository of an import source, if any: a github.com URL or "owner/repo…" label, or the page of a skill
+ * on ClawHub (its publisher and skill name there are compared with the known names in the same way).
+ */
 export function githubOwnerOf(src: { type?: string; url?: string; label?: string; publisher?: string } | null | undefined): { owner: string; repo: string } | null {
   if (!src) return null;
+  const claw = /^https:\/\/clawhub\.ai\/([A-Za-z0-9_.-]+)\/([A-Za-z0-9_.-]+)$/i.exec(String(src.url || ''));
+  if (claw) return { owner: claw[1], repo: claw[2] };
   const fromUrl = /^https?:\/\/(?:www\.)?(?:github\.com|raw\.githubusercontent\.com)\/([A-Za-z0-9_.-]+)\/([A-Za-z0-9_.-]+)/i.exec(String(src.url || ''));
   if (fromUrl) return { owner: fromUrl[1], repo: fromUrl[2].replace(/\.git$/, '') };
   if (src.type === 'github') {

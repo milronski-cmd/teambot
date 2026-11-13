@@ -21,6 +21,7 @@ export interface RegistryPick {
 import { BotPicker, ConnForm, OAuthPanel, draftFromEntry, draftPayload, openLoginWindow, useInfo, type ConnDraft, type KVDraft } from './forms';
 import { t, uiLocale } from '../../lib/i18n';
 import { ImportedFacts, type ImportedInfo } from './Import';
+import { RuntimeInstall } from './quick';
 
 /**
  * form: what is needed (often nothing) and one button; creating → login → testing run by themselves; done or error.
@@ -232,14 +233,17 @@ export function Wizard({
   const required = simple ? [...d.env.filter((k) => k.required).map((k) => kvField(k, 'env')), ...d.headers.filter((k) => k.required).map((k) => kvField(k, 'headers'))] : [];
   const actionTools = (conn?.tools || []).filter((x) => x.present && x.risk !== 'read');
   const name = conn?.display || (imported && d.name ? d.name : entry.name);
-  const notFound = d.transport === 'stdio' && entry.commandFound === false && entry.command;
+  // npx/uvx missing: "Installeren" gets TeamBot's own copy (core/runtimes.ts); other programs the user installs himself.
+  const [runtimeOk, setRuntimeOk] = useState(false);
+  const runtime = entry.command === 'npx' ? 'node' : entry.command === 'uvx' ? 'uv' : null;
+  const notFound = d.transport === 'stdio' && entry.commandFound === false && entry.command && !runtimeOk;
 
   return (
     <Modal
       open
       wide={!simple}
       onClose={close}
-      title={`${name} koppelen`}
+      title={t('{0} koppelen', name)}
       footer={
         phase === 'done' ? (
           <Button variant="primary" onClick={onClose}>
@@ -265,7 +269,7 @@ export function Wizard({
         {phase === 'done' && conn ? (
           <>
             <ConnectResult ok>{t('Verbinding werkt: {0, plural, one {# tool gevonden} other {# tools gevonden}}.', conn.counts.total)}</ConnectResult>
-            <p className="text-muted">Je bots kunnen {name} nu gebruiken om te lezen.</p>
+            <p className="text-muted">Je bots kunnen {name} nu gebruiken.</p>
             {actionTools.length > 0 && (
               <Toggle
                 checked={conn.allow_actions}
@@ -298,12 +302,10 @@ export function Wizard({
             {!simple && imported && <ImportedFacts d={d} info={imported} />}
             <p className="text-muted">{entry.description}</p>
             {!entry.available && <div className="rounded-lg bg-warn-soft p-3 text-warn">{entry.unavailableReason}</div>}
-            {notFound && (
+            {notFound && runtime && <RuntimeInstall id={runtime} onDone={() => setRuntimeOk(true)} />}
+            {notFound && !runtime && (
               <div className="rounded-lg bg-warn-soft p-3 text-warn" data-testid="app-needs-runtime">
-                {entry.command === 'uvx' ? 'Deze app heeft Python (uv) nodig en dat staat nog niet op deze computer.' : 'Deze app heeft Node.js nodig en dat staat nog niet op deze computer.'}{' '}
-                <a className="inline-flex items-center gap-0.5 font-medium underline" href={entry.command === 'uvx' ? 'https://docs.astral.sh/uv/getting-started/installation/' : 'https://nodejs.org/nl/download'} target="_blank" rel="noopener noreferrer">
-                  {entry.command === 'uvx' ? 'uv installeren' : 'Node.js installeren'} <ExternalLink className="h-3 w-3" aria-hidden />
-                </a>
+                {t('Deze app heeft {0} nodig en dat staat niet op deze computer.', entry.command || '')}
               </div>
             )}
             {pick && !pick.policy.allowed && pick.policy.reason && (
@@ -325,12 +327,24 @@ export function Wizard({
             )}
             {simple && d.auth === 'oauth' && phase !== 'error' && <p className="text-muted">Je logt in bij de dienst zelf; TeamBot bewaart de toegang versleuteld.</p>}
             {!simple && (
-              <>
-                <ConnForm d={d} set={set} entry={entry} isNew info={info} />
-                <Field label="Welke bots mogen deze app gebruiken?">
-                  <BotPicker value={bots} onChange={setBots} />
-                </Field>
-              </>
+              // Own server, register or import: what is needed to connect in view, the rest (bots, label, local
+              // network, time-outs, the facts) under "Meer opties".
+              <ConnForm
+                d={d}
+                set={set}
+                entry={entry}
+                isNew
+                info={info}
+                fold
+                more={
+                  <>
+                    <Field label="Welke bots mogen deze app gebruiken?">
+                      <BotPicker value={bots} onChange={setBots} />
+                    </Field>
+                    {entry.id !== 'custom' && <EntryFacts e={entry} />}
+                  </>
+                }
+              />
             )}
             {busy && (
               <div className="flex items-center gap-2 text-muted" role="status">

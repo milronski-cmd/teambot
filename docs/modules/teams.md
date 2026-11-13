@@ -332,7 +332,7 @@ heeft aangemeld kopieert dan zijn eigen deel; het antwoord geeft per module wat 
   eigen test voor B's eigen bots, regels per team, kennis voor alle teams en het teamfilter van de eigenaar.
   Kanalen, skills en routines (B4, `B4_PROBES`): `channel_list` (meekijken ziet het kanaal alleen-lezen),
   `channel_send` via B's kanaal, de eigenaar die bot A op B's kanaal bij naam noemt, `skill_load` en de vermelding van
-  B's skill in de prompt van A (meekijken mag lezen), `skill_run_script` van B's vertrouwde script, `skill_draft` met
+  B's skill in de prompt van A (meekijken mag lezen), `skill_run_script` van B's vertrouwde script, `skill_save` met
   de naam van B's skill, `routine_list`, een chattrigger "elk kanaal" van A op B's kanaal, een routine van A die via
   B's kanaal bezorgt, en *Daarna starten* naar B's routine. Plus een eigen test: B's eigen bots gebruiken B's kanaal,
   skill en routine, het teamfilter van de eigenaar, *voor alle teams*, gratis doorschakelen per team, een kanaal dat

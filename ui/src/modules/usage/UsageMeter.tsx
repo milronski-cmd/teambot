@@ -1,7 +1,7 @@
 import { useEffect, useId, useRef, useState } from 'react';
 import { ChevronRight, Gauge, RefreshCw } from 'lucide-react';
 import { api } from '../../lib/api';
-import { cx, toastError } from '../../components/ui';
+import { cx, useAsync } from '../../components/ui';
 import { Pop } from '../../components/Menu';
 import { ProviderMark } from '../../components/ProviderMark';
 import { t } from '../../lib/i18n';
@@ -86,11 +86,23 @@ export function MeterRing({ item, size = 28 }: { item: Pick<MeterItem, 'outer' |
 }
 
 /** The slim bar of one line in the popover (decorative: the sentence under it carries the meaning). */
-function SlimBar({ part }: { part: RingPart }) {
+export function SlimBar({ part }: { part: RingPart }) {
   const v = part.value;
   return (
     <span aria-hidden className={cx('relative block h-1 min-w-8 flex-1 overflow-hidden rounded-full', part.dashed ? 'border border-dashed border-line-strong' : 'bg-surface-3')}>
       {v !== null && v > 0 && <span className={cx('block h-full rounded-full transition-[width] duration-500', FILL[part.tone])} style={{ width: `${Math.max(3, Math.min(100, v))}%` }} />}
+    </span>
+  );
+}
+
+/** The sentence of one window ("Nog 62%, weer vol om do 09:00."), in its tone; bold when it warns. */
+export function LineSentence({ line, estimated, className }: { line: MeterItem['lines'][number]; estimated?: boolean; className: string }) {
+  return (
+    <span
+      className={cx('text-[13px] leading-snug', className, WORDS[line.part.tone], line.part.tone !== 'calm' && line.part.tone !== 'unknown' && 'font-semibold')}
+      title={estimated ? t('≈ is een schatting: de aanbieder geeft geen exact cijfer.') : undefined}
+    >
+      {line.sentence}
     </span>
   );
 }
@@ -131,12 +143,7 @@ export function Detail({ item, titleId, reading, onRefresh }: { item: MeterItem;
                 <SlimBar part={l.part} />
               </span>
             )}
-            <span
-              className={cx('block text-[13px] leading-snug', WORDS[l.part.tone], l.part.tone !== 'calm' && l.part.tone !== 'unknown' && 'font-semibold')}
-              title={item.estimated ? t('≈ is een schatting: de aanbieder geeft geen exact cijfer.') : undefined}
-            >
-              {l.sentence}
-            </span>
+            <LineSentence line={l} estimated={item.estimated} className="block" />
           </li>
         ))}
       </ul>
@@ -159,7 +166,7 @@ export function UsageMeter({ className }: { className?: string }) {
   const [open, setOpen] = useState<string | null>(null);
   /** What the closing popover still shows during its exit animation. */
   const [last, setLast] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
+  const { busy, run } = useAsync();
   const wrap = useRef<HTMLDivElement>(null);
   const panel = useRef<HTMLDivElement>(null);
   /** The button that opened the popover: Escape puts the focus back on it. */
@@ -192,16 +199,6 @@ export function UsageMeter({ className }: { className?: string }) {
   const current = view && view !== MORE ? items.find((i) => i.key === view) : undefined;
   const engine = current && bar.engines.find((e) => e.providerId === current.key);
   const reading = busy || (current ? !!engine?.reading : bar.engines.some((e) => e.reading));
-  const run = async (fn: () => Promise<unknown>) => {
-    setBusy(true);
-    try {
-      await fn();
-    } catch (err) {
-      toastError(err);
-    } finally {
-      setBusy(false);
-    }
-  };
   const refreshOne = (id: string) => run(async () => (await api.post(`/usage/limits/${id}/refresh`), await load()));
   const toggle = (key: string, e: React.MouseEvent<HTMLElement>) => {
     opener.current = e.currentTarget;
@@ -212,7 +209,9 @@ export function UsageMeter({ className }: { className?: string }) {
   return (
     <div
       ref={wrap}
-      className={cx('relative flex items-center gap-0.5', className)}
+      // Not `relative`: the popover anchors to the sidebar's footer (shell/Sidebar.tsx) and opens above the whole footer,
+      // so it never half-covers the row of fixed places right above the rings (they stay full-size targets).
+      className={cx('flex items-center gap-0.5', className)}
       role="group"
       aria-label="Gebruik"
       // A popover, not a modal: tabbing out of it closes it (the focus is somewhere else then).
@@ -256,7 +255,7 @@ export function UsageMeter({ className }: { className?: string }) {
         role="dialog"
         aria-labelledby={titleId}
         tabIndex={-1}
-        className="scroll-thin absolute inset-x-0 bottom-full z-40 mb-2 max-h-[min(70vh,480px)] overflow-y-auto p-3"
+        className="scroll-thin absolute inset-x-2 bottom-full z-40 mb-2 max-h-[min(70vh,480px)] overflow-y-auto p-3"
       >
         {current ? (
           <Detail item={current} titleId={titleId} reading={reading} onRefresh={engine?.canRead ? () => void refreshOne(engine.providerId) : undefined} />

@@ -134,9 +134,46 @@ test('open dossier actions close: the owner says it is done, "gedaan" after the 
   }
 });
 
-test('with a free model: verdicts applied by code — changes = new version, ends, repeats = merged; bogus ids, unrelated pairs and standing rules are guarded', async () => {
+test('the owner just says it in a conversation ("De SEO is bijgewerkt"): the open dossier action closes and the task line leaves the dossier text — with a model and without one, with undo', async () => {
+  for (const withModel of [false, true]) {
+    const t = await startTestApp();
+    try {
+      if (withModel) await freeEngine(t);
+      else await t.api('PUT', '/memory/settings', { extractor: 'heuristic' });
+      setShortCallFake((system) => (/Je bent het geheugen van TeamBot/.test(system) ? 'NIETS' : ''));
+      const d = (await t.api('POST', '/memory/dossiers', { title: 'Website Velo Vintage' })).dossier;
+      const seo = (await t.api('POST', `/memory/dossiers/${d.id}/records`, { kind: 'action', title: 'SEO van de website bijwerken' })).record;
+      const banner = (await t.api('POST', `/memory/dossiers/${d.id}/records`, { kind: 'action', title: 'Banner voor de kerstactie maken' })).record;
+      const a = await t.agent({ name: 'Webbot' });
+      const mem = t.app.ctx.services.memory;
+      const overview = mem.living.core(a.id).find((x: any) => x.core === 'overview');
+      mem.living.write(overview.id, '- We moeten de SEO van de website nog bijwerken\n- De banner voor de kerstactie moet nog gemaakt worden', { type: 'user', id: t.app.ctx.auth.owner()!.id });
+      const th = await t.api('POST', '/threads', { agentId: a.id });
+      await t.api('PUT', `/memory/thread/${th.id}/link`, { dossierId: d.id });
+      t.script.push({ text: 'Mooi zo.' });
+      await t.say(th.id, 'De SEO van de website is bijgewerkt.');
+      await mem.drain();
+      const status = (r: any) => t.app.ctx.store.get<any>('memory_records', r.id).status;
+      const text = () => String(t.app.ctx.store.get<any>('memory_dossiers', overview.id).body);
+      assert.equal(status(seo), 'done', `${withModel ? 'with' : 'without'} a model: the action is closed`);
+      assert.equal(status(banner), 'open', 'nothing else');
+      assert.doesNotMatch(text(), /SEO van de website nog bijwerken/, 'the task line left the text');
+      assert.match(text(), /banner voor de kerstactie/);
+      // In the dossier's archive and the history: one undo brings the line back.
+      const change = t.app.ctx.store.one<any>("SELECT id FROM memory_changes WHERE record_id = ? AND record_kind = 'dossier' AND reason LIKE 'afgerond volgens eigenaar%' ORDER BY created_at DESC LIMIT 1", overview.id);
+      assert.ok(change);
+      await t.api('POST', `/memory/changes/${change.id}/undo`, {});
+      assert.match(text(), /SEO van de website nog bijwerken/);
+    } finally {
+      setShortCallFake(null);
+      await t.close();
+    }
+  }
+});
+
+test('with a free model: the review ends what no longer holds ("vervangt") — a new value, an ending; wrong and unrelated pointers and standing rules are guarded', async () => {
   const t = await startTestApp();
-  let consolidationPrompt = '';
+  let prompt = '';
   try {
     await freeEngine(t);
     const hosting = await add(t, 'Onze hosting zit bij TransIP', { scope: 'about_you' });
@@ -145,41 +182,17 @@ test('with a free model: verdicts applied by code — changes = new version, end
     const koffie = await add(t, 'Ik drink mijn koffie zwart');
     const rule = await add(t, 'Mail klanten alleen na toestemming', { type: 'instruction', pinned: true });
     const unrelated = await add(t, 'De printer op kantoor is een Brother');
-    setShortCallFake((system, prompt) => {
-      if (/geheugenmodule van TeamBot/.test(system)) {
-        const m = (re: RegExp) => (prompt.match(re) || [])[1];
-        const id = m(/<eigenaar id="(\d+)">/) || '1';
-        return JSON.stringify({
-          items: [
-            { content: 'Onze hosting zit nu bij Hetzner', type: 'fact', about: 'owner', evidence: 'Onze hosting zit nu bij Hetzner', msg: id },
-            { content: 'Ahmed werkt niet meer bij ons', type: 'fact', about: 'owner', evidence: 'Ahmed werkt niet meer bij ons', msg: id },
-            { content: 'Mijn koffie neem ik zonder melk', type: 'preference', about: 'owner', evidence: 'mijn koffie neem ik altijd zonder melk', msg: id },
-          ],
-          episode: { summary: '', decisions: [], actions: [], open_questions: [] },
-        });
-      }
-      if (/langetermijngeheugen van TeamBot/.test(system)) {
-        consolidationPrompt = prompt;
-        const oid = (text: string) => (prompt.match(new RegExp(`^(O\\d+) \\([^)]*\\) ${text}`, 'm')) || [])[1];
-        const fid = (text: string) => (prompt.match(new RegExp(`^\\[(F\\d+)\\] ${text}`, 'm')) || [])[1];
-        return JSON.stringify({
-          facts: [
-            { fact: fid('Onze hosting zit nu bij Hetzner'), about: 'de hosting', existing: [{ id: oid('Onze hosting zit bij TransIP'), about: 'de hosting', effect: 'changes' }, { id: 'O99', about: 'x', effect: 'ends' }] },
-            {
-              fact: fid('Ahmed werkt niet meer bij ons'),
-              about: 'Ahmed',
-              existing: [
-                { id: oid('Ahmed restaureert de frames in de werkplaats'), about: 'Ahmed', effect: 'ends' },
-                { id: oid('Ahmed is de broer van Fleur'), about: 'Ahmed', effect: 'unrelated' },
-                { id: oid('Mail klanten alleen na toestemming'), about: 'klanten', effect: 'ends' },
-                { id: oid('De printer op kantoor is een Brother'), about: 'de printer', effect: 'ends' },
-              ],
-            },
-            { fact: fid('Mijn koffie neem ik zonder melk'), about: 'mijn koffie', existing: [{ id: oid('Ik drink mijn koffie zwart'), about: 'mijn koffie', effect: 'repeats' }] },
-          ],
-        });
-      }
-      return '{}';
+    setShortCallFake((system, p) => {
+      if (!/Je bent het geheugen van TeamBot/.test(system)) return '';
+      prompt = p;
+      return [
+        'Eigenaar: Onze hosting zit nu bij Hetzner (vervangt: Onze hosting zit bij TransIP)',
+        // A pointer at something it has nothing in common with: not applied (guard against a wrong pairing).
+        'Eigenaar: Onze hosting zit nu bij Hetzner (vervangt: De printer op kantoor is een Brother)',
+        'Eigenaar: Ahmed werkt niet meer bij ons (vervangt: Mail klanten alleen na toestemming)',
+        'Eigenaar: Ahmed werkt niet meer bij ons (vervangt: Ahmed restaureert de frames in de werkplaats)',
+        'Eigenaar: Mijn koffie neem ik zonder melk',
+      ].join('\n');
     });
     const a = await t.agent();
     const th = await t.api('POST', '/threads', { agentId: a.id });
@@ -187,22 +200,27 @@ test('with a free model: verdicts applied by code — changes = new version, end
     await t.say(th.id, 'Onze hosting zit nu bij Hetzner. Ahmed werkt niet meer bij ons. En mijn koffie neem ik altijd zonder melk.');
     await t.app.ctx.services.memory.drain();
     const st = (r: any) => t.app.ctx.store.get<any>('memory_items', r.id);
-    assert.match(consolidationPrompt, /lijkt op:/, 'the closest notes are listed per fact');
-    assert.equal(st(hosting).status, 'superseded', 'changes: the new note is its next version');
-    const neu = item(t, 'Onze hosting zit nu bij Hetzner');
-    assert.equal(neu.supersedes_id, hosting.id);
-    assert.equal(st(ahmed).status, 'superseded', 'ends: what depended on it ends too');
+    assert.match(prompt, /naam="Eigenaar"[\s\S]*- Onze hosting zit bij TransIP[\s\S]*<\/dossier>/, 'the review sees the notes of the dossier');
+    const owner = String(t.app.ctx.store.one<any>("SELECT body FROM memory_dossiers WHERE core = 'owner'").body);
+    assert.match(owner, /Onze hosting zit nu bij Hetzner/);
+    assert.equal(st(hosting).status, 'superseded', 'a new value: the old note no longer holds');
+    assert.match(st(hosting).invalid_reason, /Hetzner/);
+    assert.equal(st(ahmed).status, 'superseded', 'an ending');
     assert.equal(st(broer).status, 'active', 'unrelated stays');
     assert.equal(st(rule).status, 'active', 'a standing rule is never ended by a model');
-    assert.equal(st(unrelated).status, 'active', 'a pair that shares nothing is not applied (guard against a wrong pairing)');
-    assert.equal(st(koffie).status, 'active', 'repeats: the old one stays …');
-    assert.equal(item(t, 'Mijn koffie neem ik zonder melk').status, 'archived', '… and the new one goes into it');
-    assert.ok(item(t, 'Ahmed werkt niet meer bij ons').consolidated_at, 'checked once');
+    assert.equal(st(unrelated).status, 'active', 'a pair that shares nothing is not applied');
+    assert.equal(st(koffie).status, 'active', 'something else about coffee stays');
+    assert.match(owner, /Mijn koffie neem ik zonder melk/);
+    // One undo brings an ended note back.
+    const ch = t.app.ctx.store.one<any>("SELECT id FROM memory_changes WHERE record_id = ? AND op = 'invalidate'", ahmed.id);
+    await t.api('POST', `/memory/changes/${ch.id}/undo`);
+    assert.equal(st(ahmed).status, 'active');
   } finally {
     setShortCallFake(null);
     await t.close();
   }
 });
+
 
 test('team walls: a bot of team A never ends a note of team B', async () => {
   const t = await startTestApp();
@@ -230,21 +248,23 @@ test('team walls: a bot of team A never ends a note of team B', async () => {
   }
 });
 
-test('the learner: an update the model (or the pattern extractor) left out still ends what it ends — in the owner\'s words; news and small talk are not stored', async () => {
-  for (const withModel of [false, true]) {
+test('updates in the owner\'s words end what they end — the review names them (one call), and without a model "onthoud dat" does; news and small talk are not stored', async () => {
+  for (const withModel of [true, false]) {
     const t = await startTestApp();
     try {
+      let calls = 0;
       if (withModel) {
         await freeEngine(t);
-        // Like the local model in memory:bench: one item for a turn with several updates.
-        setShortCallFake((system, prompt) => {
-          if (/geheugenmodule van TeamBot/.test(system)) {
-            const id = (prompt.match(/<eigenaar id="(\d+)">We sponsoren/) || [])[1] || '1';
-            return JSON.stringify({ items: [{ content: 'We sponsoren De Spurt niet meer', type: 'fact', about: 'owner', evidence: 'We sponsoren De Spurt niet meer', msg: id }], episode: { summary: '', decisions: [], actions: [], open_questions: [] } });
-          }
-          if (/langetermijngeheugen van TeamBot/.test(system)) return JSON.stringify({ facts: [] });
-          return '{}';
-        });
+        setShortCallFake((system) =>
+          /Je bent het geheugen van TeamBot/.test(system)
+            ? (calls++,
+              [
+                'Eigenaar: Klant Bakker heeft zijn terugbetaling gekregen (vervangt: Klant Bakker wacht nog op een terugbetaling)',
+                'Eigenaar: We sponsoren De Spurt niet meer (vervangt: We sponsoren het lokale wielerteam De Spurt)',
+                'Eigenaar: We zijn gestopt met de nieuwsbrief (vervangt: Onze nieuwsbrief gaat elke eerste dinsdag van de maand uit)',
+              ].join('\n'))
+            : '',
+        );
       } else await t.api('PUT', '/memory/settings', { extractor: 'heuristic' });
       const bakker = await add(t, 'Klant Bakker wacht nog op een terugbetaling');
       const nieuwsbrief = await add(t, 'Onze nieuwsbrief gaat elke eerste dinsdag van de maand uit');
@@ -252,23 +272,26 @@ test('the learner: an update the model (or the pattern extractor) left out still
       const belt = await add(t, 'Bakker belt liever dan dat hij mailt');
       const a = await t.agent({ tool_groups: ['memory'] });
       const th = await t.api('POST', '/threads', { agentId: a.id });
+      const say = (m: string) => (withModel ? m : /terugbetaling|Spurt|nieuwsbrief/.test(m) ? `Onthoud dat ${m.charAt(0).toLowerCase()}${m.slice(1)}` : m);
       for (const m of ['Klant Bakker heeft zijn terugbetaling gekregen.', 'We sponsoren De Spurt niet meer.', 'Ik ben vandaag een beetje moe.', 'Bakker heeft vandaag gebeld over zijn bestelling.', 'We zijn gestopt met de nieuwsbrief.', 'Het concert is niet meer uitverkocht.']) {
         t.script.push({ text: 'Oké.' });
-        await t.say(th.id, m);
+        await t.say(th.id, say(m));
       }
       await t.app.ctx.services.memory.learner.learnNow(t.app.ctx.store.agent(a.id)!, t.app.ctx.store.thread(th.id)!);
       await t.app.ctx.services.memory.drain();
       const st = (id: string) => t.app.ctx.store.get<any>('memory_items', id);
-      const label = withModel ? 'with a model' : 'without a model';
+      const label = withModel ? 'the review' : 'without a model';
       assert.equal(st(bakker.id).status, 'superseded', `${label}: the refund came`);
       assert.match(st(bakker.id).invalid_reason, /terugbetaling gekregen/);
       assert.equal(st(nieuwsbrief.id).status, 'superseded', `${label}: the newsletter stopped`);
       assert.equal(st(spurt.id).status, 'superseded', `${label}: the sponsoring stopped`);
       assert.equal(st(belt.id).status, 'active', `${label}: a call ends nothing`);
-      // The owner's own sentence is what ended it, kept as a note; small talk and an ending without a target are not.
-      assert.ok(item(t, 'Klant Bakker heeft zijn terugbetaling gekregen.') || item(t, 'Klant Bakker heeft zijn terugbetaling gekregen'), `${label}: the owner's sentence is stored`);
-      assert.equal(item(t, 'Ik ben vandaag een beetje moe.'), undefined);
-      assert.equal(item(t, 'Het concert is niet meer uitverkocht.'), undefined, `${label}: an ending that ends nothing known is not stored`);
+      if (withModel) assert.equal(calls, 1, 'one call for the whole conversation');
+      // The owner's own sentence is what ended it, kept; small talk and an ending without a target are not.
+      const all = [...t.app.ctx.store.all<any>('SELECT body FROM memory_dossiers').map((d) => d.body), ...t.app.ctx.store.all<any>("SELECT content FROM memory_items WHERE status = 'active'").map((r) => r.content)].join('\n');
+      assert.match(all, /terugbetaling (?:heeft )?gekregen/i, `${label}: the owner's sentence is stored`);
+      assert.doesNotMatch(all, /beetje moe/);
+      assert.doesNotMatch(all, /concert/i, `${label}: an ending that ends nothing known is not stored`);
     } finally {
       setShortCallFake(null);
       await t.close();

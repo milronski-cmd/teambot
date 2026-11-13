@@ -46,7 +46,7 @@ fs.rmSync(work, { recursive: true, force: true });
 fs.rmSync(data, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
 
 // ---- the page side: what the real UI sends to the desktop bridge (headless browser, TEMP data folder) ----
-const { createApp } = await import('../../server/app.ts');
+const { createApp } = await import('./server.mjs');
 const { chromium } = require('playwright-core');
 const dir2 = fs.mkdtempSync(path.join(os.tmpdir(), 'tb-badge-ui-'));
 const app = await createApp({ dataDir: dir2, port: 0, host: '127.0.0.1', mode: 'desktop', quiet: true });

@@ -6,6 +6,7 @@ import path from 'node:path';
 import { startTestApp, type TestApp } from './helpers.js';
 import { safeFolderName, WERKPLEK_SETTING } from '../server/modules/folders/werkplek.js';
 import { resolveInWorkspace } from '../server/tools/builtin/files.js';
+import { executeTool } from '../server/tools/execute.js';
 import type { Agent } from '../server/core/types.js';
 
 /** "Eigen werkplek" (0.4.5): every new bot gets its own folder under the team folder, and works there by default. */
@@ -102,27 +103,40 @@ test('werkplek: the terminal works in the werkplek; outside it asks first (every
     const a = agentOf(t, (await t.agent({ name: 'Mila', tool_groups: ['files', 'shell'], access_mode: 'auto' })).id);
     const tool = t.app.ctx.tools.get('run_command')!;
     const thread = t.app.ctx.chat.threadForAgent(a.user_id, a.id);
-    const ctxOf = { agent: a, thread, userId: a.user_id };
     const outside = process.platform === 'win32' ? 'C:\\Users\\Public\\Documents\\x.txt' : '/home/someone/x.txt';
+    // The permission gate reads the command (tools/gate.ts): what runs, what asks (on a card) and what is refused.
+    const ctx = t.app.ctx;
+    const run = { id: 'run_werkplek' } as any;
+    const realRequest = ctx.broker.request.bind(ctx.broker);
+    const step = async (command: string, agent: Agent = a) => {
+      let card: any = null;
+      ctx.broker.request = async (o: any) => ((card = o), { approved: false });
+      try {
+        const r = await executeTool({ ctx, agent, thread, run, tools: [{ ...tool, run: async () => 'UITGEVOERD' }], name: 'run_command', args: { command }, callId: 'c', signal: new AbortController().signal });
+        return { ran: r.out.text === 'UITGEVOERD', card, text: r.out.text };
+      } finally {
+        ctx.broker.request = realRequest;
+      }
+    };
     // inside: an ordinary command
-    assert.equal(tool.riskFor!({ command: 'dir' }, ctxOf), 'exec');
-    assert.equal(tool.riskFor!({ command: `type "${path.join(a.workspace, 'a.txt')}"` }, ctxOf), 'exec');
-    assert.equal(tool.riskFor!({ command: `type "${path.join(team, 'gedeeld.txt')}"` }, ctxOf), 'exec', 'the team folder is part of the bot\'s folders');
-    // outside: asks, with the reason on the card
-    assert.equal(tool.riskFor!({ command: `Get-Content "${outside}"` }, ctxOf), 'danger');
+    for (const c of ['dir', `type "${path.join(a.workspace, 'a.txt')}"`, `type "${path.join(team, 'gedeeld.txt')}"`]) assert.equal((await step(c)).ran, true, c);
+    // outside: asks, with the reason on the card and without "Altijd toestaan" (risk danger)
+    const out = await step(`Get-Content "${outside}"`);
+    assert.equal(out.ran, false);
+    assert.equal(out.card?.risk, 'danger');
+    assert.match(out.card?.summary, /buiten de werkplek van de bot/);
     // a `..` escape out of the folders (this test's werkplek lives in the temp folder, which programs may use: go to the root)
     const up = ('..' + path.sep).repeat(12);
-    assert.equal(tool.riskFor!({ command: `Get-Content ${up}buiten-de-werkplek${path.sep}x.txt` }, ctxOf), 'danger');
-    assert.match(tool.summarize!({ command: `Get-Content "${outside}"` }, { agent: a }), /buiten de werkplek van de bot/);
-    const impact = typeof tool.impact === 'function' ? tool.impact({ command: `Get-Content "${outside}"` }, a) : tool.impact;
-    assert.equal(impact, 'external', 'also "Volledige toegang" asks for work outside the werkplek');
-    assert.equal(t.app.ctx.broker.decide(a, { name: 'run_command', risk: 'danger', impact: 'external' }), 'ask');
-    assert.equal(t.app.ctx.broker.decide({ ...a, access_mode: 'full' }, { name: 'run_command', risk: 'danger', impact: 'external' }), 'ask');
-    // key folders: refused before any card
+    assert.equal((await step(`Get-Content ${up}buiten-de-werkplek${path.sep}x.txt`)).card?.risk, 'danger');
+    // also "Volledige toegang" asks for work outside the werkplek of a bot kept to its own folders
+    assert.equal((await step(`Get-Content "${outside}"`, { ...a, access_mode: 'full', settings: { ...a.settings, ownFoldersOnly: true } })).card?.risk, 'danger');
+    // key folders and TeamBot's data: refused before any card
     const home = process.env.USERPROFILE || process.env.HOME || os.homedir();
-    assert.match(tool.refuse!({ command: `type "${path.join(home, '.ssh', 'id_ed25519')}"` }, ctxOf) || '', /beschermde map/);
-    assert.match(tool.refuse!({ command: `type "${path.join(t.dir, 'teambot.db')}"` }, ctxOf) || '', /gegevens van TeamBot/);
-    assert.equal(tool.refuse!({ command: 'dir' }, ctxOf), null);
+    for (const [c, why] of [[`type "${path.join(home, '.ssh', 'id_ed25519')}"`, /beschermde map/], [`type "${path.join(t.dir, 'teambot.db')}"`, /gegevens van TeamBot/]] as const) {
+      const r = await step(c);
+      assert.deepEqual([r.ran, r.card], [false, null], c);
+      assert.match(r.text, why);
+    }
     // the real path through the runner: in "Automatisch" a command outside the werkplek waits for the owner
     t.script.push({ toolCalls: [{ name: 'run_command', args: { command: `Get-Content "${outside}"` } }] }, { text: 'klaar' });
     await t.api('POST', `/threads/${thread.id}/messages`, { content: 'lees dat bestand' });

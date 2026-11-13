@@ -1,10 +1,10 @@
 import { useEffect, useState } from 'react';
-import { ChevronDown, RefreshCw } from 'lucide-react';
+import { ChevronDown, Eye, HeartPulse, RefreshCw } from 'lucide-react';
 import { api } from '../../lib/api';
 import { t } from '../../lib/i18n';
 import { useApp } from '../../lib/store';
 import { formatBytes, formatDateTime, formatNumber, formatPercent, formatSeconds } from '../../lib/format';
-import { Button, Card, Spinner, Toggle, cx, useAsync } from '../../components/ui';
+import { Button, Card, CardHead, Spinner, Toggle, cx, useAsync } from '../../components/ui';
 
 type Level = 'ok' | 'warn' | 'bad';
 type Reason = { code: 'stalls1s'; n: number; longestMs: number } | { code: 'stalls100'; n: number } | { code: 'longStall'; ms: number } | { code: 'slow'; p99: number } | { code: 'memory'; mb: number };
@@ -42,8 +42,7 @@ function WatchdogCard({ w, onChange }: { w: NonNullable<Health['watchdog']>; onC
           : t('Laatste controle {0}: TeamBot reageerde niet (sinds {1}).', formatDateTime(f.at), formatDateTime(f.since || f.at));
   return (
     <Card className="space-y-3 p-5" id="wachter">
-      <h2 className="text-[15px] font-bold tracking-tight">Wachter buiten de app</h2>
-      <p className="text-sm text-muted">Elke 10 minuten controleert Windows of TeamBot nog antwoordt.</p>
+      <CardHead icon={Eye} tone="teal" title="Wachter buiten de app" hint="Elke 10 minuten controleert Windows of TeamBot nog antwoordt." />
       <p className={cx('text-sm', f && (f.status === 'down' || f.status === 'hang') ? 'text-warn' : '')} data-watchdog={f?.status || 'none'}>
         {found}
       </p>
@@ -100,7 +99,7 @@ function Row({ label, children }: { label: string; children: React.ReactNode }) 
   );
 }
 
-/** Instellingen › Hoe gaat het met TeamBot?: one coloured line for everyone, the meter's numbers behind "Meer informatie". */
+/** Instellingen › Status van TeamBot: one coloured line for everyone, the meter's numbers behind "Meer informatie". */
 export function HealthSettings() {
   const [h, setH] = useState<Health | null>(null);
   const [failed, setFailed] = useState(false);
@@ -127,7 +126,7 @@ export function HealthSettings() {
   if (!h && failed)
     return (
       <Card className="space-y-3 p-5">
-        <h2 className="text-[15px] font-bold tracking-tight">Hoe gaat het met TeamBot?</h2>
+        <CardHead icon={HeartPulse} tone="teal" title="Status van TeamBot" />
         <p className="text-sm text-muted">De meting kon niet worden opgehaald. Probeer het zo nog eens.</p>
         <Button onClick={() => void load()} loading={busy} icon={<RefreshCw className="h-4 w-4" />}>
           Opnieuw proberen
@@ -143,7 +142,7 @@ export function HealthSettings() {
     <div className="space-y-4">
       <Card className="space-y-4 p-5" id="hoe-gaat-het">
         <div className="space-y-2">
-          <h2 className="text-[15px] font-bold tracking-tight">{headline(h.level)}</h2>
+          <CardHead icon={HeartPulse} tone="teal" title={headline(h.level)} />
           <div className={cx('h-2 rounded-full', LINE[h.level])} aria-hidden data-level={h.level} />
         </div>
         {h.level === 'ok' ? (
@@ -159,7 +158,7 @@ export function HealthSettings() {
                 <>
                   Wil je hulp? Download het diagnosebestand bij{' '}
                   <a className="underline hover:text-fg" href="#/settings/data">
-                    Waar staat mijn data?
+                    Privacy en gegevens
                   </a>
                   : daar staan deze cijfers ook in.
                 </>

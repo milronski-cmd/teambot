@@ -40,17 +40,22 @@ async function importPaste(t: TestApp, text: string) {
   return (await t.api('POST', '/skills/import/commit', { stagingId: pv.stagingId })).results[0].skillId as string;
 }
 
-test('the menu lists the bot\'s skills, and a picked skill is loaded and followed', async () => {
+test('the menu lists the skills of the bot\'s team, and a picked skill is loaded and followed', async () => {
   const t = await startTestApp();
   try {
     const brand = await importPaste(t, md('brand-guidelines', 'Huisstijl met kleuren en lettertypen.', 'Gebruik altijd #d97757 en Poppins.'));
-    await importPaste(t, md('niet-aan', 'Staat niet aan bij deze bot.', 'GEHEIM'));
+    // Switched off by the owner: not in the menu, and picking it does nothing.
+    const off = await importPaste(t, md('niet-aan', 'Uitgezet door de eigenaar.', 'GEHEIM'));
+    await t.api('PATCH', `/skills/${off}`, { status: 'disabled' });
+    await importPaste(t, md('ook-van-het-team', 'Van het team; bij één bot weggehaald.', 'TEAM'));
     const bot = await t.agent({ tool_groups: ['skills'] });
-    await t.api('PUT', `/skills/agents/${bot.id}`, { skillIds: [brand] });
     const th = await t.api('POST', '/threads', { agentId: bot.id });
+    assert.deepEqual((await t.api('GET', `/skills/menu?threadId=${th.id}`)).skills.map((s: any) => s.name), ['brand-guidelines', 'ook-van-het-team'], 'every active skill of the team, nobody switched anything on');
+    // Taken away from this bot (the owner names the one it keeps): not in its menu any more.
+    await t.api('PUT', `/skills/agents/${bot.id}`, { skillIds: [brand] });
 
     const menu = await t.api('GET', `/skills/menu?threadId=${th.id}`);
-    assert.deepEqual(menu.skills.map((s: any) => s.name), ['brand-guidelines'], 'only the skills this bot has');
+    assert.deepEqual(menu.skills.map((s: any) => s.name), ['brand-guidelines'], 'the skills this bot has: its team\'s, minus what was taken away from it');
     assert.match(menu.skills[0].description, /Huisstijl/);
 
     // "/name" at the start: the turn tells the bot to load and follow that skill; the step shows "Skill laden".
@@ -74,10 +79,11 @@ test('the menu lists the bot\'s skills, and a picked skill is loaded and followe
     assert.doesNotMatch(ctxOf(2), /koos voor dit bericht de skill/);
 
     // A group conversation lists the skills of its bots (acceptance round 6: the menu was empty in every group).
+    // A new bot has every active skill of the team; the first bot has only the brand skill left.
     const second = await t.agent({ name: 'Tweede', tool_groups: ['skills'] });
     const room = await t.api('POST', '/rooms', { name: 'Fietsteam', mode: 'mention', agentIds: [bot.id, second.id] });
     const groupMenu = await t.api('GET', `/skills/menu?threadId=${room.thread_id || room.threadId}`);
-    assert.deepEqual(groupMenu.skills.map((s: any) => s.name), ['brand-guidelines']);
+    assert.deepEqual(groupMenu.skills.map((s: any) => [s.name, s.bots]), [['brand-guidelines', ['Testbot', 'Tweede']], ['ook-van-het-team', ['Tweede']]], 'each skill names the bots that have it');
 
     // Someone else's conversation: not found.
     const other = t.app.ctx.auth.createUser({ name: 'Ander', role: 'member' });

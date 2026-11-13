@@ -6,6 +6,7 @@ import http, { type IncomingMessage } from 'node:http';
 import https from 'node:https';
 import AdmZip from 'adm-zip';
 import { type LocalModel, LOCAL_MODELS, catalogFor, totalSize } from './catalog.js';
+import { sha256File } from '../../../core/util.js';
 
 export type ModelStatus = 'missing' | 'downloading' | 'verifying' | 'installed' | 'error' | 'unsupported';
 
@@ -27,17 +28,6 @@ const fingerprint = (m: LocalModel) =>
     .update(JSON.stringify(m.files.map((f) => [f.path, f.sha256])))
     .digest('hex')
     .slice(0, 16);
-
-async function sha256File(file: string): Promise<string> {
-  const h = crypto.createHash('sha256');
-  await new Promise<void>((resolve, reject) => {
-    const s = fs.createReadStream(file);
-    s.on('data', (d) => h.update(d));
-    s.on('end', () => resolve());
-    s.on('error', reject);
-  });
-  return h.digest('hex');
-}
 
 /**
  * Downloads and keeps the local speech models. Each file is fetched over https (resumable via Range), hashed while it

@@ -1,14 +1,15 @@
-import { useState } from 'react';
+import type React from 'react';
 import { Monitor, Moon, Sun } from 'lucide-react';
 import { api } from '../lib/api';
 import { useApp } from '../lib/store';
 import { cx } from '../components/ui';
 import { BotFace } from '../components/BotFace';
 import { MoreInfo } from '../components/MoreInfo';
-import { Segmented, SettingRow, SettingsSection, useSave } from '../components/SettingControls';
+import { Segmented, SettingRow, useSave } from '../components/SettingControls';
 import { useFaceStyle } from '../lib/mood';
 import type { FaceStyle } from '../lib/botface';
-import { defaultThemePref, getAccent, getThemePref, setAccent, setThemePref, useAccent, type ThemePref } from '../shell/theme';
+import { getAccent, setAccent, setThemePref, useAccent, useThemePref, type ThemePref } from '../shell/theme';
+import { settingOptions, settingText } from '../../../shared/settings.js';
 import { ACCENTS, DEFAULT_ACCENT } from '../shell/accent';
 
 /** Store a part of `settings.ui` (accent, bot style) for the user, so every device follows. */
@@ -17,20 +18,18 @@ const putUi = (patch: Record<string, unknown>) => {
   return api.put('/settings', { ui: { ...ui, ...patch } }).then((st) => useApp.setState({ settings: st }));
 };
 
+const THEME_ICONS: Record<ThemePref, React.ReactNode> = {
+  system: <Monitor className="h-3.5 w-3.5" aria-hidden />,
+  light: <Sun className="h-3.5 w-3.5" aria-hidden />,
+  dark: <Moon className="h-3.5 w-3.5" aria-hidden />,
+};
+
 /** Light, dark or the system's choice; per device (a phone starts dark), see shell/theme.ts. */
 function ThemeRow({ theme, onChange }: { theme: ThemePref; onChange(v: ThemePref): void }) {
   const save = useSave();
   return (
-    <SettingRow label="Thema" hint="Geldt voor dit apparaat.">
-      <Segmented
-        value={theme}
-        onChange={(v) => (onChange(v), void save(Promise.resolve()))}
-        options={[
-          { value: 'system', label: 'Systeem', icon: <Monitor className="h-3.5 w-3.5" aria-hidden /> },
-          { value: 'light', label: 'Licht', icon: <Sun className="h-3.5 w-3.5" aria-hidden /> },
-          { value: 'dark', label: 'Donker', icon: <Moon className="h-3.5 w-3.5" aria-hidden /> },
-        ]}
-      />
+    <SettingRow setting="ui.theme">
+      <Segmented value={theme} onChange={(v) => (onChange(v), void save(Promise.resolve()))} options={settingOptions<ThemePref>('ui.theme').map((o) => ({ ...o, icon: THEME_ICONS[o.value] }))} />
     </SettingRow>
   );
 }
@@ -41,7 +40,7 @@ function ThemeRow({ theme, onChange }: { theme: ThemePref; onChange(v: ThemePref
  * tooltip). Applied at once (the whole app is the live preview) and
  * stored for the user, so the computer, the browser and the paired phone follow.
  */
-function AccentRow() {
+export function AccentSetting() {
   const current = useAccent();
   const save = useSave();
   const pick = (id: string) => {
@@ -55,10 +54,10 @@ function AccentRow() {
     <div className="space-y-3 py-3">
       <div>
         <div className="text-sm font-medium">
-          Kleur <span className="font-normal text-muted">· {name}</span>
+          {settingText('ui.accent').title} <span className="font-normal text-muted">· {name}</span>
         </div>
         <div className="text-xs leading-relaxed text-muted">
-          Geldt op al je apparaten.{' '}
+          {settingText('ui.accent').hint}{' '}
           <MoreInfo>
             {(window as any).teambotDesktop
               ? 'Voor knoppen, links, wat je kiest, de focusrand en het TeamBot-figuurtje, ook in het pictogram van het venster, de taakbalk en het systeemvak.'
@@ -66,7 +65,7 @@ function AccentRow() {
           </MoreInfo>
         </div>
       </div>
-      <div className="flex flex-wrap gap-2" role="radiogroup" aria-label="Kleur">
+      <div className="flex flex-wrap gap-2" role="radiogroup" aria-label={settingText('ui.accent').title}>
         {ACCENTS.map((a) => (
           <button
             key={a.id}
@@ -92,50 +91,22 @@ function AccentRow() {
 }
 
 /** "Stijl figuurtjes": smooth (Glad) or felt (Vilt) bot characters, for the whole app. */
-function FaceStyleRow() {
+export function FaceStyleSetting() {
   const style = useFaceStyle();
   const save = useSave();
   const demo = { shape: 'squircle', color: 'teal', eyes: 'bean', mouth: 'smile', extra: 'antenna', cheeks: true } as const;
   return (
-    <SettingRow label="Stijl figuurtjes" hint="Elke bot houdt zijn eigen vorm en kleur.">
+    <SettingRow setting="ui.botStyle">
       <Segmented
         value={style}
         onChange={(v: FaceStyle) => void save(putUi({ botStyle: v }))}
-        options={[
-          { value: 'clay', label: 'Glad', icon: <BotFace seed="stijl" traits={demo} style="clay" size={22} /> },
-          { value: 'felt', label: 'Vilt', icon: <BotFace seed="stijl" traits={demo} style="felt" size={22} /> },
-        ]}
+        options={settingOptions<FaceStyle>('ui.botStyle').map((o) => ({ ...o, icon: <BotFace seed="stijl" traits={demo} style={o.value} size={22} /> }))}
       />
     </SettingRow>
   );
 }
 
-/** Instellingen › Uiterlijk: theme (this device), accent colour (all your devices) and the style of the bot figures. */
-export function AppearanceSettings() {
-  const [theme, setTheme] = useState<ThemePref>(getThemePref());
-  const accent = useAccent();
-  const style = useFaceStyle();
-  const pickTheme = (v: ThemePref) => (setTheme(v), setThemePref(v));
-  const isDefault = theme === defaultThemePref() && accent === DEFAULT_ACCENT && style === 'clay';
-  return (
-    <div className="space-y-4">
-      <SettingsSection
-        title="Thema en kleur"
-        isDefault={isDefault}
-        onReset={async () => {
-          pickTheme(defaultThemePref());
-          const before = getAccent();
-          setAccent(DEFAULT_ACCENT);
-          await putUi({ accent: DEFAULT_ACCENT, botStyle: 'clay' }).catch((e) => {
-            setAccent(before);
-            throw e;
-          });
-        }}
-      >
-        <ThemeRow theme={theme} onChange={pickTheme} />
-        <AccentRow />
-        <FaceStyleRow />
-      </SettingsSection>
-    </div>
-  );
+/** The theme row (Instellingen › Taal en uiterlijk): light, dark or the system's choice, for this device. */
+export function ThemeSetting() {
+  return <ThemeRow theme={useThemePref()} onChange={setThemePref} />;
 }

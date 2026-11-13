@@ -195,7 +195,7 @@ function ServerList({ rows, chosen, setChosen, grouped }: { rows: Row[]; chosen:
       {rows.map((s) => (
         <li key={s.id}>
           <label className={cx('flex cursor-pointer items-start gap-3 rounded-lg border p-3', chosen.has(s.id) ? 'border-accent bg-accent-soft' : 'border-line')}>
-            <input type="checkbox" className="mt-1 h-4 w-4 accent-[var(--color-accent)]" checked={chosen.has(s.id)} onChange={(e) => toggle(s.id, e.target.checked)} aria-label={`${s.name} importeren`} />
+            <input type="checkbox" className="mt-1 h-4 w-4 accent-[var(--color-accent)]" checked={chosen.has(s.id)} onChange={(e) => toggle(s.id, e.target.checked)} aria-label={t('{0} importeren', s.name)} />
             <div className="min-w-0 flex-1">
               <div className="flex flex-wrap items-center gap-1.5">
                 <span className="font-medium">{s.name}</span>

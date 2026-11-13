@@ -86,17 +86,18 @@ export interface ProactiveSettings {
   runsPerDay: number;
   /** Optional: proactive work goes to a free or local model first and never moves on to a paid one. Off by default. */
   cheapFirst: boolean;
-  /** Hoogstens zoveel projecten tegelijk in de sprint, per team. */
+  /** Optional limit: hoogstens zoveel projecten tegelijk in de sprint, per team. 0 = no limit (the default). */
   maxSprint: number;
-  /** Overzicht van de hoofdbot: elke dag, elke week (maandag) of niet. */
+  /**
+   * Overzicht van de hoofdbot: elke dag, elke week (maandag) of niet. Off until the owner (or his main bot) turns it
+   * on: nothing comes to him by itself that he did not ask for. It comes at the hour of his main bot (teams/briefing.ts).
+   */
   briefing: 'dag' | 'week' | 'uit';
-  /** Local time 'UU:MM'. */
-  briefingTime: string;
   /** What the owner is interested in, for the opportunity researcher. */
   interests: string;
 }
 
-export const DEFAULT_PROACTIVE: ProactiveSettings = { runsPerDay: 0, cheapFirst: false, maxSprint: 3, briefing: 'dag', briefingTime: '08:00', interests: '' };
+export const DEFAULT_PROACTIVE: ProactiveSettings = { runsPerDay: 0, cheapFirst: false, maxSprint: 0, briefing: 'uit', interests: '' };
 
 export function cleanProactive(raw: any): ProactiveSettings {
   const r = raw && typeof raw === 'object' ? raw : {};
@@ -104,9 +105,8 @@ export function cleanProactive(raw: any): ProactiveSettings {
   return {
     runsPerDay: n(r.runsPerDay, 0, 100_000, DEFAULT_PROACTIVE.runsPerDay),
     cheapFirst: typeof r.cheapFirst === 'boolean' ? r.cheapFirst : DEFAULT_PROACTIVE.cheapFirst,
-    maxSprint: n(r.maxSprint, 1, 10, DEFAULT_PROACTIVE.maxSprint),
+    maxSprint: n(r.maxSprint, 0, 1000, DEFAULT_PROACTIVE.maxSprint),
     briefing: ['dag', 'week', 'uit'].includes(r.briefing) ? r.briefing : DEFAULT_PROACTIVE.briefing,
-    briefingTime: typeof r.briefingTime === 'string' && /^([01]\d|2[0-3]):[0-5]\d$/.test(r.briefingTime) ? r.briefingTime : DEFAULT_PROACTIVE.briefingTime,
     interests: typeof r.interests === 'string' ? r.interests.trim().slice(0, 1000) : '',
   };
 }

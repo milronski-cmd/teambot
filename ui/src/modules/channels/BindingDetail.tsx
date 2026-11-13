@@ -1,12 +1,13 @@
 import type React from 'react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { ArrowDownLeft, ArrowLeft, ArrowUpRight, Copy, ExternalLink, Headset, Info, MessageSquare, Pause, Play, Plug, PlugZap, Plus, Reply, ShieldCheck, Trash2, Undo2, UserCheck, UserPlus } from 'lucide-react';
+import { ArrowDownLeft, ArrowLeft, ArrowUpRight, Bot, Copy, ExternalLink, Globe, Headset, Info, KeyRound, Mail, MessageSquare, Pause, Play, Plug, PlugZap, Plus, Reply, ShieldCheck, Trash2, Undo2, UserCheck, UserPlus } from 'lucide-react';
 import { api, on } from '../../lib/api';
 import { useApp } from '../../lib/store';
 import { navigate } from '../../lib/router';
-import { Badge, Button, Card, EmptyState, Field, Input, Modal, Page, PageHeader, Select, Spinner, Tabs, Textarea, Toggle, cx, timeAgo, toast, toastError, useAsync } from '../../components/ui';
+import { Badge, Button, Card, CardHead, EmptyState, Field, Input, Modal, Page, PageHeader, Select, Spinner, Tabs, Textarea, Toggle, cx, timeAgo, toast, toastError, useAsync, copyText } from '../../components/ui';
+import { MoreOptions } from '../../components/MoreOptions';
 import { GUIDES } from './guides';
-import { ConfigForm, copy } from './ConfigForm';
+import { ConfigForm } from './ConfigForm';
 import { PublicUrlNote, RequirementBadges, TargetSelect, targetBody, targetValue, useRooms } from './AddChannel';
 import { ADAPTER_ICON, BOT_ACCESS_LABEL, BotAddresses, EngineNote, LOG_KIND, SENDER_HINT, StatusBadge, accessChoices, fmtTime, isGone, markGone, unmarkGone, type Access, type AdaptersInfo, type BindingDetail, type ConversationRow, type LogRow, type PairCodeRow } from './shared';
 import { WhatsAppLink } from './WhatsAppLink';
@@ -14,8 +15,10 @@ import { HealthCard } from './HealthCard';
 
 import { CustomerTab } from './CustomerMode';
 import { t } from '../../lib/i18n';
+import { Words } from '../../components/Words';
 import { useFollowTeam } from '../teams/follow';
 import { ComputerOnly, useIsPhoneSession } from '../../shell/computerOnly';
+import { PLACE } from '../../../../shared/places.js';
 
 type Tab = 'overview' | 'access' | 'customers' | 'conversations' | 'log' | 'settings';
 
@@ -53,7 +56,7 @@ export function BindingDetailPage({ id, info }: { id: string; info: AdaptersInfo
     <Page>
       <PageHeader width="4xl"
         title={
-          <span className="inline-flex items-center gap-2">
+          <span className="inline-flex items-center gap-2" translate="no">
             <Icon className="h-5 w-5 text-accent" aria-hidden />
             {b.name}
           </span>
@@ -124,6 +127,7 @@ function Overview({ b, info, reload, onSettings }: { b: BindingDetail; info: Ada
     }, b.enabled ? 'Verbinding verbroken' : 'Verbinden…');
   const del = () =>
     act.run(async () => {
+      const from = location.hash;
       // From here on nothing on this page asks for the binding again (it is gone in a moment).
       markGone(b.id);
       try {
@@ -132,7 +136,7 @@ function Overview({ b, info, reload, onSettings }: { b: BindingDetail; info: Ada
         unmarkGone(b.id);
         throw e;
       }
-      navigate('/m/channels');
+      navigate('/m/channels', { from });
     }, 'Koppeling verwijderd');
   const setTarget = (v: string) =>
     act.run(async () => {
@@ -146,7 +150,7 @@ function Overview({ b, info, reload, onSettings }: { b: BindingDetail; info: Ada
       <HealthCard b={b} reload={reload} onSettings={onSettings} />
       {!!b.botAddresses?.length && (
         <Card className="space-y-2 p-4">
-          <div className="font-semibold">E-mailadres per bot</div>
+          <CardHead icon={Mail} tone="blue" title="E-mailadres per bot" />
           <BotAddresses list={b.botAddresses} />
           <p className="text-xs text-muted">
             Mail aan zo’n adres komt bij die bot. Bij Gmail voeg je het toe onder Instellingen › Accounts › Verzenden als.
@@ -154,7 +158,27 @@ function Overview({ b, info, reload, onSettings }: { b: BindingDetail; info: Ada
         </Card>
       )}
       <Card className="space-y-3 p-4">
-        {b.last_ok_at && <div className="text-xs text-muted">{t('Verbinding laatst gemaakt {0}', timeAgo(b.last_ok_at))}</div>}
+        <CardHead icon={Bot} tone="teal" title="Wie antwoordt via dit kanaal?" />
+        <Field label={<span className="sr-only">Wie antwoordt via dit kanaal?</span>} hint={b.room_id ? 'Een groep: de bots in die groep antwoorden volgens de werkwijze van de groep.' : 'Wissel je van bot, dan beginnen nieuwe gesprekken in een nieuw gesprek.'}>
+          <TargetSelect value={targetValue(b)} onChange={setTarget} rooms={rooms} />
+        </Field>
+        {agent && (
+          <div className="text-sm text-muted">
+            {agent.name} werkt zelf met toegang <b className="text-fg">{BOT_ACCESS_LABEL[agent.access_mode] || agent.access_mode}</b>. Via dit kanaal krijgt niemand meer dan dat.{' '}
+            <a className="text-accent underline" href={`#/agents/${agent.id}`}>
+              Bot-instellingen
+            </a>
+          </div>
+        )}
+        {agent && <EngineNote engine={b.engine} botName={agent.name} />}
+      </Card>
+
+
+      {/* Rarely needed once it works: checking, disconnecting, removing and the technical ways in. Open by itself when
+          the channel is off or failing, because then this is where the way back is. */}
+      <MoreOptions defaultOpen={!b.enabled || b.status === 'error'}>
+        <Card className="space-y-3 p-4">
+          <CardHead as="h3" icon={Plug} tone="blue" title="Verbinding" hint={b.last_ok_at ? t('Verbinding laatst gemaakt {0}', timeAgo(b.last_ok_at)) : undefined} />
         {test && (
           <div className={cx('rounded-lg p-3 text-sm', test.ok ? 'bg-surface-2 text-fg' : 'bg-danger-soft text-danger')}>
             {test.detail}
@@ -179,23 +203,9 @@ function Overview({ b, info, reload, onSettings }: { b: BindingDetail; info: Ada
         </div>
         {guide && <RequirementBadges list={guide.requirements(b.config)} />}
       </Card>
+        <Connect b={b} info={info} />
+      </MoreOptions>
 
-      <Card className="space-y-3 p-4">
-        <Field label="Wie antwoordt via dit kanaal?" hint={b.room_id ? 'Een groep: de bots in die groep antwoorden volgens de werkwijze van de groep.' : 'Wissel je van bot, dan beginnen nieuwe gesprekken in een nieuw gesprek.'}>
-          <TargetSelect value={targetValue(b)} onChange={setTarget} rooms={rooms} />
-        </Field>
-        {agent && (
-          <div className="text-sm text-muted">
-            {agent.name} werkt zelf met toegang <b className="text-fg">{BOT_ACCESS_LABEL[agent.access_mode] || agent.access_mode}</b>. Via dit kanaal krijgt niemand meer dan dat.{' '}
-            <a className="text-accent underline" href={`#/agents/${agent.id}`}>
-              Bot-instellingen
-            </a>
-          </div>
-        )}
-        {agent && <EngineNote engine={b.engine} botName={agent.name} />}
-      </Card>
-
-      <Connect b={b} info={info} />
 
       <Modal
         open={confirmDel}
@@ -232,7 +242,7 @@ function CopyRow({ label, value }: { label: string; value: string }) {
         <code className="min-w-0 flex-1 truncate rounded-lg border border-line bg-canvas px-2 py-1.5 font-mono text-xs" title={value}>
           {value}
         </code>
-        <Button size="icon" variant="secondary" aria-label={`${label} kopiëren`} onClick={() => copy(value)}>
+        <Button size="icon" variant="secondary" aria-label={t('{0} kopiëren', t(label))} onClick={() => copyText(value)}>
           <Copy className="h-4 w-4" />
         </Button>
       </div>
@@ -269,7 +279,7 @@ function Connect({ b, info }: { b: BindingDetail; info: AdaptersInfo | null }) {
   const hooks = b.webhooks.filter((w) => b.adapter !== 'telegram' || b.config.mode === 'webhook').filter((w) => b.adapter !== 'slack' || b.config.mode === 'events');
   return (
     <Card className="space-y-3 p-4">
-      <div className="font-semibold">Bereikbaarheid</div>
+      <CardHead icon={Globe} tone="blue" title="Bereikbaarheid" />
       {items}
       {hooks.map((w) => (
         <div key={w.kind} className="space-y-2">
@@ -348,7 +358,7 @@ function AccessTab({ b, reload }: { b: BindingDetail; reload(): void }) {
     <>
       <Card className="space-y-3 p-4">
         <div>
-          <div className="font-semibold">Allowlist</div>
+          <CardHead icon={UserCheck} tone="rose" title="Allowlist" className="mb-1" />
           <p className="text-sm text-muted">Alleen deze afzenders bereiken de bot. Berichten van anderen worden genegeerd (je ziet ze in het logboek).</p>
         </div>
         {b.senders.length === 0 ? (
@@ -370,7 +380,7 @@ function AccessTab({ b, reload }: { b: BindingDetail; reload(): void }) {
                   <div className="truncate font-mono text-xs text-muted">{s.external_id}</div>
                 </div>
                 {!phone && <Toggle checked={s.is_owner} onChange={(v) => setOwnerFlag(s.id, v)} label={<span className="text-xs">Dit ben ik</span>} />}
-                <Button size="icon" variant="ghost" aria-label={`${s.label} verwijderen`} onClick={() => remove(s.id)}>
+                <Button size="icon" variant="ghost" aria-label={t('{0} verwijderen', s.label)} onClick={() => remove(s.id)}>
                   <Trash2 className="h-4 w-4" />
                 </Button>
               </li>
@@ -399,7 +409,7 @@ function AccessTab({ b, reload }: { b: BindingDetail; reload(): void }) {
 
       <Card className="space-y-3 p-4">
         <div>
-          <div className="font-semibold">Koppelcode</div>
+          <CardHead icon={KeyRound} tone="amber" title="Koppelcode" className="mb-1" />
           <p className="text-sm text-muted">
             Eenmalige code: wie hem binnen de geldigheid naar de bot stuurt ({b.adapter === 'email' ? <>“koppel CODE” in het onderwerp</> : <code className="font-mono">/koppel CODE</code>}), komt op de allowlist.
           </p>
@@ -442,7 +452,7 @@ function AccessTab({ b, reload }: { b: BindingDetail; reload(): void }) {
       </Card>
 
       <Card className="space-y-4 p-4">
-        <div className="font-semibold">Wat mag de bot via dit kanaal?</div>
+        <CardHead icon={ShieldCheck} tone="rose" title="Wat mag de bot via dit kanaal?" />
         <EngineNote engine={b.engine} botName={botName} where="hieronder" />
         <Field label="Voor anderen op de allowlist" hint={othersChoices.find((o) => o.value === others)?.hint}>
           <Select value={others} onChange={(e) => setCfg({ ...cfg, othersAccess: e.target.value })} aria-label="Voor anderen op de allowlist">
@@ -486,7 +496,7 @@ function AccessTab({ b, reload }: { b: BindingDetail; reload(): void }) {
         )}
         <div>
           <Toggle checked={cfg.transcribeVoice !== false} onChange={(v) => setCfg({ ...cfg, transcribeVoice: v })} label="Spraakberichten uitschrijven voor de bot" />
-          <div className="mt-1 ps-11 text-xs text-muted">Met de spraakherkenning uit Instellingen › Spraak.</div>
+          <div className="mt-1 ps-11 text-xs text-muted">{t('Met de spraakherkenning uit {0}.', t(PLACE.voice))}</div>
         </div>
         <Field label="Maximale bestandsgrootte (MB)" hint="Grotere bijlagen worden niet opgehaald of verstuurd.">
           <Input type="number" min={1} max={50} value={cfg.maxFileMb ?? 20} onChange={(e) => setCfg({ ...cfg, maxFileMb: Number(e.target.value) })} className="max-w-32" />
@@ -517,7 +527,7 @@ function AccessTab({ b, reload }: { b: BindingDetail; reload(): void }) {
                 <span className="text-xs text-muted">Of scan deze code met de camera van de telefoon: Telegram opent, druk op Start.</span>
               </div>
             )}
-            <Button variant="secondary" icon={<Copy className="h-4 w-4" />} onClick={() => copy(code.deepLink || code.command)}>
+            <Button variant="secondary" icon={<Copy className="h-4 w-4" />} onClick={() => copyText(code.deepLink || code.command)}>
               Kopiëren
             </Button>
           </div>
@@ -542,7 +552,7 @@ export function ReplyModal({ conversationId, open, onClose, title }: { conversat
     <Modal
       open={open}
       onClose={onClose}
-      title={`Zelf antwoorden — ${title}`}
+      title={<Words text="Zelf antwoorden — {0}" values={[title]} />}
       footer={
         <>
           <Button variant="ghost" onClick={onClose}>
@@ -609,7 +619,7 @@ function ConversationsTab({ b }: { b: BindingDetail }) {
           <li key={c.id} className="flex flex-wrap items-center gap-2 px-4 py-3">
             <div className="min-w-0 flex-1">
               <div className="flex flex-wrap items-center gap-1.5 text-sm font-medium">
-                {c.title}
+                <span translate="no">{c.title}</span>
                 <Badge>{c.is_private ? 'privé' : 'groep'}</Badge>
                 {c.handoff ? (
                   <Badge tone="warn">
@@ -619,7 +629,11 @@ function ConversationsTab({ b }: { b: BindingDetail }) {
                   c.paused && <Badge tone="warn">bot gepauzeerd</Badge>
                 )}
               </div>
-              {c.handoff && <div className="text-xs text-warn">{c.handoff.reason}</div>}
+              {c.handoff && (
+                <div className="text-xs text-warn" translate="no">
+                  {c.handoff.reason}
+                </div>
+              )}
               <div className="text-xs text-muted">
                 {c.last_sender ? `${c.last_sender} · ` : ''}in {fmtTime(c.last_inbound_at)} · uit {fmtTime(c.last_outbound_at)}
               </div>
@@ -794,7 +808,11 @@ function EventLog({ b, reload }: { b: BindingDetail; reload(): void }) {
               <div className="min-w-0 flex-1">
                 <div className="flex flex-wrap items-center gap-1.5">
                   <Badge tone={bad ? 'danger' : l.kind === 'message' ? 'neutral' : 'accent'}>{kind.label}</Badge>
-                  {l.sender_name && <span className="font-medium">{l.sender_name}</span>}
+                  {l.sender_name && (
+                    <span className="font-medium" translate="no">
+                      {l.sender_name}
+                    </span>
+                  )}
                   {l.sender_id && <span className="font-mono text-xs text-muted">{l.sender_id}</span>}
                   <span className="text-xs text-muted">{fmtTime(l.created_at)}</span>
                 </div>

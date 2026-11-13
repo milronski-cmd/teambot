@@ -3,34 +3,12 @@ import { ArrowUp, ChevronDown, ChevronRight, RotateCcw } from 'lucide-react';
 import { api } from '../lib/api';
 import { agentById, useApp } from '../lib/store';
 import type { Approval } from '../lib/types';
-import { BotAvatar } from '../components/BotFace';
-import { Badge, Button, Input, Select, Textarea, cx, timeAgo, toast, toastError } from '../components/ui';
+import { Badge, Button, Input, Select, Textarea, cx, toast, toastError } from '../components/ui';
 import { uiModules } from '../modules';
 import { approvalAction, approvalEngine } from './approvalLabels';
 import { stripRefs } from '../lib/preview';
 import { useIsPhoneSession } from './computerOnly';
-
-function Meta({ a, showThreadLink, verb }: { a: Approval; showThreadLink?: boolean; verb: string }) {
-  const agent = agentById(a.agent_id);
-  return (
-    <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted">
-      {showThreadLink && <BotAvatar bot={agent || { id: a.agent_id, name: 'bot' }} size={20} mood="waiting" />}
-      <span>
-        <span className="font-semibold text-fg">{agent?.name || 'Bot'}</span> {verb}
-      </span>
-      <span aria-hidden>·</span>
-      <span>{timeAgo(a.created_at)}</span>
-      {showThreadLink && a.thread_id && (
-        <>
-          <span aria-hidden>·</span>
-          <a className="font-semibold underline underline-offset-2 hover:text-fg" href={`#/t/${a.thread_id}`}>
-            naar gesprek
-          </a>
-        </>
-      )}
-    </div>
-  );
-}
+import { ApprovalMeta } from './ApprovalMeta';
 
 /**
  * The run that asked was interrupted by a crash or restart; the approval came back with it. Deciding resumes the run
@@ -44,6 +22,19 @@ function Interrupted({ a, question }: { a: Approval; question?: boolean }) {
       <span>
         <span className="font-semibold text-fg">Onderbroken door een herstart.</span>{' '}
         {question ? `Je antwoord gaat mee als ${name} verdergaat.` : `Als je toestaat, gaat ${name} verder waar hij was; weigeren kan ook.`}
+      </span>
+    </div>
+  );
+}
+
+/** Not answered within a short while: the bot went on with its other work, and the decision still reaches it. */
+function Parked({ a, question }: { a: Approval; question?: boolean }) {
+  const name = agentById(a.agent_id)?.name || 'de bot';
+  return (
+    <div className="mt-2 flex items-start gap-2 rounded-xl bg-surface-2 px-3 py-2 text-[13px] text-muted" role="note">
+      <RotateCcw className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden />
+      <span>
+        <span className="font-semibold text-fg">{name} werkt intussen door.</span> {question ? 'Je antwoord krijgt hij zodra je het geeft.' : 'Als je toestaat, voert hij dit alsnog uit; weigeren kan ook.'}
       </span>
     </div>
   );
@@ -134,7 +125,7 @@ function DefaultApprovalCard({ a, showThreadLink }: { a: Approval; showThreadLin
     try {
       await api.post(`/approvals/${a.id}`, { decision, answer: ans });
       useApp.setState((s) => ({ approvals: s.approvals.filter((x) => x.id !== a.id) }));
-      if (a.interrupted_at) {
+      if (a.interrupted_at || a.parked_at) {
         const name = agentById(a.agent_id)?.name || 'De bot';
         toast(decision === 'deny' ? `${name} gaat verder zonder deze actie` : `${name} gaat verder`, 'ok');
       }
@@ -155,8 +146,9 @@ function DefaultApprovalCard({ a, showThreadLink }: { a: Approval; showThreadLin
         options={a.options}
         meta={
           <>
-            <Meta a={a} showThreadLink={showThreadLink} verb="vraagt" />
+            <ApprovalMeta a={a} showThreadLink={showThreadLink} verb="vraagt" />
             {a.interrupted_at && <Interrupted a={a} question />}
+            {a.parked_at && <Parked a={a} question />}
           </>
         }
         busy={busy}
@@ -167,11 +159,12 @@ function DefaultApprovalCard({ a, showThreadLink }: { a: Approval; showThreadLin
   }
 
   const danger = a.risk === 'danger' || r.tone === 'danger';
-  const always = !danger && !a.interrupted_at && !a.sharedBot && !phone;
+  const always = !danger && !a.interrupted_at && !a.parked_at && !a.sharedBot && !phone;
   return (
     <div role="group" aria-label="Goedkeuring nodig" className={cx('w-full rounded-card border p-4', danger ? 'tb-ask-danger' : 'tb-ask')}>
-      <Meta a={a} showThreadLink={showThreadLink} verb={r.verb} />
+      <ApprovalMeta a={a} showThreadLink={showThreadLink} verb={r.verb} />
       {a.interrupted_at && <Interrupted a={a} />}
+      {a.parked_at && <Parked a={a} />}
       <div className="mt-2 flex items-start gap-2">
         <span className={cx('mt-[7px] h-2 w-2 shrink-0 rounded-full', danger ? 'bg-danger' : 'bg-warn')} aria-hidden />
         <div className="min-w-0 flex-1">
@@ -192,14 +185,14 @@ function DefaultApprovalCard({ a, showThreadLink }: { a: Approval; showThreadLin
       {/* Three clear choices (Grok's simplicity, with the details above): Eén keer, Overslaan, Altijd. "Altijd" only
           on the computer, never for a risky action, after a restart or for someone else's bot; the phone shows two. */}
       <div className={cx('mt-3 grid gap-2', always ? 'grid-cols-3' : 'grid-cols-2', 'max-w-md')}>
-        <Button variant="primary" className="justify-center" loading={busy === 'approve'} onClick={() => decide('approve')} aria-label={a.interrupted_at ? undefined : 'Eén keer toestaan'} title="Alleen deze ene actie toestaan">
+        <Button variant="primary" className={cx('justify-center max-sm:!px-2', !a.interrupted_at && 'whitespace-nowrap')} loading={busy === 'approve'} onClick={() => decide('approve')} aria-label={a.interrupted_at ? undefined : 'Eén keer toestaan'} title="Alleen deze ene actie toestaan">
           {a.interrupted_at ? 'Toestaan en hervatten' : 'Eén keer'}
         </Button>
-        <Button className="justify-center" loading={busy === 'deny'} onClick={() => decide('deny')} title="Niet toestaan; de bot gaat verder zonder deze actie">
+        <Button className="justify-center whitespace-nowrap max-sm:!px-2" loading={busy === 'deny'} onClick={() => decide('deny')} title="Niet toestaan; de bot gaat verder zonder deze actie">
           Overslaan
         </Button>
         {always && (
-          <Button className="justify-center" loading={busy === 'always'} onClick={() => decide('always')} aria-label="Altijd toestaan voor deze bot" title="Deze bot mag dit voortaan zonder te vragen">
+          <Button className="justify-center whitespace-nowrap max-sm:!px-2" loading={busy === 'always'} onClick={() => decide('always')} aria-label="Altijd toestaan voor deze bot" title="Deze bot mag dit voortaan zonder te vragen">
             Altijd
           </Button>
         )}
@@ -236,7 +229,7 @@ function FormCard({ a, busy, decide, showThreadLink }: { a: Approval; busy: stri
         }}
       >
         <div>
-          <Meta a={a} showThreadLink={showThreadLink} verb="vraagt" />
+          <ApprovalMeta a={a} showThreadLink={showThreadLink} verb="vraagt" />
           {a.interrupted_at && <Interrupted a={a} question />}
         </div>
         <div className="flex items-start gap-2">

@@ -9,6 +9,10 @@ import assert from 'node:assert/strict';
 import { startTestApp, type TestApp } from './helpers.js';
 import { fileUnderTeams } from '../server/modules/memory/teams.js';
 
+// These tests are about bots that are not the main bot: without this the first bot would be it (teams `autoMain`,
+// covered in works-right-away.test.ts).
+process.env.TEAMBOT_TEST_NO_AUTO_MAIN = '1';
+
 const svcOf = (t: TestApp) => t.app.ctx.services.memory.svc;
 
 async function tool(t: TestApp, agentId: string, name: string, args: any) {
@@ -25,7 +29,7 @@ async function twoTeams() {
   const ada = await t.agent({ name: 'Ada' });
   const [def] = await t.api('GET', '/teams');
   const A = await t.api('PATCH', `/teams/${def.id}`, { name: 'Team A' });
-  const B = await t.api('POST', '/teams', { name: 'Team B' });
+  const B = await t.api('POST', '/teams', { name: 'Team B', starterRules: false });
   const bo = await t.agent({ name: 'Bo', settings: { homeTeam: B.id } });
   return { t, ada, bo, A, B, owner: t.app.ctx.auth.owner()!.id };
 }
@@ -55,7 +59,8 @@ test('update from 0.3: old memory goes into “Mijn team”, every bot sees what
     // NULL already counts as the default team (read before filing) …
     assert.equal(adaBefore.items.length, 3);
     assert.equal(evaBefore.items.length, 2, 'Eva never saw Ada’s own notes');
-    assert.deepEqual(adaBefore.dossiers, [d.id]);
+    // (Every note is a note of a dossier: the core dossiers of the place exist too. Of the subject dossiers, the one.)
+    assert.deepEqual(adaBefore.dossiers.filter((id: string) => !store.one<any>('SELECT core FROM memory_dossiers WHERE id = ?', id)?.core), [d.id]);
     // … and filing puts everything under a real team, with exactly the same visibility.
     const [team] = await t.api('GET', '/teams');
     assert.ok(fileUnderTeams(svc) >= 3);
@@ -66,11 +71,12 @@ test('update from 0.3: old memory goes into “Mijn team”, every bot sees what
     assert.deepEqual(before(ada), adaBefore);
     assert.deepEqual(before(eva), evaBefore);
     // A second team: its bot sees "Over jou" (personal, as before) but nothing of "Mijn team".
-    const B = await t.api('POST', '/teams', { name: 'Thuis' });
+    const B = await t.api('POST', '/teams', { name: 'Thuis', starterRules: false });
     const bo = await t.agent({ name: 'Bo', settings: { homeTeam: B.id } });
     const r = svc.readerFor(store.agent(bo.id)!, null);
     assert.deepEqual(svc.searchItems(r, 'fietsen Sanne nieuwsbrief', { limit: 50 }).map((h: any) => svc.contentOf(h.row)), ['Ik heet Sanne']);
-    assert.deepEqual(svc.readableDossiers(r), []);
+    // Of the dossiers: only the owner's own (what "Over jou" was, for every team), nothing of "Mijn team".
+    assert.deepEqual(svc.readableDossiers(r).map((id: string) => store.one<any>('SELECT core FROM memory_dossiers WHERE id = ?', id)?.core), ['owner']);
   } finally {
     await t.close();
   }
@@ -113,6 +119,48 @@ test('dedup and quotas per team; “onthoud voor alle teams” is for every team
   }
 });
 
+test('what the owner says in a team stays in that team — named ("voor ons team Privé"), about himself, or written by the bot itself — unless he says it is for all teams; the bot is told truly where it is', async () => {
+  const { t, ada: schrijver, bo: dagboek, B } = await twoTeams();
+  try {
+    await t.api('PATCH', `/teams/${B.id}`, { name: 'Privé' });
+    const store = t.app.ctx.store;
+    const sys = async (id: string) => {
+      const th = await t.api('POST', '/threads', { agentId: id });
+      const n = t.requests.length;
+      t.script.push({ text: 'ok' });
+      await t.say(th.id, 'Hoi');
+      return String(t.requests[n].system);
+    };
+    // In team Privé, to Dagboek: one fact for the team by its name, one about himself.
+    const th = await t.api('POST', '/threads', { agentId: dagboek.id });
+    t.script.push({ text: 'Genoteerd.' });
+    const msgs = await t.say(th.id, 'Onthoud voor ons team Privé: de codenaam van mijn dagboek is KOLIBRIE-23. En onthoud over mij persoonlijk: ik heb vrijdag om 9 uur een afspraak bij de tandarts.');
+    const mine = msgs.find((m: any) => m.role === 'user');
+    const said = JSON.stringify((await t.api('GET', `/memory/message/${mine.id}`)) || {});
+    assert.match(said, /alleen de bots van team Privé lezen het/, 'the bot is told where it really is');
+    assert.doesNotMatch(said, /alle teams lezen het/);
+    const priv = await sys(dagboek.id);
+    assert.match(priv, /KOLIBRIE-23/);
+    assert.match(priv, /tandarts/);
+    const werk = await sys(schrijver.id);
+    assert.doesNotMatch(werk, /KOLIBRIE|tandarts/, 'nothing of it reaches team Werk');
+    assert.doesNotMatch(await tool(t, schrijver.id, 'memory_search', { query: 'codenaam dagboek tandarts afspraak' }), /KOLIBRIE|tandarts/);
+    // The bot itself writes something about him in "Eigenaar": it stays in the team as well, and the bot is told so.
+    const out = await tool(t, dagboek.id, 'dossier_write', { dossier: 'Eigenaar', content: '- Hij schrijft elke avond in zijn dagboek.' });
+    assert.match(out, /blijft in dit team/);
+    assert.doesNotMatch(await sys(schrijver.id), /elke avond in zijn dagboek/);
+    assert.match(await sys(dagboek.id), /elke avond in zijn dagboek/);
+    // "Voor alle teams": then every team reads it.
+    const th2 = await t.api('POST', '/threads', { agentId: dagboek.id });
+    t.script.push({ text: 'Genoteerd.' });
+    await t.say(th2.id, 'Onthoud voor alle teams dat ik in Zwolle woon.');
+    assert.match(await sys(schrijver.id), /Zwolle/);
+    void store;
+  } finally {
+    await t.close();
+  }
+});
+
 test('forgetting is global: every copy in every team goes, and nothing can store it again', async () => {
   const { t, ada, bo, A, B } = await twoTeams();
   try {
@@ -124,7 +172,7 @@ test('forgetting is global: every copy in every team goes, and nothing can store
     const b = (await t.api('POST', '/memory/items', { content: fact, scope: 'shared', teamId: B.id })).item;
     const d = (await t.api('POST', '/memory/dossiers', { title: 'Loods', teamId: A.id })).dossier;
     const rec = (await t.api('POST', `/memory/dossiers/${d.id}/records`, { kind: 'decision', title: 'De loods gaat om zes uur dicht' })).record;
-    const C = await t.api('POST', '/teams', { name: 'Team C' });
+    const C = await t.api('POST', '/teams', { name: 'Team C', starterRules: false });
     const copy = await t.api('POST', '/memory/teams/copy', { fromTeamId: A.id, toTeamId: C.id });
     assert.equal(copy.dossiers, 1);
     const copied = store.one<any>("SELECT * FROM memory_items WHERE copy_of = ? AND scope = 'shared'", a.id);
@@ -180,7 +228,7 @@ test('“vakkennis meenemen” copies only dossiers and shared knowledge, never 
     const none = t.app.ctx.services.teams.copyTeamData(store.agent(ada.id)!.user_id, A.id, B.id, {});
     assert.equal(none.memory, undefined);
     assert.equal(itemsB(), 0);
-    assert.equal(count('SELECT COUNT(*) AS n FROM memory_dossiers WHERE team_id = ?', B.id), 0);
+    assert.equal(count('SELECT COUNT(*) AS n FROM memory_dossiers WHERE team_id = ? AND core IS NULL', B.id), 0);
 
     // With "vakkennis meenemen".
     const r = t.app.ctx.services.teams.copyTeamData(store.agent(ada.id)!.user_id, A.id, B.id, { knowledge: true }).memory;
@@ -229,7 +277,7 @@ test('a specialist’s knowledge base inherits its bot’s team; a module writin
     assert.throws(() => mem.dossiers.addEvent(owner, kb.id, { title: 'Ada schrijft hier niet' }, ada.id), /Team B/);
     assert.equal(mem.remember(owner, { content: 'Ada schrijft hier ook niet', scope: 'dossier', dossierId: kb.id, agentId: ada.id, createdBy: 'agent' }).action, 'invalid');
     // A bot that creates a dossier itself: in its own team.
-    await tool(t, bo.id, 'dossier_create', { title: 'Zoekwoorden' });
+    await tool(t, bo.id, 'dossier_write', { dossier: 'Zoekwoorden', content: 'Zoekwoorden voor de winkels.' });
     assert.equal(t.app.ctx.store.one<any>("SELECT team_id FROM memory_dossiers WHERE title = 'Zoekwoorden'")?.team_id, B.id);
   } finally {
     await t.close();

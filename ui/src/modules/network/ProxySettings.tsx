@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
-import { Check, CircleAlert, CircleCheck, Minus, ShieldCheck } from 'lucide-react';
+import { ArrowLeftRight, Check, CircleAlert, CircleCheck, Minus, Network, PlugZap, ShieldCheck } from 'lucide-react';
 import { api } from '../../lib/api';
-import { Badge, Button, Card, Field, Input, Spinner, Textarea, Toggle, cx, timeAgo, toast, toastError } from '../../components/ui';
+import { Badge, Button, Card, CardHead, Field, Input, Spinner, Textarea, Toggle, cx, timeAgo, toast, toastError } from '../../components/ui';
 import { ComputerOnly, useIsPhoneSession } from '../../shell/computerOnly';
 
 interface ProxyView {
@@ -133,10 +133,12 @@ function ProxyForm() {
         </Card>
       )}
       <Card className="space-y-5 p-5">
-        <div className="flex flex-wrap items-center justify-between gap-2">
-          <h2 className="text-[15px] font-bold tracking-tight">Proxy voor uitgaand verkeer</h2>
-          {v.active ? <Badge tone="ok">Actief</Badge> : v.enabled && v.applyError ? <Badge tone="danger">Niet actief</Badge> : <Badge>Uit</Badge>}
-        </div>
+        <CardHead
+          icon={Network}
+          tone="blue"
+          title="Proxy voor uitgaand verkeer"
+          action={v.active ? <Badge tone="ok">Actief</Badge> : v.enabled && v.applyError ? <Badge tone="danger">Niet actief</Badge> : <Badge>Uit</Badge>}
+        />
         <p className="text-sm leading-relaxed text-muted">
           Voor een netwerk dat alleen via een proxy naar internet mag, zoals op kantoor.
         </p>
@@ -193,8 +195,7 @@ function ProxyForm() {
       </Card>
 
       <Card className="space-y-4 p-5">
-        <h2 className="text-[15px] font-bold tracking-tight">Verbinding testen</h2>
-        <p className="text-sm text-muted">Haalt deze pagina op via de proxy hierboven. Opslaan is niet nodig.</p>
+        <CardHead icon={PlugZap} tone="blue" title="Verbinding testen" hint="Haalt deze pagina op via de proxy hierboven. Opslaan is niet nodig." />
         <div className="flex flex-col gap-2 sm:flex-row">
           <Input value={target} onChange={(e) => setTarget(e.target.value)} aria-label="Testadres" placeholder="https://example.com" inputMode="url" spellCheck={false} translate="no" className="sm:flex-1" />
           <Button loading={testing} disabled={!url.trim()} onClick={test}>
@@ -210,7 +211,7 @@ function ProxyForm() {
       </Card>
 
       <Card className="space-y-4 p-5">
-        <h2 className="text-[15px] font-bold tracking-tight">Wat gaat via de proxy?</h2>
+        <CardHead icon={ArrowLeftRight} tone="blue" title="Wat gaat via de proxy?" />
         <div className="grid gap-5 md:grid-cols-2">
           <div>
             <h3 className="mb-2 text-[13px] font-semibold">Wel</h3>

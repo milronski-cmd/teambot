@@ -7,18 +7,25 @@ connectorcatalogus van de MCP-module. De zelf geschreven skills van TeamBot en e
 staan onder "Zelf geschreven en eigen catalogi" (een link onder de catalogus). Bot-sjablonen blijven ingebouwd: er is
 (nog) geen openbare, legitieme bron voor bot-sjablonen.
 
-**Voor een normaal mens (0.4.5).** De pagina opent op *Aanbevolen voor je bots*: per bot een korte lijst (3 skills,
-2 apps) die past bij de naam, rol en beschrijving van die bot (een SEO-bot krijgt eerst de SEO-skills), zonder bots
-één skill per onderwerp. Skills en Apps hebben één zoekvak en **onderwerpen als tegels** met een pictogram
-(Marketing en SEO, Klantenservice en verkoop, Bouwen en data, Kantoor en ontwerp, Zoeken, Schrijven en plannen,
-Overig). Elke catalogusvermelding valt via haar categorie (en anders haar pakket) in een tegel; een categorie die
-nergens past krijgt een eigen tegel, dus nieuwe catalogusbestanden met nieuwe pakketten werken zonder UI-wijziging
-(`ui/src/modules/skills/marketGroups.ts`). Een kaart toont de naam, één zin, *Gratis*, de licentie, *Werkt op Windows*
-waar dat bekend is (gecontroleerd, of alleen tekst zonder scripts) en één knop **Toevoegen**; daarna één keuze: *het
-hele team* (alle bots van dat team) of één bot. Wat er al is, heet *Toegevoegd*, met de melding van een nieuwe versie.
-De controles blijven precies zoals hieronder (licentie, scan bij toevoegen, uitgeverscontrole, vaste versie); op de
-kaart zijn ze één klein **Gecontroleerd** met de uitleg achter (i). Apps uit het register zijn niet door TeamBot
-gecontroleerd en krijgen dat label dus niet.
+**Voor een normaal mens.** De pagina opent op *Aanbevolen voor je bots*: per bot een korte lijst die past bij de naam,
+rol en beschrijving van die bot (een SEO-bot krijgt eerst de SEO-skills), zonder bots één skill per onderwerp. *Alles*
+heeft één zoekvak en **onderwerpen als tegels** (Marketing en SEO, Klantenservice en verkoop, Bouwen en data, Kantoor
+en ontwerp, Zoeken, Schrijven en plannen, Overig; `ui/src/modules/skills/marketGroups.ts`). De lijst staat op
+**sterren**: de skills uit de repository met de meeste sterren op GitHub eerst. Een kaart toont een icoon, de naam, de
+bron met het aantal sterren, één zin en één knop **Toevoegen**. Toevoegen is **één klik**: de skill is er meteen voor
+alle bots van het team; er is geen keuze per bot en er valt niets in te stellen. Wat er al is, heet *Toegevoegd*, met
+de melding van een nieuwe versie. Een klik op de kaart opent de **pagina van de skill** (met de pijl terug): wat hij
+doet, bron, sterren en licentie, wat hij nodig heeft, de instructies die de bot leest, en daaronder de controle
+(rechten, veiligheidsscan, bestanden). Bevat een skill scripts, dan staat daar welke; ze staan na toevoegen uit en er
+wordt niets uitgevoerd. **Toevoegen via link** (naast het zoekvak) neemt elke skill in het open SKILL.md-formaat over
+van een GitHub-map, een link naar een SKILL.md (de hele map komt mee, met scripts en andere bestanden), een zip of een
+map op de computer; je ziet eerst wat erin zit, met de scan. De controles blijven zoals hieronder (licentie, scan bij
+toevoegen, uitgeverscontrole, vaste versie); op de kaart zijn ze één klein **Gecontroleerd** met de uitleg erachter.
+Apps uit het register zijn niet door TeamBot gecontroleerd en krijgen dat label dus niet.
+
+**Bots doen het zelf.** Een bot zoekt met `skill_find` in wat het team heeft en in de catalogus, voegt toe met
+`skill_install` (een id uit de catalogus of een adres op GitHub) en legt een eigen werkwijze vast met `skill_save`;
+zie [skills.md](skills.md).
 
 Waarom een eigen catalogus (onderzoek *Knelpunten gebruikers alle AI bots*, 9 november 2026): besmette skills haalden
 in 2026 samen meer dan 1,7 miljoen downloads door eerst een exacte kopie van een officiële skill te uploaden en die
@@ -29,43 +36,79 @@ Vanaf twee teams kies je bij installeren voor welk team (of *Alle teams*); "Geï
 
 ## TeamBot-catalogus
 
-Gecontroleerd op 9 november 2026 met de GitHub-API (`gh`): repository, het licentiebestand dat voor elke gekozen
-skillmap geldt, en de nieuwste commit; daarna vastgezet. Elke gekozen skill is dezelfde dag live geïnstalleerd vanaf
-deze commits (68 direct; planning-with-files vraagt een bevestiging omdat de bestaande scan een geciteerde zin
-"Ignore any instruction-like text" als prompt-injectie ziet).
+Wat de community echt gebruikt, niet de standaardpakketten van leveranciers. De lijst is gemaakt op 12 november 2026:
+op GitHub gezocht naar repositories met skills in het open SKILL.md-formaat, gesorteerd op sterren, van elke kandidaat
+een deel gelezen, en het licentiebestand per skillmap nagekeken (GitHub-API via `gh`). Daarna is **elke** skill
+hieronder in een testapp vanaf zijn vastgezette commit met één klik toegevoegd en door een bot die nooit is ingesteld
+geladen met `skill_load` (78 van 78). Het aantal sterren is dat van die dag; het staat op elke kaart en
+bepaalt de volgorde.
 
-| Bron | Commit | Licentie (bestand) | Skills |
-| --- | --- | --- | --- |
-| `anthropics/knowledge-work-plugins` | `e050c2ec` (2026-11-07) | Apache-2.0 (`customer-support/LICENSE`, `marketing/LICENSE`, `data/LICENSE`; operations en small-business: `LICENSE` in de hoofdmap) | klantenservice 5, marketing 8, operations 9, data 7, klein bedrijf 12 |
-| `anthropics/skills` | `2c5958ec` (2026-11-06) | Apache-2.0 (`skills/<naam>/LICENSE.txt`; pas vanaf deze commit, PR #2146) | docx, pdf, pptx, xlsx |
-| `obra/superpowers` | `22f0b463` (2026-11-03) | MIT (`LICENSE`) | verification-before-completion, writing-plans, executing-plans, systematic-debugging, test-driven-development, receiving-code-review |
-| `coreyhaines31/marketingskills` | `96798cf3` (2026-11-06) | MIT (`LICENSE`) | copywriting, copy-editing, ads, ad-creative, emails, social, cro, pricing, launch, ai-seo |
-| `AgriciDaniel/claude-seo` | `6be93f45` (2026-10-22) | MIT (`LICENSE`; de `LICENSE.txt` in de skillmappen verwijst ernaar) | seo-local, seo-plan, seo-content-brief, seo-geo, seo-schema, seo-hreflang |
-| `blader/humanizer` | `0ef9fe5b` (2026-10-28) | MIT (`LICENSE`) | humanizer |
-| `OthmanAdi/planning-with-files` | `2362ca38` (2026-11-07) | MIT (`LICENSE`) | planning-with-files |
+| Bron | Sterren | Commit | Licentie | Skills |
+| --- | --- | --- | --- | --- |
+| `mattpocock/skills` | 321.994 | `4ae2317d` (2026-10-31) | MIT | to-spec, tdd, grilling, handoff |
+| `obra/superpowers` | 316.285 | `22f0b463` (2026-11-03) | MIT | brainstorming, writing-plans, systematic-debugging, verification-before-completion, executing-plans |
+| `addyosmani/agent-skills` | 115.896 | `301b02b1` (2026-11-01) | MIT | spec-driven-development, planning-and-task-breakdown, shipping-and-launch, security-and-hardening, performance-optimization |
+| `blader/humanizer` | 67.965 | `b48c832f` (2026-11-10) | MIT | humanizer |
+| `coreyhaines31/marketingskills` | 59.778 | `1f837447` (2026-11-11) | MIT | copywriting, seo-audit, ai-seo, ads, cold-email, emails, content-strategy, cro, ad-creative, programmatic-seo, schema, site-architecture, link-building, analytics, social, copy-editing, pricing |
+| `K-Dense-AI/scientific-agent-skills` | 56.845 | `2d2065fb` (2026-11-09) | MIT | market-research-reports, statistical-analysis |
+| `obsidianmd/obsidian-skills` | 51.710 | `39812773` (2026-11-11) | MIT | obsidian-markdown, defuddle |
+| `alirezarezvani/claude-skills` | 29.654 | `9ca476d8` (2026-11-11) | MIT | financial-analyst, month-end-close, customer-success-manager |
+| `AgriciDaniel/claude-seo` | 28.240 | `cca7e4a2` (2026-11-11) | MIT | seo-technical, seo-ecommerce, seo-local, seo-schema, seo-content, seo-plan, seo-content-brief, seo-geo |
+| `phuryn/pm-skills` | 27.892 | `9af7bfd0` (2026-11-08) | MIT | competitor-analysis, market-sizing, pricing-strategy |
+| `zubair-trabzada/geo-seo-claude` | 11.628 | `989cae01` (2026-10-05) | MIT | geo-audit, geo-llmstxt |
+| `SawyerHood/dev-browser` | 6.727 | `520ba5cb` (2026-11-03) | MIT | dev-browser |
+| `czlonkowski/n8n-skills` | 6.630 | `e037563e` (2026-10-24) | MIT | n8n-code-javascript, n8n-error-handling |
+| `sergebulaev/linkedin-skills` | 5.843 | `8f8bc4b4` (2026-10-27) | MIT | linkedin-post-writer, linkedin-profile-optimizer |
+| `lackeyjb/playwright-skill` | 3.285 | `dd47a6a0` (2026-08-14) | MIT | playwright-skill |
+| `addyosmani/web-quality-skills` | 3.069 | `afa8da94` (2026-08-24) | MIT | seo, core-web-vitals, accessibility |
+| `wondelai/skills` | 2.669 | `d8d5d75f` (2026-11-02) | MIT | hundred-million-offers, one-page-marketing, mom-test |
+| `Kappaemme-git/codex-first-customer-finder-skill` | 1.249 | `d3f6964b` (2026-09-19) | MIT | first-customer-finder |
+| `jezweb/claude-skills` | 1.108 | `1260fa74` (2026-10-09) | MIT | shopify-setup, shopify-products, wordpress-setup, wordpress-content, seo-local-business |
+| `growthenginenowoslawski/coldoutboundskills` | 813 | `25c5d85f` (2026-10-05) | MIT | campaign-strategy, campaign-copywriting, spam-word-checker |
+| `40RTY-ai/shopify-admin-skills` | 204 | `e3579f43` (2026-10-26) | MIT | shopify-admin-order-lookup-and-summary, shopify-admin-refund-and-reorder, shopify-admin-low-inventory-restock, shopify-admin-seo-metadata-audit, shopify-admin-payout-reconciliation |
 
-Bewust niet opgenomen: CC BY-NC-ND (`hesreallyhim/awesome-claude-code`), CC-BY-SA (`trailofbits/skills`), de
-Figma-skills (Figma Developer Terms), repositories zonder licentiebestand (`vercel-labs/agent-skills`,
-`ComposioHQ/awesome-claude-skills`) en AGPL. Bij claude-seo zijn alleen onderdelen gekozen die (vrijwel) zonder hun
-eigen Python-hulpprogramma werken; skills van knowledge-work-plugins/small-business werken het best met gekoppelde
-(vaak betaalde) diensten, en zeggen dat zelf.
+Samen 78 skills uit 21 repositories. Een skill staat er alleen in als de repository een open licentie in een
+licentiebestand heeft (MIT, Apache-2.0, BSD, ISC), de vastgezette versie door de importregels komt, en hij zonder
+bevestiging toe te voegen is.
 
-Windows (documentskills): docx, pptx en xlsx *deels*: maken en lezen werkt met Node.js/Python, maar alles via
-`scripts/office/soffice.py` (pdf maken, formules doorrekenen, voorbeeldafbeeldingen) gebruikt `socket.AF_UNIX` en een
-`LD_PRELOAD`-truc; Python op Windows heeft geen `AF_UNIX` (gecontroleerd met Python 3.12.10 op Windows 11), en
-LibreOffice staat meestal niet in het pad. pdf gebruikt alleen Python-bibliotheken (niet uitgevoerd op Windows).
+Bewust niet opgenomen:
+- **standaardpakketten van leveranciers** (Anthropic, Google, OpenAI, Vercel): de eigenaar wil wat mensen zelf kozen.
+  Wie ze toch wil, voegt ze toe met *Toevoegen via link*;
+- **geweigerd door de importregels** (te veel of te grote bestanden, archieven): `Leonxlnx/taste-skill`,
+  `tt-a1i/archify`, `mvanhorn/last30days-skill`, `nicobailon/visual-explainer`, `Agents365-ai/drawio-skill`,
+  `mikehasa/golive-skill`;
+- **ernstige bevinding in de veiligheidsscan** (vraagt een bevestiging, dus geen één klik):
+  `OthmanAdi/planning-with-files`, `nidhinjs/prompt-master`, `n8n-workflow-patterns` uit `czlonkowski/n8n-skills`;
+- `AgriciDaniel/claude-ads`: de hoofdskill heet `ads`, net als die van marketingskills (één naam per team), en de
+  andere skills leunen op die hoofdskill;
+- **geen of een beperkende licentie**: `vercel-labs/agent-skills` en `ComposioHQ/awesome-claude-skills` (geen
+  licentiebestand), `sickn33/agentic-awesome-skills` (teksten CC BY 4.0), `trailofbits/skills` (CC-BY-SA),
+  `hesreallyhim/awesome-claude-code` (CC BY-NC-ND), AGPL;
+- **werken niet als losse skillmap**: `garrytan/gstack`, `Panniantong/Agent-Reach`, `nowork-studio/notfair-plugin`.
+
+Waar de community weinig goeds heeft (stand 12 november 2026): Google Merchant Center, WooCommerce, Nederlandse
+boekhouding en btw, en Excel. Daar staat dus weinig of niets; een bot kan er zelf een skill voor vastleggen
+(`skill_save`).
+
+Skills met scripts: de scripts staan na toevoegen uit en zijn op Windows niet door TeamBot uitgevoerd; de werkwijze zelf
+werkt zonder.
 
 Code: `server/modules/skills/{curated,curated-source,curated-routes,import-rules,textdiff}.ts` (catalogus),
-`server/modules/skills/{websource,web-routes,webcache,licenses}.ts` (open bronnen, cache, licenties),
+`server/modules/skills/{websource,web-routes,webcache,licenses}.ts` (open zoeken in GitHub, skills.sh en ClawHub; cache; licenties),
 `server/modules/mcp/registry.ts` (+ routes in `server/modules/mcp/api.ts`), UI
-`ui/src/modules/skills/{Catalog,ClearMarket,Recommended,WebSkills,RegistryApps,marketParts,merge}.tsx` en `marketGroups.ts`. Tests: `tests/skills-catalog.test.ts`
-(lokale fixture-repository in `tests/fixtures/curated/`), `tests/marketplace-web.test.ts` en `tests/market-speed.test.ts`
-met opgenomen antwoorden in `tests/fixtures/market/` (geen netwerk; vertraagde bronnen worden gesimuleerd), de duidelijke pagina (tegels, zoeken, Toevoegen voor een bot of het hele team, ook op de telefoon): `node --import tsx tests/e2e/market-clear.mjs`, in de echte
-UI: `node --import tsx tests/e2e/market-speed.mjs [map voor schermafbeeldingen]` (open bronnen via
-`#/m/skills/skills?bron=internet`; na `npm run build:ui`; `MARKET_SPEED_LIVE=1` voor het echte internet), live:
+`ui/src/modules/skills/{Catalog,ClearMarket,Recommended,OpenMarket,RegistryApps,marketParts,merge}.tsx` en `marketGroups.ts`. Tests: `tests/skills-catalog.test.ts`
+(lokale fixture-repository in `tests/fixtures/curated/`), `tests/skills-catalog-data.test.ts` (de lijst zelf), `tests/skills-web-open.test.ts` (open zoeken en toevoegen, tegen een nagebootste GitHub, skills.sh en ClawHub op 127.0.0.1), `tests/marketplace-web.test.ts` en `tests/market-speed.test.ts`
+met opgenomen antwoorden in `tests/fixtures/market/` (geen netwerk; vertraagde bronnen worden gesimuleerd), de duidelijke pagina (tegels, zoeken, Toevoegen in één klik, de skillpagina, ook op de telefoon): `node --import tsx tests/e2e/market-clear.mjs`, in de echte
+UI: `node --import tsx tests/e2e/market-speed.mjs [map voor schermafbeeldingen]` (de weergave Openbaar via
+`#/m/skills/skills?bron=open`; na `npm run build:ui`; `MARKET_SPEED_LIVE=1` voor het echte internet), live:
 `OPENAI_KEY_FILE=… npm run market:live` (tijdelijke datamap).
 
 ## Snel eerste beeld (stale-while-revalidate)
+
+Voor skills: *Gecontroleerd* vraagt geen netwerk en staat er meteen. *Open* vraagt GitHub, skills.sh en ClawHub elk
+apart (`only=github|directory|clawhub`), zodat een trage bron de kaarten van de andere niet ophoudt; wat al eens
+gezocht is, komt uit de cache zonder verzoek. De punten hieronder over `pending`, `refreshing` en "Alvast klaar" gelden
+voor de apps uit het MCP-register.
 
 - Alle bronnen lopen parallel, elk met een eigen tijdslimiet (`SOURCE_TIMEOUTS` in `websource.ts`: HEAD-controle 10 s,
   archief 60 s, GitHub-API 10 s, skills.sh 10 s; register 10 s per verzoek). Eén trage bron houdt de rest niet op.
@@ -85,30 +128,60 @@ UI: `node --import tsx tests/e2e/market-speed.mjs [map voor schermafbeeldingen]`
   internetkaarten 3,4 s, compleet 4,9 s; tegen het echte internet eerste kaarten 1,6 s, eerste internetkaarten 2,0 s,
   alle collecties 8,8 s; apps 1,4 s met alle 49 aanbevolen apps.
 
-## Open bronnen (alleen als ze bewust zijn ingesteld)
+## Open: alles wat openbaar is
 
-Sinds 0.4 is de lijst open collecties standaard leeg (`DEFAULT_COLLECTIONS = []`; de oude lijst staat als
-`OPEN_COLLECTIONS` in `websource.ts`) en zoekt TeamBot niet meer in skills.sh. Met
-`TEAMBOT_SKILL_COLLECTIONS=eigenaar/repo,…` (ontwikkelaars, tests) verschijnt *Open bronnen (niet gecontroleerd)*
-weer, met skills.sh-zoeken erbij; dan geldt de beschrijving hieronder (stand 2026-11-07). Eigen import via een adres
-(Mijn skills › Importeren) blijft kunnen, met de uitgever-controle op namaaknamen.
+Naast *Gecontroleerd* heeft Skills de weergave *Open*: één zoekvak en één sorteerkeuze over alles wat openbaar is, voor
+iedereen aan (geen instelling; de omgevingsvariabele `TEAMBOT_SKILL_COLLECTIONS` en de open collecties van 0.3 bestaan
+niet meer). Niemand bij TeamBot heeft deze skills bekeken; de controle gebeurt op het moment van toevoegen. Zoek je op
+woorden, dan staan de treffers uit de gecontroleerde catalogus en uit de eigen catalogi er ook bij.
 
-| Bron | Wat | Toegang | Licentie van de inhoud |
+| Bron | Wat | Toegang (zonder account) | Getallen op de kaart |
 | --- | --- | --- | --- |
-| GitHub-collecties | Mappen met een `SKILL.md` in bekende openbare repositories (lijst hieronder) | Archief-download via `codeload.github.com` (geen API-limiet); welke commit `HEAD` is, leest TeamBot uit de doorverwijzing van `github.com/<repo>/archive/HEAD.zip` | Per skill bepaald (zie Licenties) |
-| skills.sh | Zoekfunctie van de openbare skills-directory (`/api/search`), met installatie-aantallen | Openbaar, per IP beperkt; de voorwaarden staan caching uitdrukkelijk toe. `/api/v1` vraagt een Vercel-token en wordt niet gebruikt | Resultaten wijzen naar GitHub-repositories; daar wordt de licentie gelezen |
-| GitHub-API | Alleen sterren, licentie volgens GitHub en (fallback) de bestandsboom van te grote repositories | 60/uur zonder token; optioneel token in de kluis | — |
+| GitHub | Repositories met skills: zonder woorden alles met het topic `agent-skills`, met woorden die woorden plus "skill" in naam, beschrijving of topics (`/search/repositories`). De skills in een repository leest TeamBot uit het archief (`codeload.github.com`, geen API-limiet) | 10 zoekopdrachten per minuut; code zoeken (mappen met een `SKILL.md`) vraagt een account en wordt niet gebruikt | Sterren op GitHub, licentie volgens GitHub, laatst bijgewerkt |
+| skills.sh | Losse skills die in een GitHub-repository staan: zoeken (`/api/search`) en de lijsten "all-time" en "trending" (`/api/skills/<lijst>/<pagina>`) | Openbaar | Installaties volgens skills.sh (hun eigen telling); geen beschrijving tot de repository is geopend |
+| ClawHub | Losse skills die ClawHub zelf host (niet op GitHub), met versies: lijst (`/api/v1/skills?sort=stars|trending|newest|updated`, met cursor), zoeken (`/api/v1/search`), één skill (`/api/v1/skills/<naam>?ownerHandle=`), zip per versie (`/api/v1/download`) | Openbaar | Sterren en downloads die ClawHub zelf telt (andere getallen dan GitHub-sterren; de kaart zegt "op ClawHub"), licentie zoals ClawHub die noemt |
+| GitHub-API | Alleen (fallback) de bestandsboom van repositories die te groot zijn voor een archief | 60 per uur; optioneel token in de kluis | — |
 | Officieel MCP-register | `registry.modelcontextprotocol.io` API **v0.1** (`/servers`, `/servers/{naam}/versions/{versie}`) | Openbaar | Licentie van het pakket via npm/PyPI-metadata waar bekend |
 
-Open collecties tot en met 0.3 (`OPEN_COLLECTIONS`; nu alleen via `TEAMBOT_SKILL_COLLECTIONS=eigenaar/repo,…`):
-anthropics/skills, openai/skills, vercel-labs/agent-skills, anthropics/knowledge-work-plugins, huggingface/skills,
-cloudflare/skills, supabase/agent-skills, expo/skills, microsoft/azure-skills, mattpocock/skills, obra/superpowers,
-trailofbits/skills, remotion-dev/skills. Repositorylicenties (GitHub, 2026-11-07): MIT (mattpocock, obra, supabase, expo,
-microsoft/azure-skills), Apache-2.0 (huggingface, cloudflare, anthropics/knowledge-work-plugins), CC-BY-SA-4.0
-(trailofbits); geen repositorylicentie bij anthropics/skills, openai/skills, vercel-labs/agent-skills en
-remotion-dev/skills — daar geldt per skill wat in de map of de frontmatter staat (Anthropic en OpenAI leveren per skill
-een `LICENSE.txt`; de Figma-skills van OpenAI vallen onder Figma's eigen voorwaarden; Remotion heeft geen licentie en is
-dus niet installeerbaar). Live geteld: 653 skills, waarvan het grootste deel installeerbaar.
+Niet gebruikt (nagegaan op 2026-11-12): Smithery (de lijst werkt, zoeken op woorden geeft HTTP 500), LobeHub (401, vraagt
+een account), agentskills.io (alleen de specificatie, geen bibliotheek).
+
+**Sorteren** (het scherm zegt onder de keuze wat de volgorde betekent):
+
+- *Meeste sterren*: GitHub op sterren; skills.sh op installaties; ClawHub op zijn eigen sterren. Drie secties, want de
+  getallen zijn niet te vergelijken.
+- *Trending*: GitHub heeft geen openbare lijst van sterren per dag, dus: de meeste sterren onder repositories die in de
+  laatste 30 dagen zijn aangemaakt. skills.sh: de meeste installaties in de laatste 24 uur. ClawHub: zijn eigen
+  trending-volgorde (bij zoeken op woorden: de meeste installaties in 60 dagen).
+- *Nieuwste*: GitHub kan repositories niet op aanmaakdatum sorteren, dus: van wat deze week is aangemaakt de 100 met de
+  meeste sterren, nieuwste eerst; samen met het nieuwste van ClawHub in één lijst op datum.
+- *Laatst bijgewerkt*: GitHub en ClawHub in één lijst op datum.
+
+**Toevoegen** is één klik en dezelfde route als de catalogus (`POST /api/skills/curated/install`), met als id
+`github/<eigenaar>/<repo>[/<map of skillnaam>]` of `clawhub/<eigenaar>/<skill>`. Dezelfde importregels en scan, scripts
+uit tot de eigenaar de skill vertrouwt, en de versie van dat moment wordt vastgelegd: bij GitHub de commit waar `HEAD`
+naar wijst, bij ClawHub het versienummer. Een repository met één skill voegt die toe; met meer skills kiest de gebruiker
+er een (`GET /api/skills/web/repo`). Ernstige bevindingen van de scan, een uitgever die op een bekende naam lijkt of een
+waarschuwing van ClawHub zelf maken van de klik een bevestiging die ze toont. Een licentie wordt getoond als die bekend
+is; het ontbreken ervan houdt toevoegen niet tegen (net als bij *Toevoegen via link*). Staat dezelfde map in de
+gecontroleerde catalogus, dan wordt die versie toegevoegd.
+
+**Bijwerken**: *Controleer op updates* vergelijkt de vastgelegde bestanden met de nieuwste commit of versie bij de bron;
+een verschil is een melding met het verschil per bestand (`GET /api/skills/curated/diff`), en pas na een klik wordt er
+bijgewerkt (`POST /api/skills/curated/update`). Bron in de bibliotheek: `catalog_ref = curated/github/…` of
+`curated/clawhub/…`, met `source.commit` als de vastgelegde commit of versie.
+
+**Limiet**: resultaten blijven een uur in de cache (laatst bijgewerkt, en het nieuwste van ClawHub, tien minuten). Geeft GitHub aan dat de
+zoeklimiet bereikt is, dan zegt TeamBot rustig wanneer het weer kan; wat al gezien is, skills.sh, ClawHub, de
+gecontroleerde catalogus en toevoegen werken door. De zoeklimiet en de uurlimiet van de rest van de GitHub-API worden
+apart bijgehouden.
+
+**Bots** krijgen hetzelfde: `skill_find` noemt na de skills van het team en de gecontroleerde catalogus ook wat openbaar
+is (gemarkeerd als niet gecontroleerd), en `skill_install` voegt daaruit toe met dezelfde controles; wat de eigenaar
+moet bevestigen, voegt een bot niet toe.
+
+**Wat de pc verlaat**: alleen de zoekwoorden (van de gebruiker of van een bot) gaan naar GitHub, skills.sh en ClawHub;
+dat staat op *Instellingen › Wat verlaat je pc?*. Met `TEAMBOT_OFFLINE=1` gaat er niets uit.
 
 Het register heeft geen categorieën of populariteit. "Aanbevolen" is een met de hand gekozen lijst van 49 servernamen
 (`FEATURED` in `registry.ts`; alle gegevens komen live uit het register), zodat er zonder zoeken ruim 40 apps staan.
@@ -133,8 +206,9 @@ Herkenning is bewust behoudend: onbekende tekst is nooit "open".
   ETag-hervalidatie waar de server dat ondersteunt, en bij netwerkfouten, limieten of offline een verouderde kopie
   (`stale`), die de UI ook zo toont. Maximaal 400 MB, oudste eerst opgeruimd.
 - TTL's: commit van een repository 1 uur; archief per commit 30 dagen (onveranderlijk); GitHub-repositorygegevens 24 uur;
-  skills.sh-zoekopdracht 1 uur; registerlijst/`latest` 1 uur; exacte registerversie 30 dagen; npm/PyPI-licentie 7 dagen.
-- Een host die 429 of `x-ratelimit-remaining: 0` geeft, wordt tot de reset met rust gelaten.
+  zoekresultaten van GitHub, skills.sh en ClawHub 1 uur (laatst bijgewerkt, en het nieuwste van ClawHub, 10 minuten); een versie van een ClawHub-skill 1 jaar; registerlijst/`latest` 1 uur; exacte registerversie 30 dagen; npm/PyPI-licentie 7 dagen.
+- Een host die 429 of `x-ratelimit-remaining: 0` geeft, wordt tot de reset met rust gelaten. Zoeken op GitHub heeft een
+  eigen limiet (`limitKey`), los van de rest van de GitHub-API.
 - `TEAMBOT_OFFLINE=1` (of `TEAMBOT_MARKET_OFFLINE=1`): nooit netwerk, alleen cache.
 - Optioneel GitHub-token (Marktplaats › Bronnen) als geheim `market:github-token` in de kluis, of `TEAMBOT_GITHUB_TOKEN`
   voor een server. Het token gaat alleen naar `api.github.com` (de fetcher stuurt `Authorization` nooit mee naar een
@@ -176,11 +250,11 @@ Herkenning is bewust behoudend: onbekende tekst is nooit "open".
   direct geïnstalleerd, anders de gewone review). Bijwerken: *Controleer op nieuwe versies* → *Nieuwe versie: bekijk
   verschil* (`GET /api/skills/curated/diff`) → *Bijwerken* (`POST /api/skills/curated/update`). Bron:
   `catalog_ref = curated/<bron-id>/<pad>`. Verwijderen: `DELETE /api/skills/:id`.
-- **Skill uit een open bron** (alleen als ingesteld): detail → "Installeren…" → `POST /api/skills/web/install` (stage) → bestaande review en
-  `POST /api/skills/import/commit` met `enableFor`. Bron: `catalog_ref = github/<eigenaar>/<repo>/<pad>`.
-  Update: de index vergelijkt de checksum van de geïnstalleerde versie met de bron (`catalogUpdate` in Mijn skills);
-  `POST /api/skills/web/check-updates` kijkt of `HEAD` verschoof en haalt dan één keer het nieuwe archief.
-  Verwijderen: `DELETE /api/skills/:id`.
+- **Skill uit Open** (GitHub of ClawHub): *Toevoegen* op de kaart → `POST /api/skills/curated/install` met het id van
+  het resultaat; zie "Open: alles wat openbaar is" hierboven. Bijwerken en verwijderen als een catalogusskill.
+- **Skill van internet uit 0.3** (`catalog_ref = github/<eigenaar>/<repo>/<pad>`, zonder vastgelegde commit): de
+  update-melding blijft werken (`POST /api/skills/web/check-updates` vergelijkt met `HEAD`); de link opent de pagina van
+  de skill, en toevoegen daar zet hem om naar een vastgelegde commit.
 - **App**: detail → installatievorm kiezen (remote HTTP/SSE, npm via `npx`, PyPI via `uvx`, OCI via `docker`, NuGet via
   `dnx`; MCPB, Cargo en pakketten met een eigen lokale webserver worden nog niet ondersteund) → `POST
   /api/mcp/registry/entry` → de bestaande wizard (sleutels naar de kluis, bots, vertrouwen, leestest, acties) →
@@ -193,9 +267,10 @@ Herkenning is bewust behoudend: onbekende tekst is nooit "open".
 Lijsten geven naast `items` ook `pending` (nog nooit opgehaald, loopt), `refreshing` (uit de cache, wordt gecontroleerd),
 `starter`/`starterTotal` (TeamBot-items zolang er niets van internet is) en `offline`; `budget` (ms, max. 20 000) en
 `early=1` regelen hoe lang de server wacht.
-Skills (`/api/skills/web/…`): `GET sources`, `POST sources/refresh`, `GET skills?q&category&repo&installable&budget&early`,
-`GET item?repo&path` (of `?source&skillId` voor een skills.sh-resultaat), `GET file?…&file`, `POST install`,
-`POST check-updates`, `PUT/DELETE github-token`.
+Skills (`/api/skills/web/…`): `GET search?q&sort&page&teamId&only` (`sort` = `stars`, `trending`, `new`, `updated`;
+antwoord: `checked`, `github`, `directory`, `clawhub`, `limit`, `offline`), `GET repo?repo&teamId` (de skills in één
+repository), `GET sources` (limieten, of er een token is), `POST check-updates` (skills van internet uit 0.3),
+`PUT/DELETE github-token`. Toevoegen, de pagina van een skill, verschil en bijwerken: `/api/skills/curated/…`.
 Apps (`/api/mcp/registry/…`): `GET servers?q&category&cursor&budget&early`, `GET server?name&version`, `GET icon?name&v`,
 `POST entry`, `POST check-updates`; `POST /api/mcp/connections/:id/registry-update`.
 
@@ -206,4 +281,8 @@ Apps (`/api/mcp/registry/…`): `GET servers?q&category&cursor&budget&early`, `G
 - Zeer grote repositories (archief > 25 MB) gebruiken de GitHub-boom-API plus losse bestanden; zonder token kost dat
   API-verzoeken en zijn beschrijving en licentie pas bekend na openen.
 - MCPB-bundels, Cargo en pakketten die zelf een lokale webserver starten worden niet ondersteund.
-- De lijst met aanbevolen servers en collecties is met de hand gekozen en moet af en toe worden nagelopen.
+- De lijst met aanbevolen servers is met de hand gekozen en moet af en toe worden nagelopen.
+- Een ClawHub-skill is vastgelegd op het versienummer dat ClawHub geeft; of ClawHub een bestaande versie laat
+  overschrijven is niet nagegaan. Een commit op GitHub kan niet veranderen.
+- GitHub laat zonder account alleen repositories zoeken, geen bestanden: een map met een `SKILL.md` in een repository
+  zonder het topic of het woord "skill" wordt alleen gevonden via skills.sh of met *Toevoegen via link*.

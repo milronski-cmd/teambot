@@ -1,23 +1,13 @@
 import path from 'node:path';
 import crypto from 'node:crypto';
 import { type FileMap, isBinary, isSkillMd, sha256 } from './files.js';
+import type { Finding, PermissionDiff, Permissions, Severity } from '../../../shared/skills.js';
 
 /**
  * Static safety scan for skills. Skills are untrusted input: we flag executable content, prompt
  * injection, exfiltration patterns, secrets, hidden characters and external addresses. The scan
  * never blocks on its own; it labels and the UI asks for explicit acknowledgement on "danger".
  */
-
-export type Severity = 'info' | 'warn' | 'danger';
-
-export interface Finding {
-  severity: Severity;
-  kind: 'script' | 'binary' | 'injection' | 'exfiltration' | 'secret' | 'network' | 'hidden' | 'command' | 'sensitive';
-  file: string;
-  line?: number;
-  message: string;
-  excerpt?: string;
-}
 
 export interface ScanFile {
   path: string;
@@ -263,6 +253,17 @@ export function scriptsChecksum(scan: ScanResult): string {
   return h.digest('hex');
 }
 
+/**
+ * Does a serious finding wait for the owner's look before the skill is installed? Only one in what a bot reads and
+ * follows (instructions that try to steer it, hidden text, a secret, data sent away). A dangerous script is
+ * information, not a stop: an install makes a skill's scripts usable (library `installed`), and a script runs like any
+ * command at the bot's own level, where a bot that may run programs could run that command anyway.
+ */
+export function ownerLooksFirst(scan: Pick<ScanResult, 'findings' | 'files'>): boolean {
+  const exec = new Set(scan.files.filter((f) => f.type === 'script' || f.type === 'executable').map((f) => f.path));
+  return scan.findings.some((f) => f.severity === 'danger' && !exec.has(f.file || ''));
+}
+
 // ---------- permission manifest ----------
 
 /** Map common `allowed-tools` names (Claude Code / Agent Skills) to TeamBot tool groups. */
@@ -286,16 +287,6 @@ const TOOL_MAP: Record<string, { group: string; label: string }> = {
   browser: { group: 'browser', label: 'Browser' },
 };
 
-export interface Permissions {
-  /** Declared tools (allowed-tools), as written. */
-  tools: string[];
-  /** TeamBot tool groups the declared tools map onto. */
-  groups: string[];
-  scripts: { path: string; sha256: string }[];
-  binaries: string[];
-  domains: string[];
-}
-
 export function toolGroupOf(tool: string): { group: string; label: string } | null {
   const base = tool.replace(/\(.*$/, '').trim().toLowerCase();
   if (base.startsWith('mcp__')) return { group: 'mcp', label: 'MCP-connector' };
@@ -316,20 +307,6 @@ export function permissionsOf(allowedTools: string[], scan: ScanResult): Permiss
     binaries: [...scan.binaries],
     domains: [...scan.domains],
   };
-}
-
-export interface PermissionDiff {
-  addedTools: string[];
-  removedTools: string[];
-  addedGroups: string[];
-  addedScripts: string[];
-  changedScripts: string[];
-  removedScripts: string[];
-  addedBinaries: string[];
-  addedDomains: string[];
-  removedDomains: string[];
-  /** True when the new version needs more than the old one (requires explicit confirmation). */
-  elevated: boolean;
 }
 
 export function diffPermissions(oldP: Permissions | null | undefined, newP: Permissions): PermissionDiff {

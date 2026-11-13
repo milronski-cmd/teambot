@@ -5,12 +5,17 @@
  * form values are never touched (elements inside [translate="no"], .md, code, pre, textarea, input,
  * [contenteditable]). Dates, numbers and plural forms come from Intl in the chosen locale (lib/format.ts).
  *
+ * What a user or a bot wrote is never translated, not even in part: a chat title, a message, a note, a role, a
+ * description, a routine's name. Wherever it is shown, its element carries the one marker translate="no". TeamBot's
+ * own words with such words in them are a template with values: tOwn / components/Words.tsx (bot names are kept
+ * everywhere by keepNames as well).
+ *
  * Choice: per user (the `language` setting, so the phone follows the computer), cached per device so the first paint
  * is already right. First run: the system/browser language when TeamBot has it, else English. Switching reloads.
  * Right-to-left languages set dir="rtl" on <html>; the layout uses logical classes (ps/pe, ms/me, start/end).
  */
 import { FALLBACK_LANG, LANGUAGES, SOURCE_LANG, isLanguage, language, matchLanguage } from './languages';
-import { Translator, fillSource } from './i18n-core';
+import { Translator, fillSource, ownPieces, type Piece, type WordsValue } from './i18n-core';
 import { bindLocale } from './format';
 
 export type Lang = string;
@@ -42,9 +47,6 @@ export const detectLanguage = (): string => matchLanguage(systemLanguages(), FAL
 export function getLang(): Lang {
   return stored() || detectLanguage();
 }
-
-/** Has a language been chosen (or confirmed) on this device? False on a first run. */
-export const langChosen = (): boolean => stored() !== null;
 
 /** Locale for dates and numbers in the interface (follows the chosen language). */
 export function uiLocale(): string {
@@ -101,9 +103,6 @@ export function syncLanguage(userLang: unknown, o: { existingUser?: boolean } = 
   return true;
 }
 
-/** Languages for a picker, each in its own name ("Deutsch", "العربية"); never translated (translate="no"). */
-export const languageOptions = () => LANGUAGES.map((l) => ({ code: l.code, label: l.name, dir: l.dir }));
-
 let tr: Translator | null = null;
 
 /** The bot names last given, also before the dictionary is loaded (startI18n applies them before its first walk). */
@@ -133,11 +132,33 @@ export function t(tpl: string, ...values: (string | number)[]): string {
   return values.length || /\{\d+\s*,\s*plural\s*,/.test(tpl) ? fillSource(tpl, values) : tpl;
 }
 
+/**
+ * t() whose text values are someone's own words (a chat title, a name, what a bot wrote): the pieces to show, the
+ * values exactly as written (components/Words.tsx shows them). t('Gesprek “{0}” nalezen', title) would hand the page
+ * translator one text in which it also translates the title.
+ */
+export function tOwn(tpl: string, ...values: WordsValue[]): Piece[] {
+  return ownPieces(tpl, values, (x, v) => t(x, ...v));
+}
+
+/** tOwn as one text, for an attribute (title, aria-label) of an element marked translate="no". */
+export const ownText = (tpl: string, ...values: WordsValue[]): string => tOwn(tpl, ...values).map((p) => (typeof p === 'string' ? p : p.own)).join('');
+
+const onLoad = new Set<() => void>();
+/** Called once the dictionary is there: what was rendered before it, in Dutch, renders again. */
+export function onDictionary(fn: () => void): () => void {
+  onLoad.add(fn);
+  return () => void onLoad.delete(fn);
+}
+/** Is the dictionary of the interface language there (always false in Dutch, which needs none)? */
+export const dictionaryLoaded = (): boolean => !!tr;
+
 // Dates, numbers and plural forms (lib/format.ts) follow the interface language.
 bindLocale(
   uiLocale,
   (s, ...values) => t(s, ...values),
   (s) => (tr ? tr.fragment(s) : s),
+  (s) => (tr?.has(s) ? tr.translate(s) : s),
 );
 
 const SKIP = '[translate="no"],.notranslate,.md,code,pre,textarea,input,[contenteditable="true"],script,style';
@@ -220,6 +241,7 @@ export async function startI18n() {
   // The bots often load before the dictionary: their names were given while there was no translator yet
   // (acceptance round 4: "Lokaal" became "Lokal", "Reserve kapot" became "احتياطي kapot").
   keepNames(keptNames);
+  for (const fn of onLoad) fn();
   walk(document.body);
   let queue: Node[] = [];
   let scheduled = false;

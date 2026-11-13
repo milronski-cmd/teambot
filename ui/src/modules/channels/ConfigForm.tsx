@@ -1,15 +1,8 @@
 import { useState } from 'react';
 import { Check, Copy, KeyRound, RefreshCw } from 'lucide-react';
-import { Button, Field, Input, Select, Toggle, toast } from '../../components/ui';
+import { Button, Field, Input, Select, Toggle, copyText } from '../../components/ui';
 import type { FieldDef, Guide } from './guides';
 import { randomSecret } from './shared';
-
-export function copy(text: string, what = 'Gekopieerd') {
-  navigator.clipboard?.writeText(text).then(
-    () => toast(what, 'ok'),
-    () => toast('Kopiëren lukte niet — selecteer en kopieer handmatig', 'danger'),
-  );
-}
 
 function SecretInput({ f, value, onChange, isSet }: { f: FieldDef; value: string; onChange(v: string): void; isSet: boolean }) {
   const [show, setShow] = useState(!!f.generate);
@@ -30,7 +23,7 @@ function SecretInput({ f, value, onChange, isSet }: { f: FieldDef; value: string
           <Button type="button" size="icon" variant="secondary" aria-label="Nieuw geheim genereren" title="Nieuw geheim genereren" onClick={() => onChange(randomSecret(32))}>
             <RefreshCw className="h-4 w-4" />
           </Button>
-          <Button type="button" size="icon" variant="secondary" aria-label="Kopiëren" title="Kopiëren" disabled={!value} onClick={() => copy(value)}>
+          <Button type="button" size="icon" variant="secondary" aria-label="Kopiëren" title="Kopiëren" disabled={!value} onClick={() => copyText(value)}>
             <Copy className="h-4 w-4" />
           </Button>
         </>

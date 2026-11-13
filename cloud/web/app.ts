@@ -382,7 +382,8 @@ export function createControlApp(d: ControlDeps): express.Express {
     const file = await d.workspaces.exportPath(o.ws.id, String(req.params.exportId));
     if (!file) return page(res, 404, 'Niet gevonden', P.messagePage('Export niet gevonden', 'Deze export is verlopen of bestaat niet. Maak een nieuwe.', { href: `/workspaces/${o.ws.id}#export`, label: 'Naar je workspace' }));
     await audit(d.db, d.clock, { ...ref(req, res), kind: 'workspace.export_downloaded', workspaceId: o.ws.id });
-    res.download(file, path.basename(file));
+    // The service's data folder may lie under a folder whose name starts with a dot: Express refuses that by default.
+    res.download(file, path.basename(file), { dotfiles: 'allow' });
   });
 
   app.post(

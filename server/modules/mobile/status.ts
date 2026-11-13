@@ -3,9 +3,9 @@ import type { Request } from 'express';
 import type { Ctx, ProviderConfig, User } from '../../core/types.js';
 import type { SessionInfo } from '../../core/auth.js';
 import { HttpError, ah, bad, user } from '../../core/http.js';
-import { Limiter } from './limiter.js';
 import { normalizeBaseUrl } from './pairing.js';
-import { interfaces, isLoopbackHost, isPrivateLan, isTailscaleIp } from './reach.js';
+import { Limiter, isLoopbackHost } from '../../core/util.js';
+import { interfaces, isPrivateLan, isTailscaleIp } from './reach.js';
 import type { Mobile } from './index.js';
 
 /**

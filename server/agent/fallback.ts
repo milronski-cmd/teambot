@@ -1,5 +1,6 @@
 import type { Agent } from '../core/types.js';
 import { ERROR_TEXT, ProviderError, isOutage } from '../providers/common.js';
+import { PLACE } from '../../shared/places.js';
 
 /**
  * Reserve engines (ordered list per bot, also for CLI engines such as Claude Code → Codex → OpenCode free).
@@ -406,7 +407,7 @@ export function plainEngineError(raw: string, o: { engine?: string; tz?: string;
     case 'cancelled':
       return 'Afgebroken voordat het klaar was.';
     case 'missing':
-      return `${e} is niet gevonden op deze computer. Installeer het programma of stel het pad in via Instellingen › Abonnementen, of kies een andere engine.`;
+      return `${e} is niet gevonden op deze computer. Installeer het programma of stel het pad in via ${PLACE.aiPrograms}, of kies een andere engine.`;
     case 'auth': {
       // Keep the login command TeamBot already found for this CLI ("Log zelf in met: claude auth login").
       const login = t.match(/Log zelf in met: ([\w@/-]+(?: [\w@/-]+){0,3})/)?.[1];
@@ -427,7 +428,7 @@ export function plainEngineError(raw: string, o: { engine?: string; tz?: string;
     case 'cut':
       return `De verbinding met ${e} brak halverwege het antwoord af. Probeer het opnieuw.`;
     case 'crash':
-      return `${e} stopte onverwacht. Probeer het opnieuw. Gebeurt het weer, kijk dan bij Instellingen › Abonnementen of ${e} nog werkt, of kies een andere engine voor deze bot.`;
+      return `${e} stopte onverwacht. Probeer het opnieuw. Gebeurt het weer, kijk dan bij ${PLACE.aiPrograms} of ${e} nog werkt, of kies een andere engine voor deze bot.`;
   }
 }
 

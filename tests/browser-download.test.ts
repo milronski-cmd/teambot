@@ -206,7 +206,7 @@ test('real browser: browser_download of a picture on another site (by url and by
     // The step log says what was downloaded in words (no element codes like e12).
     const acts = await t.api('GET', `/computers/${a.id}/actions`);
     const dl = acts.filter((x: any) => x.tool === 'browser_download').map((x: any) => x.summary);
-    assert.ok(dl.some((s: string) => /link “Bekijk de foto”/.test(s)), dl.join(' | '));
+    assert.ok(dl.some((s: string) => /de link “Bekijk de foto”/.test(s)), dl.join(' | '));
     assert.ok(!dl.some((s: string) => /\be\d+\b/.test(s)), dl.join(' | '));
   } finally {
     await t.close();

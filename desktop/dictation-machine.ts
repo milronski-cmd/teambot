@@ -62,6 +62,9 @@ export interface MachineDeps {
 
 export const HOLD_MS = 350;
 export const MAX_MS = 5 * 60_000;
+/** Hard limits, so the pill can never stay hanging over other programs: opening the microphone, and writing out + pasting. */
+export const START_MAX_MS = 20_000;
+export const FINISH_MAX_MS = 120_000;
 const REPEAT_MS = 250;
 
 export class DictationMachine {
@@ -148,6 +151,19 @@ export class DictationMachine {
     this.d.view.hide();
   }
 
+  /**
+   * It broke while busy (the microphone went away, the pill crashed, writing out hangs): throw the recording away,
+   * say why for a moment and go away. Nothing is pasted.
+   */
+  fail(text: string) {
+    if (this.phase === 'idle' || this.phase === 'message') return;
+    ++this.gen;
+    this.clearAll();
+    this.d.armEscape(false);
+    this.d.recorder.cancel();
+    this.message(String(text || 'Dicteren lukte niet').slice(0, 160));
+  }
+
   /** Feature switched off / app quits. */
   shutdown() {
     if (this.phase === 'starting' || this.phase === 'recording') this.escape();
@@ -167,6 +183,7 @@ export class DictationMachine {
     this.finishWhenStarted = false;
     this.startedAt = this.now();
     this.d.view.show({ phase: 'starting', hint: 'Microfoon aan…' });
+    this.later(() => this.gen === my && this.phase === 'starting' && this.fail('De microfoon reageerde niet.'), START_MAX_MS);
     // Hold detection starts right away: the key may already be up by the time the microphone is open.
     let releasedEarly = false;
     if (this.d.keyWatch) {
@@ -243,6 +260,7 @@ export class DictationMachine {
     this.d.armEscape(false);
     const seconds = (this.now() - this.startedAt) / 1000;
     this.d.view.show({ phase: 'working', text: this.liveText, hint: 'Uitschrijven…' });
+    this.later(() => this.gen === my && (this.phase === 'finishing' || this.phase === 'inserting') && this.fail('Uitschrijven duurde te lang.'), FINISH_MAX_MS);
     let text = '';
     try {
       text = (await this.d.recorder.stop()).trim();

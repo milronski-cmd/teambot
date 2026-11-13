@@ -28,6 +28,11 @@ op, met reserve-engines en volledige toegang.
   geheugen, team, browser, desktop, skills, routines, kanalen en gekoppelde apps.
 - **Gekoppelde apps (MCP-connectors).** Die worden geproxied in plaats van doorgegeven. Zo bereiken de
   OAuth-tokens de CLI nooit, en gelden toestemming en risico per tool net als bij API-bots.
+- **Korte lijst (aanvulling 12 nov 2026).** De CLI krijgt niet elke tool in zijn lijst, maar een kern plus
+  `tools_find` (noemt elke andere tool bij naam) en `tools_call` (`server/tools/selection.ts`, zie
+  `docs/modules/context-budget.md`). Dat werkt op elke engine; er hoeft geen lijst opnieuw te worden opgevraagd. Een
+  `tools_call` wordt vóór de poort omgezet in de tool die hij noemt; de regels hierboven gelden dus per echte tool. In
+  `--allowedTools` staat wat in de lijst staat.
 
 ### Inhaken per engine
 

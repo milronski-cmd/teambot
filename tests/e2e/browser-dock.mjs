@@ -1,6 +1,6 @@
 // Browser panel + vault check (real UI, real bot browser): the docked panel next to a chat (desktop) and the full-screen
-// sheet (phone) with live view, address bar, tabs, "Neem over" / "Geef terug"; a vault login approval card in the chat
-// that TeamBot then fills; the Kluis page. Checks: no horizontal scrolling on the phone, no page errors, no serious
+// sheet (phone) with live view, address bar, tabs, "Neem over" / "Geef terug"; a vault login TeamBot fills in by itself
+// (one login fits the site, so nothing is asked); the Kluis page. Checks: no horizontal scrolling on the phone, no page errors, no serious
 // axe-core violations in the open panel (light + dark), and that no password reaches the page text of the panel.
 // Usage: npm run build:ui && npm run browser:check   [TEAMBOT_DOCK_SHOTS=<dir> to keep the screenshots]
 import fs from 'node:fs';
@@ -12,7 +12,7 @@ import { createRequire } from 'node:module';
 const require = createRequire(import.meta.url);
 const { chromium, devices } = require('playwright-core');
 const axeSource = fs.readFileSync(require.resolve('axe-core/axe.min.js'), 'utf8');
-const { createApp } = await import('../../server/app.ts');
+const { createApp } = await import('./server.mjs');
 
 const results = [];
 const check = (name, ok, detail = '') => {
@@ -166,21 +166,14 @@ try {
       await page.getByRole('button', { name: 'Neem over' }).waitFor({ timeout: 10_000 });
       check('desktop: "Geef terug" geeft de bediening terug', true);
 
-      // the bot asks to log in: a vault approval card in the chat, TeamBot fills it after "Inloggen"
+      // the bot asks to log in: one login in the vault fits this site, so TeamBot fills it in at once and asks nothing
+      // (a card only asks which account when several fit: tests/e2e/vault-choice.mjs)
       const s = app.ctx.store;
       const run = s.createRun({ thread_id: th.id, agent_id: agent.id, user_id: owner.id, status: 'running' });
       const ac = new AbortController();
       const tool = app.ctx.tools.get('browser_request_login');
-      const pending = tool.run({ url: base + '/login', reason: 'aanbiedingen in je account bekijken' }, { ctx: app.ctx, agent: s.agent(agent.id), thread: s.thread(th.id), run, userId: owner.id, signal: ac.signal, toolCallId: 'e2e', progress: () => {} });
-      const card = page.getByRole('group', { name: 'Inloggen met de kluis' });
-      await card.waitFor({ timeout: 20_000 });
-      await card.scrollIntoViewIfNeeded();
-      const cardText = await card.innerText();
-      check('kluis: goedkeuring "Operations wil inloggen op … als …"', /Operations wil inloggen op 127\.0\.0\.1/.test(cardText) && cardText.includes(USER), cardText.split('\n').slice(0, 3).join(' / '));
-      await page.screenshot({ path: path.join(shots, 'kluis-goedkeuring-desktop.png') });
-      await axe(page, 'goedkeuringskaart kluis');
-      await card.getByRole('button', { name: 'Inloggen', exact: true }).click();
-      const out = await pending;
+      const out = await tool.run({ url: base + '/login', reason: 'aanbiedingen in je account bekijken' }, { ctx: app.ctx, agent: s.agent(agent.id), thread: s.thread(th.id), run, userId: owner.id, signal: ac.signal, toolCallId: 'e2e', progress: () => {} });
+      check('kluis: één login past bij de site: geen kaart in de chat, TeamBot logt meteen in', (await page.getByRole('group', { name: 'Inloggen met de kluis' }).count()) === 0);
       app.ctx.services.computers._service.leases.releaseHolder(run.id);
       const text = typeof out === 'string' ? out : out.text;
       check('kluis: TeamBot logde in; de bot krijgt alleen "Ingelogd"', /^Ingelogd op 127\.0\.0\.1/.test(text) && !text.includes(PASS) && !text.includes(USER), text.slice(0, 120));
@@ -233,9 +226,17 @@ try {
       await axe(page, 'kluis bewerken');
       await page.keyboard.press('Escape');
 
-      // the big live screen: take over, open pages with "Ga"; picture and address follow each one
+      // the big live screen: take over, open pages with "Ga"; picture and address follow each one. A bot with full
+      // access may also use the desktop, so the page opens on the tab "Bureaublad": go to "Browser" first (taking over
+      // the desktop of this pc is never part of this check).
       await page.evaluate((h) => (location.hash = h), `#/m/browser/live/${agent.id}`);
-      await page.getByRole('button', { name: 'Neem over' }).first().click();
+      // The page shows the tabs (or only the browser) once it knows the screens of this pc; that can take a while.
+      const main = page.locator('main');
+      await main.getByRole('tablist').or(main.getByRole('button', { name: 'Neem over' })).first().waitFor({ timeout: 30_000 });
+      const browserTab = main.getByRole('tab', { name: 'Browser', exact: true });
+      if (await browserTab.count()) await browserTab.click();
+      if ((await browserTab.count()) && (await browserTab.getAttribute('aria-selected')) !== 'true') throw new Error('live scherm: het tabblad Browser gaat niet open');
+      await main.getByRole('button', { name: 'Neem over' }).first().click();
       await page.getByRole('button', { name: /Geef terug/ }).first().waitFor({ timeout: 10_000 });
       await page.waitForFunction(() => [...document.querySelectorAll('img')].some((i) => i.src.includes('/stream') && i.naturalWidth > 0), null, { timeout: 20_000 });
       for (const [p, kleur] of [['/geel', 'geel'], ['/rood', 'rood'], ['/blauw', 'blauw']]) {

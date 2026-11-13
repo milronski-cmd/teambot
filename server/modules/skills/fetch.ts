@@ -71,7 +71,8 @@ export interface GithubTarget {
  *  - github.com/o/r                    -> archive zip (default branch)
  *  - github.com/o/r/tree/<ref>/<path>  -> archive zip of <ref>, folder <path>
  *  - github.com/o/r/blob/<ref>/<path>/SKILL.md -> archive zip of <ref>, folder of that file
- *  - raw.githubusercontent.com/...     -> single file
+ *  - raw.githubusercontent.com/o/r/<ref>/<path>/SKILL.md -> archive zip of <ref>, folder of that file
+ *  - raw.githubusercontent.com/... (another file) -> single file
  * Branch names containing "/" are not supported in tree/blob URLs (first segment is the ref).
  */
 export function resolveGithub(raw: string): GithubTarget | null {
@@ -82,7 +83,17 @@ export function resolveGithub(raw: string): GithubTarget | null {
     return null;
   }
   const host = u.hostname.toLowerCase();
-  if (host === 'raw.githubusercontent.com') return { kind: 'file', url: u.toString(), subdir: '', label: u.pathname.slice(1) };
+  if (host === 'raw.githubusercontent.com') {
+    // A link to the SKILL.md itself: take the whole folder (scripts and other files belong to the skill).
+    const raw = u.pathname.split('/').filter(Boolean).map(decodeURIComponent);
+    const at = raw[2] === 'refs' && (raw[3] === 'heads' || raw[3] === 'tags') ? 5 : 3;
+    if (raw.length > at && /^skill\.md$/i.test(raw[raw.length - 1]) && /^[\w.-]+$/.test(raw[0]) && /^[\w.-]+$/.test(raw[1])) {
+      const ref = raw[at - 1];
+      const rest = raw.slice(at, -1);
+      return { kind: 'zip', url: `https://github.com/${encodeURIComponent(raw[0])}/${encodeURIComponent(raw[1])}/archive/${encodeURIComponent(ref)}.zip`, subdir: rest.join('/'), label: `${raw[0]}/${raw[1]}@${ref}${rest.length ? '/' + rest.join('/') : ''}` };
+    }
+    return { kind: 'file', url: u.toString(), subdir: '', label: u.pathname.slice(1) };
+  }
   if (host !== 'github.com' && host !== 'www.github.com') return null;
   const seg = u.pathname.split('/').filter(Boolean).map(decodeURIComponent);
   if (seg.length < 2) return null;

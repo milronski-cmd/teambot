@@ -1,13 +1,14 @@
 import { useEffect, useState } from 'react';
+import { formatBytes } from '../../lib/format';
 import { CircleStop, Copy, ExternalLink, Globe, House, Laptop, Link2, RefreshCw, Trash2, Wifi } from 'lucide-react';
 import { api, on } from '../../lib/api';
 import { BotAvatar } from '../../components/BotFace';
 import { MoreInfo } from '../../components/MoreInfo';
 import { Menu, SkeletonCards } from '../../components/overview';
-import { askConfirm, Badge, Button, Card, EmptyState, Field, Modal, Page, PageHeader, Select, Spinner, timeAgo, toast, toastError } from '../../components/ui';
+import { askConfirm, Badge, Button, Card, EmptyState, Field, Modal, Page, PageHeader, Select, timeAgo, toast, toastError, copyText } from '../../components/ui';
 import { t, uiLocale } from '../../lib/i18n';
 import { navigate } from '../../lib/router';
-import { REACH, copyText, fmtBytes, type Reach, type SiteView, type SitesInfo } from './api';
+import { REACH, type Reach, type SiteView, type SitesInfo } from './api';
 
 const REACH_ICON: Record<Reach, typeof Laptop> = { local: Laptop, lan: Wifi, tailnet: House };
 const DAYS = [0, 1, 7, 30, 90];
@@ -137,7 +138,7 @@ function SiteCard({ s, info, onRepublish }: { s: SiteView; info: SitesInfo; onRe
           </div>
         </div>
         {live && main && (
-          <Button size="sm" className="hidden sm:inline-flex" icon={<Copy className="h-3.5 w-3.5" />} onClick={() => copyText(main.url)}>
+          <Button size="sm" className="hidden sm:inline-flex" icon={<Copy className="h-3.5 w-3.5" />} onClick={() => copyText(main.url, 'Link gekopieerd', 'Kopiëren lukt hier niet; houd de link ingedrukt om hem te kopiëren')}>
             Link kopiëren
           </Button>
         )}
@@ -145,7 +146,7 @@ function SiteCard({ s, info, onRepublish }: { s: SiteView; info: SitesInfo; onRe
           label={t('Meer opties voor {0}', s.title)}
           items={[
             live && !!main && { label: 'Openen', icon: <ExternalLink />, onSelect: () => void window.open(main.url, '_blank', 'noopener,noreferrer') },
-            live && !!main && { label: 'Link kopiëren', icon: <Copy />, onSelect: () => void copyText(main.url) },
+            live && !!main && { label: 'Link kopiëren', icon: <Copy />, onSelect: () => void copyText(main.url, 'Link gekopieerd', 'Kopiëren lukt hier niet; houd de link ingedrukt om hem te kopiëren') },
             info.canPublish && { label: 'Opnieuw publiceren', icon: <RefreshCw />, disabled: !!busy, onSelect: onRepublish },
             'sep',
             live ? { label: 'Stoppen', icon: <CircleStop />, danger: true, disabled: !!busy, onSelect: () => void stop() } : { label: 'Verwijderen', icon: <Trash2 />, danger: true, disabled: !!busy, onSelect: () => void remove() },
@@ -166,7 +167,7 @@ function SiteCard({ s, info, onRepublish }: { s: SiteView; info: SitesInfo; onRe
       )}
       <MoreInfo block label="Details">
         <span className="block">
-          {[t('{0, plural, one {# bestand} other {# bestanden}} · {1}', s.files, fmtBytes(s.bytes)), s.published_at && t('gepubliceerd {0}', timeAgo(s.published_at)), s.views > 0 && t('{0}× bekeken', s.views), expiryText(s)].filter(Boolean).join(' · ')}
+          {[t('{0, plural, one {# bestand} other {# bestanden}} · {1}', s.files, formatBytes(s.bytes)), s.published_at && t('gepubliceerd {0}', timeAgo(s.published_at)), s.views > 0 && t('{0}× bekeken', s.views), expiryText(s)].filter(Boolean).join(' · ')}
         </span>
         <span className="block">{s.reachText}</span>
         {live && s.urls.length > 1 && (

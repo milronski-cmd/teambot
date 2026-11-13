@@ -3,7 +3,7 @@ import { useEffect, useState } from 'react';
 import { ArrowLeft, ArrowRight, Check, Copy, ExternalLink, KeyRound, LogIn, Plus, ShieldAlert, Trash2 } from 'lucide-react';
 import { api, on } from '../../lib/api';
 import { t } from '../../lib/i18n';
-import { Badge, Button, Field, Input, Select, Textarea, Toggle, Spinner, toast, toastError, cx } from '../../components/ui';
+import { Badge, Button, Field, Input, Select, Textarea, Toggle, Spinner, toast, toastError, cx, copyText } from '../../components/ui';
 import type { CatalogEntry, CatalogField, Conn, KVView, OAuthAppGuide } from './shared';
 import { BotPicker as SharedBotPicker } from '../../components/BotPicker';
 
@@ -221,13 +221,8 @@ export function CopyField({ value, label }: { value: string; label: string }) {
       <Button
         size="icon"
         variant="ghost"
-        aria-label={`${label} kopiëren`}
-        onClick={() =>
-          navigator.clipboard
-            .writeText(value)
-            .then(() => toast('Gekopieerd', 'ok'))
-            .catch(() => toast('Kopiëren lukt niet; selecteer en kopieer handmatig'))
-        }
+        aria-label={t('{0} kopiëren', t(label))}
+        onClick={() => void copyText(value)}
       >
         <Copy className="h-4 w-4" />
       </Button>
@@ -377,12 +372,55 @@ export function useSharedClients(group: string | undefined, exceptId?: string) {
   return list;
 }
 
-/** Connection settings form (used by the wizard and the edit dialog). */
-export function ConnForm({ d, set, entry, isNew, info }: { d: ConnDraft; set(p: Partial<ConnDraft>): void; entry: CatalogEntry | null; isNew: boolean; info: McpInfo | null }) {
+/**
+ * Connection settings form (used by the wizard and the edit dialog). `fold`: only what is needed to connect stays in
+ * view (name, address or command, the confirmation of a command, a key the server asks for, the own OAuth app); every
+ * other option (label, work folder, variables, local network, time-outs, and `more`) is under "Meer opties".
+ */
+export function ConnForm({ d, set, entry, isNew, info, fold, more }: { d: ConnDraft; set(p: Partial<ConnDraft>): void; entry: CatalogEntry | null; isNew: boolean; info: McpInfo | null; fold?: boolean; more?: React.ReactNode }) {
   const custom = !entry || entry.id === 'custom';
   const cmdLine = commandLine(d, entry, isNew);
   const guide = isNew && d.auth === 'oauth' ? entry?.oauthAppGuide : undefined;
   const shared = useSharedClients(guide?.group);
+  const headersNeeded = d.auth === 'headers' || d.headers.length > 0;
+  const optional = (
+    <>
+      <Field label="Accountlabel" hint="Optioneel, om meerdere accounts van dezelfde dienst uit elkaar te houden (bijv. Werk, Privé).">
+        <Input value={d.label} onChange={(e) => set({ label: e.target.value })} placeholder="Werk" maxLength={60} />
+      </Field>
+      {d.transport === 'stdio' ? (
+        <>
+          <Field label="Werkmap" hint="Leeg = eigen map van deze koppeling in de TeamBot-datamap.">
+            <Input value={d.cwd} onChange={(e) => set({ cwd: e.target.value, trust_command: false })} className="font-mono text-xs" placeholder="(automatisch)" />
+          </Field>
+          <Field label="Omgevingsvariabelen" hint="Alleen deze variabelen (plus een opgeschoonde basisomgeving zonder sleutels) krijgt het programma.">
+            <KVEditor list={d.env} onChange={(env) => set({ env, trust_command: false })} kind="env" />
+          </Field>
+        </>
+      ) : (
+        <>
+          {custom && !headersNeeded && fold && (
+            <Field label="Headers">
+              <KVEditor list={d.headers} onChange={(headers) => set({ headers })} kind="header" />
+            </Field>
+          )}
+          {info?.privateNetworkAllowed && <Toggle checked={d.allow_private} onChange={(v) => set({ allow_private: v })} label="Lokaal netwerk toestaan (localhost/LAN)" />}
+        </>
+      )}
+      <details className="text-sm">
+        <summary className="cursor-pointer text-muted">Geavanceerd</summary>
+        <div className="mt-3 grid gap-3 sm:grid-cols-2">
+          <Field label="Stoppen na inactiviteit (minuten)" hint="0 = blijft draaien">
+            <Input type="number" min={0} max={1440} value={d.idle_minutes} onChange={(e) => set({ idle_minutes: Number(e.target.value) })} />
+          </Field>
+          <Field label="Time-out per verzoek (seconden)">
+            <Input type="number" min={5} max={600} value={d.timeout_sec} onChange={(e) => set({ timeout_sec: Number(e.target.value) })} />
+          </Field>
+        </div>
+      </details>
+      {more}
+    </>
+  );
   return (
     <div className="space-y-4">
       {custom && (
@@ -390,9 +428,6 @@ export function ConnForm({ d, set, entry, isNew, info }: { d: ConnDraft; set(p: 
           <Input value={d.name} onChange={(e) => set({ name: e.target.value })} placeholder="Mijn server" />
         </Field>
       )}
-      <Field label="Accountlabel" hint="Optioneel, om meerdere accounts van dezelfde dienst uit elkaar te houden (bijv. Werk, Privé).">
-        <Input value={d.label} onChange={(e) => set({ label: e.target.value })} placeholder="Werk" maxLength={60} />
-      </Field>
       {custom && (
         <Field label="Soort server">
           <Select value={d.transport} onChange={(e) => set({ transport: e.target.value as any, auth: e.target.value === 'stdio' ? 'none' : d.auth })}>
@@ -423,12 +458,6 @@ export function ConnForm({ d, set, entry, isNew, info }: { d: ConnDraft; set(p: 
               </Field>
             )
           )}
-          <Field label="Werkmap" hint="Leeg = eigen map van deze koppeling in de TeamBot-datamap.">
-            <Input value={d.cwd} onChange={(e) => set({ cwd: e.target.value, trust_command: false })} className="font-mono text-xs" placeholder="(automatisch)" />
-          </Field>
-          <Field label="Omgevingsvariabelen" hint="Alleen deze variabelen (plus een opgeschoonde basisomgeving zonder sleutels) krijgt het programma.">
-            <KVEditor list={d.env} onChange={(env) => set({ env, trust_command: false })} kind="env" />
-          </Field>
           <div className="space-y-2 rounded-lg border border-warn/40 bg-warn-soft p-3 text-sm">
             <div className="flex items-center gap-2 font-medium text-warn">
               <ShieldAlert className="h-4 w-4" /> Dit programma draait met jouw rechten op deze {info?.mode === 'server' ? 'server' : 'computer'}
@@ -451,7 +480,7 @@ export function ConnForm({ d, set, entry, isNew, info }: { d: ConnDraft; set(p: 
               </Select>
             </Field>
           )}
-          {(d.auth === 'headers' || d.headers.length > 0 || custom) && (
+          {(headersNeeded || (custom && !fold)) && (
             <Field label="Headers">
               <KVEditor list={d.headers} onChange={(headers) => set({ headers })} kind="header" />
             </Field>
@@ -485,20 +514,16 @@ export function ConnForm({ d, set, entry, isNew, info }: { d: ConnDraft; set(p: 
               </Field>
             </div>
           )}
-          {info?.privateNetworkAllowed && <Toggle checked={d.allow_private} onChange={(v) => set({ allow_private: v })} label="Lokaal netwerk toestaan (localhost/LAN)" />}
         </>
       )}
-      <details className="text-sm">
-        <summary className="cursor-pointer text-muted">Geavanceerd</summary>
-        <div className="mt-3 grid gap-3 sm:grid-cols-2">
-          <Field label="Stoppen na inactiviteit (minuten)" hint="0 = blijft draaien">
-            <Input type="number" min={0} max={1440} value={d.idle_minutes} onChange={(e) => set({ idle_minutes: Number(e.target.value) })} />
-          </Field>
-          <Field label="Time-out per verzoek (seconden)">
-            <Input type="number" min={5} max={600} value={d.timeout_sec} onChange={(e) => set({ timeout_sec: Number(e.target.value) })} />
-          </Field>
-        </div>
-      </details>
+      {fold ? (
+        <details className="group">
+          <summary className="cursor-pointer text-xs font-medium text-muted hover:text-fg">Meer opties</summary>
+          <div className="mt-3 space-y-4">{optional}</div>
+        </details>
+      ) : (
+        optional
+      )}
     </div>
   );
 }

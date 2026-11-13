@@ -7,6 +7,7 @@ import { loadConfig, type Config } from './core/config.js';
 import { openDb, migrate, now } from './core/db.js';
 import { coreMigrations } from './core/migrations.js';
 import { Store } from './core/store.js';
+import { newBotDefaults } from './agent/new-bot.js';
 import { EventBus } from './core/events.js';
 import { Secrets, redact } from './core/secrets.js';
 import { Auth, passwordProblem } from './core/auth.js';
@@ -24,6 +25,7 @@ import { fileTools } from './tools/builtin/files.js';
 import { shellTools } from './tools/builtin/shell.js';
 import { webTools } from './tools/builtin/web.js';
 import { coreTools } from './tools/builtin/core.js';
+import { registerSelfServe } from './tools/builtin/selfserve.js';
 import { planTool } from './tools/builtin/plan.js';
 import { agentRoutes } from './api/agents.js';
 import { threadRoutes } from './api/threads.js';
@@ -90,6 +92,8 @@ export async function createApp(over: Partial<Config> & { modules?: Module[]; qu
   let ctx!: Ctx;
   const getCtx = () => ctx;
   const runner = new Runner(getCtx);
+  // "Alles stoppen": a message that would be tried again after its limit, or important work that would resume.
+  (hooks.stopAll ??= []).push(({ userId }) => void runner.stopPlanned(userId));
   const queue = new ChatQueue(getCtx);
   ctx = {
     config,
@@ -119,12 +123,19 @@ export async function createApp(over: Partial<Config> & { modules?: Module[]; qu
     log,
   };
 
+  // The start of every new bot, on every path that makes one (agent/new-bot.ts).
+  store.agentDefaults = (userId, data) => newBotDefaults(ctx, userId, data);
+  // A bot that starts at "Volledige toegang" by that default is logged like the switch in the bot editor.
+  store.agentCreated = (a, asked) => {
+    if (!asked.access_mode && a.access_mode === 'full') ctx.audit(a.user_id, 'agent.full_access', { on: true, external: a.settings?.fullAccessExternal === true, from: 'nieuwe bot' }, a.id);
+  };
   for (const k of builtinKinds()) ctx.providers.registerKind(k);
   ctx.tools.registerGroup({ id: 'core', label: 'Basis', description: 'Vragen stellen en meldingen sturen', always: true });
   ctx.tools.registerGroup({ id: 'files', label: 'Bestanden', description: 'Lezen en schrijven binnen de werkmap van de bot', defaultOn: true });
   ctx.tools.registerGroup({ id: 'web', label: 'Internet', description: 'Zoeken en webpagina’s lezen', defaultOn: true });
   ctx.tools.registerGroup({ id: 'shell', label: 'Terminal', description: 'Opdrachten uitvoeren (PowerShell/bash) in de werkmap — standaard uit' });
   for (const t of [...coreTools(), planTool(), ...fileTools(), ...shellTools({ dataDir: () => ctx.config.dataDir }), ...webTools()]) ctx.tools.register(t);
+  registerSelfServe(ctx);
   // A shared bot in a member's conversation only keeps the tools of its private context (agent/shared.ts).
   ctx.tools.addFilter((agent, _thread, list) => (sharedRunOf(agent) ? list.filter((t) => SHARED_BOT_TOOLS.has(t.name)) : list));
 
@@ -216,6 +227,11 @@ export async function createApp(over: Partial<Config> & { modules?: Module[]; qu
     // unexpected exceptions are called an internal error.
     // Every error text is redacted: a provider or service that echoes a key in its error must not hand it to the UI.
     const msg = status < 500 ? redact(String(err?.message ?? '')) : err instanceof HttpError ? redact(String(err.message)) : `Interne fout: ${redact(String(err?.message || err))}`;
+    // Half a file already went out: Express closes the connection. Otherwise the error is JSON, also when the route
+    // had already named the file it meant to send (an image, audio, a download).
+    if (res.headersSent) return _next(err);
+    res.removeHeader('content-type');
+    res.removeHeader('content-disposition');
     res.status(status).json({ error: msg, code: err?.code });
   });
 

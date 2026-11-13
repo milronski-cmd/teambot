@@ -2,58 +2,9 @@ import { useEffect, useRef, useState } from 'react';
 import { api, on, request } from '../../lib/api';
 import { t } from '../../lib/i18n';
 import { formatNumber, formatUsd, formatUsdRange } from '../../lib/format';
-import type { TalkSetting } from './talk';
+import type { CallEngine, LiveMode, VoiceSettings } from '../../../../shared/voiceSettings.js';
 
-export type TtsEngine = 'auto' | 'local' | 'browser' | 'provider' | 'off';
-export type SttEngine = 'local' | 'provider' | 'browser';
-export type LiveMode = 'direct' | 'agent';
-/** 'local' = free call on this pc; 'realtime' = OpenAI Realtime; 'gemini' = Gemini Live (cloud voice in front of the bot). */
-export type CallEngine = 'local' | 'realtime' | 'gemini';
-
-export interface VoiceSettings {
-  stt: { engine: SttEngine; providerId: string | null; model: string; language: string; localModel: string };
-  tts: {
-    engine: TtsEngine;
-    providerId: string | null;
-    model: string;
-    voice: string;
-    speed: number;
-    instructions: string;
-    browserVoice: string;
-    localVoice: string;
-    localSpeaker: number;
-    localVoiceEn: string;
-    /** Start reading aloud while the bot is still writing (local voice). */
-    streaming: boolean;
-  };
-  /** talk: hold a key/button to talk, or hands-free; 'auto' = hold on a computer, hands-free on a phone (talk.ts). */
-  call: { engine: CallEngine; bargeIn: boolean; silenceMs: number; talk: TalkSetting };
-  realtime: { providerId: string | null; model: string; voice: string; transcribeModel: string; mode: LiveMode; sendContext: boolean; vad: 'semantic' | 'server' };
-  /** Gemini Live (Google AI Studio key); mode and context follow `realtime`. */
-  gemini?: { providerId: string | null; model: string; voice: string };
-  priceCapUsd: number;
-  maxMinutes: number;
-  keepTranscripts: boolean;
-  audioDays: number;
-  ttsCacheDays: number;
-  /** Desktop app: dictate into any program with a global key combination. */
-  hotkey: { enabled: boolean; accelerator: string };
-}
-
-export interface AgentVoice {
-  engine?: TtsEngine | 'default';
-  providerId?: string | null;
-  model?: string;
-  voice?: string;
-  speed?: number;
-  instructions?: string;
-  browserVoice?: string;
-  localVoice?: string;
-  localSpeaker?: number;
-  autoRead?: boolean;
-  realtimeVoice?: string;
-  liveMode?: LiveMode | 'default';
-}
+export type { AgentVoice, LiveMode, SttEngine, VoiceSettings } from '../../../../shared/voiceSettings.js';
 
 export interface VoiceStatus {
   openai: { id: string; name: string; hasKey: boolean } | null;
@@ -203,20 +154,6 @@ export interface CallView {
   transcript?: { role: 'user' | 'assistant'; text: string; at: string }[];
 }
 
-export interface AskResult {
-  status: 'done' | 'working' | 'waiting_approval' | 'error' | 'cancelled';
-  text: string;
-  runId: string;
-  messageId: string | null;
-  error?: string;
-  /** The model of the answer (the same one the bot uses in the chat). */
-  model?: string | null;
-  /** Turn with speak: true — the live voice for this answer (stream: null = read the finished answer instead). */
-  speech?: LiveSpeech;
-}
-
-export type LiveSpeech = { engine: 'local'; id: string; stream: string; sampleRate: number; voice: string; model: string; provider: string } | { engine: string; stream: null; reason: string };
-
 // ---------- settings cache (shared by all voice components) ----------
 
 let cache: Promise<VoiceInfo> | null = null;
@@ -228,10 +165,6 @@ export function loadVoice(force = false): Promise<VoiceInfo> {
     cache.then((v) => listeners.forEach((l) => l(v))).catch(() => (cache = null));
   }
   return cache;
-}
-
-export function invalidateVoice() {
-  cache = null;
 }
 
 let wired = false;

@@ -4,6 +4,7 @@ import path from 'node:path';
 import { parseCsv } from '../browser/vault-import.js';
 import { xlsxSheets } from '../folders/documents.js';
 import { type Actor, type TeamData, TeamDataError } from './service.js';
+import type { ImportResult } from '../../../shared/teamdata.js';
 
 /**
  * "Zet deze Excel of CSV in een teamtabel": a spreadsheet becomes a table in the team database, through the existing
@@ -89,19 +90,6 @@ export function tableFromRows(raw: unknown[][], tableName: string): FileTable {
     return o;
   });
   return { name: tableName, sql, columns, rows: out };
-}
-
-export interface ImportResult {
-  table: string;
-  source: string;
-  created: boolean;
-  inserted: number;
-  skipped: number;
-  rows: number;
-  columns: { name: string; label: string; type: string }[];
-  sheet?: string;
-  sheets?: string[];
-  error?: string;
 }
 
 /** The rows of a CSV or Excel file (the chosen sheet, or the first with data) and the sheet names. */

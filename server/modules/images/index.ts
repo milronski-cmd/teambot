@@ -4,6 +4,8 @@ import type { Ctx, Module, ProviderConfig, ToolDef } from '../../core/types.js';
 import { ah, bad, str, user } from '../../core/http.js';
 import { registerAttachment, resolveInWorkspace } from '../../tools/builtin/files.js';
 import { readBytes, safeFetch } from '../../tools/builtin/web.js';
+import { PLACE } from '../../../shared/places.js';
+import { words } from '../../../shared/i18n-core.js';
 
 /**
  * Afbeeldingen maken: the tool `generate_image` lets a bot make an image (a product photo for a blog, a banner, an
@@ -59,7 +61,7 @@ export class Images {
   settings(userId: string): ImageSettings {
     const s = this.ctx.store.getSetting<Partial<ImageSettings>>(userId, SETTING, {});
     const max = Number(s.dailyMax);
-    return { provider: typeof s.provider === 'string' ? s.provider : '', models: s.models && typeof s.models === 'object' ? s.models : {}, dailyMax: Number.isFinite(max) && max >= 0 ? Math.min(500, Math.round(max)) : 20 };
+    return { provider: typeof s.provider === 'string' ? s.provider : '', models: s.models && typeof s.models === 'object' ? s.models : {}, dailyMax: Number.isFinite(max) && max >= 0 ? Math.min(500, Math.round(max)) : 0 };
   }
 
   save(userId: string, data: any): ImageSettings {
@@ -140,13 +142,14 @@ export class Images {
   async generate(userId: string, prompt: string, shape: Shape, signal?: AbortSignal): Promise<{ bytes: Buffer; ext: string; service: string; model: string }> {
     const chosen = this.pick(userId);
     if (!chosen)
-      throw bad('Er is nog geen AI-dienst gekoppeld die afbeeldingen kan maken. Koppel bij Instellingen › AI een dienst met een sleutel (OpenAI, xAI of Together) of je eigen OpenAI-compatibele server; daarna werkt dit vanzelf.');
+      throw bad(`Er is nog geen AI-dienst gekoppeld die afbeeldingen kan maken. Koppel bij ${PLACE.ai} een dienst met een sleutel (OpenAI, xAI of Together) of je eigen OpenAI-compatibele server; daarna werkt dit vanzelf.`);
     const { p, model } = chosen;
-    if (!model) throw bad(`Kies bij Instellingen › Afbeeldingen maken welk model van “${p.name}” de afbeeldingen maakt.`);
+    if (!model) throw bad(`Kies bij ${PLACE.images} welk model van “${p.name}” de afbeeldingen maakt.`);
     const s = this.settings(userId);
     const c = this.made.get(userId);
     const n = c && c.day === today() ? c.n : 0;
-    if (n >= s.dailyMax) throw bad(s.dailyMax === 1 ? 'Het maximum van 1 afbeelding per dag is bereikt. Je verhoogt het bij Instellingen › Afbeeldingen maken.' : `Het maximum van ${s.dailyMax} afbeeldingen per dag is bereikt. Je verhoogt het bij Instellingen › Afbeeldingen maken.`);
+    // 0 = no limit (the default): a maximum exists only when the owner sets one.
+    if (s.dailyMax > 0 && n >= s.dailyMax) throw bad(s.dailyMax === 1 ? `Het maximum van 1 afbeelding per dag is bereikt. Je verhoogt het bij ${PLACE.images}.` : `Het maximum van ${s.dailyMax} afbeeldingen per dag is bereikt. Je verhoogt het bij ${PLACE.images}.`);
     const k = KINDS[p.kind];
     const body: Record<string, any> = { model, prompt, n: 1 };
     if (k.size) body.size = SIZES[shape];
@@ -211,7 +214,7 @@ function tool(svc: Images): ToolDef {
       },
       required: ['prompt'],
     },
-    summarize: (a) => `Afbeelding maken: ${String(a.prompt || '').replace(/\s+/g, ' ').slice(0, 160)}`,
+    summarize: (a) => words('Afbeelding maken: {0}', String(a.prompt || '').replace(/\s+/g, ' ').slice(0, 160)),
     async run(a, t) {
       const prompt = str(a.prompt, 4000).trim();
       if (!prompt) return { text: 'Beschrijf wat er op de afbeelding moet staan.', isError: true };
@@ -241,6 +244,14 @@ function tool(svc: Images): ToolDef {
 const mod: Module = {
   id: 'images',
   label: 'Afbeeldingen maken',
+  migrations: [
+    {
+      // The old built-in maximum (20 a day) is gone: where it is still stored it becomes 0 = no limit. 0 used to mean
+      // "none at all"; nobody could set that on purpose and still use the tool, so it now reads as no limit too.
+      id: 'images-001',
+      sql: `UPDATE settings SET value = json_set(value, '$.dailyMax', 0) WHERE key = 'images' AND json_valid(value) AND json_extract(value, '$.dailyMax') = 20;`,
+    },
+  ],
   init(ctx: Ctx) {
     const svc = new Images(ctx);
     ctx.services.images = { status: (u: string) => svc.status(u), generate: (u: string, prompt: string, shape: Shape) => svc.generate(u, prompt, shape) };

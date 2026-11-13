@@ -4,6 +4,7 @@ import https from 'node:https';
 import net from 'node:net';
 import { checkUrl, defaultResolver, type Resolver, type UrlPolicy } from './policy.js';
 import { forwardOptions, looksLocalName, openTunnel, upstreamFor, type UpstreamProxy } from '../network/proxy.js';
+import { PLACE } from '../../../shared/places.js';
 
 /**
  * Local policy-enforcing forward proxy for the bot browsers. Every request of a bot browser
@@ -34,7 +35,7 @@ interface ProxyClient {
 }
 
 const LOGIN_REFUSED = {
-  owner: 'De proxy van de eigenaar weigert de inloggegevens. Controleer ze in Instellingen › Netwerk en proxy.',
+  owner: `De proxy van de eigenaar weigert de inloggegevens. Controleer ze in ${PLACE.proxy}.`,
   profile: 'De proxy van dit browserprofiel weigert de inloggegevens. Controleer ze bij Computers › Browserprofielen › Proxy.',
 };
 

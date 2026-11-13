@@ -3,10 +3,11 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import type { Agent, Ctx, Module, User } from '../../core/types.js';
-import { ah, bad, forbidden, notFound, own, requireRole, str, user } from '../../core/http.js';
+import { ah, bad, forbidden, notFound, own, requireRole, sendOwnFile, str, user } from '../../core/http.js';
 import { isRestricted } from '../../api/member-policy.js';
+import { standardDataDir } from '../../core/config.js';
 import { type AgentRoot, addPathGuard, addRootProvider, agentRootList, announceTrash, isInside, isProtectedPath, resolveInRoots, setWholeComputer, wholeComputer } from '../../tools/builtin/files.js';
-import { colleagueWerkplek, followName, werkplekFor } from './werkplek.js';
+import { colleagueWerkplek, followName, isWerkplek, werkplekFor } from './werkplek.js';
 import { readDocumentTool } from './documents.js';
 import { OcrEngine, ocrEngine, setOcrEngine } from './ocr.js';
 import { Trash, trashMigrations, type TrashEntry, type TrashLimits } from './trash.js';
@@ -98,7 +99,7 @@ export function folderProblem(ctx: Ctx, p: string): string | null {
   const data = path.resolve(ctx.config.dataDir);
   const inData = isInside(abs, data);
   const holdsData = isInside(data, abs);
-  if (inData && !n(abs).startsWith(n(path.join(data, 'workspaces')))) return 'Mappen in de eigen gegevensmap van TeamBot kun je niet delen.';
+  if (inData && !n(abs).startsWith(n(path.join(data, 'workspaces'))) && !isInside(abs, documentsFor(ctx))) return 'Mappen in de eigen gegevensmap van TeamBot kun je niet delen.';
   if (holdsData && !inData) return 'Deze map bevat de gegevensmap van TeamBot (met sleutels); kies een andere map.';
   return null;
 }
@@ -111,14 +112,50 @@ export function documentsDir(home = os.homedir()): string {
 }
 
 /**
- * The example team folder: a TeamBot folder under the user's Documents (an older TeamBot suggestion that is already
- * in use stays). Never another app's live folder such as OpenBot's ~/OpenBot/Shared: bots would then write into the
+ * The Documents folder of this TeamBot: the user's own for the installed app, and for a TeamBot with a data folder of
+ * its own (TEAMBOT_DATA, a test, a trial install, a server in Docker) a folder inside that data folder. Its team
+ * folders, and with them the werkplekken of its bots, then stay in what belongs to that run and never touch the
+ * owner's real files. A folder the owner picks himself is his choice, wherever it is.
+ */
+export function documentsFor(ctx: Ctx): string {
+  const data = path.resolve(ctx.config.dataDir);
+  const n = (x: string) => (process.platform === 'win32' ? path.resolve(x).toLowerCase() : path.resolve(x));
+  return n(data) === n(standardDataDir()) ? documentsDir() : path.join(data, 'Documents');
+}
+
+/** Files a system puts in any folder by itself: a folder with only these is empty. */
+const SYSTEM_FILE = /^(desktop\.ini|thumbs\.db|\.ds_store)$/i;
+
+/**
+ * A new team folder starts empty, like everything after an install: `want` when it does not exist yet or is empty,
+ * else the first free folder beside it ("Teammap (2)"). A folder an earlier install left behind (with the werkplekken
+ * of its bots) is never handed to the bots of a fresh one, and nothing in it is moved or deleted; the owner can still
+ * pick it himself (Mappen › Teammap).
+ */
+export function freshFolder(want: string): string {
+  const free = (p: string) => {
+    const st = fs.statSync(p, { throwIfNoEntry: false });
+    if (!st) return true;
+    try {
+      return st.isDirectory() && fs.readdirSync(p).every((x) => SYSTEM_FILE.test(x));
+    } catch {
+      return false;
+    }
+  };
+  for (let i = 1; i < 100; i++) {
+    const p = i === 1 ? want : `${want} (${i})`;
+    if (free(p)) return p;
+  }
+  return want;
+}
+
+/**
+ * The example team folder: `<Documents>\TeamBot\Teammap` (another team: `<Documents>\TeamBot\<team>`), new or empty
+ * (`freshFolder`). Never another app's live folder such as OpenBot's ~/OpenBot/Shared: bots would then write into the
  * files that app is using.
  */
-export function suggestTeamFolder(home = os.homedir()): string {
-  const older = path.join(home, 'TeamBot', 'Gedeeld');
-  if (isDir(older)) return older;
-  return path.join(documentsDir(home), 'TeamBot', 'Teammap');
+export function suggestTeamFolder(docs = documentsDir(), name = 'Teammap'): string {
+  return freshFolder(path.join(docs, 'TeamBot', name));
 }
 
 /** A folder that belongs to another assistant app in daily use (a warning, not a block). */
@@ -244,9 +281,7 @@ function sendRaw(req: any, res: any, root: AgentRoot, rel: string) {
   // Opened in its own tab, a file is an opaque, script-less sandbox: it can never act with the owner's session.
   res.setHeader('Content-Security-Policy', "sandbox; default-src 'none'; img-src 'self' data:; media-src 'self'; style-src 'unsafe-inline'");
   res.setHeader('Cache-Control', 'private, no-cache');
-  res.sendFile(abs, { dotfiles: 'allow', headers: { 'Content-Type': type }, lastModified: true, acceptRanges: true }, (err: any) => {
-    if (err && !res.headersSent) res.status(err.status || 500).json({ error: 'Bestand kon niet gelezen worden' });
-  });
+  sendOwnFile(res, abs, { headers: { 'Content-Type': type }, lastModified: true, acceptRanges: true }).catch((err: any) => res.status(err.status || 500).json({ error: 'Bestand kon niet gelezen worden' }));
 }
 
 /** Stable system-prompt block listing the extra folders of a bot (only when it has any). */
@@ -353,7 +388,7 @@ export function createFoldersModule(opts: { trash?: Partial<TrashLimits> } = {})
         ah(async (req) => {
           const u = requireRole(req, 'admin');
           const st = ocr.status();
-          if (st.state === 'no-runtime') throw bad('Scans lezen kan niet in deze installatie: het onderdeel voor tekstherkenning ontbreekt. Installeer TeamBot opnieuw.');
+          if (st.state === 'no-runtime') throw bad(ocr.problem());
           ctx.audit(u.id, 'ocr.download', { mb: Math.round(st.bytes / 1e6), langs: st.langs.map((l) => l.id) });
           void ocr.download().then((ok) => ctx.log.info(`[folders] taaldata voor scans ${ok ? 'klaar' : 'niet gelukt'}`));
           return ocr.status();
@@ -373,6 +408,8 @@ export function createFoldersModule(opts: { trash?: Partial<TrashLimits> } = {})
         problem: (p: string) => folderProblem(ctx, p),
         /** "Eigen werkplek": the folder a new bot gets under its team folder (null = TeamBot's data folder). */
         werkplekFor: (userId: string, data: Partial<Agent>) => werkplekFor(ctx, userId, data),
+        /** Is the bot's work folder its own werkplek in a team folder (werkplek.ts)? */
+        isWerkplek: (agent: Agent) => isWerkplek(ctx, agent),
       };
       // The Prullenbak: the file tools keep what bots overwrite or delete (tools/builtin/files.ts, TrashLike). Other
       // places that change files for a bot (a CLI engine's write through TeamBot) can call the same three methods.
@@ -452,9 +489,7 @@ export function createFoldersModule(opts: { trash?: Partial<TrashLimits> } = {})
           res.setHeader('X-Content-Type-Options', 'nosniff');
           res.setHeader('Content-Security-Policy', "sandbox; default-src 'none'");
           res.setHeader('Cache-Control', 'private, no-cache');
-          res.sendFile(blob, { dotfiles: 'allow' }, (err: any) => {
-            if (err && !res.headersSent) res.status(err.status || 500).json({ error: 'Bestand kon niet gelezen worden' });
-          });
+          sendOwnFile(res, blob).catch((err: any) => res.status(err.status || 500).json({ error: 'Bestand kon niet gelezen worden' }));
         }),
       );
       api.delete(
@@ -490,7 +525,7 @@ export function createFoldersModule(opts: { trash?: Partial<TrashLimits> } = {})
           // Another team than the first gets its own suggestion (team folders never overlap): Documents\TeamBot\<team>.
           const first = teams?.list(u.id)[0]?.id;
           const safe = team ? team.name.replace(/[<>:"/\\|?*\u0000-\u001f]+/g, '-').replace(/^[\s.]+|[\s.]+$/g, '') : '';
-          const suggestion = team && first && team.id !== first ? path.join(documentsDir(), 'TeamBot', safe || 'Team') : suggestTeamFolder();
+          const suggestion = suggestTeamFolder(documentsFor(ctx), team && first && team.id !== first ? safe || 'Team' : 'Teammap');
           return {
             folder: tf,
             exists: tf ? fs.existsSync(tf.path) : false,

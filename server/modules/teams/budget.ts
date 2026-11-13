@@ -2,6 +2,7 @@ import type { Agent, Ctx } from '../../core/types.js';
 import { usdText } from '../../core/i18n.js';
 import { BudgetError, type BudgetStop, dayStart, nextDay } from '../../agent/budget.js';
 import type { TeamsService } from './service.js';
+import { PLACE } from '../../../shared/places.js';
 
 /**
  * A team's daily budget (package B2): optional, in USD, on top of the owner's own daily budget (Instellingen ›
@@ -38,7 +39,7 @@ export function teamBudgetText(b: TeamBudgetStop, tz?: string): string {
     b.estimate !== undefined && b.spent < b.limit
       ? `Daglimiet van het team “${b.team.name}” bereikt: het dagbudget is ${usdText(b.limit)}, vandaag is ${usdText(b.spent)} gebruikt en de volgende stap kost naar schatting ${usdText(b.estimate)} (zoveel kostte de vorige).`
       : `Daglimiet van het team “${b.team.name}” bereikt: vandaag is ${usdText(b.spent)} van ${usdText(b.limit)} gebruikt.`;
-  return `${first} Om ${clock(b.resetAt, tz)} begint een nieuwe dag en werkt de bot weer. Wil je vandaag verder, verhoog het dagbudget van het team dan in Instellingen › Teams.`;
+  return `${first} Om ${clock(b.resetAt, tz)} begint een nieuwe dag en werkt de bot weer. Wil je vandaag verder, verhoog het dagbudget van het team dan in ${PLACE.teams}.`;
 }
 
 /** The runner hook: throws a BudgetError when the bot's home team reached its daily budget (or the next step would). */

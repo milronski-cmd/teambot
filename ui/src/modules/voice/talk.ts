@@ -1,3 +1,5 @@
+import type { CallTalk } from '../../../../shared/voiceSettings.js';
+
 /**
  * How you talk in a spoken call: hold a key or button while you talk ("hold", push-to-talk), or hands-free (the
  * microphone listens and a pause ends your turn). No DOM types here: the call screens and the tests share it.
@@ -7,10 +9,8 @@
  * both (the advice for Claude's and Gemini's voice modes in shared rooms, research of 9 November 2026). A phone is
  * held to the ear or used with earphones, where hands-free works well.
  */
-export type TalkSetting = 'auto' | 'hold' | 'handsfree';
+export type TalkSetting = CallTalk;
 export type TalkMode = 'hold' | 'handsfree';
-
-export const TALK_SETTINGS: readonly TalkSetting[] = ['auto', 'hold', 'handsfree'];
 
 /** The mode for this device: an explicit choice, else hold on a computer and hands-free on a touch screen. */
 export function talkMode(setting: TalkSetting | string | null | undefined, touch: boolean): TalkMode {

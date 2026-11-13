@@ -5,7 +5,7 @@ import path from 'node:path';
 import { startTestApp, type TestApp } from './helpers.js';
 import type { ChatRequest, ChatResult, StreamEvent } from '../server/core/types.js';
 import { buildHistory } from '../server/agent/history.js';
-import { cleanLimits, findMentions } from '../server/modules/rooms/routing.js';
+import { cleanLimits, effectiveLimits, findMentions } from '../server/modules/rooms/routing.js';
 
 // ---------------------------------------------------------------- multi-bot mock provider
 
@@ -131,7 +131,11 @@ test('mention parsing: names, multi-word, @iedereen, code is ignored', () => {
   assert.deepEqual(findMentions('```\n@Bo\n```  en `@Ada`', people).ids, []);
   assert.deepEqual(findMentions('Bo, wil jij dit doen?', people, { leading: true }).ids, ['c']);
   assert.deepEqual(findMentions('Bo, wil jij dit doen?', people).ids, []);
-  assert.deepEqual(cleanLimits({ maxTurnsPerMessage: 999, maxCostUsd: '1.5', bogus: 1 }), { maxTurnsPerMessage: 50, maxCostUsd: 1.5 });
+  assert.deepEqual(cleanLimits({ maxTurnsPerMessage: 9_999_999, maxCostUsd: '1.5', bogus: 1 }), { maxTurnsPerMessage: 100_000, maxCostUsd: 1.5 });
+  // No built-in brakes: by default no time-out, no step cap and no cost or token cap (0 = none).
+  const d = effectiveLimits();
+  assert.deepEqual([d.turnTimeoutSec, d.delegationTimeoutSec, d.maxStepsPerTurn, d.maxCostUsd, d.maxTokens, d.maxChainCostUsd, d.maxChainTokens], [0, 0, 0, 0, 0, 0, 0]);
+  assert.deepEqual(cleanLimits({ delegationTimeoutSec: 0, maxStepsPerTurn: 0 }), { delegationTimeoutSec: 0, maxStepsPerTurn: 0 }, 'the owner can still set "none" himself');
 });
 
 test('history keeps a tool result paired when another participant spoke in between', async () => {
@@ -620,8 +624,8 @@ test('approvals go to the bot owner; another bot or a room member cannot answer 
     // The human member who asked cannot answer it either, but is told who must.
     assert.equal((await bob.api('GET', '/approvals')).length, 0);
     assert.equal(await bob.status('POST', `/approvals/${pending[0].id}`, { decision: 'approve' }), 400);
-    const inbox = await bob.api('GET', '/rooms/inbox');
-    assert.ok(inbox.items.some((x: any) => x.kind === 'approval_wait'));
+    const told = t.app.ctx.store.all<any>('SELECT title, body FROM notifications WHERE user_id = ?', bob.user.id);
+    assert.ok(told.some((x) => / wacht op /.test(x.title) && /alleen de eigenaar van de bot kan dit beantwoorden/.test(x.body)), JSON.stringify(told));
     // No team tool can resolve approvals.
     assert.ok(!t.app.ctx.tools.list().some((x) => /approv|goedkeur/i.test(x.name)));
     const filePath = path.join(t.dir, 'rooms', r.id, 'files', 'plan.md');
@@ -746,7 +750,7 @@ test('task board via tools, hire proposal approved by a human, teams', async () 
     await t.api('POST', `/rooms/proposals/${props[0].id}`, { decision: 'approve' });
     const eva = (await t.api('GET', '/agents')).find((a: any) => a.name === 'Eva');
     assert.ok(eva);
-    assert.equal(eva.access_mode, 'ask');
+    assert.equal(eva.access_mode, 'full', 'a hired bot starts like any new bot of the owner (agent/new-bot.ts)');
     const v = await t.api('GET', `/rooms/${r.id}`);
     assert.ok(v.bots.some((b: any) => b.agentId === eva.id));
     // A non-lead bot cannot propose members (tool not offered).
@@ -869,9 +873,9 @@ test('hire proposal card: event in the group chat, open in Wacht op jou, read-on
     assert.equal(eva.status, 'pending');
     assert.ok(events.some((e) => e.data?.id === eva.id && e.data?.status === 'pending'), 'live event for the cards');
     // The notification opens the group chat with the card (not a page that does not exist).
-    const inbox = t.app.ctx.store.all<any>("SELECT * FROM room_inbox WHERE kind = 'proposal'");
-    assert.equal(inbox.length, 2);
-    assert.ok(inbox.every((x) => x.link === `#/t/${r.thread}`));
+    const told = t.app.ctx.store.all<any>("SELECT title, link FROM notifications WHERE title LIKE 'Voorstel: %'");
+    assert.deepEqual(told.map((x) => x.title).sort(), ['Voorstel: Eva toevoegen aan “Redactie”', 'Voorstel: Fien toevoegen aan “Redactie”']);
+    assert.ok(told.every((x) => x.link === `#/t/${r.thread}`));
     // GET by id: owner yes; an accepted member of the room read-only; a stranger 404 (and cannot decide).
     const one = await t.api('GET', `/rooms/proposals/${eva.id}`);
     assert.equal(one.profile.name, 'Eva');

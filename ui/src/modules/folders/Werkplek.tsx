@@ -3,6 +3,7 @@ import { t } from '../../lib/i18n';
 import type { Agent } from '../../lib/types';
 import { Button, toastError } from '../../components/ui';
 import { FolderName } from '../../components/FolderName';
+import { werkplekScope } from './werkplekScope';
 
 /** The desktop app opens a bot's werkplek in Explorer (desktop/main.ts, only from the TeamBot window). */
 const openInDesktop = (): ((agentId: string) => Promise<unknown>) | null => {
@@ -10,11 +11,28 @@ const openInDesktop = (): ((agentId: string) => Promise<unknown>) | null => {
   return typeof d?.openWerkplek === 'function' ? d.openWerkplek : null;
 };
 
+/** The line under the folder: what the bot does here and outside it, by its access level (werkplekScope.ts). */
+function scopeLine(agent: Pick<Agent, 'name' | 'access_mode' | 'settings'>): string {
+  switch (werkplekScope(agent)) {
+    case 'whole':
+      return t('Hier werkt {0}: bestanden, terminal en downloads. Met Volledige toegang werkt de bot ook daarbuiten, op je hele computer, zonder te vragen.', agent.name);
+    case 'asks':
+      return t('Hier werkt {0}: bestanden, terminal en downloads. Voordat de bot iets wijzigt, vraagt hij je akkoord.', agent.name);
+    case 'read':
+      return t('Hier mag {0} lezen en zoeken, niets wijzigen.', agent.name);
+    case 'chat':
+      return t('{0} staat op Alleen chat: hij praat alleen en gebruikt deze map niet.', agent.name);
+    default:
+      return t('Hier werkt {0}: bestanden, terminal en downloads. Daarbuiten vraagt de bot eerst toestemming.', agent.name);
+  }
+}
+
 /**
- * "Werkplek: <map>" on the bot page (0.4.5, "Eigen werkplek"): the bot's own folder, where its files, terminal and
- * downloads live. Outside its folders it asks first; a colleague's werkplek it may only read.
+ * "Werkplek: <map>" on the first-bot screen and the bot page (0.4.5, "Eigen werkplek"): the bot's own folder, where its
+ * files, terminal and downloads live, with one line that follows its access level (the bot page passes the level that
+ * is chosen there). A colleague's werkplek it may only read.
  */
-export function WerkplekLine({ agent }: { agent: Pick<Agent, 'id' | 'name' | 'workspace'> }) {
+export function WerkplekLine({ agent }: { agent: Pick<Agent, 'id' | 'name' | 'workspace' | 'access_mode' | 'settings'> }) {
   const open = openInDesktop();
   if (!agent.workspace) return null;
   return (
@@ -29,7 +47,7 @@ export function WerkplekLine({ agent }: { agent: Pick<Agent, 'id' | 'name' | 'wo
           </Button>
         )}
       </div>
-      <p className="mt-1 text-xs leading-relaxed text-muted">{t('Hier werkt {0}: bestanden, terminal en downloads. Daarbuiten vraagt de bot eerst toestemming.', agent.name)}</p>
+      <p className="mt-1 text-xs leading-relaxed text-muted">{scopeLine(agent)}</p>
     </div>
   );
 }

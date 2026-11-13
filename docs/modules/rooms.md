@@ -59,9 +59,35 @@ Server (subagent) + UI (hoofdsessie, na overname op 2026-11-06). Plan: §21.3, �
     tweede stap, en "Dit werk is al 3 keer doorgegeven, het maximum: je kunt het niet verder doorgeven" voor de bot
     onderaan; "Resultaat teruggestuurd naar …" in elk subgesprek.
   - Dit geldt voor `delegate_task`. Een `ask_bot`-antwoord blijft wat de ontvanger in zijn beurt antwoordt.
-- **Begrenzing** (instelbaar per groep, met veilige standaarden):
-  - `maxTurnsPerMessage` 8, `maxDelegationDepth` 3 (hoofdbot → leider → teamleider → bot; de 4e keer doorgeven wordt
-    geweigerd), `maxHandoffs` 3, `maxBroadcastTargets` 6;
+- **Stoppen door de eigenaar start niets.** Eén plek zegt "dit heeft de eigenaar gestopt" (`agent/runs.ts`):
+  `RunManager.cancel` schrijft het op zodra hij drukt, `stoppedByOwner` leest het voor een beurt of een verzoek, en
+  `RunManager.ownerStopped(agentId)` voor een bot ("door de eigenaar gestopt en sindsdien geen beurt gehad"). Alles
+  wat uit zichzelf een beurt begint om verder te gaan met eerder werk vraagt het daar: vervolgbeurten en wachtende
+  botberichten (hier), de werklus en de check-in van de hoofdbot (`docs/modules/proactief.md`), en het herstel na een
+  herstart. Het geldt voor de stopknop van een chat of van een subtaak, *Alles stoppen*, `/stop` in een chat-app en de
+  noodstop, ook voor één gestopte bot. (Een groep stoppen of een bot in een groep pauzeren is iets anders: de groep
+  wacht tot de eigenaar hem hervat en gaat dan verder. Schema's lopen door: een routine op haar tijd is een nieuwe
+  beurt, geen gevolg van de stop.)
+  - de bot die het werk gaf krijgt géén vervolgbeurt. In zijn gesprek komt een notitie ("Gestopt door de eigenaar: …
+    Het is niet af en blijft van …"), die hij leest bij zijn volgende beurt, waardoor die ook start. Een echte uitkomst
+    (klaar, fout, time-out) wekt hem wel, zoals altijd;
+  - wat op de gestopte bot wachtte (antwoorden, botberichten in de wachtrij) wacht tot na zijn volgende beurt, ook
+    over een herstart heen. Bij *Alles stoppen* vervalt via één haak (`hooks.stopAll`) ook wat nog vanzelf zou
+    beginnen: wachtende botberichten, routine-runs die op een nieuwe poging wachten, een geplande nieuwe poging na een
+    gebruikslimiet, en een workflow die bezig is of wacht (die krijgt *Gestopt door jou* in plaats van *liep vast*);
+  - wordt TeamBot afgesloten vlak na de stop, dan blijft het een stop: na de herstart heet de beurt niet "onderbroken",
+    wordt de subtaak niet opnieuw gestart en meldt de hoofdbot het niet als vastgelopen werk;
+  - wachtte een subtaak alleen op het gestopte werk, dan stopt die mee en gaat de stop zo de keten omhoog;
+  - een taak die de gestopte bot op *Bezig* had staat weer op *Te doen*, zonder claim, en blijft van die bot. Opnieuw
+    starten is één stap: *Hervatten* in het gesprek van die bot (het resultaat van een subtaak gaat dan alsnog terug),
+    of de bot die de taak gaf geeft hem opnieuw (`task_update` met dezelfde `owner`, of `delegate_task`);
+  - de werklus pakt het werk van een gestopte bot niet uit zichzelf op (`docs/modules/proactief.md`).
+- **Begrenzing**: geen ingebouwde rem. Alle grenzen zijn instellingen die standaard uit staan (0 = geen grens):
+  - `maxTurnsPerMessage`, `maxAskTurns`, `maxDelegationDepth`, `maxHandoffs`, `maxBroadcastTargets`,
+    `maxAsksPerHour`, `maxAsksPerPairPerHour` (bij diepte en overdrachten: -1 = helemaal niet);
+  - wat vanzelf stopt is alleen een echte lus: in één keten geeft dezelfde bot dezelfde collega voor de derde keer
+    hetzelfde verzoek, de twee keren ervoor kwam hetzelfde terug en er veranderde niets (geen taak die verder kwam,
+    geen stap die iets schreef of de eigenaar iets meldde). De gever leest waarom, de eigenaar krijgt één melding;
   - stappen per beurt, time-outs per beurt en per delegatie;
   - **kostenplafond** en tokenplafond (de groep stopt en meldt dat);
   - cyclusdetectie (geen A→B→A).
@@ -79,7 +105,7 @@ Server (subagent) + UI (hoofdsessie, na overname op 2026-11-06). Plan: §21.3, �
   team (van de eigenaar zelf) ziet iedereen.
   **Aanname-voorstellen** (hire) worden pas na menselijke goedkeuring een bot (`access_mode: ask`).
 - **Menselijke leden**: andere gebruikers van de server als *lid* of *gast* (gast ziet alleen die groep, geen
-  takenbord), met uitnodigen, accepteren of weigeren, en intrekken. Eigen inbox per persoon.
+  takenbord), met uitnodigen, accepteren of weigeren, en intrekken. Meldingen van een groep komen bij de gewone meldingen (de bel).
 - **Kostenledger** per bot per groep. Activiteitenlog (wie deed wat) en zoeken. Export naar Markdown/JSON, zonder
   bevroren contexten en ruwe providerdata.
 
@@ -93,14 +119,13 @@ Server (subagent) + UI (hoofdsessie, na overname op 2026-11-06). Plan: §21.3, �
 | Takenbord | `GET/POST /rooms/tasks`, `PATCH/DELETE /rooms/tasks/:id` (ook `important: true/false`: *Belangrijk*, zie [engine-chain](engine-chain.md)); `POST /rooms/tasks/:id/start-after` `{ at }` (0.4.4, P3): *Start na de reset om …* uit de kostenschatting: de eigen bot die de taak doet krijgt hem dan in zijn eigen chat, als eenmalige routine (`Taak: <titel>`, belangrijk als de taak belangrijk is; nodig: module routines) |
 | Voorstellen | `GET /rooms/proposals`, `POST /rooms/proposals/:id` (`{decision: approve\|deny}`) |
 | Delegaties | `GET /rooms/delegations?threadId=`, `GET /rooms/delegations/by-call/:callId`, `POST /rooms/delegations/:id/cancel` |
-| Overig | `GET /rooms/by-thread/:threadId`, `GET /rooms/:id/ledger`, `GET /rooms/:id/activity`, `GET /rooms/:id/search`, `GET /rooms/:id/export`, groepsbestanden `GET/POST/DELETE /rooms/:id/files`, `GET /rooms/inbox` |
+| Overig | `GET /rooms/by-thread/:threadId`, `GET /rooms/:id/ledger`, `GET /rooms/:id/activity`, `GET /rooms/:id/search`, `GET /rooms/:id/export`, groepsbestanden `GET/POST/DELETE /rooms/:id/files` |
 
-Events: `rooms.changed`, `rooms.member`, `rooms.delegation`, `rooms.task`, `rooms.team`, `rooms.files`,
-`rooms.inbox`.
+Events: `rooms.changed`, `rooms.member`, `rooms.delegation`, `rooms.task`, `rooms.team`, `rooms.files`.
 
 Tabellen: `rooms` (met `workspace_id`, migratie `rooms-group-team`; bij de start krijgen groepen van vóór teams
 hun team), `room_members`, `room_delegations`, `room_teams` (met `workspace_id`), `room_team_members`, `room_tasks`
-(met `workspace_id`), `room_proposals`, `room_activity`, `room_inbox`.
+(met `workspace_id`), `room_proposals`, `room_activity`, `room_inbox` (wordt niet meer gevuld; de tabel blijft).
 
 Dienst `ctx.services.rooms`: ook `teamOf(roomId)` (het team van een groep) en `botTakesPart(roomId, agentId)` (lid
 én mag nog meedoen), onder andere voor zoeken.

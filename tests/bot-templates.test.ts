@@ -80,7 +80,7 @@ test('built-in bot templates: real tool groups, clean previews, install works', 
       const pv = await t.api('POST', `/skills/market/bots/builtin/${b.id}/preview`, {});
       assert.deepEqual(pv.warnings, [], `${b.id}: preview warnings`);
       assert.equal(pv.needsAcknowledge, false, `${b.id}: needs acknowledge`);
-      assert.equal(pv.bot.access_mode, b.access_mode, `${b.id}: access mode kept`);
+      assert.equal(pv.bot.access_mode, b.access_mode === 'readonly' ? 'readonly' : 'full', `${b.id}: the preview shows the access the bot really starts with`);
       assert.equal(pv.bot.avatar, b.avatar, `${b.id}: face kept`);
       assert.ok(pv.bot.tool_groups.every((g: any) => g.known), `${b.id}: unknown group in preview`);
       assert.deepEqual(pv.skills.map((s: any) => s.name), b.skills, `${b.id}: skills resolved`);
@@ -106,8 +106,11 @@ test('built-in bot templates: real tool groups, clean previews, install works', 
     const shared = await t.api('POST', '/skills/market/bots/builtin/hr-assistent/preview', {});
     assert.equal(shared.skills.find((s: any) => s.name === 'heldere-taal').action, 'use-existing');
     const hr = await t.api('POST', '/skills/market/bots/builtin/hr-assistent/install', { provider_id: t.providerId, model: 'mock-1' });
-    assert.equal(hr.agent.access_mode, 'ask');
-    assert.equal(hr.agent.skills.length, 3);
+    assert.equal(hr.agent.access_mode, 'full'); // ships with TeamBot: starts at Volledige toegang
+    assert.equal(hr.agent.settings.fullAccessExternal, true);
+    assert.equal(hr.agent.settings.template.itemId, 'hr-assistent', 'the other settings stay');
+    assert.equal(inst.agent.settings.fullAccessExternal, undefined, 'a read-only bot stays read-only');
+    assert.equal(hr.agent.skills.length, 4, 'its own three and the skill of the first bot: every bot has the active skills');
     assert.deepEqual(hr.skillsCreated.map((s: any) => s.name).sort(), ['vacaturetekst', 'zakelijke-email']);
 
     const after = await t.api('GET', '/skills/market/bots?q=juridische');

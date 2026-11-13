@@ -1,6 +1,7 @@
 import type { Module } from '../../core/types.js';
 import { qualityMigrations } from './schema.js';
-import { QualityService } from './service.js';
+import { QualityService, taskLink } from './service.js';
+import { plannerOf } from '../routines/planner.js';
 import { qualityRoutes } from './routes.js';
 import { verifyPrompt } from './prompt.js';
 import { isCorrection, learnFromCorrection } from './lessons.js';
@@ -13,8 +14,9 @@ import { isCorrection, learnFromCorrection } from './lessons.js';
  * The task board (rooms), the team database (teamdata) and delegations call `ctx.services.quality`; loop detection
  * lives in the runner (server/agent/loops.ts). See docs/modules/quality.md.
  */
-/** The recheck timers of each running app (a test process runs several). */
-const timers = new WeakMap<object, ReturnType<typeof setInterval>[]>();
+/** The recheck source of each running app (a test process runs several). */
+const stops = new WeakMap<object, () => void>();
+const SOURCE = 'quality-recheck';
 
 const mod: Module = {
   id: 'quality',
@@ -46,6 +48,7 @@ const mod: Module = {
       tellBot: svc.tellBot.bind(svc),
       /** Second looks that waited for a usage limit and are due now (the module runs this every minute). */
       recheckDue: svc.recheckDue.bind(svc),
+      stopRechecks: svc.stopRechecks.bind(svc),
       /** Test/diagnostic hook: wait for lessons that are still being made. */
       drain: async () => {
         while (pending.size) await Promise.allSettled([...pending]);
@@ -85,15 +88,37 @@ const mod: Module = {
   },
   start(ctx) {
     // A second look that met a usage limit (OpenCode's free daily limit) runs again after the reset; stored, so also
-    // after a restart. Every minute, a few at a time.
-    const tick = () => void ctx.services.quality?.recheckDue?.().catch((e: any) => ctx.log.warn('[quality] recheck', e?.message || e));
-    const list = [setInterval(tick, 60_000), setTimeout(tick, 5_000)];
-    for (const t of list) t.unref?.();
-    timers.set(ctx, list);
+    // after a restart. A source of the one planner (routines/planner.ts): a look every minute, a few at a time, and
+    // each waiting second look is in "Wat start vanzelf" with its time (it calls a model).
+    const planner = plannerOf(ctx);
+    if (!planner) return;
+    try {
+      ctx.services.quality?.svc?.retryUnclear?.();
+    } catch (e: any) {
+      ctx.log.warn('[quality] retry unclear', e?.message || e);
+    }
+    stops.set(
+      ctx,
+      planner.register({
+        id: SOURCE,
+        everyMs: 60_000,
+        firstMs: 5_000,
+        look: (now) => ctx.services.quality?.recheckDue?.(now),
+        // "Alles stoppen": what waits for a limit is not checked by itself later; the task waits for the owner.
+        stop: (userId) => ctx.services.quality?.stopRechecks?.(userId) ?? 0,
+        planned: (userId) =>
+          ctx.store
+            .all<{ kind: string; ref: string; title: string; reported_by: string | null; recheck_at: string }>(
+              "SELECT kind, ref, title, reported_by, recheck_at FROM quality_tasks WHERE user_id = ? AND recheck_at IS NOT NULL AND check_state = 'review' AND open = 1 AND kind IN ('room','teamdata')",
+              userId,
+            )
+            .map((r) => ({ kind: 'recheck', id: `recheck:${r.kind}:${r.ref}`, userId, agentId: r.reported_by, title: `Tweede controle: ${r.title.slice(0, 80)}`, words: { text: 'Tweede controle: {0}', values: [r.title.slice(0, 80)] }, at: new Date(planner.lookAt(SOURCE, Date.parse(r.recheck_at)) ?? Date.parse(r.recheck_at)).toISOString(), model: true, link: taskLink(r) })),
+      }),
+    );
   },
   stop(ctx) {
-    for (const t of timers.get(ctx) || []) clearTimeout(t);
-    timers.delete(ctx);
+    stops.get(ctx)?.();
+    stops.delete(ctx);
   },
 };
 

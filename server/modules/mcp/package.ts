@@ -4,7 +4,8 @@ import { type CatalogEntry, type CatalogField, type CatalogScope, catalogEntry }
 import type { ConnectionRow } from './db.js';
 import { isRisk } from './risk.js';
 import type { InlinePackage, PackageVerification } from '../../../packages/teambot-sdk/src/index.js';
-import { type PackageInfo, type SignatureView, builtinView, infoOf, unsignedView, verifyInline, viewOf, viewOfInfo } from '../skills/publishers.js';
+import type { SignatureView } from '../../../shared/skills.js';
+import { type PackageInfo, builtinView, infoOf, unsignedView, verifyInline, viewOf, viewOfInfo } from '../skills/publishers.js';
 import { scanSkill } from '../skills/scan.js';
 
 /**

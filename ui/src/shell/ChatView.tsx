@@ -1,17 +1,18 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { ArrowDown, ArrowLeft, ChevronDown, CornerDownRight, ListEnd, MessageSquarePlus, Monitor, PanelRight, Play, RotateCcw, Search, Square } from 'lucide-react';
+import { ArrowDown, ArrowLeft, ChevronDown, MessageSquarePlus, Monitor, PanelRight, Play, RotateCcw, Search, Square } from 'lucide-react';
 import { useShallow } from 'zustand/react/shallow';
-import { api, authUrl, on } from '../lib/api';
+import { api, on } from '../lib/api';
 import { agentById, useApp } from '../lib/store';
 import { navigate } from '../lib/router';
 import { useIsDesktop } from '../lib/media';
 import { limitLine, moodText, moodTone, useAgentMood, useLimitUntil } from '../lib/mood';
-import type { Agent, Message, ProviderView, Run, Thread } from '../lib/types';
+import type { Agent, Message, Run, Thread } from '../lib/types';
 import { uiModules } from '../modules';
 import { BotAvatar, LiveBotAvatar, StackedFaces } from '../components/BotFace';
-import { askConfirm, Button, EmptyState, Input, Modal, Spinner, cx, listTime, toast, toastError, toastProgress } from '../components/ui';
+import { askConfirm, Button, EmptyState, Input, Modal, Spinner, cx, dayLabel, listTime, toast, toastError, toastProgress } from '../components/ui';
 import { MenuLabel, Pop, menuKeys, menuRow, useDismiss } from '../components/Menu';
 import { ChatMenu, openChatMenuFor } from './ChatMenu';
+import { ModelSwitcher } from './ModelSwitcher';
 import { useRunning } from '../modules/browser/BrowserDock';
 import { MessageItem } from './Message';
 import { Composer } from './Composer';
@@ -24,16 +25,17 @@ import { markSeen } from './unread';
 import { useRoomList } from './rooms';
 import { t, translate, uiLocale } from '../lib/i18n';
 import { firstTasks } from './firstTasks';
+import { Words } from '../components/Words';
 import { ChatUsage } from '../modules/usage/UsagePopover';
 import { BotDeleteDialog } from './BotDeleteDialog';
 import { HistoryDeleteDialog, useCanDeleteHistory } from './HistoryDeleteDialog';
 import { CHAT_MIN, PagePanel, PagePanelButton, usePagesDocked } from './PagePanel';
-import { BUSY_POLICIES } from './busyPolicy';
 import { stripKindPrefix, threadSubtitle } from '../lib/threadTitle';
 import { useAdvanced } from './advanced';
 import { SaveAsSkillModal } from '../modules/skills/SaveAsSkill';
 import { MoveToFolderDialog } from '../modules/chat-folders/parts';
 import { useHomeMap, useMainBotId } from '../modules/teams/scope';
+import { tText } from '../lib/format';
 
 const kindTitle: Record<Thread['kind'], string> = { chat: 'Chat', room: 'Groep', routine: 'Routine', delegation: 'Subtaak', channel: 'Kanaal' };
 
@@ -42,18 +44,16 @@ export function AgentChatRoute({ agentId }: { agentId: string }) {
   const threads = useApp((s) => s.threads);
   const [err, setErr] = useState('');
   useEffect(() => {
+    // Only for whoever is still here: this effect can run after the user already went on (a click right after #/).
+    const from = `#/a/${agentId}`;
     const existing = threads.find((t) => t.agent_id === agentId && t.kind === 'chat' && !t.room_id && !t.archived);
-    if (existing) {
-      history.replaceState(null, '', `#/t/${existing.id}`);
-      dispatchEvent(new HashChangeEvent('hashchange'));
-      return;
-    }
+    if (existing) return navigate(`/t/${existing.id}`, { from, replace: true });
     api
       .post<Thread>('/threads', { agentId })
       .then((t) => {
         useApp.setState((s) => ({ threads: [t, ...s.threads.filter((x) => x.id !== t.id)] }));
-        history.replaceState(null, '', `#/t/${t.id}`);
-        dispatchEvent(new HashChangeEvent('hashchange'));
+        // The chat is made either way.
+        navigate(`/t/${t.id}`, { from, replace: true });
       })
       .catch((e) => setErr(e.message));
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -64,15 +64,6 @@ export function AgentChatRoute({ agentId }: { agentId: string }) {
       <Spinner />
     </div>
   );
-}
-
-function dayLabel(iso: string) {
-  const d = new Date(iso);
-  const today = new Date();
-  const y = new Date(Date.now() - 864e5);
-  if (d.toDateString() === today.toDateString()) return 'Vandaag';
-  if (d.toDateString() === y.toDateString()) return 'Gisteren';
-  return d.toLocaleDateString(uiLocale(), { weekday: 'long', day: 'numeric', month: 'long', year: d.getFullYear() === today.getFullYear() ? undefined : 'numeric' });
 }
 
 /**
@@ -105,7 +96,7 @@ function ThreadSwitcher({ agent, thread, onNew }: { agent: Agent; thread: Thread
         className="flex h-7 max-w-full items-center gap-1 rounded-control px-1 text-[15px] font-bold tracking-tight transition-colors hover:bg-surface-2 aria-expanded:bg-surface-2 coarse:-my-2 coarse:h-11 coarse:min-w-11"
         aria-expanded={open}
         aria-haspopup="true"
-        aria-label={`Gesprekken met ${agent.name} (${list.length})`}
+        aria-label={tText('Gesprekken met {0} ({1})', agent.name, list.length)}
         onClick={() => {
           if (!open && ref.current) setRoom(Math.max(200, document.documentElement.clientWidth - ref.current.getBoundingClientRect().left - 8));
           setOpen(!open);
@@ -132,11 +123,27 @@ function ThreadSwitcher({ agent, thread, onNew }: { agent: Agent; thread: Thread
                   className={cx('block rounded-control px-2.5 py-2 text-sm outline-none transition-colors focus-visible:bg-surface-2', t.id === thread.id ? 'bg-surface-3' : 'hover:bg-surface-2')}
                 >
                   <span className="flex items-center gap-2">
-                    <span className="min-w-0 flex-1 truncate font-semibold">{t.kind === 'chat' ? t.title || 'Gesprek' : stripKindPrefix(t.title, kindTitle[t.kind]) || kindTitle[t.kind]}</span>
+                    {/* The title is the user's or a bot's words: never translated (a TeamBot fallback is). */}
+                    {(t.kind === 'chat' ? t.title : stripKindPrefix(t.title, kindTitle[t.kind])) ? (
+                      <span className="min-w-0 flex-1 truncate font-semibold" translate="no">
+                        {t.kind === 'chat' ? t.title : stripKindPrefix(t.title, kindTitle[t.kind])}
+                      </span>
+                    ) : (
+                      <span className="min-w-0 flex-1 truncate font-semibold">{t.kind === 'chat' ? 'Gesprek' : kindTitle[t.kind]}</span>
+                    )}
                     <span className="shrink-0 text-xs text-muted">{listTime(t.updated_at)}</span>
                   </span>
-                  <span className="block truncate text-xs text-muted" translate={t.last ? 'no' : undefined}>
-                    {t.last ? `${t.last.role === 'user' ? 'Jij: ' : ''}${t.last.content}` : 'Nog leeg'}
+                  <span className="block truncate text-xs text-muted">
+                    {t.last?.note?.text ? (
+                      <Words text={t.last.note.text} values={t.last.note.values} />
+                    ) : t.last ? (
+                      <>
+                        {t.last.role === 'user' && 'Jij: '}
+                        <span translate={t.last.role === 'event' ? undefined : 'no'}>{t.last.content}</span>
+                      </>
+                    ) : (
+                      'Nog leeg'
+                    )}
                   </span>
                 </a>
               ))}
@@ -168,12 +175,16 @@ function Intro({ agent, onSend }: { agent: Agent; onSend(text: string): Promise<
     <div className="flex flex-col items-center px-4 pb-4 pt-10 sm:px-6">
       <BotAvatar bot={agent} size={84} />
       <div className="mt-3 text-lg font-bold tracking-tight">{agent.name}</div>
-      {agent.role && <div className="text-sm text-muted">{agent.role}</div>}
+      {agent.role && (
+        <div className="text-sm text-muted" translate="no">
+          {agent.role}
+        </div>
+      )}
       <div className="mt-8 flex w-full max-w-[640px] flex-col items-start gap-3">
         <div className="flex gap-2.5">
           <BotAvatar bot={agent} size={30} className="mt-0.5" />
           <div className="rounded-bubble rounded-ss-md border border-line bg-surface px-4 py-2.5 text-[14.5px] leading-relaxed">
-            {welcome ? `Hoi! Ik ben ${agent.name}, je eerste bot. Leuk je te ontmoeten.` : `Hoi, ik ben ${agent.name}. ${agent.description || 'Waarmee kan ik je helpen?'}`}
+            {welcome ? `Hoi! Ik ben ${agent.name}, je eerste bot. Leuk je te ontmoeten.` : agent.description ? <Words text="Hoi, ik ben {0}. {1}" values={[agent.name, agent.description]} /> : `Hoi, ik ben ${agent.name}. Waarmee kan ik je helpen?`}
           </div>
         </div>
         {welcome && (
@@ -221,6 +232,7 @@ const INSPECTOR_KEY = 'tb_inspector';
 export { openChatMenuFor };
 
 export function ChatView({ threadId }: { threadId: string }) {
+  const page = location.hash;
   const thread = useApp((s) => s.threads.find((t) => t.id === threadId));
   const messages = useApp((s) => s.messages[threadId]);
   const approvals = useApp(useShallow((s) => s.approvals.filter((a) => a.thread_id === threadId)));
@@ -228,6 +240,9 @@ export function ChatView({ threadId }: { threadId: string }) {
   const asking = approvals.some((a) => a.kind === 'question' && a.status === 'pending');
   const runs = useApp(useShallow((s) => s.runs.filter((r) => r.thread_id === threadId)));
   const providers = useApp((s) => s.providers);
+  // The bot itself: a change to it (another model picked in the header, a new name, from another device) shows at
+  // once in the header and next to the message box (agentById below reads the store when this renders).
+  useApp((s) => (thread?.agent_id ? s.agents.find((a) => a.id === thread.agent_id) : undefined));
   const desktop = useIsDesktop();
   const advanced = useAdvanced();
   // The bot's computer has a button in the header only while the bot uses a browser or the screen.
@@ -415,12 +430,16 @@ export function ChatView({ threadId }: { threadId: string }) {
   const reserveProvider = reserve ? providers.find((p) => p.id === reserve.provider_id) : undefined;
   const provider = reserveProvider || providers.find((p) => p.id === agent?.provider_id);
   const busy = runs.length > 0;
+  // The model switcher in the header: for a chat with one bot of your own.
+  const modelSwitch = !!agent && thread.kind !== 'room' && !agent.shared_from;
   const headerActions = uiModules.flatMap((m) => m.chatHeaderActions || []);
   const hasComputerTab = uiModules.some((m) => m.id === 'browser' && m.inspectorTabs?.some((t) => t.id === 'computer'));
   const title = thread.kind === 'chat' ? agent?.name || thread.title || 'Gesprek' : thread.title || room?.name || agent?.name || kindTitle[thread.kind];
   const noProvider = agent && !agent.provider_id && !agent.shared_from ? 'Deze bot heeft nog geen AI-provider. Kies er een in de bot-instellingen.' : null;
   const status = thread.kind === 'room' ? (busy ? 'aan het werk' : room ? t('Groep · {0, plural, one {# bot} other {# bots}}', room.bots.length) : 'Groep') : reserve && mood === 'working' ? `werkt nu via de reserve-engine ${reserve.name}` : mood === 'limit' ? limitLine(limitUntil) : moodText(mood, agent?.role || 'klaar voor een opdracht');
   const statusTone = thread.kind === 'room' ? (busy ? 'text-ok' : 'text-muted') : moodTone(mood);
+  // Idle, the line under a bot's name is its role: the user's words.
+  const ownStatus = thread.kind !== 'room' && !(reserve && mood === 'working') && mood === 'idle' && !!agent?.role;
   // A bot someone else shares with the team: say whose it is, and that this conversation is yours alone.
   const sharedBy = agent?.shared_from?.name;
   // "Verplaats naar map…" (PARITEIT 4.2): this chat's row in the list, a bot of your own or a group of your own. A pinned
@@ -474,45 +493,37 @@ export function ChatView({ threadId }: { threadId: string }) {
   };
   const duplicateBot = async () => {
     if (!agent) return;
+    const from = location.hash;
     try {
       const a = await api.post<Agent>(`/agents/${agent.id}/duplicate`);
       useApp.setState((s) => ({ agents: [...s.agents.filter((x) => x.id !== a.id), a] }));
       toast(`Kopie gemaakt: ${a.name}. Gesprekken en geheugen gaan niet mee.`, 'ok');
-      navigate(`/agents/${a.id}`);
+      navigate(`/agents/${a.id}`, { from });
     } catch (e) {
       toastError(e);
     }
   };
   const archiveBot = async () => {
     if (!agent) return;
+    const from = location.hash;
     const to = !agent.archived;
     if (to && !(await askConfirm(`${agent.name} archiveren? De bot doet niets meer tot je hem terughaalt (Alle bots › Archief).`, { ok: 'Archiveren' }))) return;
     try {
       const a = await api.patch<Agent>(`/agents/${agent.id}`, { archived: to });
       useApp.setState((s) => ({ agents: s.agents.map((x) => (x.id === a.id ? a : x)) }));
       toast(to ? `${a.name} staat in het archief` : `${a.name} is terug uit het archief`, 'ok');
-      if (to) navigate('/');
-    } catch (e) {
-      toastError(e);
-    }
-  };
-  const setBusyPolicy = async (policy: Agent['busy_policy']) => {
-    // Read the bot from the store now: `agent` above is a snapshot of this render.
-    const cur = agent && useApp.getState().agents.find((x) => x.id === agent.id);
-    if (!cur || cur.busy_policy === policy) return;
-    try {
-      const a = await api.patch<Agent>(`/agents/${cur.id}`, { busy_policy: policy });
-      useApp.setState((s) => ({ agents: s.agents.map((x) => (x.id === a.id ? a : x)) }));
+      if (to) navigate('/', { from });
     } catch (e) {
       toastError(e);
     }
   };
   const newChat = async () => {
     if (!agent) return;
+    const from = location.hash;
     try {
       const t = await api.post<Thread>('/threads', { agentId: agent.id });
       useApp.setState((s) => ({ threads: [t, ...s.threads] }));
-      navigate(`/t/${t.id}`);
+      navigate(`/t/${t.id}`, { from });
     } catch (e) {
       toastError(e);
     }
@@ -550,11 +561,12 @@ export function ChatView({ threadId }: { threadId: string }) {
     }
   };
   const deleteThread = async () => {
+    const from = location.hash;
     if (!(await askConfirm('Dit gesprek en alle berichten definitief verwijderen? Bestanden in de werkmap van de bot blijven bestaan.', { ok: 'Verwijderen', danger: true }))) return;
     try {
       await api.del(`/threads/${threadId}`);
       useApp.setState((s) => ({ threads: s.threads.filter((t) => t.id !== threadId) }));
-      navigate('/');
+      navigate('/', { from });
     } catch (e) {
       toastError(e);
     }
@@ -573,7 +585,8 @@ export function ChatView({ threadId }: { threadId: string }) {
     <div className="flex h-full min-w-0">
       <div className="flex min-w-0 flex-1 flex-col" style={pagesDocked ? { minWidth: CHAT_MIN } : undefined}>
         <header className="safe-top shrink-0 border-b border-line bg-canvas">
-          <div className="@container flex h-[60px] items-center gap-2 px-2 desk:px-4">
+          {/* With the model control in it, the phone's header stands a little closer together, so the name and the model both fit. */}
+          <div className={cx('@container flex h-[60px] items-center px-2 desk:px-4', modelSwitch ? 'gap-1 desk:gap-2' : 'gap-2')}>
             {!desktop && (
               <a href="#/" className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-fg transition-colors hover:bg-surface-2 active:bg-surface-3" aria-label="Terug naar chats">
                 <ArrowLeft className="h-5 w-5" />
@@ -586,16 +599,19 @@ export function ChatView({ threadId }: { threadId: string }) {
             ) : (
               <div className="flex h-9 w-9 items-center justify-center rounded-full bg-surface-3 text-xs font-bold">{kindTitle[thread.kind][0]}</div>
             )}
-            <div className="min-w-0 flex-1 desk:min-w-[7rem]">
+            {/* In a narrow header (a phone) the name keeps about 56 px: the model control next to it gives way first. */}
+            <div className="min-w-0 flex-[1_1_3.5rem] desk:min-w-[7rem]">
               {agent && thread.kind !== 'room' ? (
                 <ThreadSwitcher agent={agent} thread={thread} onNew={newChat} />
               ) : (
-                <h1 className="truncate px-1 text-[15px] font-bold tracking-tight">{title}</h1>
+                <h1 className="truncate px-1 text-[15px] font-bold tracking-tight" translate={thread.title || room?.name ? 'no' : undefined}>
+                  {title}
+                </h1>
               )}
               {/* Touch: the name above reaches over this line (44 px to tap without moving the text), so it lets taps through. */}
               <div className="flex min-w-0 items-center gap-1.5 px-1 text-[12.5px] coarse:pointer-events-none">
                 {(mood !== 'idle' || (thread.kind === 'room' && busy)) && <span className={cx('h-1.5 w-1.5 shrink-0 rounded-full bg-current', statusTone, mood === 'working' && 'tb-pulse')} aria-hidden />}
-                <span className={cx('truncate', statusTone)} title={mood === 'limit' ? status : undefined}>
+                <span className={cx('truncate', statusTone)} title={mood === 'limit' ? status : undefined} translate={ownStatus ? 'no' : undefined}>
                   {status}
                 </span>
                 {sub && (
@@ -603,12 +619,22 @@ export function ChatView({ threadId }: { threadId: string }) {
                     <span aria-hidden>· </span>
                     {/* The conversation's own title is the user's words: never translated ("Lees prijzen.txt …" became
                         "Read prijzen.txt in de extra map …" in English; acceptance round 5, C-15). */}
-                    <span translate={!sharedBy && thread.kind === 'chat' ? 'no' : undefined}>{sub}</span>
+                    {!sharedBy && thread.kind !== 'chat' && thread.kind !== 'room' && stripKindPrefix(thread.title, kindTitle[thread.kind]) !== kindTitle[thread.kind] ? (
+                      <>
+                        {kindTitle[thread.kind]}
+                        {' · '}
+                        <span translate="no">{stripKindPrefix(thread.title, kindTitle[thread.kind])}</span>
+                      </>
+                    ) : (
+                      <span translate={!sharedBy && thread.kind === 'chat' ? 'no' : undefined}>{sub}</span>
+                    )}
                   </span>
                 )}
               </div>
               {agent && thread.kind !== 'room' && <h1 className="sr-only">{title}</h1>}
             </div>
+            {/* Which AI and model this bot is on; a click puts it on another (not for a group, nor for a bot someone else shares). */}
+            {modelSwitch && <ModelSwitcher agent={agent} busy={busy} />}
             {/* One row of the same quiet icon buttons (36 px, 44 on touch), each with its name as a tooltip. */}
             <div className="flex shrink-0 items-center gap-0.5">
               {headerActions.map((A, i) => (
@@ -746,7 +772,6 @@ export function ChatView({ threadId }: { threadId: string }) {
         </div>
 
         <div className="mx-auto w-full max-w-[860px]">
-          {busy && queue.enabled && agent && <BusyChoice agent={agent} cli={queue.state?.engine === 'cli'} onChange={setBusyPolicy} />}
           <QueueBar queue={queue} className="mx-3 mb-2 sm:mx-4" />
           <Composer
             key={threadId}
@@ -785,56 +810,15 @@ export function ChatView({ threadId }: { threadId: string }) {
         <Input value={rename || ''} onChange={(e) => setRename(e.target.value)} autoFocus placeholder={title} aria-label="Naam van het gesprek" onKeyDown={(e) => e.key === 'Enter' && (patchThread({ title: rename || '' }), setRename(null))} />
       </Modal>
       <ForwardModal m={forward} onClose={() => setForward(null)} />
-      <BotDeleteDialog agent={agent} open={delBot} onClose={() => setDelBot(false)} onDeleted={() => navigate('/')} />
+      <BotDeleteDialog agent={agent} open={delBot} onClose={() => setDelBot(false)} onDeleted={() => navigate('/', { from: page })} />
       {saveSkill && <SaveAsSkillModal threadId={threadId} onClose={() => setSaveSkill(false)} />}
       {folderItem && <MoveToFolderDialog item={{ kind: folderItem.kind, id: folderItem.id }} name={folderItem.name} teams={folderItem.teams} open={toFolder} onClose={() => setToFolder(false)} />}
       <HistoryDeleteDialog
         target={thread.kind === 'room' && thread.room_id ? { kind: 'room', id: thread.room_id, name: room?.name || title, threadId: thread.id } : agent && thread.kind !== 'room' ? { kind: 'agent', id: agent.id, name: agent.name } : null}
         open={delHistory}
         onClose={() => setDelHistory(false)}
-        onDone={() => (thread.kind === 'room' ? useApp.getState().loadThread(thread.id) : agent && navigate(`/a/${agent.id}`))}
+        onDone={() => (thread.kind === 'room' ? useApp.getState().loadThread(thread.id) : agent && navigate(`/a/${agent.id}`, { from: page }))}
       />
-    </div>
-  );
-}
-
-/**
- * While the bot works: what a new message does (the bot's busy_policy), as a visible choice right above the composer.
- * Changing it is saved for this bot (also under Bot-instellingen › Denken, drukte en reserve-engines).
- */
-function BusyChoice({ agent, cli, onChange }: { agent: Agent; cli: boolean; onChange(p: Agent['busy_policy']): void }) {
-  const cur = useApp((s) => s.agents.find((a) => a.id === agent.id)?.busy_policy) || 'queue';
-  const help = BUSY_POLICIES.find((p) => p.id === cur)!;
-  const ICON = { queue: ListEnd, steer: CornerDownRight, interrupt: Square } as const;
-  // One calm line: three choices with an icon on one track, and next to it what the chosen one does, in a few words.
-  return (
-    <div className="mx-3 mb-2 flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1 sm:mx-4">
-      <div className="inline-flex shrink-0 rounded-full bg-surface-2 p-0.5" role="radiogroup" aria-label={t('Nieuw bericht terwijl {0} werkt', agent.name)}>
-        {BUSY_POLICIES.map((p) => {
-          const Icon = ICON[p.id];
-          const on = cur === p.id;
-          return (
-            <button
-              key={p.id}
-              type="button"
-              role="radio"
-              aria-checked={on}
-              title={p.text + (cli && p.cli ? ' ' + p.cli : '')}
-              onClick={() => onChange(p.id)}
-              className={cx(
-                'inline-flex h-7 items-center gap-1.5 whitespace-nowrap rounded-full px-3 text-[12.5px] transition-colors coarse:h-11 coarse:px-3.5',
-                on ? 'bg-surface font-semibold text-fg shadow-sm' : 'font-medium text-muted hover:text-fg',
-              )}
-            >
-              <Icon className={cx('h-3.5 w-3.5', p.id === 'interrupt' && 'h-3 w-3')} aria-hidden />
-              {p.label}
-            </button>
-          );
-        })}
-      </div>
-      <span className="min-w-0 text-[12px] text-muted" aria-live="polite">
-        {cli && help.cliShort ? help.cliShort : help.short}
-      </span>
     </div>
   );
 }
@@ -865,7 +849,9 @@ function ForwardModal({ m, onClose }: { m: Message | null; onClose(): void }) {
                 }}
               >
                 {a ? <BotAvatar bot={a} size={28} /> : <span className="h-7 w-7 rounded-full bg-surface-3" />}
-                <span className="truncate font-medium">{t.title || a?.name || kindTitle[t.kind]}</span>
+                <span className="truncate font-medium" translate={t.title ? 'no' : undefined}>
+                  {t.title || a?.name || kindTitle[t.kind]}
+                </span>
               </button>
             );
           })}

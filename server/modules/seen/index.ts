@@ -5,6 +5,7 @@ import { ah, own, str, user } from '../../core/http.js';
 import { agentRootList } from '../../tools/builtin/files.js';
 import { teambotFacts } from '../cli-agents/activity-labels.js';
 import { canSeeThread } from '../../api/threads.js';
+import type { SeenFile, SeenItem, SeenOp, SeenView } from '../../../shared/seen.js';
 
 /**
  * "Wat heeft deze bot gezien en gedaan" (A-58) and the bot's own files in the side panel (A-35): files it read and
@@ -12,48 +13,6 @@ import { canSeeThread } from '../../api/threads.js';
  * what TeamBot already keeps: the steps of each answer (CLI engines, with their facts), the tool calls of API bots
  * and the approvals. Nothing new is logged; deleting a conversation removes its part of this view too.
  */
-
-export type SeenOp = StepFact['op'];
-export interface SeenItem {
-  op: SeenOp;
-  /** Full path, URL, command, query or app name. */
-  target: string;
-  count: number;
-  last: string;
-  threadId: string;
-  messageId: string;
-}
-export interface SeenFile extends SeenItem {
-  name: string;
-  /** Inside one of the bot's folders: which one (index as /folders/roots lists them) and the path in it. */
-  root: number | null;
-  rel: string | null;
-  exists: boolean;
-  size: number | null;
-  mtime: string | null;
-}
-export interface SeenApproval {
-  id: string;
-  summary: string;
-  status: string;
-  risk: string;
-  at: string;
-  threadId: string | null;
-}
-export interface SeenView {
-  agent: { id: string; name: string };
-  threadId: string | null;
-  days: number;
-  read: SeenFile[];
-  written: SeenFile[];
-  deleted: SeenFile[];
-  pages: SeenItem[];
-  searches: SeenItem[];
-  commands: SeenItem[];
-  apps: SeenItem[];
-  approvals: SeenApproval[];
-  steps: number;
-}
 
 /** Older steps (before facts were stored): the step titles TeamBot itself writes, read back. Names only. */
 export function titleFacts(item: ActivityItem): StepFact[] {

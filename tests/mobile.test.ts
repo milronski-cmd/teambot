@@ -661,12 +661,13 @@ test("push texts follow the owner's interface language (the lock screen is not t
     assert.equal(run.body, 'Zusammenfassung fertig');
 
     // A TeamBot notification (Dutch source text) arrives translated.
-    t.app.ctx.events.emit(ownerId, 'notification', { title: 'Nieuwe geheugenvoorstellen', body: 'Onderzoeker stelt 3 herinneringen voor. Bekijk en keur goed of weiger.', link: '#/m/memory/beoordelen', kind: 'memory' });
-    await until(() => sent.some((s) => open(s).link === '#/m/memory/beoordelen'));
-    const mem = sent.map(open).find((p) => p.link === '#/m/memory/beoordelen');
-    assert.notEqual(mem.title, 'Nieuwe geheugenvoorstellen', 'title translated');
+    // (the memory's own notice, server/modules/memory/dossier-auto.ts)
+    t.app.ctx.events.emit(ownerId, 'notification', { title: 'Dossier voorgesteld', body: 'Onderzoeker stelt een dossier voor: “Klanten” (kwam in meer gesprekken terug). Eén klik in Geheugen › Dossiers.', link: '#/m/memory/dossiers', kind: 'memory' });
+    await until(() => sent.some((s) => open(s).link === '#/m/memory/dossiers'));
+    const mem = sent.map(open).find((p) => p.link === '#/m/memory/dossiers');
+    assert.notEqual(mem.title, 'Dossier voorgesteld', 'title translated');
     assert.match(mem.body, /Onderzoeker/);
-    assert.doesNotMatch(mem.body, /herinneringen|keur goed/, `body translated: ${mem.body}`);
+    assert.doesNotMatch(mem.body, /stelt een dossier voor|Eén klik/, `body translated: ${mem.body}`);
 
     // Without previews: the generic texts in German too.
     await t.api('PUT', '/mobile/push/prefs', { preview: false });

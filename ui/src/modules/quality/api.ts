@@ -1,29 +1,6 @@
 import { create } from 'zustand';
 import { api, on } from '../../lib/api';
-
-/** Mirrors server/modules/quality/types.ts (what a task's quality record looks like in the interface). */
-export type CheckState = 'none' | 'passed' | 'review' | 'cant' | 'skipped' | 'owner';
-export type TaskKind = 'room' | 'teamdata' | 'delegation';
-
-export interface EvidenceItem {
-  type: 'file' | 'link' | 'message' | 'attachment' | 'screenshot' | 'output' | 'text';
-  value: string;
-  ok: boolean | null;
-  note: string;
-}
-
-export interface QualityView {
-  doneWhen: string;
-  doneWhenBy: 'agent' | 'user' | null;
-  skipCheck: boolean;
-  claim: { agentId: string; name: string; at: string } | null;
-  outcome: 'done' | 'cant' | null;
-  outcomeReason: string;
-  reportedBy: { agentId: string; name: string; at: string } | null;
-  evidence: EvidenceItem[];
-  check: { state: CheckState; label: string; reason: string; engine: string; at: string | null };
-  open: boolean;
-}
+import type { QualityView, TaskKind } from '../../../../shared/quality.js';
 
 export interface OpenItem extends QualityView {
   kind: TaskKind;

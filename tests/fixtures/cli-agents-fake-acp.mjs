@@ -212,6 +212,39 @@ readline.createInterface({ input: process.stdin }).on('line', async (line) => {
         update(sid, { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: 'Klaar.' } });
         return send({ id: m.id, result: { stopReason: 'end_turn' } });
       }
+      // SCENARIO:stappen STAPPEN:<base64url JSON [{ kind, title, rawInput, locations }]>: asks permission for every
+      // step and does none of them (the case table of tests/permission-gate.test.ts).
+      if (scen(text) === 'stappen') {
+        const steps = JSON.parse(Buffer.from(/STAPPEN:([\w-]+)/.exec(text)[1], 'base64url').toString('utf8'));
+        const opts = [{ optionId: 'a', name: 'Allow', kind: 'allow_once' }, { optionId: 'r', name: 'Reject', kind: 'reject_once' }];
+        const got = [];
+        // What TeamBot answered a call of one of its own tools, in words ('' for the engine's own steps).
+        const said = [];
+        const srv = (sessionMcp.get(sid) || []).find((x) => x.name === 'teambot');
+        const listed = srv && steps.some((st) => st.teambot) ? ((await mcp(srv, 'tools/list', {})).result?.tools || []).map((x) => x.name) : [];
+        for (const [i, st] of steps.entries()) {
+          // { teambot: { name, arguments } }: one of TeamBot's own tools, by its name or (outside the list) with tools_call.
+          // With `direct`: by its own name even when it is not in the list.
+          if (st.teambot) {
+            const r = srv ? await mcp(srv, 'tools/call', st.direct || listed.includes(st.teambot.name) ? st.teambot : { name: 'tools_call', arguments: { name: st.teambot.name, args: st.teambot.arguments } }) : null;
+            got.push(r?.result?.isError === false ? 'a' : 'r');
+            said.push(String(r?.result?.content?.[0]?.text || r?.error?.message || ''));
+            continue;
+          }
+          // { fswrite: path }: the engine writes a file through TeamBot's fs/write_text_file without asking first.
+          if (st.fswrite) {
+            const w = await call('fs/write_text_file', { sessionId: sid, path: st.fswrite, content: 'x' });
+            got.push(w?.error ? 'r' : 'a');
+            said.push(String(w?.error?.message || ''));
+            continue;
+          }
+          got.push((await call('session/request_permission', { sessionId: sid, toolCall: { toolCallId: `st${i}`, ...st }, options: opts })).result?.outcome?.optionId || null);
+          said.push('');
+        }
+        log({ stappen: got, teksten: said });
+        update(sid, { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: 'Stappen gevraagd.' } });
+        return send({ id: m.id, result: { stopReason: 'end_turn' } });
+      }
       if (scen(text) === 'edit') {
         const target = path.join(process.cwd(), 'acp.txt');
         update(sid, { sessionUpdate: 'tool_call', toolCallId: 't1', title: 'Schrijf acp.txt', kind: 'edit', status: 'pending', locations: [{ path: target }] });

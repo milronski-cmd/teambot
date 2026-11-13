@@ -257,7 +257,7 @@ export function PageLinks({ label, items, className }: { label: string; items: (
               data-i18n="label"
               className={cx(
                 // On a phone the icons go, so four links fit the screen without scrolling sideways.
-                'inline-flex h-8 shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full px-3 text-[13px] transition-colors coarse:h-10 sm:px-3.5 [&_svg]:hidden [&_svg]:h-3.5 [&_svg]:w-3.5 sm:[&_svg]:block',
+                'inline-flex h-8 shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full px-3 text-[13px] transition-colors coarse:h-11 sm:px-3.5 [&_svg]:hidden [&_svg]:h-3.5 [&_svg]:w-3.5 sm:[&_svg]:block',
                 it.current ? 'bg-surface-3 font-semibold text-fg' : 'font-medium text-muted hover:bg-surface-2 hover:text-fg',
               )}
             >

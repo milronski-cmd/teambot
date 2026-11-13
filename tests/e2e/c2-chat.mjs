@@ -11,7 +11,7 @@ import { createRequire } from 'node:module';
 
 const require = createRequire(import.meta.url);
 const { chromium } = require('playwright-core');
-const { createApp } = await import('../../server/app.ts');
+const { createApp } = await import('./server.mjs');
 
 const step = (s) => console.log(`• ${s}`);
 const fail = (s) => {
@@ -101,19 +101,20 @@ try {
   script.push({ text: 'klaar met de lange taak', delayMs: 8000 }, { text: 'Ik ga verder waar ik was.' });
   await composer.fill('Schrijf een lang verhaal');
   await page.keyboard.press('Enter');
-  const choice = page.getByRole('radiogroup', { name: /Nieuw bericht terwijl Mila werkt/ });
-  await choice.waitFor({ timeout: 10000 }).catch(() => fail('bezig: keuze wachtrij/bijsturen/onderbreken niet zichtbaar'));
-  if ((await choice.getByRole('radio').count()) !== 3) fail('bezig: niet drie keuzes');
-  if ((await choice.getByRole('radio', { name: 'Wachtrij' }).getAttribute('aria-checked')) !== 'true') fail('bezig: standaard is niet Wachtrij');
-  await shot(page, 'c2-5b-bezig-keuze');
-  await choice.getByRole('radio', { name: 'Bijsturen' }).click();
-  await page.waitForTimeout(400);
-  if (app.ctx.store.agent(mila.id).busy_policy !== 'steer') fail('bezig: keuze Bijsturen niet bewaard bij de bot');
-  if ((await choice.getByRole('radio', { name: 'Bijsturen' }).getAttribute('aria-checked')) !== 'true') fail('bezig: gekozen Bijsturen niet zichtbaar geselecteerd');
-  await choice.getByRole('radio', { name: 'Wachtrij' }).click();
-  await page.waitForTimeout(400);
-  if (app.ctx.store.agent(mila.id).busy_policy !== 'queue') fail('bezig: terugzetten naar Wachtrij niet bewaard');
-  step('bezig: zichtbare keuze Wachtrij / Bijsturen / Onderbreken, bewaard per bot');
+  // No choice up front: a message sent while the bot works waits in the queue, with an arrow to send it now.
+  await page.getByRole('button', { name: 'Stoppen', exact: true }).waitFor({ timeout: 10000 }).catch(() => fail('bezig: bot werkt niet'));
+  await composer.fill('En daarna dit');
+  await page.keyboard.press('Enter');
+  const qbar = page.getByRole('region', { name: 'Wachtrij' });
+  await qbar.waitFor({ timeout: 10000 }).catch(() => fail('bezig: bericht staat niet in de wachtrij'));
+  if (await page.getByRole('radiogroup', { name: /Nieuw bericht terwijl/ }).count()) fail('bezig: de keuzebalk wachtrij/bijsturen/onderbreken staat er nog');
+  if ((await qbar.getByRole('button', { name: 'Nu sturen' }).count()) !== 1) fail('bezig: geen pijl "Nu sturen" bij het wachtende bericht');
+  await shot(page, 'c2-5b-bezig-wachtrij');
+  await qbar.getByRole('button', { name: 'Meer' }).click();
+  if (!(await qbar.getByRole('button', { name: 'Onderbreken' }).count())) fail('bezig: "Onderbreken" niet bereikbaar onder Meer');
+  await qbar.getByRole('button', { name: 'Uit de wachtrij halen' }).click();
+  await qbar.waitFor({ state: 'detached', timeout: 5000 }).catch(() => fail('bezig: wachtrij niet leeg na verwijderen'));
+  step('bezig: bericht gaat vanzelf in de wachtrij, met pijl "Nu sturen"; Onderbreken onder Meer');
   await page.getByRole('button', { name: 'Stoppen', exact: true }).click();
   const resumeBar = page.getByRole('status').filter({ hasText: 'Je hebt Mila gestopt.' });
   await resumeBar.waitFor({ timeout: 8000 }).catch(() => fail('stoppen: geen "Hervatten" na handmatig stoppen'));
@@ -233,8 +234,7 @@ try {
   await api('PATCH', `/agents/${mila.id}`, { instructions: 'Schrijf kort en zakelijk.\nGebruik eenvoudige woorden.\nSluit af met een vraag.', role: 'Schrijfcoach' });
   await page.goto(`${app.url}/#/agents/${mila.id}`);
   const histBtn = page.getByRole('button', { name: /^Geschiedenis/ });
-  // Geschiedenis is a closed section on the tab Meer (behind "Meer opties").
-  await page.getByRole('tab', { name: /^Meer/ }).click();
+  // Geschiedenis is a closed section of the bot page, inside "Geavanceerd".
   await page.evaluate(() => document.querySelectorAll('details').forEach((x) => (x.open = true)));
   await histBtn.first().click();
   await page.getByRole('button', { name: /gewijzigd: instructies$/ }).click();
@@ -279,8 +279,13 @@ try {
   const sorted = app.ctx.store.agents(owner.id).filter((a) => !a.archived).sort((a, b) => a.sort - b.sort).map((a) => a.name);
   if (sorted.join(',') !== after2.join(',')) fail(`volgorde: niet bewaard (${sorted.join(',')} vs ${after2.join(',')})`);
   if (app.ctx.store.settings(owner.id).ui?.botOrder !== 'manual') fail('volgorde: lijst niet op "Eigen volgorde" gezet');
-  const sidebarNames = await page.getByRole('list', { name: 'Bots en groepen' }).locator('li').allInnerTexts();
-  if (!sidebarNames[0]?.startsWith(after2[0])) fail('volgorde: zijbalk volgt de eigen volgorde niet');
+  // The main bot always stands on top, in "Vastgezet" (above every team); the list under it follows the own order.
+  const pinnedNames = (await page.getByRole('group', { name: 'Vastgezette bots' }).locator('li').allInnerTexts().catch(() => [])).map((t) => t.trim().split('\n')[0]);
+  const sidebarNames = (await page.getByRole('list', { name: 'Bots en groepen' }).locator('li').allInnerTexts()).map((t) => t.trim().split('\n')[0]);
+  const inList = after2.filter((n) => sidebarNames.some((s) => s.startsWith(n)));
+  const shownOrder = sidebarNames.map((s) => after2.find((n) => s.startsWith(n))).filter(Boolean);
+  if (inList.length + pinnedNames.filter((p) => after2.some((n) => p.startsWith(n))).length !== after2.length) fail(`volgorde: niet elke bot staat in de zijbalk (${after2.join(',')} vs vastgezet ${pinnedNames.join(',')} + ${sidebarNames.join(',')})`);
+  if (shownOrder.join(',') !== inList.join(',')) fail(`volgorde: zijbalk volgt de eigen volgorde niet (${shownOrder.join(',')} vs ${inList.join(',')})`);
   await shot(page, 'c2-5g-zijbalk-eigen-volgorde');
   step(`eigen volgorde: slepen en pijlen, bewaard (${after2.join(' → ')}), zijbalk volgt`);
 
@@ -302,13 +307,18 @@ try {
   script.push({ text: 'lang antwoord op de telefoon', delayMs: 5000 });
   await p2.getByLabel('Bericht').fill('Nog een taak');
   await p2.getByRole('button', { name: 'Versturen' }).click();
-  const pchoice = p2.getByRole('radiogroup', { name: /Nieuw bericht terwijl Mila werkt/ });
-  await pchoice.waitFor({ timeout: 8000 }).catch(() => fail('telefoon: bezig-keuze niet zichtbaar'));
-  const rb = await pchoice.getByRole('radio', { name: 'Onderbreken' }).boundingBox();
-  if (!rb || rb.height < 44) fail(`telefoon: keuzeknoppen kleiner dan 44 px (${rb?.height})`);
+  await p2.getByRole('button', { name: 'Stoppen', exact: true }).waitFor({ timeout: 8000 }).catch(() => fail('telefoon: bot werkt niet'));
+  await p2.getByLabel('Bericht').fill('En nog iets');
+  await p2.getByRole('button', { name: 'Versturen' }).click();
+  const pq = p2.getByRole('region', { name: 'Wachtrij' });
+  await pq.waitFor({ timeout: 8000 }).catch(() => fail('telefoon: bericht staat niet in de wachtrij'));
+  const rb = await pq.getByRole('button', { name: 'Nu sturen' }).boundingBox();
+  if (!rb || rb.height < 44) fail(`telefoon: pijl "Nu sturen" kleiner dan 44 px (${rb?.height})`);
   const over = await p2.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
   if (over > 1) fail(`telefoon: horizontale overflow ${over}px in de chat`);
-  await shot(p2, 'c2-5b-telefoon-bezig-keuze');
+  await shot(p2, 'c2-5b-telefoon-bezig-wachtrij');
+  await pq.getByRole('button', { name: 'Uit de wachtrij halen' }).click();
+  await pq.waitFor({ state: 'detached', timeout: 5000 }).catch(() => fail('telefoon: wachtrij niet leeg na verwijderen'));
   await p2.getByRole('button', { name: 'Stoppen', exact: true }).click();
   await p2.getByRole('status').filter({ hasText: 'Je hebt Mila gestopt.' }).waitFor({ timeout: 8000 }).catch(() => fail('telefoon: Hervatten na stoppen ontbreekt'));
   await shot(p2, 'c2-5a-telefoon-hervatten');
@@ -324,7 +334,6 @@ try {
   await p2.keyboard.press('Escape');
   await p2.goto(`${app.url}/#/agents/${mila.id}`);
   const ph = p2.getByRole('button', { name: /^Geschiedenis/ });
-  await p2.getByRole('tab', { name: /^Meer/ }).click();
   await p2.evaluate(() => document.querySelectorAll('details').forEach((x) => (x.open = true)));
   await ph.first().click();
   await p2.getByRole('button', { name: /gewijzigd: instructies$/ }).click();

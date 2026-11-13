@@ -7,9 +7,13 @@ import { modules } from '../server/modules/index.js';
 import { FIXTURES, fixtureModule, runFixture, type Fixture } from './fixtures/context-conversations.js';
 import { buildHistory } from '../server/agent/history.js';
 import { carryBlock, cliContextStats, cliRecord, editsKey, measure, ownerRules, pinnedLines, SAVER_DEFAULTS, saverSettings, stripStaleThinking, sumParts } from '../server/agent/context-budget.js';
-import { LOADER_NAME, selectTools } from '../server/tools/selection.js';
+import { CALL_NAME, FIND_NAME, onDemand } from '../server/tools/selection.js';
 import { cacheParams } from '../server/providers/anthropic.js';
-import type { ChatMsg, ChatRequest, ToolDef } from '../server/core/types.js';
+import type { ChatMsg, ChatRequest, PartGuide, ToolDef } from '../server/core/types.js';
+
+// These tests are about bots that are not the main bot: without this the first bot would be it (teams `autoMain`,
+// covered in works-right-away.test.ts).
+process.env.TEAMBOT_TEST_NO_AUTO_MAIN = '1';
 
 const tokensOf = (reqs: ChatRequest[]) => reqs.reduce((n, r) => n + sumParts(measure(r.system, r.tools, r.messages)), 0);
 const json = (x: any) => JSON.stringify(x);
@@ -58,8 +62,13 @@ test('fixture conversations: at least 30% fewer input tokens than 0.3.0, with th
         // Since package F the owner's pinned instructions are standing rules in the system prompt (never cut).
         for (const p of fx.pinned || []) assert.ok(req.system.includes(p) || json(req.messages).includes(p), `${fx.id} call ${i}: pinned rule "${p}" is in the context`);
         // (the id of a pinned rule differs per test app: [m:…])
-        const noPath = (x: string) => x.replace(/Je werkmap is [^\n]*/, '').replace(/\[m:[a-z0-9]+\]/g, '[m:…]');
-        assert.equal(noPath(req.system), noPath(r.off.requests[i].system), `${fx.id} call ${i}: system prompt untouched`);
+        // The saver never cuts the prompt. With tools on demand it has one line more (how to reach them), and what a
+        // bot must know about a part outside its list comes with that part instead (tools/selection.ts).
+        const noPath = (x: string) => x.replace(/Je werkmap is [^\n]*/, '').replace(/\[m:[a-z0-9]+\]/g, '[m:…]').replace(/id="d:[a-z0-9]+"/g, 'id="d:…"').replace(/\[d:[a-z0-9]+\]/g, '[d:…]');
+        const offLines = new Set(noPath(r.off.requests[i].system).split('\n'));
+        const extra = noPath(req.system).split('\n').filter((l) => !offLines.has(l));
+        assert.equal(extra.length, 1, `${fx.id} call ${i}: nothing in the prompt but what the bot always had, and one line`);
+        assert.match(extra[0], /zoek je met tools_find en gebruik je met tools_call/);
       });
       const last = json(r.on.requests.at(-1)!.messages) + r.on.requests.at(-1)!.system;
       for (const f of fx.facts) assert.ok(last.includes(f), `${fx.id}: "${f}" is still there at the end`);
@@ -80,8 +89,8 @@ test('fixture conversations: at least 30% fewer input tokens than 0.3.0, with th
       }
       const lastStats = stats.at(-1)!;
       assert.ok(lastStats.tools.sent < lastStats.tools.of && lastStats.tools.leftOut.length, `${fx.id}: fewer tool definitions, and which ones were left out`);
-      assert.ok(r.on.requests.every((x) => x.tools.some((s) => s.name === LOADER_NAME)), `${fx.id}: the bot can always load the rest`);
-      assert.ok(r.off.requests.every((x) => !x.tools.some((s) => s.name === LOADER_NAME)), `${fx.id}: 0.3.0 sends everything`);
+      assert.ok(r.on.requests.every((x) => x.tools.some((s) => s.name === FIND_NAME) && x.tools.some((s) => s.name === CALL_NAME)), `${fx.id}: the bot can always find and use the rest`);
+      assert.ok(r.off.requests.every((x) => !x.tools.some((s) => s.name === FIND_NAME)), `${fx.id}: 0.3.0 sends everything`);
       assert.doesNotMatch(r.off.requests.map((x) => json(x.messages)).join('\n'), /Ingekort door TeamBot/, `${fx.id}: off is the 0.3.0 history`);
     } finally {
       await r.off.t.close();
@@ -99,11 +108,11 @@ test('prompt caching: system prompt and tool list byte-identical across turns; t
     try {
       const { requests } = await runFixture(t, fx, { saver: true });
       assert.equal(new Set(requests.map((r) => r.system)).size, 1, `${fx.id}: one system prompt for the whole conversation`);
-      // The tool list changes only when a part is added (the webshop names Google Sheets in turn 3), never back.
+      // The tool list never changes: what is outside it is found and used through two tools that are always in it.
       const lists = requests.map((r) => json(r.tools));
       let changes = 0;
       for (let i = 1; i < lists.length; i++) if (lists[i] !== lists[i - 1]) changes++;
-      assert.ok(changes <= (fx.id === 'webshop' ? 1 : 0), `${fx.id}: ${changes} tool-list changes`);
+      assert.equal(changes, 0, `${fx.id}: ${changes} tool-list changes`);
       // Between consecutive calls the previous request is a prefix of the next one, except where a cut point moved
       // (every few turns) — 0.3.0 had no such moves, but sent the full output every time.
       let breaks = 0;
@@ -189,32 +198,41 @@ test('the current question is never dropped, also when this turn alone is larger
   }
 });
 
-test('tools_load: a left-out part is named, loads in one step and stays for the rest of the conversation', async () => {
+test('tools outside the list: found and used in one run, kept readable in older turns, never more than the bot has', async () => {
   const t = await withFixtures();
   try {
     const groups = [...t.app.ctx.tools.groups.keys()];
     const a = await t.agent({ tool_groups: groups, access_mode: 'auto' });
     const th = await t.api('POST', '/threads', { agentId: a.id });
-    t.script.push({ toolCalls: [{ name: LOADER_NAME, args: { names: ['routines'] } }] }, { toolCalls: [{ name: 'routine_list', args: {} }] }, { text: 'Je hebt nog geen routines.' });
+    t.script.push({ toolCalls: [{ name: FIND_NAME, args: { query: 'routines' } }] }, { toolCalls: [{ name: CALL_NAME, args: { name: 'routine_list', args: {} } }] }, { text: 'Je hebt nog geen routines.' });
     await t.say(th.id, 'Wat staat er klaar?');
     const [r1, r2, r3] = t.requests.slice(-3);
-    const loader = r1.tools.find((x) => x.name === LOADER_NAME)!;
-    assert.ok(loader, 'tools_load is offered');
-    assert.match(loader.description, /- routines: Routines/, 'the left-out parts are named');
-    assert.ok(!r1.tools.some((x) => x.name === 'routine_create'), 'routines are left out at first');
-    assert.ok(r2.tools.some((x) => x.name === 'routine_create') && r2.tools.some((x) => x.name === 'routine_list'), 'loaded from the next step on');
-    assert.ok(r3.tools.some((x) => x.name === 'routine_list'));
-    const result = t.app.ctx.store.messages(th.id).find((m) => m.role === 'tool' && m.parts.toolResult?.name === LOADER_NAME)!;
-    assert.match(result.content, /^Geladen: Routines \(/);
-    // It stays: the next turn still has it (the call is in the conversation).
-    t.script.push({ text: 'ok' });
-    await t.say(th.id, 'Dank je.');
-    assert.ok(t.requests.at(-1)!.tools.some((x) => x.name === 'routine_create'));
-    // Never more than the bot has: a part it does not have cannot be loaded.
+    const finder = r1.tools.find((x) => x.name === FIND_NAME)!;
+    assert.ok(finder, 'tools_find is offered');
+    assert.match(finder.description, /routines: routine_create, routine_list, wait_for/, 'what there is to find is named, tool by tool');
+    assert.ok(!r1.tools.some((x) => x.name === 'routine_create'), 'routines are not in the list');
+    assert.equal(json(r2.tools), json(r1.tools), 'and the list stays as it is');
+    assert.equal(json(r3.tools), json(r1.tools));
+    const results = t.app.ctx.store.messages(th.id).filter((m) => m.role === 'tool');
+    assert.match(results[0].content, /### routine_list\n[\s\S]*velden: /);
+    assert.equal(results[1].parts.toolResult?.name, 'routine_list');
+    assert.equal(results[1].parts.toolResult?.isError, false, results[1].content);
+    // What the bot found stays readable for the rest of the conversation (never shortened as "older output").
+    for (let i = 0; i < 6; i++) {
+      t.script.push({ text: 'ok' });
+      await t.say(th.id, `Dank je ${i}.`);
+    }
+    const later = t.requests.at(-1)!.messages.find((m) => m.role === 'tool' && m.toolName === FIND_NAME)!;
+    assert.equal(textOf(later), results[0].content, 'the fields it looked up are still there');
+    // Never more than the bot has: a part it does not have is not there to find or to use.
     const none = await t.agent({ name: 'Klein', tool_groups: ['files', 'web', 'memory', 'team', 'skills', 'routines'] });
-    const loaderDef = (await import('../server/tools/selection.js')).loaderTool(await t.app.ctx.tools.forAgent(t.app.ctx.store.agent(none.id)!, t.app.ctx.store.thread(th.id)!), t.app.ctx.tools.groups);
-    const out: any = await loaderDef.run({ names: ['browser'] }, {} as any);
-    assert.equal(out.isError, true);
+    const nth = await t.api('POST', '/threads', { agentId: none.id });
+    t.script.push({ toolCalls: [{ name: FIND_NAME, args: { query: 'browser_open' } }] }, { toolCalls: [{ name: CALL_NAME, args: { name: 'browser_open', args: { url: 'https://example.com' } } }] }, { text: 'Dat kan ik niet.' });
+    await t.say(nth.id, 'Open een website.');
+    const out = t.app.ctx.store.messages(nth.id).filter((m) => m.role === 'tool');
+    assert.doesNotMatch(out[0].content, /### browser_open/);
+    assert.equal(out[1].parts.toolResult?.isError, true);
+    assert.match(out[1].content, /Onbekend hulpmiddel: browser_open/);
   } finally {
     await t.close();
   }
@@ -348,9 +366,9 @@ test('settings: on by default, off per bot or per user, numbers clamped', async 
     assert.equal(saverSettings(t.app.ctx, a).on, true);
     assert.equal(saverSettings(t.app.ctx, { ...a, settings: { contextSaver: false } }).on, false);
     assert.equal(saverSettings(t.app.ctx, { ...a, settings: { contextSaver: { on: false } } }).on, false);
-    const s = saverSettings(t.app.ctx, { ...a, settings: { contextSaver: { keepTurns: 999, toolTokens: 'x', duplicates: false } } });
+    const s = saverSettings(t.app.ctx, { ...a, settings: { contextSaver: { keepTurns: 999, oldToolChars: 'x', duplicates: false } } });
     assert.equal(s.keepTurns, 50);
-    assert.equal(s.toolTokens, SAVER_DEFAULTS.toolTokens);
+    assert.equal(s.oldToolChars, SAVER_DEFAULTS.oldToolChars);
     assert.equal(s.duplicates, false);
     t.app.ctx.store.setSetting(a.user_id, 'contextSaver', { on: false });
     assert.equal(saverSettings(t.app.ctx, a).on, false, 'off for all bots of this owner');
@@ -374,25 +392,87 @@ test('measure: the parts add up and land in the right place', () => {
   assert.ok(p.history > 10 && p.history < 60);
 });
 
-test('tool selection: all under the budget; named, used and asked-for parts stay; deterministic', () => {
-  const tool = (name: string, group: string, app?: string): ToolDef => ({ name, group, app, risk: 'read', description: `${name} `.repeat(60), parameters: { type: 'object', properties: { q: { type: 'string', description: 'x'.repeat(200) } } }, run: async () => '' });
-  const tools = [tool('read_file', 'files'), tool('web_fetch', 'web'), tool('routine_create', 'routines'), tool('task_create', 'team'), tool('browser_open', 'browser'), tool('mcp_notion_search', 'mcp', 'Notion'), tool('mcp_shop_orders', 'mcp', 'Shop')];
+test('the tool list: the core plus tools_find (every other tool by name) and tools_call; everything when nothing is outside it or "fewer tools" is off; deterministic', async () => {
+  const tool = (name: string, group: string, app?: string): ToolDef => ({ name, group, app, risk: 'read', description: `${name} doet iets.`, parameters: { type: 'object', properties: { q: { type: 'string' } }, required: ['q'] }, run: async (a) => `${name}:${a.q}` });
+  const tools = [tool('read_file', 'files'), tool('web_fetch', 'web'), tool('routine_create', 'routines'), tool('task_create', 'team'), tool('browser_open', 'browser'), tool('browser_click', 'browser'), tool('browser_type', 'browser'), tool('mcp_notion_search', 'mcp', 'Notion'), tool('mcp_notion_write', 'mcp', 'Notion'), tool('mcp_shop_orders', 'mcp', 'Shop'), tool('routine_no_update', 'routines:run'), tool('remote_exec', 'remote')];
   const groups = new Map([['routines', { id: 'routines', label: 'Routines', description: 'Op vaste tijden' }]]);
-  const base = { tools, groups, system: 'Je bent een bot.', about: '', messages: [] as ChatMsg[], budget: 100_000 };
-  assert.equal(selectTools(base).key, '', 'under the budget: everything, no tools_load');
-  const tight = { ...base, budget: 1 };
-  const s0 = selectTools(tight);
-  assert.deepEqual(s0.specs.map((x) => x.name), ['read_file', 'web_fetch', LOADER_NAME], 'only the basics');
-  assert.equal(json(selectTools(tight)), json(s0), 'deterministic');
-  assert.ok(selectTools({ ...tight, system: 'Gebruik browser_open voor websites.' }).specs.some((x) => x.name === 'browser_open'), 'named in the system prompt');
-  assert.ok(selectTools({ ...tight, messages: [{ role: 'user', content: 'Zoek het op in Notion' }] }).specs.some((x) => x.name === 'mcp_notion_search'), 'an app named in the question');
-  assert.ok(!selectTools({ ...tight, messages: [{ role: 'user', content: 'hoi\n\n<context>\nNotion staat in je geheugen\n</context>' }] }).specs.some((x) => x.name === 'mcp_notion_search'), 'memory notes are no request');
-  assert.ok(selectTools({ ...tight, messages: [{ role: 'user', content: 'Herinner me er elke ochtend aan' }] }).specs.some((x) => x.name === 'routine_create'), 'a hint in the question');
-  assert.ok(selectTools({ ...tight, messages: [{ role: 'assistant', content: '', toolCalls: [{ id: '1', name: 'mcp_shop_orders', args: {} }] }] }).specs.some((x) => x.name === 'mcp_shop_orders'), 'used earlier');
-  assert.ok(selectTools({ ...tight, messages: [{ role: 'user', content: 'Vraag het aan Sanne' }], botNames: ['Sanne'] }).specs.some((x) => x.name === 'task_create'), 'another bot named');
-  assert.ok(selectTools({ ...tight, room: true }).specs.some((x) => x.name === 'task_create'), 'team tools in a group chat');
-  const order = selectTools({ ...tight, messages: [{ role: 'user', content: 'Zoek het op in Notion' }] }).specs.map((x) => x.name);
-  assert.deepEqual(order, ['read_file', 'web_fetch', 'mcp_notion_search', LOADER_NAME], 'the bot’s own order, tools_load last');
+  const guide: PartGuide = { parts: ['browser'], text: () => '## Je browser\n- Lees eerst de pagina.' };
+  const who: any = { agent: {}, thread: {}, userId: 'u' };
+  const make = (o: { tools?: ToolDef[]; on?: boolean; told?: Set<string> } = {}) => onDemand({ tools: o.tools || tools, groups, guides: [guide], who, on: o.on ?? true, told: o.told || new Set() });
+  const d = make();
+  assert.deepEqual(d.listed.map((x) => x.name), ['read_file', 'web_fetch', 'browser_open', 'routine_no_update', 'remote_exec', FIND_NAME, CALL_NAME], 'the core in the bot’s own order (with the way into the browser, and what only a special run or the bot’s own computer has), then the two');
+  assert.deepEqual(d.rest.map((x) => x.name), ['routine_create', 'task_create', 'browser_click', 'browser_type', 'mcp_notion_search', 'mcp_notion_write', 'mcp_shop_orders']);
+  assert.deepEqual(d.leftOut, ['Routines', 'team', 'browser', 'Notion', 'Shop']);
+  assert.equal(json(make().listed.map((x) => [x.name, x.description, x.parameters])), json(d.listed.map((x) => [x.name, x.description, x.parameters])), 'deterministic');
+  assert.ok(d.key && d.key === make().key, 'a stable key of the listed set');
+  // Every tool outside the list is named, per part: a model never has to guess whether something exists.
+  const find = d.listed.find((x) => x.name === FIND_NAME)!;
+  assert.match(find.description, /Wat je buiten je lijst hebt: routines: routine_create; collega-bots en takenbord: task_create; je eigen browser: browser_click, browser_type; app Notion: mcp_notion_search, mcp_notion_write; app Shop: mcp_shop_orders\.$/);
+  // A tool description is cut at 2,000 characters on its way to a CLI engine: the names are made to fit. Many tools of an
+  // app: its names once with what they share; far too many: the first of each part, and how to get every name.
+  const invoices = (n: number) => Array.from({ length: n }, (_, i) => tool(`mcp_boekhouding_factuur_${String(i).padStart(3, '0')}`, 'mcp', 'Boekhouding'));
+  const many = make({ tools: [...tools, ...invoices(60)] }).listed.find((x) => x.name === FIND_NAME)!.description;
+  assert.ok(many.length < 2000, `${many.length} characters`);
+  assert.match(many, /Staat er \(begin_…\) achter een onderdeel, dan begint elke naam daarvan zo\./);
+  assert.match(many, /app Boekhouding \(mcp_boekhouding_factuur_…\): 000, 001, [^;]*, 059[;.]/, 'every name of the app, written once with what they share');
+  assert.match(many, /je eigen browser: browser_click, browser_type/, 'a part of two tools is written in full');
+  const huge = make({ tools: [...tools, ...invoices(700)] }).listed.find((x) => x.name === FIND_NAME)!;
+  assert.ok(huge.description.length < 2000, `${huge.description.length} characters`);
+  assert.match(huge.description, /Zonder query krijg je elke naam\./);
+  assert.match(huge.description, /app Boekhouding \(mcp_boekhouding_factuur_…\): 000, [^;]* en nog \d+[;.]/);
+  assert.match(((await huge.run({ query: '' }, {} as any)) as any).text, /mcp_boekhouding_factuur_699/, 'and the whole list on request');
+
+  // Nothing outside the core, or "fewer tools" off: the list is the whole set and there is nothing to find.
+  for (const all of [make({ tools: tools.slice(0, 2) }), make({ on: false })]) {
+    assert.equal(all.active, false);
+    assert.equal(all.key, '');
+    assert.ok(!all.listed.some((x) => x.name === FIND_NAME || x.name === CALL_NAME));
+    assert.deepEqual(all.resolve(CALL_NAME, { name: 'browser_click' }), { name: CALL_NAME, args: { name: 'browser_click' } });
+  }
+  assert.equal(make({ on: false }).listed.length, tools.length);
+
+  // Finding: by name, by part, by a word, by an app; everything; nothing.
+  const found = async (query: string) => ((await find.run({ query }, {} as any)) as any).text as string;
+  const names = (text: string) => [...text.matchAll(/^### (\w+)$/gm)].map((m) => m[1]);
+  assert.deepEqual(names(await found('browser_click')), ['browser_click']);
+  assert.deepEqual(names(await found('mcp__teambot__routine_create')), ['routine_create'], 'as an engine names it');
+  assert.deepEqual(names(await found('notion')), ['mcp_notion_search', 'mcp_notion_write']);
+  assert.deepEqual(names(await found('routines')), ['routine_create']);
+  assert.deepEqual(names(await found('website')), ['browser_click', 'browser_type'], 'a word of the part');
+  assert.match(await found('browser_click'), /velden: \{"type":"object","properties":\{"q":\{"type":"string"\}\},"required":\["q"\]\}/);
+  assert.match(await found(''), /Buiten je lijst heb je 7 hulpmiddelen:\n- Routines: routine_create\n- team: task_create\n- browser: browser_click, browser_type\n- Notion: mcp_notion_search, mcp_notion_write\n- Shop: mcp_shop_orders/);
+  assert.match(await found('zeppelin'), /Niets gevonden voor “zeppelin”/);
+  assert.match(await found('read_file'), /read_file staat al in je lijst: gebruik het direct\./, 'what is in the list is not found again');
+
+  // Using: a tools_call becomes the call it names (fields in args, beside the name, or as JSON text); the rest as it is.
+  assert.deepEqual(d.resolve(CALL_NAME, { name: 'browser_click', args: { q: 'x' } }), { name: 'browser_click', args: { q: 'x' } });
+  assert.deepEqual(d.resolve(CALL_NAME, { name: ' teambot.browser_click ', q: 'x' }), { name: 'browser_click', args: { q: 'x' } });
+  assert.deepEqual(d.resolve(CALL_NAME, { name: 'browser_click', args: '{"q":"x"}' }), { name: 'browser_click', args: { q: 'x' } });
+  assert.deepEqual(d.resolve(CALL_NAME, { name: 'read_file', args: { q: 'x' } }), { name: 'read_file', args: { q: 'x' } }, 'a listed tool through tools_call simply runs');
+  assert.deepEqual(d.resolve(CALL_NAME, { name: 'bestaat_niet' }), { name: CALL_NAME, args: { name: 'bestaat_niet' } });
+  assert.deepEqual(d.resolve('task_create', { q: 'x' }), { name: 'task_create', args: { q: 'x' } });
+  const call = d.callable.find((x) => x.name === CALL_NAME)!;
+  assert.match(((await call.run({ name: 'browser_klik' }, {} as any)) as any).text, /Onbekend hulpmiddel: browser_klik\. Bedoel je: browser_click, browser_type\?/);
+
+  // Afterwards. The first use of a part whose tools belong together (the browser, an app) brings the fields of the rest
+  // of it and what the bot must know about it, once; wrong arguments bring the fields of the tool itself.
+  const told = new Set<string>();
+  const run = make({ told });
+  const [open, click] = [tools[4], tools[5]];
+  const first = await run.after(open, { q: 'x' }, { text: 'Geopend.' }, false);
+  assert.equal(first.text, 'Geopend.\n\nBij dit onderdeel horen ook (gebruik ze met tools_call):\n\n### browser_click\nbrowser_click doet iets.\nvelden: {"type":"object","properties":{"q":{"type":"string"}},"required":["q"]}\n\n### browser_type\nbrowser_type doet iets.\nvelden: {"type":"object","properties":{"q":{"type":"string"}},"required":["q"]}\n\n## Je browser\n- Lees eerst de pagina.');
+  assert.deepEqual([...told].sort(), ['browser', 'guide:browser']);
+  assert.deepEqual(await run.after(click, { q: 'x' }, { text: 'ok' }, false), { text: 'ok' }, 'once');
+  assert.deepEqual(await make({ told }).after(click, { q: 'x' }, { text: 'ok' }, false), { text: 'ok' }, 'also with a fresh list for the same run or session');
+  const bad = await run.after(click, {}, { text: 'Ontbreekt: q.', isError: true }, false);
+  assert.equal(bad.text, 'Ontbreekt: q.\n\nVelden van browser_click: {"type":"object","properties":{"q":{"type":"string"}},"required":["q"]}');
+  const app = await make().after(tools[7], { q: 'x' }, { text: 'ok' }, false);
+  assert.match(app.text, /^ok\n\nBij dit onderdeel horen ook[^\n]*\n\n### mcp_notion_write\n/, 'one tool of an app, and the app is known');
+  assert.doesNotMatch(app.text, /mcp_shop_orders/, 'another app is another part');
+  assert.deepEqual(await make().after(tools[3], { q: 'x' }, { text: 'ok' }, false), { text: 'ok' }, 'a part that is a mixed bag brings nothing along');
+  assert.deepEqual(await make().after(click, { q: 'x' }, { text: 'Geweigerd.', isError: true }, true), { text: 'Geweigerd.', isError: true }, 'nothing after a refusal');
+  assert.deepEqual(await make().after(tools[0], { q: 'x' }, { text: 'ok' }, false), { text: 'ok' }, 'a part that is all in the list: as it is');
+  assert.match(((await make().listed.find((x) => x.name === FIND_NAME)!.run({ query: 'browser' }, {} as any)) as any).text, /## Je browser/, 'the guide also comes with what tools_find finds');
 });
 
 test('shortening: long runs in blocks of steps, duplicates only while the first copy is complete, decisions only grow', async () => {

@@ -11,10 +11,33 @@ import { RiskBadge, StatusBadge, invalidateToolIndex, useToolIndex } from './sha
 import { MainPage } from './Page';
 import { DetailPage } from './Detail';
 
+/** An app the bot has from its AI program itself (the owner's Claude connectors …): GET /cli-agents/agents/:id/apps. */
+interface OwnApp {
+  id: string;
+  name: string;
+  engine: string;
+  state: string;
+  tools: number;
+  on: boolean;
+  note: string;
+}
+
 /** Bot editor section: which apps this bot may use (saved immediately). */
 function AgentApps({ agent }: { agent: Agent; onChange(p: Partial<Agent>): void }) {
   const [list, setList] = useState<Conn[] | null>(null);
+  const [own, setOwn] = useState<OwnApp[]>([]);
   const [err, setErr] = useState<string | null>(null);
+  useEffect(() => {
+    if (agent.id) api.get<{ apps: OwnApp[] }>(`/cli-agents/agents/${agent.id}/apps`).then((r) => setOwn(r.apps || [])).catch(() => setOwn([]));
+  }, [agent.id, agent.provider_id, agent.access_mode]);
+  const toggleOwn = async (a: OwnApp, enabled: boolean) => {
+    try {
+      setOwn((await api.put<{ apps: OwnApp[] }>(`/cli-agents/agents/${agent.id}/apps/${encodeURIComponent(a.id)}`, { enabled })).apps || []);
+      toast(enabled ? `${a.name} aan voor deze bot` : `${a.name} uit voor deze bot`, 'ok');
+    } catch (e) {
+      toastError(e);
+    }
+  };
   const load = () =>
     api
       .get<Conn[]>(`/mcp/agents/${agent.id}`)
@@ -67,9 +90,19 @@ function AgentApps({ agent }: { agent: Agent; onChange(p: Partial<Agent>): void 
             </div>
           ))}
         </div>
-      ) : (
+      ) : own.length ? null : (
         <div className="text-sm text-muted">Nog geen apps gekoppeld.</div>
       )}
+      {own.map((a) => (
+        <div key={a.id} data-row="eigen-app" className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-line p-2.5">
+          <div className="min-w-0">
+            <div className="truncate text-sm font-medium">{a.name}</div>
+            <div className="text-xs text-muted">{[t('Uit {0}', a.engine), a.state, a.tools ? t('{0, plural, one {# tool} other {# tools}}', a.tools) : ''].filter(Boolean).join(' · ')}</div>
+            <div className="text-xs text-muted">{a.note}</div>
+          </div>
+          <Toggle checked={a.on} onChange={(v) => toggleOwn(a, v)} label={<span className="sr-only">{a.name} voor deze bot</span>} />
+        </div>
+      ))}
       <Button size="sm" variant="ghost" icon={<Plug className="h-4 w-4" />} onClick={() => navigate('/m/mcp')}>
         Apps beheren
       </Button>

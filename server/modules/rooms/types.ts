@@ -106,6 +106,8 @@ export interface Delegation {
   wait: boolean;
   follow_up: boolean;
   delivered: boolean;
+  /** The task on the board this request is about: a task given to a bot starts that bot, and its outcome comes back. */
+  task_id?: string | null;
   created_at: string;
   updated_at: string;
   finished_at: string | null;

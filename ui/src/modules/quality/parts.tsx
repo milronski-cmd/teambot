@@ -4,8 +4,10 @@ import type { Message } from '../../lib/types';
 import { api } from '../../lib/api';
 import { Badge, Button, Spinner, Textarea, Toggle, cx, timeAgo, toast, toastError } from '../../components/ui';
 import { t } from '../../lib/i18n';
+import { MoreOptions } from '../../components/MoreOptions';
 import { activeClaim } from './claim';
-import { type CheckState, type EvidenceItem, type OpenItem, type QualityView, type Suggestion, type TaskKind, fetchQuality, loadInbox, qualityActions, useQualityInbox } from './api';
+import { type OpenItem, type Suggestion, fetchQuality, loadInbox, qualityActions, useQualityInbox } from './api';
+import type { CheckState, EvidenceItem, QualityView, TaskKind } from '../../../../shared/quality.js';
 
 /**
  * Reusable pieces for "werk dat echt af is" (server: modules/quality). The task board (#/m/rooms/taken, later the
@@ -43,20 +45,6 @@ export function ClaimBadge({ claim, className }: { claim: QualityView['claim']; 
         werkt eraan
       </span>
     </span>
-  );
-}
-
-/** A compact line for a task card: claim, check and how much evidence. */
-export function TaskQualityLine({ q, className }: { q: QualityView | null | undefined; className?: string }) {
-  if (!q) return null;
-  const n = q.evidence.length;
-  if (!q.claim && q.check.state === 'none' && !q.doneWhen) return null;
-  return (
-    <div className={cx('flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1', className)}>
-      <ClaimBadge claim={activeClaim(q)} />
-      <CheckBadge state={q.check.state} />
-      {n > 0 && <span className="text-xs text-muted">{t('{0, plural, one {# bewijsstuk} other {# bewijsstukken}}', n)}</span>}
-    </div>
   );
 }
 
@@ -221,13 +209,6 @@ export function TaskQuality({ kind, refId, q: given, editable = true, onChanged,
           <EvidenceList items={q.evidence} />
         </Row>
       )}
-      {editable && (
-        <Toggle
-          checked={q.skipCheck}
-          onChange={(v) => act('skip', () => qualityActions.setSkip(kind, refId, v), v ? 'Controle uit voor deze taak (bewijs blijft nodig)' : 'Controle weer aan')}
-          label={<span className="text-[13px]">Controle overslaan (bewijs blijft nodig)</span>}
-        />
-      )}
       {editable && waits && (
         <div className="space-y-2 border-t border-line pt-3">
           {sending && <Textarea rows={2} value={note} onChange={(e) => setNote(e.target.value)} aria-label="Wat moet er nog gebeuren?" placeholder="Wat moet er nog gebeuren? (optioneel)" maxLength={2000} />}
@@ -254,6 +235,16 @@ export function TaskQuality({ kind, refId, q: given, editable = true, onChanged,
             </Button>
           </div>
         </div>
+      )}
+      {/* Rarely needed: behind "Meer opties" (open when the check is off, so that stays visible). */}
+      {editable && (
+        <MoreOptions defaultOpen={q.skipCheck}>
+          <Toggle
+            checked={q.skipCheck}
+            onChange={(v) => act('skip', () => qualityActions.setSkip(kind, refId, v), v ? 'Controle uit voor deze taak (bewijs blijft nodig)' : 'Controle weer aan')}
+            label={<span className="text-[13px]">Controle overslaan (bewijs blijft nodig)</span>}
+          />
+        </MoreOptions>
       )}
     </div>
   );

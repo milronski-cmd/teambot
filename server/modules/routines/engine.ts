@@ -1,12 +1,14 @@
 import crypto from 'node:crypto';
+import { sha256 } from '../../core/util.js';
 import fs from 'node:fs';
 import type { AccessMode, Agent, Ctx, Run, Thread } from '../../core/types.js';
-import { newId } from '../../core/db.js';
+import { newId, now } from '../../core/db.js';
 import { redact } from '../../core/secrets.js';
 import { bytesText, nlCount, tr, usdText, userLanguage } from '../../core/i18n.js';
 import { localeOf } from '../../../shared/languages.js';
 import { resolveInWorkspace } from '../../tools/builtin/files.js';
 import { assertPublicUrl } from '../../tools/builtin/web.js';
+import { canonicalJson } from '../../tools/broker.js';
 import * as S from './schedule.js';
 import * as T from './triggers.js';
 import { fallbackLimitWait, isQuotaWindow, isUsageLimit, parseLimitReset } from './limits.js';
@@ -14,11 +16,12 @@ import { fallbackList, plainEngineError } from '../../agent/fallback.js';
 import { gatherProof, type Proof } from './proof.js';
 import { blockedError, preflight } from './preflight.js';
 import { RoutineWatch, timeAndDay } from './watch.js';
+import { Planner, sortPlanned, type Planned } from './planner.js';
 import { cleanDuty, cleanReminder, type DutyService, type DutyStart } from './duties/service.js';
 import {
+  COUNT_LIMITS,
   DEFAULT_GLOBAL,
   DEFAULT_OPTIONS,
-  MAX_CHAIN,
   MAX_SECRET_GRACE_MINUTES,
   STARTED_RUN,
   secretName,
@@ -38,6 +41,7 @@ import {
   type WaitKind,
   type Waitpoint,
 } from './schema.js';
+import { PLACE } from '../../../shared/places.js';
 
 /** What the wait_for tool asks for (see createWaitpoint). */
 export interface WaitpointInput {
@@ -70,7 +74,11 @@ export interface EngineOptions {
 }
 
 const iso = (ms: number) => new Date(ms).toISOString();
+/** The owner's last "Alles stoppen" (planner.ts: stop / held). */
+const STOPPED_KEY = 'planner.stoppedAt';
 const ACCESS_RANK: Record<AccessMode, number> = { chat: 0, readonly: 1, ask: 2, auto: 3, full: 4 };
+/** The fields of a routine a change may set (validate); everything else of it follows from these or from its runs. */
+const EDITABLE = ['name', 'agent_id', 'prompt', 'timezone', 'schedule', 'options'] as const;
 const TRIGGER_LABEL: Record<RunTrigger, string> = {
   schedule: 'volgens schema',
   catchup: 'inhaalrun na opstarten',
@@ -85,7 +93,17 @@ const TRIGGER_LABEL: Record<RunTrigger, string> = {
   chain: 'na een andere routine',
 };
 export const NO_UPDATE_TOKEN = 'ROUTINE_NO_UPDATE';
-const MAX_QUEUE = 20;
+
+/** A quiet turn leaves the conversation: these messages and every message of these runs are hidden (the receipt stays). */
+export function hideTurn(ctx: Ctx, threadId: string | null | undefined, messageIds: (string | null | undefined)[], runIds: string[]) {
+  const ids = new Set(messageIds.filter((x): x is string => !!x));
+  for (const id of runIds) for (const m of ctx.store.all<{ id: string }>('SELECT id FROM messages WHERE run_id = ? AND deleted = 0', id)) ids.add(m.id);
+  const t = threadId ? ctx.store.thread(threadId) : null;
+  for (const id of ids) {
+    const upd = ctx.store.updateMessage(id, { deleted: true });
+    if (t) ctx.chat.emitMessage(t, upd, 'message.updated');
+  }
+}
 const POLL_MIN: Record<string, number> = { feed: 5, page: 5, folder: 1 };
 
 export class HttpishError extends Error {
@@ -146,12 +164,28 @@ export class RoutineEngine {
   readonly watch: RoutineWatch;
   /** Vaste taken and reminders (duties/service.ts): measure before a model is woken; set by the module. */
   duties: DutyService | null = null;
+  /** Everything else that starts by itself at a time registers here and is looked at from this engine's tick (planner.ts). */
+  readonly planner: Planner;
 
   constructor(private ctx: Ctx, opts: EngineOptions = {}) {
     this.now = opts.clock || Date.now;
     this.fetcher = opts.fetcher || T.safeFetch;
     this.graceMs = opts.graceMs ?? 10 * 60_000;
     this.tickMs = opts.tickMs ?? 15_000;
+    this.planner = new Planner({
+      now: () => this.now(),
+      track: (p) => void this.track(p),
+      warn: (what, e) => !this.stopped && this.ctx.log.warn(`[planner] ${what}`, redact(String((e as any)?.message || e))),
+      wake: () => this.arm(),
+      // The moment of "Alles stoppen" on the wall clock, like the runs' own times: it holds until a run of his starts.
+      stops: {
+        mark: (userId) => ctx.store.setSetting(userId, STOPPED_KEY, now()),
+        held: (userId) => {
+          const at = ctx.store.getSetting<string | null>(userId, STOPPED_KEY, null);
+          return !!at && !ctx.store.one('SELECT 1 FROM runs WHERE created_at > ? AND user_id = ? LIMIT 1', at, userId);
+        },
+      },
+    });
     this.watch = new RoutineWatch(ctx, {
       now: () => this.now(),
       tickMs: this.tickMs,
@@ -211,8 +245,8 @@ export class RoutineEngine {
     if (!this.tickMs || this.stopped) return;
     if (this.timer) clearTimeout(this.timer);
     const now = this.now();
-    const soonest = this.soonestDue();
-    const wait = soonest === null ? this.tickMs : Math.max(1000, Math.min(this.tickMs, soonest - now + 50));
+    const due = [this.soonestDue(), this.planner.soonest()].filter((x): x is number => x !== null);
+    const wait = due.length ? Math.max(1000, Math.min(this.tickMs, Math.min(...due) - now + 50)) : this.tickMs;
     this.timer = setTimeout(() => {
       try {
         this.tick();
@@ -339,6 +373,7 @@ export class RoutineEngine {
       paused: patch?.paused !== undefined ? !!patch.paused : cur.paused,
       maxRunsPerDay: patch?.maxRunsPerDay !== undefined ? Math.round(clamp(patch.maxRunsPerDay, 0, 10_000, cur.maxRunsPerDay)) : cur.maxRunsPerDay,
       maxCostPerDayUsd: patch?.maxCostPerDayUsd !== undefined ? clamp(patch.maxCostPerDayUsd, 0, 10_000, cur.maxCostPerDayUsd) : cur.maxCostPerDayUsd,
+      ...(Object.fromEntries(COUNT_LIMITS.map((k) => [k, patch?.[k] !== undefined ? Math.round(clamp(patch[k], 0, 1_000_000, cur[k])) : cur[k]])) as Pick<GlobalSettings, (typeof COUNT_LIMITS)[number]>),
     };
     this.ctx.store.setSetting(userId, 'routines', next);
     this.ctx.audit(userId, 'routines.settings', next);
@@ -476,8 +511,10 @@ export class RoutineEngine {
     const planned: { routineId: string; name: string; agentId: string; at: string; waitpoint: boolean }[] = [];
     const capped: string[] = [];
     const f = this.teamSql(userId, teamId);
-    for (const r of this.routinesOf(userId).filter((x) => this.inTeam(x, teamId))) {
-      if (r.status !== 'active' || !r.next_run_at) continue;
+    // Which routines are planned at all comes from the one list (plannedRoutines); here their times are laid out.
+    const plan = new Set(this.plannedRoutines(userId, teamId).filter((p) => p.kind !== 'retry').map((p) => p.id));
+    for (const r of this.routinesOf(userId)) {
+      if (!plan.has(r.id) || !r.next_run_at) continue;
       let t = Math.max(fromMs, now) - 1;
       let n = 0;
       for (;;) {
@@ -503,6 +540,39 @@ export class RoutineEngine {
       )
       .map((x) => ({ id: x.id, routineId: x.routine_id, name: names.get(x.routine_id) || 'Verwijderde routine', status: x.status, trigger: x.trigger, at: x.started_at || x.created_at, summary: String(x.summary || '').slice(0, 160) }));
     return { from: iso(fromMs), to: iso(to), timezone: this.userTz(userId), planned: planned.sort((a, b) => a.at.localeCompare(b.at)), runs, capped };
+  }
+
+  // ======================================================================
+  // what starts by itself
+  // ======================================================================
+
+  /**
+   * The routines that will start by themselves: at their next time, or when their event happens (a routine that only
+   * listens has no time). Reminders, wait points and vaste taken are routines too. While "Alle routines pauzeren" is on
+   * none of them starts. A run that waits for a new attempt is planned as well.
+   */
+  plannedRoutines(userId: string, teamId?: string | null): Planned[] {
+    const out: Planned[] = [];
+    if (!this.globalSettings(userId).paused) {
+      const listening = new Set(this.ctx.store.all<{ routine_id: string }>('SELECT DISTINCT routine_id FROM routine_triggers WHERE user_id = ? AND enabled = 1', userId).map((x) => x.routine_id));
+      for (const r of this.routinesOf(userId)) {
+        if (r.status !== 'active' || !this.inTeam(r, teamId) || (!r.next_run_at && !listening.has(r.id))) continue;
+        const o = r.options;
+        // (A reminder is told by TeamBot itself; everything else may wake the bot's model.)
+        out.push({ kind: o.reminder ? 'reminder' : o.waitpoint ? 'waitpoint' : o.duty ? 'duty' : 'routine', id: r.id, userId, agentId: r.agent_id, title: r.name, at: r.next_run_at, model: !o.reminder, link: `#/m/routines/r/${r.id}` });
+      }
+    }
+    for (const x of this.ctx.store.all<{ id: string; routine_id: string; next_retry_at: string }>("SELECT id, routine_id, next_retry_at FROM routine_runs WHERE user_id = ? AND status = 'retrying' AND next_retry_at IS NOT NULL", userId)) {
+      const r = this.routine(x.routine_id);
+      if (!r || !this.inTeam(r, teamId)) continue;
+      out.push({ kind: 'retry', id: x.id, userId, agentId: r.agent_id, title: `Nieuwe poging: ${r.name}`, words: { text: 'Nieuwe poging: {0}', values: [r.name] }, at: x.next_retry_at, model: true, link: `#/m/routines/r/${r.id}?tab=history` });
+    }
+    return out;
+  }
+
+  /** The one list: everything that will start by itself for this owner, and when (the routines and every planner source). */
+  async planned(userId: string): Promise<Planned[]> {
+    return sortPlanned([...this.plannedRoutines(userId), ...(await this.planner.planned(userId, this.now()))]);
   }
 
   // ======================================================================
@@ -605,7 +675,8 @@ export class RoutineEngine {
       maxCostPerDayUsd: clamp(o.maxCostPerDayUsd, 0, 10_000, DEFAULT_OPTIONS.maxCostPerDayUsd),
       retries: Math.round(clamp(o.retries, 0, 5, DEFAULT_OPTIONS.retries)),
       pauseAfterFailures: Math.round(clamp(o.pauseAfterFailures, 1, 50, DEFAULT_OPTIONS.pauseAfterFailures)),
-      timeoutMinutes: Math.round(clamp(o.timeoutMinutes, 1, 1440, DEFAULT_OPTIONS.timeoutMinutes)),
+      // 0 = no time limit (the default). At most 14 days: a longer timer would not fire at its time (Node's limit).
+      timeoutMinutes: Math.round(clamp(o.timeoutMinutes, 0, 20_160, DEFAULT_OPTIONS.timeoutMinutes)),
       lastRunContext: !!o.lastRunContext,
       lastRunChars: Math.round(clamp(o.lastRunChars, 200, 4000, DEFAULT_OPTIONS.lastRunChars)),
       hideSilentRuns: o.hideSilentRuns !== false,
@@ -786,12 +857,19 @@ export class RoutineEngine {
     return { since: iso(sinceMs), total: rows.reduce((a, b) => a + b.n, 0), counts, waiting };
   }
 
+  /**
+   * Make a routine (the editor, the API, routine_create, reminders, vaste taken, wait points, imports). It takes the
+   * same fields as a change (routineInput): one it does not take is refused, never skipped. No built-in maximum: only
+   * the one the owner may set under Standaarden voor routines (0 = none, the default).
+   */
   create(userId: string, body: any, opts: { status?: Routine['status']; createdBy?: 'user' | 'agent'; allowPastOnce?: boolean } = {}): Routine {
-    const count = this.ctx.store.one<{ n: number }>('SELECT COUNT(*) n FROM routines WHERE user_id = ?', userId)?.n ?? 0;
-    if (count >= 200) throw new HttpishError(400, 'Je hebt het maximum van 200 routines bereikt');
-    const v = this.validate(userId, body, null, !!opts.allowPastOnce);
+    const input = this.routineInput(null, body);
+    const max = this.globalSettings(userId).maxRoutines;
+    if (max > 0 && (this.ctx.store.one<{ n: number }>('SELECT COUNT(*) n FROM routines WHERE user_id = ?', userId)?.n ?? 0) >= max)
+      throw new HttpishError(400, max === 1 ? `Het maximum van 1 routine is bereikt. Er is geen routine gemaakt. Dat maximum stel je in onder ${PLACE.routineDefaults}.` : `Het maximum van ${max} routines is bereikt. Er is geen routine gemaakt. Dat maximum stel je in onder ${PLACE.routineDefaults}.`);
+    const v = this.validate(userId, input, null, !!opts.allowPastOnce);
     const ts = iso(this.now());
-    const status = opts.status || (body?.status === 'paused' ? 'paused' : 'active');
+    const status = opts.status || (input.status === 'paused' ? 'paused' : 'active');
     const r: Routine = {
       ...v,
       id: newId('rtn_'),
@@ -815,8 +893,16 @@ export class RoutineEngine {
     return r;
   }
 
+  /**
+   * Change a routine (the editor, a bot through my_routines or teambot_do, other modules). Only the fields a routine
+   * has can change; a field it does not know is refused, never skipped. The schedule may also come flat, the way
+   * routine_create takes it (schedule.ts `scheduleFromFlat`): `times` alone moves the time and keeps the days. The log
+   * names only what really changed; nothing changed, nothing is written.
+   */
   update(r: Routine, body: any): Routine {
-    const v = this.validate(r.user_id, body, r);
+    const v = this.validate(r.user_id, this.routineInput(r, body), r);
+    const changed = EDITABLE.filter((k) => canonicalJson(v[k]) !== canonicalJson(r[k]));
+    if (!changed.length) return r;
     const patch: any = { ...v, updated_at: iso(this.now()) };
     if (v.agent_id !== r.agent_id) patch.thread_id = null;
     if (r.status === 'completed' && JSON.stringify(v.schedule) !== JSON.stringify(r.schedule)) patch.status = 'active';
@@ -824,10 +910,48 @@ export class RoutineEngine {
     patch.next_run_at = status === 'active' ? this.computeNext(v) : null;
     this.ctx.store.update('routines', r.id, patch);
     const upd = this.routine(r.id)!;
-    this.ctx.audit(r.user_id, 'routine.updated', { id: r.id, fields: Object.keys(body || {}) }, upd.agent_id);
+    this.ctx.audit(r.user_id, 'routine.updated', { id: r.id, fields: changed }, upd.agent_id);
     this.emitRoutine(upd);
     this.arm();
     return upd;
+  }
+
+  /**
+   * What a new routine (`r` null) or a change of `r` asks, as the fields `validate` knows: the one check for making and
+   * for changing. The schedule may also come flat, the way routine_create takes it (schedule.ts `scheduleFromFlat`).
+   * A field a routine does not take is refused with what can be given instead, never skipped. A new routine may start
+   * paused (status). On a change, a field of the routine's view that only follows from the rest (id, status,
+   * next_run_at, scheduleText …) may come along unchanged, as when a bot sends back what it read; a different value
+   * there is refused.
+   */
+  private routineInput(r: Routine | null, body: any): any {
+    const b = body && typeof body === 'object' && !Array.isArray(body) ? body : {};
+    const view: Record<string, unknown> = r ? this.view(r) : {};
+    const unknown: string[] = [];
+    const fixed: string[] = [];
+    for (const k of Object.keys(b)) {
+      if ((EDITABLE as readonly string[]).includes(k) || S.FLAT_SCHEDULE_FIELDS.includes(k)) continue;
+      if (!r && k === 'status') continue;
+      if (r && (k in view || k === 'triggers')) {
+        if (canonicalJson(b[k]) !== canonicalJson(view[k])) fixed.push(k);
+      } else unknown.push(k);
+    }
+    const can = 'name, prompt, times (["UU:MM"]), days (["ma", …]), schedule_kind (daily, weekly, once, interval, monthly, cron) met at, every_minutes, month_days of cron, of schedule als geheel; verder timezone, agent_id en options';
+    if (!r) {
+      // One whole sentence per form, never "het veld"/"de velden" as a value.
+      if (unknown.length === 1) throw new HttpishError(400, `Een nieuwe routine neemt het veld ${unknown[0]} niet aan. Er is geen routine gemaakt. Wat je kunt meegeven: ${can}; en status paused om hem op pauze te laten beginnen.`);
+      if (unknown.length) throw new HttpishError(400, `Een nieuwe routine neemt de velden ${unknown.join(', ')} niet aan. Er is geen routine gemaakt. Wat je kunt meegeven: ${can}; en status paused om hem op pauze te laten beginnen.`);
+      if (b.status !== undefined && b.status !== 'active' && b.status !== 'paused') throw new HttpishError(400, 'Een nieuwe routine staat aan (status active) of op pauze (status paused). Er is geen routine gemaakt.');
+    }
+    if (unknown.length === 1) throw new HttpishError(400, `Een routine heeft geen veld ${unknown[0]}. Er is niets veranderd. Wat je kunt veranderen: ${can}.`);
+    if (unknown.length) throw new HttpishError(400, `Een routine heeft geen velden ${unknown.join(', ')}. Er is niets veranderd. Wat je kunt veranderen: ${can}.`);
+    if (fixed.includes('status')) throw new HttpishError(400, 'De status verander je met pauzeren of aanzetten (pause of resume), niet met een wijziging. Er is niets veranderd.');
+    if (fixed.length) throw new HttpishError(400, `${fixed.join(', ')} volgt uit de rest van de routine en verander je niet zelf. Er is niets veranderd. Wat je kunt veranderen: ${can}.`);
+    const flat = S.scheduleFromFlat(b, r?.schedule);
+    if (!flat) return b;
+    if (b.schedule !== undefined && (!r || canonicalJson(b.schedule) !== canonicalJson(r.schedule)))
+      throw new HttpishError(400, r ? 'Geef het schema óf als schedule, óf met times, days en schedule_kind, niet allebei. Er is niets veranderd.' : 'Geef het schema óf als schedule, óf met times, days en schedule_kind, niet allebei. Er is geen routine gemaakt.');
+    return { ...b, schedule: flat };
   }
 
   setStatus(r: Routine, status: 'active' | 'paused', reason: string | null = null, by: 'user' | 'system' = 'user'): Routine {
@@ -896,11 +1020,6 @@ export class RoutineEngine {
       this.ctx.log.error('[routines] heartbeat', e);
     }
     try {
-      this.duties?.sweep(now);
-    } catch (e) {
-      this.ctx.log.error('[routines] vaste taken', e);
-    }
-    try {
       this.processSchedules(now);
     } catch (e) {
       this.ctx.log.error('[routines] schedules', e);
@@ -934,6 +1053,8 @@ export class RoutineEngine {
         this.ctx.log.error('[routines] cleanup', e);
       }
     }
+    // Everything else with a time (planner.ts): the work that lies there, the main bot's own messages, workflows, …
+    this.planner.run(now);
   }
 
   private processSchedules(now: number) {
@@ -1020,10 +1141,14 @@ export class RoutineEngine {
         status = 'skipped';
         summary = 'Overgeslagen: de vorige run van deze routine was nog bezig.';
       } else {
-        const queued = this.ctx.store.one<{ n: number }>("SELECT COUNT(*) n FROM routine_runs WHERE routine_id = ? AND status IN ('pending','retrying')", r.id)?.n ?? 0;
-        if (queued >= MAX_QUEUE) {
+        // Runs wait their turn, as many as come; only a maximum the owner set himself skips one (Standaarden voor routines).
+        const max = this.globalSettings(r.user_id).maxQueuedRuns;
+        if (max > 0 && (this.ctx.store.one<{ n: number }>("SELECT COUNT(*) n FROM routine_runs WHERE routine_id = ? AND status IN ('pending','retrying')", r.id)?.n ?? 0) >= max) {
           status = 'skipped';
-          summary = `Overgeslagen: er staan al ${MAX_QUEUE} runs in de wachtrij van deze routine.`;
+          summary =
+            max === 1
+              ? `Overgeslagen: er staat al 1 run in de wachtrij van deze routine, het maximum (${PLACE.routineDefaults}).`
+              : `Overgeslagen: er staan al ${max} runs in de wachtrij van deze routine, het maximum (${PLACE.routineDefaults}).`;
         }
       }
     }
@@ -1330,18 +1455,26 @@ export class RoutineEngine {
     const runIds = [...(rr.meta?.runIds || []), run.id];
     rr = this.updateRun(rr.id, { status: 'running', run_id: run.id, thread_id: thread.id, message_id: messageId, started_at: rr.started_at || iso(this.now()), error: null, next_retry_at: null, meta: { ...rr.meta, runIds } });
     this.emitRoutine(this.routine(r.id)!);
-    const timeout = setTimeout(() => ctx.runs.cancel(run.id, r.options.timeoutMinutes === 1 ? 'Time-out: de routine duurde langer dan 1 minuut' : `Time-out: de routine duurde langer dan ${r.options.timeoutMinutes} minuten`), r.options.timeoutMinutes * 60_000);
-    timeout.unref?.();
+    // Only a time limit the owner set cuts a run off; without one it runs until it is done or he stops it.
+    const limit = r.options.timeoutMinutes;
+    const timeout = limit > 0 ? setTimeout(() => ctx.runs.cancel(run.id, limit === 1 ? 'Time-out: de routine duurde langer dan 1 minuut' : `Time-out: de routine duurde langer dan ${limit} minuten`), limit * 60_000) : null;
+    timeout?.unref?.();
     try {
       const fin = await ctx.runs.waitFor(run.id);
       if (!this.stopped) this.finalize(rr.id, fin);
     } finally {
-      clearTimeout(timeout);
+      if (timeout) clearTimeout(timeout);
     }
   }
 
+  /**
+   * The bot's final answer of the run: on a CLI engine the text after its last step (parts.answer, agent/cli-loop.ts),
+   * not what the engine wrote between its steps ("The timestamp came out as 19:21, …" before the answer, 12 nov).
+   */
   private finalText(run: Run): string {
-    return this.ctx.store.one<{ content: string }>("SELECT content FROM messages WHERE run_id = ? AND role = 'assistant' AND content != '' ORDER BY seq DESC LIMIT 1", run.id)?.content || '';
+    const row = this.ctx.store.one<{ id: string; content: string }>("SELECT id, content FROM messages WHERE run_id = ? AND role = 'assistant' AND content != '' ORDER BY seq DESC LIMIT 1", run.id);
+    const answer = row ? this.ctx.store.message(row.id)?.parts?.answer : undefined;
+    return (typeof answer === 'string' && answer.trim()) || row?.content || '';
   }
 
   /** Turn a finished core run into a receipt; decide quiet path / retry / pause. */
@@ -1376,7 +1509,7 @@ export class RoutineEngine {
       const none = proof?.result === 'none';
       this.updateRun(rr.id, { ...base, status: silent ? 'no_update' : 'done', summary, ...(proof ? { meta: { ...(this.getRun(rr.id)?.meta || rr.meta), proof } } : {}) });
       setRoutine({ last_status: silent ? 'no_update' : none ? 'no_result' : 'done', last_summary: (none ? proof!.reason : summary).slice(0, 500), ...(counted && !none ? { fail_count: 0 } : {}) });
-      if (silent && r?.options.hideSilentRuns) this.hideRunMessages(rr);
+      if (silent && r?.options.hideSilentRuns) hideTurn(ctx, rr.thread_id, [rr.message_id], rr.meta?.runIds || (rr.run_id ? [rr.run_id] : []));
       if (none && r && r.options.notify !== 'never') {
         this.notify(r, `Routine “${r.name}”: zonder resultaat`, proof!.reason, link, { routineRunId: rr.id, level: 'warn' });
         ctx.store.update('routine_runs', rr.id, { notified: true });
@@ -1446,7 +1579,12 @@ export class RoutineEngine {
           : null;
     if (pauseReason && r.status !== 'paused') {
       this.setStatus(this.routine(r.id)!, 'paused', pauseReason, 'system');
-      this.notify(r, `Routine “${r.name}” gepauzeerd`, pauseReason, `#/m/routines/r/${r.id}`, { routineRunId: rr.id, level: 'error' });
+      // Why, and the one thing to do: the link opens the routine, where Aanzetten turns it back on.
+      const told =
+        kind === 'entitlement'
+          ? `Gepauzeerd: de AI-provider weigerde de opdracht (sleutel, tegoed of abonnement). Zet hem weer aan met Aanzetten zodra dat is opgelost. Laatste fout: ${err}`
+          : `Gepauzeerd na ${fails} mislukte runs op rij, zodat hij niet blijft mislukken. Zet hem weer aan met Aanzetten zodra het probleem is opgelost. Laatste fout: ${err}`;
+      this.notify(r, `Routine “${r.name}” gepauzeerd`, told, `#/m/routines/r/${r.id}`, { routineRunId: rr.id, level: 'error' });
     } else {
       if (r.options.notify !== 'never') this.notify(r, `Routine “${r.name}” mislukt`, err, link, { routineRunId: rr.id, level: 'error' });
       this.emitRoutine(this.routine(r.id)!);
@@ -1526,7 +1664,11 @@ ${redact(err).slice(0, 1500)}`, files: [], senderName: agent?.name, agentId: r.a
     );
   }
 
-  /** Routine chain: when this run is finished, start the next routine (never a loop, at most MAX_CHAIN hops). */
+  /**
+   * Routine chain: when this run is finished, start the next routine. A chain never comes back to a routine that already
+   * ran in it (the guard against a loop, also for old data saved before validateThen checked it); its length is free,
+   * unless the owner set a maximum under Standaarden voor routines.
+   */
   private startNext(rrId: string, r: Routine, status: 'done' | 'no_update' | 'no_result' | 'error', summary: string) {
     const n = r.options.then;
     if (!n || (n.on === 'done' && status !== 'done')) return;
@@ -1540,7 +1682,10 @@ ${redact(err).slice(0, 1500)}`, files: [], senderName: agent?.name, agentId: r.a
     const wall = bot ? this.wallFor(bot, this.teamOf(next), `Routine “${next.name}”`) : null;
     if (wall) return stop(wall);
     if (!['active', 'completed'].includes(next.status)) return stop(`“${next.name}” staat niet aan`);
-    if (chain.includes(next.id) || chain.length >= MAX_CHAIN) return stop(chain.length === 1 ? 'Keten gestopt om een lus te voorkomen (1 routine)' : `Keten gestopt om een lus te voorkomen (${chain.length} routines)`);
+    if (chain.includes(next.id)) return stop(chain.length === 1 ? 'Keten gestopt om een lus te voorkomen (1 routine)' : `Keten gestopt om een lus te voorkomen (${chain.length} routines)`);
+    const max = this.globalSettings(r.user_id).maxChain;
+    if (max > 0 && chain.length >= max)
+      return stop(chain.length === 1 ? `Keten gestopt na 1 routine: het maximum (${PLACE.routineDefaults}).` : `Keten gestopt na ${chain.length} routines: het maximum (${PLACE.routineDefaults}).`);
     const claimed = this.claim({
       routine: next,
       key: `${next.id}@chain@${rr.id}`,
@@ -1569,20 +1714,6 @@ ${redact(err).slice(0, 1500)}`, files: [], senderName: agent?.name, agentId: r.a
     } catch (e) {
       this.ctx.log.warn('[routines] proof', String(e));
       return null;
-    }
-  }
-
-  /** Quiet path: keep the receipt, hide the no-news exchange from the thread. */
-  private hideRunMessages(rr: RoutineRun) {
-    const ctx = this.ctx;
-    const runIds: string[] = rr.meta?.runIds || (rr.run_id ? [rr.run_id] : []);
-    const ids = new Set<string>();
-    if (rr.message_id) ids.add(rr.message_id);
-    for (const id of runIds) for (const m of ctx.store.all<{ id: string }>('SELECT id FROM messages WHERE run_id = ? AND deleted = 0', id)) ids.add(m.id);
-    const t = rr.thread_id ? ctx.store.thread(rr.thread_id) : null;
-    for (const id of ids) {
-      const upd = ctx.store.updateMessage(id, { deleted: true });
-      if (t) ctx.chat.emitMessage(t, upd, 'message.updated');
     }
   }
 
@@ -1852,7 +1983,7 @@ ${redact(err).slice(0, 1500)}`, files: [], senderName: agent?.name, agentId: r.a
       this.recordEvent(t, `ping:${deliveryId || newId()}`, 'filtered', 'ping', 'GitHub ping ontvangen — koppeling werkt');
       return { status: 200, body: { ok: true, ping: true } };
     }
-    const dedupeKey = deliveryId ? `id:${deliveryId.slice(0, 200)}` : `sha:${T.sha256(raw)}`;
+    const dedupeKey = deliveryId ? `id:${deliveryId.slice(0, 200)}` : `sha:${sha256(raw)}`;
     const presetLabel = T.WEBHOOK_PRESETS.find((p) => p.id === preset)?.label || preset;
     return this.acceptEvent(t, r, { dedupeKey, event, headers: T.pickHeaders(headers), body, source: `webhook:${preset}`, label: `webhook ${presetLabel}: ${event}`, trigger: 'webhook', test: o.test });
   }
@@ -1929,8 +2060,9 @@ ${redact(err).slice(0, 1500)}`, files: [], senderName: agent?.name, agentId: r.a
   }
 
   createTrigger(r: Routine, v: Pick<Trigger, 'kind' | 'name' | 'config' | 'filters' | 'enabled'> & { preset?: Trigger['preset'] }): { trigger: Trigger; secret?: string } {
-    const count = this.ctx.store.one<{ n: number }>('SELECT COUNT(*) n FROM routine_triggers WHERE routine_id = ?', r.id)?.n ?? 0;
-    if (count >= 20) throw new HttpishError(400, 'Maximaal 20 triggers per routine');
+    const max = this.globalSettings(r.user_id).maxTriggersPerRoutine;
+    if (max > 0 && (this.ctx.store.one<{ n: number }>('SELECT COUNT(*) n FROM routine_triggers WHERE routine_id = ?', r.id)?.n ?? 0) >= max)
+      throw new HttpishError(400, max === 1 ? `Deze routine heeft al 1 trigger, het maximum. Dat stel je in onder ${PLACE.routineDefaults}.` : `Deze routine heeft al ${max} triggers, het maximum. Dat stel je in onder ${PLACE.routineDefaults}.`);
     const ts = iso(this.now());
     const t: Trigger = {
       id: newId('trg_'),
@@ -2043,12 +2175,12 @@ ${redact(err).slice(0, 1500)}`, files: [], senderName: agent?.name, agentId: r.a
     if (!fresh.length) return 'no_change';
     const passing = fresh.filter((i) => T.passesFilters(t.filters, { event: 'item', body: i }).ok);
     if (!passing.length) {
-      this.recordEvent(t, `items:${T.sha256(fresh.map((i) => i.id).join('\n')).slice(0, 40)}`, 'filtered', 'nieuwe items', fresh.length === 1 ? '1 nieuw item, dat niet voldoet aan de filters' : `${fresh.length} nieuwe items, geen enkele voldoet aan de filters`);
+      this.recordEvent(t, `items:${sha256(fresh.map((i) => i.id).join('\n')).slice(0, 40)}`, 'filtered', 'nieuwe items', fresh.length === 1 ? '1 nieuw item, dat niet voldoet aan de filters' : `${fresh.length} nieuwe items, geen enkele voldoet aan de filters`);
       return 'filtered';
     }
     const batch = passing.slice(0, Number(t.config.maxItems) || 10);
     this.acceptEvent(t, r, {
-      dedupeKey: `items:${T.sha256(batch.map((i) => i.id).join('\n')).slice(0, 40)}`,
+      dedupeKey: `items:${sha256(batch.map((i) => i.id).join('\n')).slice(0, 40)}`,
       event: 'nieuwe items',
       body: { feed: feed.title, url: t.config.url, items: batch, more: passing.length - batch.length },
       source: 'feed',
@@ -2065,7 +2197,7 @@ ${redact(err).slice(0, 1500)}`, files: [], senderName: agent?.name, agentId: r.a
     const res = await this.fetcher(t.config.url, { allowPrivate: !!agent?.settings?.allowPrivateNetwork, maxBytes: 3_000_000, timeoutMs: 20_000 });
     if (res.status >= 400) throw new Error(`HTTP ${res.status}`);
     const text = T.readableText(res.text, res.contentType);
-    const hash = T.sha256(text);
+    const hash = sha256(text);
     if (!st.hash) {
       this.setState(t, { ...st, hash, text: text.slice(0, 50_000) });
       this.recordEvent(t, `baseline:${newId()}`, 'baseline', 'startpunt', 'Startpunt vastgelegd; volgende wijzigingen worden gemeld');
@@ -2122,7 +2254,7 @@ ${redact(err).slice(0, 1500)}`, files: [], senderName: agent?.name, agentId: r.a
     if (!change.added.length && !change.changed.length && !change.removed.length) return 'no_change';
     const limit = (a: string[]) => a.slice(0, 100);
     this.acceptEvent(t, r, {
-      dedupeKey: `snap:${T.sha256(JSON.stringify([change, change.added.map((k) => snap[k]), change.changed.map((k) => snap[k])])).slice(0, 40)}`,
+      dedupeKey: `snap:${sha256(JSON.stringify([change, change.added.map((k) => snap[k]), change.changed.map((k) => snap[k])])).slice(0, 40)}`,
       event: 'mapwijziging',
       body: { folder: t.config.path || '.', added: limit(change.added), changed: limit(change.changed), removed: limit(change.removed) },
       source: 'folder',
@@ -2180,7 +2312,7 @@ ${redact(err).slice(0, 1500)}`, files: [], senderName: agent?.name, agentId: r.a
         text: String(mail.text || mail.body || '').slice(0, 20_000),
       };
       const id = mail.messageId || mail.id;
-      this.acceptEvent(t, r, { dedupeKey: id ? `msg:${String(id).slice(0, 200)}` : `sha:${T.sha256(JSON.stringify(body))}`, event: 'e-mail', body, source: 'email', label: `e-mail van ${body.from}`, trigger: 'email' });
+      this.acceptEvent(t, r, { dedupeKey: id ? `msg:${String(id).slice(0, 200)}` : `sha:${sha256(JSON.stringify(body))}`, event: 'e-mail', body, source: 'email', label: `e-mail van ${body.from}`, trigger: 'email' });
     }
   }
 

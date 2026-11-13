@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { CheckCircle2, CircleHelp, FlaskConical, Plus, Trash2, XCircle } from 'lucide-react';
+import { CheckCircle2, CircleHelp, FlaskConical, Plus, Trash2, XCircle, Play, History } from 'lucide-react';
 import { api, on } from '../../lib/api';
 import { t } from '../../lib/i18n';
 import { formatDateTime, formatNumber, formatUsd } from '../../lib/format';
-import { Badge, Button, Card, Field, Input, Spinner, Textarea, toast, useAsync } from '../../components/ui';
+import { Badge, Button, Card, Field, Input, Spinner, Textarea, toast, useAsync, CardHead } from '../../components/ui';
 import { MoreInfo } from '../../components/MoreInfo';
 import { Dropdown } from '../../components/SettingControls';
 import { Skeleton, SkeletonRows } from '../../components/overview';
@@ -213,9 +213,7 @@ export function TestRunPanel({ skillId, target, title, onRun }: { skillId: strin
   return (
     <div className="space-y-3">
       {title && (
-        <h3 className="flex items-center gap-1.5 text-sm font-semibold">
-          <FlaskConical className="h-4 w-4 text-accent" aria-hidden /> {title}
-        </h3>
+        <CardHead as="h3" icon={FlaskConical} tone="teal" title={title} />
       )}
       <div className="flex flex-wrap items-end gap-2">
         <Field label="Testen met bot">
@@ -275,7 +273,7 @@ export function TestsTab({ s }: { s: SkillDetail }) {
   return (
     <div className="tb-in space-y-4">
       <Card className="space-y-3 p-4">
-        <h2 className="text-sm font-semibold">Testvragen</h2>
+        <CardHead icon={CircleHelp} tone="teal" title="Testvragen" />
         <p className="text-sm text-muted">
           Drie tot vijf vragen die deze skill goed moet kunnen. <MoreInfo>Zet bij elke vraag wanneer het antwoord goed is. Een test kost tokens; je ziet eerst een schatting.</MoreInfo>
         </p>
@@ -307,7 +305,7 @@ export function TestsTab({ s }: { s: SkillDetail }) {
       </Card>
       {view.tests.length > 0 && (
         <Card className="space-y-3 p-4">
-          <h2 className="text-sm font-semibold">Test draaien</h2>
+          <CardHead icon={Play} tone="teal" title="Test draaien" />
           <Field label="Welke versie">
             <Dropdown
               label="Versie om te testen"
@@ -321,7 +319,7 @@ export function TestsTab({ s }: { s: SkillDetail }) {
       )}
       {view.runs.length > 0 && (
         <Card className="space-y-2 p-4">
-          <h2 className="text-sm font-semibold">Eerdere tests</h2>
+          <CardHead icon={History} title="Eerdere tests" />
           <ul className="divide-y divide-line text-sm">
             {view.runs.map((r) => (
               <li key={r.id} className="flex flex-wrap items-center justify-between gap-2 py-2">

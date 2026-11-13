@@ -195,6 +195,7 @@ export function agentRoutes(ctx: Ctx) {
         if (patch.fallback?.provider_id && patch.fallback.model) applySharedModel(ctx.providers.config(patch.fallback.provider_id)!, u.id, patch.fallback.model);
       }
       if (patch.provider_id !== undefined && patch.provider_id !== a.provider_id) {
+        // Back on a CLI engine it used before: its session there is kept and told what it missed (cli-agents: missedTurns).
         ctx.audit(u.id, 'agent.provider_changed', { from: a.provider_id, to: patch.provider_id, model: patch.model }, a.id);
       }
       recordAgentVersion(ctx, a, patch);

@@ -290,6 +290,8 @@ try {
     await page.getByRole('button', { name: 'Start live gesprek' }).click();
     const dlg = page.getByRole('dialog', { name: 'Live gesprek met Sam' });
     await dlg.waitFor({ timeout: 10000 });
+    // The call is a compact bar above the message field; what was said opens on request.
+    await dlg.getByRole('button', { name: 'Ondertiteling tonen' }).click();
     const t0 = Date.now();
     let text = '';
     while (Date.now() - t0 < 40000) {

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { ChevronDown, ChevronUp, GripVertical, ListOrdered, Paperclip, Pause, Pencil, Play, Trash2, Zap } from 'lucide-react';
+import { ArrowUp, ChevronDown, ChevronUp, GripVertical, ListOrdered, MoreHorizontal, Paperclip, Pause, Pencil, Play, Square, Trash2 } from 'lucide-react';
 import { api, on } from '../lib/api';
 import { useApp } from '../lib/store';
 import type { AttachmentRef } from '../lib/types';
@@ -9,8 +9,10 @@ import { Button, cx, Textarea, toast, toastError } from '../components/ui';
  * Chat queue + steering (server: server/agent/queue.ts).
  *
  * While the bot works, the owner's messages wait in a queue outside the transcript (edit, reorder, delete) and are
- * sent one per turn when the bot is free. "Bijsturen" puts a message into the running turn: API engines take it at the
- * next safe point; CLI engines (Claude Code, Codex …) are interrupted and continue their session with the message.
+ * sent one per turn when the bot is free. There is no choice up front: a message simply waits, and its arrow ("Nu
+ * sturen") puts it into the running turn. API engines take it at the next safe point; CLI engines (Claude Code,
+ * Codex …) are interrupted and continue their session with the message. "Onderbreken" for an API engine sits under
+ * "Meer" on the row. A bot whose own setting is Bijsturen or Onderbreken (busy_policy) still gets that on a plain send.
  *
  * Placement (for the composer): use `useMessageQueue(threadId)`, send through `queue.send(...)` instead of POST
  * /threads/:id/messages (it posts directly when the bot is idle and queues otherwise), and render
@@ -103,7 +105,8 @@ export function useMessageQueue(threadId: string | null) {
     }
     const r = await api.post<SendResult>(`/threads/${threadId}/queue`, { content, attachments: o.attachments, replyTo: o.replyTo, voice: o.voice, mode: o.mode || 'auto' });
     apply(r.queue);
-    if (r.mode !== 'sent') toast(r.reason || RESULT_TEXT[r.mode], r.reason ? 'neutral' : 'ok');
+    // A queued message shows up in the queue right above the composer: no toast on top of it (it covered the row on a phone).
+    if (r.mode !== 'sent' && (r.mode !== 'queued' || r.reason)) toast(r.reason || RESULT_TEXT[r.mode], r.reason ? 'neutral' : 'ok');
     return r;
   };
   const edit = async (id: string, content: string) => apply(await api.patch<QueueState>(`/threads/${threadId}/queue/${id}`, { content }));
@@ -143,6 +146,10 @@ function Item({ q, it, index, count, onDragStart, onDrop }: { q: MessageQueue; i
   // The bot waits for an answer to its question card: a queued message can be that answer (never an interrupt).
   const asking = useApp((s) => s.approvals.some((a) => a.thread_id === q.state?.threadId && a.kind === 'question' && a.status === 'pending'));
   const steerLabel = asking ? 'Gebruiken als antwoord op de vraag van de bot' : !running ? 'Nu versturen' : cli ? 'Nu sturen (onderbreekt de beurt)' : 'Bijsturen: meegeven aan de lopende beurt';
+  // "Onderbreken" (stop the turn, send this message at once) as its own quiet action: only where the arrow does not
+  // already do that (a CLI engine is interrupted by the arrow) and never while the bot waits for an answer.
+  const canInterrupt = running && !cli && !asking;
+  const [more, setMore] = useState(false);
   return (
     <li
       className="group flex items-start gap-1.5 rounded-lg border border-line bg-surface px-2 py-1.5 text-sm"
@@ -157,7 +164,8 @@ function Item({ q, it, index, count, onDragStart, onDrop }: { q: MessageQueue; i
         onDrop();
       }}
     >
-      <GripVertical className="mt-0.5 h-4 w-4 shrink-0 cursor-grab text-muted" aria-hidden />
+      {/* Dragging is for a mouse; on a narrow screen the room goes to the text (the arrows under "Meer" reorder). */}
+      <GripVertical className="mt-0.5 h-4 w-4 shrink-0 cursor-grab text-muted max-sm:hidden" aria-hidden />
       <span className="mt-0.5 w-4 shrink-0 text-xs text-muted">{index + 1}</span>
       <div className="min-w-0 flex-1">
         {editing ? (
@@ -197,22 +205,44 @@ function Item({ q, it, index, count, onDragStart, onDrop }: { q: MessageQueue; i
         )}
       </div>
       {!editing && (
-        <div className="flex shrink-0 items-center opacity-70 transition group-hover:opacity-100 focus-within:opacity-100">
-          <Button size="icon" variant="ghost" className="h-7 w-7" aria-label={steerLabel} title={steerLabel} loading={busy} onClick={() => act(() => q.steer(it.id, asking ? false : undefined))}>
-            <Zap className="h-3.5 w-3.5" />
-          </Button>
-          <Button size="icon" variant="ghost" className="h-7 w-7" aria-label="Bewerken" title="Bewerken" onClick={() => (setDraft(it.content), setEditing(true))}>
-            <Pencil className="h-3.5 w-3.5" />
-          </Button>
-          <Button size="icon" variant="ghost" className="h-7 w-7" aria-label="Omhoog" title="Omhoog" disabled={index === 0} onClick={() => act(() => q.move(it.id, index - 1))}>
-            <ChevronUp className="h-3.5 w-3.5" />
-          </Button>
-          <Button size="icon" variant="ghost" className="h-7 w-7" aria-label="Omlaag" title="Omlaag" disabled={index === count - 1} onClick={() => act(() => q.move(it.id, index + 1))}>
-            <ChevronDown className="h-3.5 w-3.5" />
-          </Button>
-          <Button size="icon" variant="ghost" className="h-7 w-7 text-danger" aria-label="Uit de wachtrij halen" title="Uit de wachtrij halen" onClick={() => act(() => q.remove(it.id))}>
-            <Trash2 className="h-3.5 w-3.5" />
-          </Button>
+        <div className="flex shrink-0 flex-col items-end gap-1">
+          <div className="flex items-center gap-0.5">
+            {/* The one clear action of a waiting message: the bot reads it now instead of after its turn. */}
+            <Button size="icon" variant="soft" className="h-7 w-7 rounded-full" aria-label="Nu sturen" title={steerLabel} data-testid="queue-send-now" loading={busy} onClick={() => act(() => q.steer(it.id, asking ? false : undefined))}>
+              <ArrowUp className="h-4 w-4" strokeWidth={2.4} />
+            </Button>
+            <Button size="icon" variant="ghost" className="h-7 w-7 opacity-70 hover:opacity-100 max-sm:hidden" aria-label="Bewerken" title="Bewerken" onClick={() => (setDraft(it.content), setEditing(true))}>
+              <Pencil className="h-3.5 w-3.5" />
+            </Button>
+            <Button size="icon" variant="ghost" className="h-7 w-7 text-danger opacity-70 hover:opacity-100" aria-label="Uit de wachtrij halen" title="Uit de wachtrij halen" onClick={() => act(() => q.remove(it.id))}>
+              <Trash2 className="h-3.5 w-3.5" />
+            </Button>
+            {(count > 1 || canInterrupt) && (
+              <Button size="icon" variant="ghost" className="h-7 w-7 opacity-70 hover:opacity-100 aria-expanded:bg-surface-3 aria-expanded:opacity-100" aria-label="Meer" title="Meer" aria-expanded={more} onClick={() => setMore(!more)}>
+                <MoreHorizontal className="h-3.5 w-3.5" />
+              </Button>
+            )}
+          </div>
+          {/* The rest, one click away: the order, and stopping the bot for this message. */}
+          {more && (count > 1 || canInterrupt) && (
+            <div className="flex flex-wrap items-center justify-end gap-0.5">
+              {count > 1 && (
+                <>
+                  <Button size="icon" variant="ghost" className="h-7 w-7" aria-label="Omhoog" title="Omhoog" disabled={index === 0} onClick={() => act(() => q.move(it.id, index - 1))}>
+                    <ChevronUp className="h-3.5 w-3.5" />
+                  </Button>
+                  <Button size="icon" variant="ghost" className="h-7 w-7" aria-label="Omlaag" title="Omlaag" disabled={index === count - 1} onClick={() => act(() => q.move(it.id, index + 1))}>
+                    <ChevronDown className="h-3.5 w-3.5" />
+                  </Button>
+                </>
+              )}
+              {canInterrupt && (
+                <Button size="sm" variant="ghost" className="h-7 px-2 text-xs" icon={<Square className="h-3 w-3" />} title="De bot stopt meteen en gaat verder met jouw nieuwe bericht." data-testid="queue-interrupt" onClick={() => act(() => q.steer(it.id, true))}>
+                  Onderbreken
+                </Button>
+              )}
+            </div>
+          )}
         </div>
       )}
     </li>
@@ -247,7 +277,7 @@ export function QueueBar({ threadId, queue, className }: { threadId?: string; qu
         <span className="font-medium">
           In de wachtrij ({q.items.length})
         </span>
-        <span className="text-muted">{s.paused ? '' : s.busy ? '· gaan één voor één naar de bot zodra hij klaar is' : ''}</span>
+        <span className="text-muted max-sm:hidden">{s.paused ? '' : s.busy ? '· gaan één voor één naar de bot zodra hij klaar is' : ''}</span>
         <span className="ms-auto flex items-center gap-1">
           {s.paused ? (
             <Button size="sm" variant="soft" className="h-7" icon={<Play className="h-3.5 w-3.5" />} loading={busy} onClick={() => act(q.resume)}>

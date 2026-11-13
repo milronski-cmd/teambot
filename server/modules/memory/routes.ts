@@ -8,8 +8,11 @@ import type { MemoryItemRow, Scope } from './types.js';
 import { ALL_TEAMS, ITEM_TYPES, SCOPES, SENSITIVITIES, nextReview, reviewInterval } from './types.js';
 import { copyTeamKnowledge } from './teams.js';
 import { approveProposal, rejectProposal, writeCandidate } from './pipeline.js';
+import { lineKey } from './same.js';
+import { limitOf } from './living.js';
+import { dossierAt, placeOf } from './write.js';
 import { deleteAllForUser, forgetRecord, purgeForgotten, recordLabel } from './forget.js';
-import { addRecord, addSourceAsync, createDossier, dossierMarkdown, getDossier, listDossiers, shareDossier, updateDossier, updateRecord } from './dossiers.js';
+import { addRecord, addSourceAsync, createDossier, dossierMarkdown, ensureCoreDossiers, getDossier, listDossiers, shareDossier, updateDossier, updateRecord } from './dossiers.js';
 import { importMarkdownDossiers } from './md-import.js';
 import { purgeTrash, reconcile, storageReport } from './lifecycle.js';
 import { exportJson, exportMarkdown, importText } from './io.js';
@@ -18,7 +21,7 @@ import { linkedDossier } from './context.js';
 import { impliedSources } from './implied.js';
 import { estimateTokens } from '../../core/tokens.js';
 import { clean, detectSecret, excerpt } from './text.js';
-import { type Learner, PROFILE_GROUPS, profileGroup } from './learn.js';
+import { type Learner, PROFILE_GROUPS, profileGroup, reviewBlocked } from './learn.js';
 import { type MaintenanceReport, reportView, summaryText, undoReport } from './maintenance.js';
 import { engineBackoff, engineOptions, pickEngine } from './engine.js';
 import { EMBED_PREFERENCE, SUGGESTED_MODEL } from './semantic.js';
@@ -26,6 +29,7 @@ import { BUILTIN } from './builtin-embed.js';
 import { cleanupText, sizes } from './cleanup.js';
 import { acceptSubject, dismissSubject, subjectProposals } from './dossier-auto.js';
 import { customerInfo, dropIdentities, linkIdentity } from './customers.js';
+import { PLACE } from '../../../shared/places.js';
 
 const ITEM_ACTIONS = new Set(['approve', 'reject', 'archive', 'restore', 'trash', 'confirm', 'pin', 'unpin', 'retire']);
 
@@ -155,6 +159,28 @@ export function memoryRoutes(ctx: Ctx, svc: MemoryService, deps: MemoryRouteDeps
     }),
   );
 
+  /**
+   * One place of memory as the owner sees it: about himself, a team's shared knowledge, or one bot. The dossiers behind
+   * it with their text (which the owner edits like any dossier), and for a bot also what he told it himself (its
+   * instructions) — so "what this bot was told and what it noted" is one view.
+   */
+  api.get(
+    '/memory/place',
+    ah(async (req) => {
+      const u = user(req);
+      const q = req.query as Record<string, string>;
+      const bot = q.scope === 'agent' ? st.agent(q.agentId) : null;
+      if (q.scope === 'agent' && (!bot || bot.user_id !== u.id)) throw notFound('Bot niet gevonden');
+      const team = q.scope === 'shared' ? teamFilter(u.id, q.teamId) : null;
+      const rows = st.tx(() =>
+        q.scope === 'agent' ? [dossierAt(svc, u.id, 'notes', { agent: bot })] : q.scope === 'shared' ? [dossierAt(svc, u.id, 'overview', { teamId: team }), dossierAt(svc, u.id, 'lessons', { teamId: team })] : [dossierAt(svc, u.id, 'owner')],
+      );
+      const seen = new Set<string>();
+      const dossiers = rows.filter((d) => d && !seen.has(d.id) && seen.add(d.id)).map((d) => ({ id: d.id, ref: d.ref, title: d.title, core: d.core, body: d.body || '', body_limit: limitOf(d), updated_at: d.updated_at }));
+      return { dossiers, instructions: bot ? { text: bot.instructions || '', agentId: bot.id, name: bot.name } : null };
+    }),
+  );
+
   api.get(
     '/memory/items',
     ah(async (req) => {
@@ -170,7 +196,9 @@ export function memoryRoutes(ctx: Ctx, svc: MemoryService, deps: MemoryRouteDeps
         where.push('i.status = ?');
         params.push(status);
       }
-      if (q.scope && SCOPES.includes(q.scope as Scope)) (where.push('i.scope = ?'), params.push(q.scope));
+      // A dossier's notes are every note linked to it, whatever their scope: "Lessen" holds team notes (scope shared),
+      // and its tab Notities must list them as the dossier counts them.
+      if (q.scope && SCOPES.includes(q.scope as Scope) && !q.dossierId) (where.push('i.scope = ?'), params.push(q.scope));
       if (q.agentId) (where.push('i.agent_id = ?'), params.push(q.agentId));
       if (q.dossierId) (where.push('i.dossier_id = ?'), params.push(q.dossierId));
       if (q.type && ITEM_TYPES.includes(q.type as any)) (where.push('i.type = ?'), params.push(q.type));
@@ -340,6 +368,12 @@ export function memoryRoutes(ctx: Ctx, svc: MemoryService, deps: MemoryRouteDeps
       } else if (teamChoice && (row.scope === 'shared' || (row.scope === 'agent' && teamChoice !== ALL_TEAMS)) && row.user_id === u.id && svc.resolveTeam(u.id, teamChoice) !== svc.resolveTeam(u.id, row.team_id)) {
         p.team_id = teamChoice;
         op = 'move';
+      }
+      // Whose a note is decides the dossier it is a note of: moved, it is a note of the dossier of its new place.
+      const place = (p.scope ?? row.scope) as Scope;
+      if (op !== 'update' && place !== 'dossier') {
+        const bot = place === 'agent' ? st.agent(p.agent_id ?? row.agent_id) : null;
+        p.dossier_id = st.tx(() => dossierAt(svc, row.user_id, placeOf(place, p.type || row.type), { agent: bot, teamId: p.team_id !== undefined ? p.team_id : row.team_id }))?.id ?? null;
       }
       if (!Object.keys(p).length) return { item: svc.view(row) };
       if (p.content !== undefined || p.scope !== undefined) p.version = (row.version || 1) + 1;
@@ -731,7 +765,7 @@ export function memoryRoutes(ctx: Ctx, svc: MemoryService, deps: MemoryRouteDeps
       const model = str(req.body?.model, 80) || SUGGESTED_MODEL;
       if (!EMBED_PREFERENCE.some((p) => model === p || model.startsWith(p + ':'))) throw bad('Kies een van de voorgestelde modellen voor zoeken op betekenis');
       const info = await svc.semantic.info(u.id, true);
-      if (!info.provider || info.state === 'remote' || info.state === 'no-ollama' || info.state === 'off') throw bad('Koppel eerst Ollama op deze computer (Instellingen › AI-diensten) en zet zoeken op betekenis aan.');
+      if (!info.provider || info.state === 'remote' || info.state === 'no-ollama' || info.state === 'off') throw bad(`Koppel eerst Ollama op deze computer (${PLACE.ai}) en zet zoeken op betekenis aan.`);
       if (info.state === 'unreachable') throw bad('Ollama reageert niet. Start Ollama en probeer het opnieuw.');
       const cfg = ctx.providers.config(info.provider.id)!;
       const origin = (() => {
@@ -869,7 +903,7 @@ export function memoryRoutes(ctx: Ctx, svc: MemoryService, deps: MemoryRouteDeps
         const u0 = st.decode<any>('memory_usage', x);
         return { id: u0.id, via: u0.via, message_id: u0.message_id, agent_id: u0.agent_id, agent_name: svc.agentName(u0.agent_id), tokens: u0.tokens, created_at: u0.created_at, refs: (u0.refs || []).map((r: any) => refBrief(u.id, r.p, r.ref, r.id)) };
       });
-      const learned = st.all<any>("SELECT * FROM memory_items WHERE user_id = ? AND source_thread_id = ? AND status NOT IN ('forgotten','rejected') ORDER BY created_at DESC LIMIT 50", u.id, t.id).map((r) => svc.view(st.decode('memory_items', r)));
+      const learned = [...learnedLines(u.id, { threadId: t.id }).filter((x) => x.status === 'active'), ...st.all<any>("SELECT * FROM memory_items WHERE user_id = ? AND source_thread_id = ? AND status NOT IN ('forgotten','rejected') ORDER BY created_at DESC LIMIT 50", u.id, t.id).map((r) => svc.view(st.decode('memory_items', r)))];
       const ep = episodeFor(svc, t.id);
       const linked = linkedDossier(svc, t.id);
       const agent = st.agent(t.agent_id);
@@ -1003,6 +1037,7 @@ export function memoryRoutes(ctx: Ctx, svc: MemoryService, deps: MemoryRouteDeps
     '/memory/dossiers',
     ah(async (req) => {
       const u = user(req);
+      ensureCoreDossiers(svc, u.id);
       return listDossiers(svc, svc.userReader(u.id), { q: req.query.q ? str(req.query.q, 200) : undefined, status: (req.query.status as string) || undefined, teamId: teamFilter(u.id, req.query.teamId) });
     }),
   );
@@ -1240,6 +1275,47 @@ export function memoryRoutes(ctx: Ctx, svc: MemoryService, deps: MemoryRouteDeps
     };
   };
 
+  /**
+   * What was learned from a message and is a line of a dossier's text (the one write path): the same view as a learned
+   * note, by the change of that dossier. The lines that change added; the lines it took the place of as 'replaced'.
+   */
+  const lineView = (row: any) => {
+    const c = st.decode<any>('memory_changes', row);
+    const lines = (x: any) => String(x?.body || '').split('\n').filter((l: string) => lineKey(l));
+    const plain = (l: string) => l.replace(/^[\s>*-]+/, '').trim();
+    const before = new Set(c.record_kind === 'dossier' ? lines(c.before).map(lineKey) : []);
+    const after = new Set(lines(c.after).map(lineKey));
+    const added = lines(c.after).filter((l: string) => !before.has(lineKey(l)));
+    const gone = c.record_kind === 'dossier' ? lines(c.before).filter((l: string) => !after.has(lineKey(l))) : [];
+    const d = st.get<any>('memory_dossiers', c.dossier_id);
+    const work = /eigen werk/.test(c.reason || '');
+    return {
+      id: c.id,
+      line: true,
+      scope: 'dossier',
+      type: 'fact',
+      status: c.undone_at ? 'trashed' : 'active',
+      content: added.map(plain).join(' · '),
+      dossier_id: c.dossier_id,
+      dossier_title: d?.title || 'Dossier',
+      created_at: c.created_at,
+      source_kind: 'message',
+      source_ref: c.source_ref,
+      source_thread_id: c.source_thread_id,
+      source_thread_title: st.thread(c.source_thread_id)?.title || null,
+      learned_from: work ? 'bot' : 'owner',
+      how: c.reason === 'explicit' ? 'Je vroeg het te onthouden' : work ? `Uit het werk van ${svc.agentName(c.actor_id)}` : c.actor === 'agent' ? 'Herkend in je bericht' : 'Zelf toegevoegd',
+      changeId: c.undone_at ? null : c.id,
+      replaced: gone.length ? { content: gone.map(plain).join(' · ') } : null,
+      conflict: null,
+    };
+  };
+  const learnedLines = (userId: string, o: { threadId?: string; limit?: number } = {}) =>
+    st
+      .all<any>(`SELECT * FROM memory_changes WHERE user_id = ? AND source_thread_id IS NOT NULL${o.threadId ? ' AND source_thread_id = ?' : ''} AND op IN ('update','create') ORDER BY created_at DESC LIMIT ?`, userId, ...(o.threadId ? [o.threadId] : []), o.limit || 50)
+      .map(lineView)
+      .filter((x) => x.content);
+
   /** Recently learned (what, when, from where), newest first. */
   api.get(
     '/memory/learned',
@@ -1249,8 +1325,10 @@ export function memoryRoutes(ctx: Ctx, svc: MemoryService, deps: MemoryRouteDeps
       const rows = st
         .all<any>("SELECT * FROM memory_items WHERE user_id = ? AND (source_kind = 'message' OR (source_kind = 'tool' AND idem_key LIKE 'mt:%')) AND status IN ('active','proposed','superseded') ORDER BY created_at DESC LIMIT ?", u.id, limit)
         .map((r) => learnedView(st.decode('memory_items', r)));
+      // Lines of a dossier's text and notes of a dossier, together, newest first.
+      const all = [...rows, ...learnedLines(u.id, { limit }).filter((x) => x.status === 'active')].sort((a: any, b: any) => String(b.created_at).localeCompare(String(a.created_at))).slice(0, limit);
       const pending = deps.learner.pendingFor(u.id).map((j) => ({ threadId: j.thread_id, title: st.thread(j.thread_id)?.title || 'Gesprek', due_at: j.due_at, status: j.status }));
-      return { items: rows, pending };
+      return { items: all, pending };
     }),
   );
 
@@ -1278,6 +1356,7 @@ export function memoryRoutes(ctx: Ctx, svc: MemoryService, deps: MemoryRouteDeps
         }
         if (key) (out[key] ||= []).push(learnedView(r));
       }
+      for (const l of learnedLines(u.id, { threadId: t.id, limit: 200 }).reverse()) (out[l.source_ref] ||= []).push(l);
       const job = deps.learner.job(t.id);
       return { byMessage: out, pending: job && job.status !== 'idle' ? { due_at: job.due_at, status: job.status } : null };
     }),
@@ -1355,8 +1434,22 @@ export function memoryRoutes(ctx: Ctx, svc: MemoryService, deps: MemoryRouteDeps
       const choice = s.extractor === 'heuristic' ? null : await pickEngine(svc, u.id, null, s.extractor === 'model' ? 'model' : 'free').catch(() => null);
       const options = req.query.options === '1' ? await engineOptions(svc, u.id) : undefined;
       const jobs = deps.learner.pendingFor(u.id);
+      // Said plainly when the background review cannot run, and why: the bots still keep their dossiers themselves.
+      // (Why there is no model, as it is: no AI at all, only paid ones, or a free one that cannot be reached now.)
+      const providers = svc.ctx.providers.list(u.id);
+      const free = choice ? [] : await engineOptions(svc, u.id).catch(() => []);
+      const blocked =
+        reviewBlocked(svc, u.id) ||
+        (choice
+          ? null
+          : !providers.length
+            ? `Er is nog geen AI gekoppeld. Koppel er een in ${PLACE.ai}.`
+            : free.some((o) => o.billing !== 'paid')
+              ? 'Het gratis model om mee na te lezen is nu niet bereikbaar.'
+              : 'Er is geen model dat gesprekken zonder extra kosten kan nalezen: je bots werken met een betaalde API-sleutel en er is geen lokaal model of abonnement. Wil je het toch, kies dan bij “Herkennen met” het model van de bot, ook als dat geld kost.');
       return {
         extractor: s.extractor,
+        blocked,
         engine: choice ? { label: choice.label, billing: choice.billing, model: choice.model, providerId: choice.providerId, backoff: engineBackoff(choice.providerId) } : null,
         options,
         today: stats?.day === day ? { calls: stats.calls, avgMs: stats.calls ? Math.round(stats.ms / stats.calls) : 0, cost: stats.cost, input: stats.input, output: stats.output } : { calls: 0, avgMs: 0, cost: 0, input: 0, output: 0 },

@@ -12,11 +12,6 @@ export function useAdvanced(): boolean {
   return useApp((s) => s.settings?.ui?.advanced === true);
 }
 
-/** The current choice outside React (event handlers, initial state). */
-export function isAdvanced(): boolean {
-  return useApp.getState().settings?.ui?.advanced === true;
-}
-
 export async function setAdvanced(on: boolean): Promise<void> {
   const ui = useApp.getState().settings?.ui || {};
   const st = await api.put('/settings', { ui: { ...ui, advanced: on } });

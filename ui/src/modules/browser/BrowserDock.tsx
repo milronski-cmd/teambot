@@ -23,15 +23,17 @@ import {
   RotateCw,
   X,
 } from 'lucide-react';
-import { api, on } from '../../lib/api';
+import { on } from '../../lib/api';
 import { useApp } from '../../lib/store';
 import { navigate } from '../../lib/router';
 import { useIsDesktop, useMedia } from '../../lib/media';
-import { isRtl, uiLocale } from '../../lib/i18n';
+import { isRtl, uiLocale, t } from '../../lib/i18n';
 import { BotAvatar } from '../../components/BotFace';
-import { Badge, Button, cx, Input, Modal, Spinner, toast, useAsync } from '../../components/ui';
-import { browserApi, computers, openPip, patchStatus, siteOf, useLive, type BrowserTab, type ComputerStatus } from './api';
-import { LiveImage, useScreenInput } from './LiveScreen';
+import { Badge, Button, cx, Input, Modal, Spinner, toast } from '../../components/ui';
+import { browserApi, computers, openPip, useLive, type BrowserTab, type ComputerStatus } from './api';
+import { siteOf } from '../../../../shared/computers.js';
+import { LiveImage, useComputerControl } from './LiveScreen';
+import { tText } from '../../lib/format';
 
 // ---------------- open/closed + width (per device) ----------------
 
@@ -106,7 +108,7 @@ export function BrowserDockButton({ threadId, agentId }: { threadId: string; age
       variant="ghost"
       size="icon"
       className="relative aria-pressed:bg-surface-3 aria-pressed:text-fg"
-      aria-label={`Browser van ${agent.name}${running ? ' (actief)' : ''}`}
+      aria-label={running ? t('Browser van {0} (actief)', agent.name) : t('Browser van {0}', agent.name)}
       title="Browser van de bot: meekijken, overnemen, inloggen"
       aria-pressed={open}
       onClick={() => useDock.getState().setOpen(agent.id, !open)}
@@ -200,12 +202,10 @@ const menuItem = 'flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-s
 
 /** The browser of one bot: tabs, address bar, live view, take over / give back, and a menu with the rest. */
 export function BrowserPanel({ agentId, onClose, variant }: { agentId: string; onClose(): void; variant: 'dock' | 'sheet' }) {
-  const me = useApp((s) => s.me);
   const agent = useApp((s) => s.agents.find((a) => a.id === agentId));
-  const { data, error, loading, reload } = useLive(() => computers.get(agentId), ['computer.status', 'computer.config'], [agentId], patchStatus(agentId));
+  const { data, error, loading, reload, status, controller, iControl, sticky, scr, busy, run, post } = useComputerControl(agentId);
   const caps = useLive(() => computers.caps().catch(() => null), [], []);
   const last = useLive(() => computers.actions(agentId, 1).catch(() => []), ['computer.action'], [agentId]);
-  const { busy, run } = useAsync();
   const [streamKey, setStreamKey] = useState(0);
   const [editing, setEditing] = useState<string | null>(null);
   const [typed, setTyped] = useState('');
@@ -216,32 +216,19 @@ export function BrowserPanel({ agentId, onClose, variant }: { agentId: string; o
   const menuRef = useRef<HTMLDivElement>(null);
   const titleRef = useRef<HTMLHeadingElement>(null);
 
-  const status = data?.status;
   const running = !!status?.browser.running;
-  const controller = status?.controller || null;
-  const iControl = !!(controller && controller.kind === 'user' && me && controller.userId === me.id);
-  const sticky = !!controller?.sticky;
-  // Whoever holds the browser can click and type, also while the bot is paused: that is exactly how you log in
-  // when the bot asks for it (browser_request_login pauses the bot and hands you the browser).
   const active = iControl;
-  const scr = useScreenInput(agentId, active);
   const hasBrowser = status?.mode === 'browser' || status?.mode === 'host';
   // A window on the computer's screen is opened from the computer; a paired phone takes over in the live view.
   const phone = useApp((s) => s.device);
   const visibleOk = caps.data?.caps.find((c) => c.id === 'visible')?.status === 'available' && caps.data?.isOwner && variant === 'dock' && !phone;
   const url = status?.browser.url || '';
   const parts = hostParts(url);
-  const site = parts.secure !== null ? siteOf(url) : '';
+  const site = parts.secure !== null ? siteOf(url) || '' : '';
   const tabs = status?.browser.tabs || [];
   const name = agent?.name || 'de bot';
 
   useEffect(() => titleRef.current?.focus(), []);
-  // keep the human lease alive while you control the browser from this panel
-  useEffect(() => {
-    if (!active || sticky) return; // a pause has no heartbeat: it lasts until "Ga verder"
-    const t = setInterval(() => api.post(`/computers/${agentId}/heartbeat`, {}).catch(() => {}), 15_000);
-    return () => clearInterval(t);
-  }, [active, sticky, agentId]);
   useEffect(() => {
     if (!menu) return;
     const f = (e: MouseEvent) => menuRef.current && !menuRef.current.contains(e.target as Node) && setMenu(false);
@@ -260,7 +247,6 @@ export function BrowserPanel({ agentId, onClose, variant }: { agentId: string; o
     return () => clearTimeout(t);
   }, [lastAction?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const post = (p: string, body: any = {}, ok?: string) => run(() => api.post(`/computers/${agentId}${p}`, body), ok).then((r) => (reload(), r));
   const go = (raw: string) => {
     const v = raw.trim();
     if (!v) return;
@@ -312,7 +298,7 @@ export function BrowserPanel({ agentId, onClose, variant }: { agentId: string; o
         <div className="p-4 text-sm text-danger">{error}</div>
       ) : !status ? null : !hasBrowser ? (
         <Empty
-          title={`${name} heeft geen eigen browser`}
+          title={tText('{0} heeft geen eigen browser', name)}
           text="Kies bij de bot onder Computer & bestanden de modus “Eigen browser”."
           action={
             <Button size="sm" onClick={() => navigate(`/agents/${agentId}`)}>
@@ -373,7 +359,7 @@ export function BrowserPanel({ agentId, onClose, variant }: { agentId: string; o
                 disabled={!active}
                 onClick={() => setEditing(url.startsWith('http') ? url : '')}
                 title={active ? 'Klik om een adres te typen' : url ? `${url}${running ? ' — neem over om zelf een adres te openen' : ''}` : undefined}
-                aria-label={`Adres: ${url || 'geen pagina'}${active ? ' (klik om te wijzigen)' : ''}`}
+                aria-label={url ? (active ? t('Adres: {0} (klik om te wijzigen)', url) : t('Adres: {0}', url)) : active ? t('Adres: geen pagina (klik om te wijzigen)') : t('Adres: geen pagina')}
                 className={cx('flex h-9 min-w-0 flex-1 items-center gap-2 rounded-full border border-line bg-surface-2 px-3.5 text-start text-[13px]', active ? 'cursor-text hover:border-line-strong' : 'cursor-default')}
               >
                 {parts.secure === true ? <Lock className="h-3.5 w-3.5 shrink-0 text-muted" aria-label="Beveiligde verbinding" /> : parts.secure === false ? <LockOpen className="h-3.5 w-3.5 shrink-0 text-warn" aria-label="Niet beveiligd" /> : <Globe className="h-3.5 w-3.5 shrink-0 text-muted" aria-hidden />}
@@ -533,7 +519,7 @@ export function BrowserPanel({ agentId, onClose, variant }: { agentId: string; o
       <Modal
         open={confirm === 'logout'}
         onClose={() => setConfirm(null)}
-        title={`Uitloggen bij ${site}?`}
+        title={t('Uitloggen bij {0}?', site)}
         footer={
           <>
             <Button onClick={() => setConfirm(null)}>Annuleren</Button>

@@ -3,9 +3,9 @@ import type React from 'react';
 import { Check, Copy, ExternalLink, QrCode, RefreshCw, Smartphone } from 'lucide-react';
 import { api } from '../../lib/api';
 import { t, translate } from '../../lib/i18n';
-import { Button, Field, Input, Modal, Spinner, cx, timeAgo, useAsync } from '../../components/ui';
+import { Button, Field, Input, Modal, Spinner, cx, timeAgo, useAsync, copyText } from '../../components/ui';
 import { ConnectCard, ConnectResult, type ConnectState } from '../../components/ConnectCard';
-import { TESTFLIGHT_APP, clientLabel, copy, linkButton, type Device, type Reach } from './parts';
+import { clientLabel, linkButton, type Device, type Reach } from './parts';
 import type { Pairing } from './pairing';
 
 function PairStep({ n, title, done, children }: { n: number; title: string; done?: boolean; children: React.ReactNode }) {
@@ -90,7 +90,7 @@ export function PairCard({ pair, reach, setReach, devices, devicesError, reloadD
             TeamBot-verbinding aanzetten
           </Button>
         ) : (
-          reach?.iroh?.error || 'Kijk onder Meer opties bij Bereikbaarheid.'
+          reach?.iroh?.error || 'Kijk bij Instellingen › Meer mogelijkheden › Telefoonverbinding.'
         )
       }
     >
@@ -103,8 +103,9 @@ export function PairCard({ pair, reach, setReach, devices, devicesError, reloadD
       <ConnectCard
         data-testid="pair-card"
         icon={<Smartphone />}
+        tone="blue"
         title="Telefoon koppelen"
-        line={active.length && !showQr ? undefined : 'Installeer de app en scan de code. Meer is het niet.'}
+        line={active.length && !showQr ? undefined : ios ? 'Installeer de app en scan de code. Meer is het niet.' : 'Scan de code met de iPhone-app.'}
         state={state}
         stateLabel={label}
         action={
@@ -129,12 +130,20 @@ export function PairCard({ pair, reach, setReach, devices, devicesError, reloadD
         {showQr || !active.length ? (
           <ol className="divide-y divide-line">
             <PairStep n={1} title="Haal de app" done={active.length > 0}>
-              <a href={ios || TESTFLIGHT_APP} target="_blank" rel="noreferrer" className={linkButton}>
-                <Smartphone className="h-4 w-4" aria-hidden />
-                {ios ? 'iPhone-app downloaden' : 'TestFlight voor de iPhone-app'}
-                <ExternalLink className="h-3.5 w-3.5 text-muted" aria-hidden />
-              </a>
-              {!ios && <p className="text-xs text-muted">Nu nog via TestFlight: open daarna je uitnodiging voor TeamBot.</p>}
+              {ios ? (
+                <a href={ios} target="_blank" rel="noreferrer" className={linkButton}>
+                  <Smartphone className="h-4 w-4" aria-hidden />
+                  iPhone-app downloaden
+                  <ExternalLink className="h-3.5 w-3.5 text-muted" aria-hidden />
+                </a>
+              ) : (
+                // No public link (TEAMBOT_IOS_APP_URL): say so, instead of a button to TestFlight for an invitation that
+                // does not exist. Without the app the browser works on the same wifi or with Tailscale.
+                <div className="space-y-1 text-sm text-muted">
+                  <p>De iPhone-app is nog niet openbaar. Heb je een uitnodiging voor TestFlight gekregen, installeer hem dan daarmee.</p>
+                  <p>Zonder app: kies onder Instellingen › Meer mogelijkheden › Telefoonverbinding een adres voor de browser (zelfde wifi of Tailscale).</p>
+                </div>
+              )}
             </PairStep>
 
             <PairStep n={2} title="Scan de QR-code">
@@ -178,7 +187,7 @@ export function PairCard({ pair, reach, setReach, devices, devicesError, reloadD
                           {tk!.via === 'both' ? t('Via {0}, en de TeamBot-verbinding voor onderweg.', tk!.base_url) : t('Via {0}.', tk!.base_url)}
                         </p>
                         {waiting && (
-                          <Button size="sm" variant="ghost" onClick={() => copy(tk!.url)} icon={<Copy className="h-3.5 w-3.5" />}>
+                          <Button size="sm" variant="ghost" onClick={() => copyText(tk!.url)} icon={<Copy className="h-3.5 w-3.5" />}>
                             Link kopiëren
                           </Button>
                         )}

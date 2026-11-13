@@ -11,16 +11,18 @@ import { type SkillLibrary, type SkillRow, type VersionRow, analyze } from './li
 import type { Importer } from './importer.js';
 import { discoverDirs } from './importer.js';
 import { type Catalogs, type MarketBot, type MarketSkill, mapToFiles } from './catalog.js';
-import { exportTemplate, installTemplate, normalizeTemplate, previewTemplate, templateFromPackage, type BotTemplate, TEMPLATE_FORMAT } from './templates.js';
+import { exportTemplate, installTemplate, normalizeTemplate, ownStartAccess, previewTemplate, startOwnBot, templateFromPackage, type BotTemplate, TEMPLATE_FORMAT } from './templates.js';
 import { diffPermissions, fileType } from './scan.js';
 import { skillSubstance } from './substance.js';
-import { type Fetcher, resolveGithub } from './fetch.js';
+import type { Fetcher } from './fetch.js';
 import { parseWebRef } from './websource.js';
 import type { WebSkills } from './websource.js';
 import { checksumOf } from './files.js';
 import { type InlinePackage, MAIN_FILE, MANIFEST_FILE, PACKAGE_KINDS, type PackageKind, type PackageVerification, filesToInline, readManifest } from '../../../packages/teambot-sdk/src/index.js';
-import { type PackageInfo, type SignatureView, assertMaySelfAuthor, builtinView, decide, enforcePolicy, infoOf, unsignedView, viewOf, viewOfInfo } from './publishers.js';
+import type { SignatureView } from '../../../shared/skills.js';
+import { type PackageInfo, assertMaySelfAuthor, builtinView, decide, enforcePolicy, infoOf, unsignedView, viewOf, viewOfInfo } from './publishers.js';
 import type { CuratedCatalog } from './curated-routes.js';
+import { stageUrl as stageUrlFrom } from './url-import.js';
 
 const SIGNED_STATES = new Set(['builtin', 'trusted', 'untrusted']);
 
@@ -79,7 +81,7 @@ export function skillRoutes(d: Deps) {
 
   const agentsUsing = (userId: string) => {
     const map = new Map<string, { id: string; name: string }[]>();
-    for (const a of ctx.store.agents(userId)) for (const sid of a.skills || []) map.set(sid, [...(map.get(sid) || []), { id: a.id, name: a.name }]);
+    for (const a of ctx.store.agents(userId)) for (const s of lib.enabledFor(a)) map.set(s.id, [...(map.get(s.id) || []), { id: a.id, name: a.name }]);
     return map;
   };
 
@@ -109,7 +111,7 @@ export function skillRoutes(d: Deps) {
       catalogUpdate: webUpd
         ? { version: webUpd.version, catalogId: 'github', itemId: `${webUpd.repo}${webUpd.path ? '/' + webUpd.path : ''}` }
         : curated?.update
-          ? { version: `commit ${curated.update.to.slice(0, 7)}`, catalogId: 'curated', itemId: curated.id, commit: curated.update.to }
+          ? { version: /^[0-9a-f]{40}$/.test(curated.update.to) ? `commit ${curated.update.to.slice(0, 7)}` : `versie ${curated.update.to}`, catalogId: 'curated', itemId: curated.id, commit: curated.update.to }
           : item && item.version && s.version && cmpVersion(item.version, s.version) > 0
             ? { version: item.version, catalogId: item.catalogId, itemId: item.id }
             : null,
@@ -210,51 +212,7 @@ export function skillRoutes(d: Deps) {
     }
   }
 
-  async function stageUrl(userId: string, url: string) {
-    if (!/^https?:\/\//i.test(url)) throw bad('Geef een http(s)-adres.');
-    const gh = resolveGithub(url);
-    const fetchIt = async (u: string) => {
-      try {
-        return await d.fetcher()(u, { maxBytes: LIMITS.maxZipBytes });
-      } catch (e: any) {
-        throw new HttpError(422, e?.message || String(e));
-      }
-    };
-    if (gh?.kind === 'zip') {
-      const r = await fetchIt(gh.url);
-      let files: FileMap;
-      try {
-        files = stripTopFolder(filesFromZip(r.body));
-      } catch (e: any) {
-        throw new HttpError(422, e.message);
-      }
-      return importer.stageFiles(userId, files, { type: 'github', label: gh.label, url }, { subdir: gh.subdir || undefined, fallbackName: gh.subdir ? path.posix.basename(gh.subdir) : gh.label.split('/')[1] });
-    }
-    const r = await fetchIt(gh?.url || url);
-    const isZip = r.body.subarray(0, 2).toString('latin1') === 'PK';
-    if (isZip) {
-      let files: FileMap;
-      try {
-        files = stripTopFolder(filesFromZip(r.body));
-      } catch (e: any) {
-        throw new HttpError(422, e.message);
-      }
-      return importer.stageFiles(userId, files, { type: 'url', label: new URL(url).hostname, url });
-    }
-    if (isBinary(r.body)) throw new HttpError(422, 'Dit adres geeft geen SKILL.md of zip-bestand terug.');
-    const text = r.body.toString('utf8');
-    if (/^\s*\{/.test(text)) {
-      try {
-        const j = JSON.parse(text);
-        if (j?.format === 'teambot.catalog/v1') throw new HttpError(422, 'Dit is een catalogus. Voeg hem toe via Marktplaats › Bronnen.');
-        if (j?.format === TEMPLATE_FORMAT) throw new HttpError(422, 'Dit is een bot-sjabloon. Installeer het via Marktplaats › Bots › Sjabloon importeren.');
-      } catch (e) {
-        if (e instanceof HttpError) throw e;
-      }
-    }
-    const base = slugify(decodeURIComponent(new URL(url).pathname.split('/').filter(Boolean).slice(-2, -1)[0] || ''));
-    return importer.stage(userId, new URL(url).hostname, [{ files: new Map([['SKILL.md', r.body]]), root: '', source: { type: 'url', label: new URL(url).hostname, url }, fallbackName: base }]);
-  }
+  const stageUrl = (userId: string, url: string) => stageUrlFrom(importer, d.fetcher(), userId, url);
 
   api.post(
     '/skills/import/zip',
@@ -314,7 +272,8 @@ export function skillRoutes(d: Deps) {
       // Per team (package B4): only skills the bot's team may see; another team's (meekijken) is marked read-only.
       const seen = lib.list(u.id).filter((s) => s.status !== 'draft' && lib.reach(a, s) !== 'none');
       return {
-        enabled: (a.skills || []).filter((id) => seen.some((s) => s.id === id)),
+        // What the bot has: the active skills of its team, minus what was taken away from it.
+        enabled: lib.enabledFor(a).map((s) => s.id),
         skills: seen.map((s) => ({ ...summary(s, using), readOnly: lib.reach(a, s) === 'read' })),
       };
     }),
@@ -326,9 +285,9 @@ export function skillRoutes(d: Deps) {
       const a = ownAgent(req, String(req.params.agentId));
       const ids = Array.isArray(req.body?.skillIds) ? req.body.skillIds.map(String).slice(0, 200) : null;
       if (!ids) throw bad('skillIds moet een lijst zijn');
-      const upd = lib.setAgentSkills(a, ids);
-      ctx.audit(u.id, 'agent.skills_changed', { skills: upd.skills.length }, a.id);
-      return { enabled: upd.skills };
+      const enabled = lib.enabledFor(lib.setAgentSkills(a, ids)).map((s) => s.id);
+      ctx.audit(u.id, 'agent.skills_changed', { skills: enabled.length }, a.id);
+      return { enabled };
     }),
   );
   /**
@@ -379,7 +338,7 @@ export function skillRoutes(d: Deps) {
     }),
   );
 
-  /** Which of my bots have this skill ("Alle bots" in one go). Bots not in the list lose it; archived bots keep theirs. */
+  /** Which of my bots have this skill ("Alle bots" in one go): it is taken away from the bots that are not named. */
   api.put(
     '/skills/:id/agents',
     ah(async (req) => {
@@ -392,14 +351,14 @@ export function skillRoutes(d: Deps) {
       const changed: string[] = [];
       for (const a of ctx.store.agents(u.id)) {
         if (a.archived) continue;
-        const has = (a.skills || []).includes(s.id);
+        const mine = lib.enabledFor(a).map((x) => x.id);
         const want = ids.has(a.id);
-        if (has === want) continue;
-        lib.setAgentSkills(a, want ? [...(a.skills || []), s.id] : (a.skills || []).filter((x) => x !== s.id));
+        if (mine.includes(s.id) === want || lib.reach(a, s) === 'none') continue;
+        lib.setAgentSkills(a, want ? [...mine, s.id] : mine.filter((x) => x !== s.id));
         changed.push(a.id);
       }
       if (changed.length) ctx.audit(u.id, 'skill.agents_changed', { skill: s.id, agents: changed.length });
-      return { agentIds: ctx.store.agents(u.id).filter((a) => (a.skills || []).includes(s.id)).map((a) => a.id), changed: changed.length };
+      return { agentIds: ctx.store.agents(u.id).filter((a) => lib.enabledFor(a).some((x) => x.id === s.id)).map((a) => a.id), changed: changed.length };
     }),
   );
 
@@ -787,7 +746,13 @@ export function skillRoutes(d: Deps) {
       const it = catalogs.findBot(u.id, String(req.params.catalogId), String(req.params.itemId));
       const { template, warnings, verified } = await botTemplate(u.id, it);
       const signature = botSignature(verified);
-      return { item: botItemView(it, u.id), ...previewTemplate(ctx, lib, u.id, template, warnings), signature, policy: decide(ctx, u, signature) };
+      const pv = previewTemplate(ctx, lib, u.id, template, warnings);
+      // The preview shows what the install below gives: TeamBot's own bots start with more than a foreign template.
+      if (verified === 'builtin') {
+        const mode = ownStartAccess(ctx, u.id, pv.bot.access_mode);
+        pv.bot = { ...pv.bot, access_mode: mode, requested_access_mode: mode };
+      }
+      return { item: botItemView(it, u.id), ...pv, signature, policy: decide(ctx, u, signature) };
     }),
   );
 
@@ -800,7 +765,7 @@ export function skillRoutes(d: Deps) {
       const { template, verified } = await botTemplate(u.id, it);
       const signature = botSignature(verified);
       enforcePolicy(ctx, u, signature, { override: b.overridePolicy === true, what: 'bot', item: `${it.catalogId}/${it.id}` });
-      return installTemplate(ctx, lib, u.id, template, {
+      const done = await installTemplate(ctx, lib, u.id, template, {
         provider_id: b.provider_id ? str(b.provider_id, 100) : null,
         model: str(b.model, 200),
         name: str(b.name, 80),
@@ -809,6 +774,10 @@ export function skillRoutes(d: Deps) {
         packageInfo: botPackageInfo(verified),
         teamId: b.teamId ? str(b.teamId, 60) : null,
       });
+      // A bot that ships with TeamBot starts at "Volledige toegang" (startOwnBot; paying always asks). A read-only bot
+      // stays read-only, and a bot from another catalogue keeps starting at "Vraagt toestemming".
+      if (verified === 'builtin' && done?.agent) done.agent = startOwnBot(ctx, u.id, done.agent.id, 'ingebouwde bot') || done.agent;
+      return done;
     }),
   );
 
@@ -1224,7 +1193,7 @@ export function skillRoutes(d: Deps) {
       const enable = Array.isArray(b.enableFor) ? b.enableFor.map(String) : [];
       for (const id of enable) {
         const a = ctx.store.agent(id);
-        if (a && a.user_id === u.id && !(a.skills || []).includes(target.id)) lib.setAgentSkills(a, [...(a.skills || []), target.id]);
+        if (a && a.user_id === u.id && lib.takenAway(a).has(target.id)) lib.giveSkills(a, [target.id]);
       }
       ctx.audit(u.id, 'skill.published', { skill: target.name, fromDraft: s.id, mode: existing ? 'update' : 'new' }, s.draft_agent_id);
       emit(u.id, [target.id, s.id]);

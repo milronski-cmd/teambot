@@ -7,13 +7,13 @@
   "publisher": {
     "id": "example.invalid",
     "name": "Voorbeelduitgever (alleen voorbeeld, niet vertrouwen)",
-    "publicKey": "aGEJ2ZkTPsyfOCBN4cH4INrMwdJixT7ZnrcLB41kno0="
+    "publicKey": "8USVm7HoZBgxhQogN++flkbBmu4sTFTzs3BDy5zq9CA="
   },
-  "teambot": ">=0.1.0 <1.0.0",
+  "teambot": ">=0.1.0 <3.0.0",
   "requires": {},
   "license": "Apache-2.0",
   "files": {
     "SKILL.md": "1b6e5ab7a39048eceb660bb1d1bed46dca1746e48713705d0db69d10cc619388"
   },
-  "signature": "R/kxU0RMk0ave3/lvX+KzndTPPdDFkfaoLxKBBQAescnVxgxowmLqvojqbWXkZ+ox46oDkENDxna4zXX/BtwBA=="
+  "signature": "wRZhYnWmD6JE5kKoHjmBqvzkeuQWpD+SBWiRUX0IQNV7F2V9Q+W279NWJuY7/dOabeOxaWnp7B4GvGI95fIFAA=="
 }

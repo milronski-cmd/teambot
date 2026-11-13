@@ -32,7 +32,15 @@ export interface Config {
 }
 
 function defaultDataDir() {
-  if (process.env.TEAMBOT_DATA) return process.env.TEAMBOT_DATA;
+  return process.env.TEAMBOT_DATA || standardDataDir();
+}
+
+/**
+ * Where an installed TeamBot keeps its data on this computer when nothing else is set. A TeamBot with another data
+ * folder (TEAMBOT_DATA, a test, a trial install, a server in Docker) is a run of its own: it keeps its team folders in
+ * that data folder too (modules/folders, `documentsFor`).
+ */
+export function standardDataDir() {
   if (process.platform === 'win32') return path.join(process.env.APPDATA || path.join(os.homedir(), 'AppData', 'Roaming'), APP_NAME);
   if (process.platform === 'darwin') return path.join(os.homedir(), 'Library', 'Application Support', APP_NAME);
   return path.join(process.env.XDG_DATA_HOME || path.join(os.homedir(), '.local', 'share'), 'teambot');
@@ -57,7 +65,8 @@ export function loadConfig(over: Partial<Config> = {}): Config {
   // an explicit choice (TEAMBOT_HOST / --host, the Docker image sets 0.0.0.0 inside its own network); the startup
   // check in server/modules/network/exposure.ts refuses or warns about unsafe combinations.
   const host = over.host || process.env.TEAMBOT_HOST || '127.0.0.1';
-  const dataDir = over.dataDir || defaultDataDir();
+  // Always absolute: an engine that runs in a bot's own folder (Claude Code) gets file paths in the data folder.
+  const dataDir = path.resolve(over.dataDir || defaultDataDir());
   fs.mkdirSync(dataDir, { recursive: true });
   for (const d of ['workspaces', 'attachments', 'skills', 'browser', 'backups', 'logs']) fs.mkdirSync(path.join(dataDir, d), { recursive: true });
   return {

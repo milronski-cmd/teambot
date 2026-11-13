@@ -6,7 +6,9 @@ import { useRunning } from '../modules/browser/BrowserDock';
 import { agentById, useApp } from '../lib/store';
 import type { Message, Thread } from '../lib/types';
 import { stripRefs } from '../lib/preview';
-import { plainStep, toolLabel } from './toolLabels';
+import { toolLabel } from './toolLabels';
+import { StepTitle } from './Message';
+import { Words } from '../components/Words';
 import { BotFilesInThread } from '../modules/seen/parts';
 import { useAdvanced } from './advanced';
 import { ContextUse } from './ContextUse';
@@ -73,17 +75,19 @@ function Activity({ thread }: { thread: Thread }) {
   // API bots: their tool calls. CLI bots (Claude Code, Codex, OpenCode): the steps of each answer, in words.
   const calls = useMemo(() => {
     const results = new Map(messages.filter((m) => m.role === 'tool' && m.parts.toolResult).map((m) => [m.parts.toolResult!.toolCallId, m]));
-    const out: { key: string; m: Message; title: string; detail: string; state: 'ok' | 'error' | 'busy' }[] = [];
+    const out: { key: string; m: Message; title: React.ReactNode; detail: React.ReactNode; state: 'ok' | 'error' | 'busy' }[] = [];
     for (const m of messages) {
       if (m.role !== 'assistant') continue;
       for (const c of m.parts.toolCalls || []) {
         const r = results.get(c.id);
-        out.push({ key: c.id, m, title: toolLabel(c, false), detail: c.summary || '', state: r ? (r.parts.toolResult?.isError ? 'error' : 'ok') : m.status === 'streaming' ? 'busy' : 'ok' });
+        // The step's line: TeamBot's words in the reader's language with the values as written; an older one as it was.
+        const detail = c.words ? <Words text={c.words.text} values={c.words.values} /> : c.summary ? <span translate="no">{c.summary}</span> : '';
+        out.push({ key: c.id, m, title: toolLabel(c, false), detail, state: r ? (r.parts.toolResult?.isError ? 'error' : 'ok') : m.status === 'streaming' ? 'busy' : 'ok' });
       }
       (m.parts.activity || []).forEach((a, i) => {
         // TeamBot's own tools used by a CLI only report when done ("TeamBot · …").
         if (!STEP_KINDS.has(a.kind) && !(a.kind === 'tool_result' && a.title.startsWith('TeamBot · '))) return;
-        out.push({ key: `${m.id}:${i}`, m, title: plainStep(stripRefs(a.title)), detail: a.kind === 'tool_error' ? stripRefs(a.detail || '') : '', state: a.kind === 'tool_error' || a.kind === 'denied' ? 'error' : 'ok' });
+        out.push({ key: `${m.id}:${i}`, m, title: <StepTitle a={a} />, detail: a.kind === 'tool_error' ? stripRefs(a.detail || '') : '', state: a.kind === 'tool_error' || a.kind === 'denied' ? 'error' : 'ok' });
       });
     }
     return out.reverse().slice(0, 100);
@@ -216,7 +220,9 @@ function Details({ thread }: { thread: Thread }) {
           <BotAvatar bot={agent} size={40} />
           <div className="min-w-0">
             <div className="font-medium">{agent.name}</div>
-            <div className="truncate text-xs text-muted">{agent.role || agent.description}</div>
+            <div className="truncate text-xs text-muted" translate="no">
+              {agent.role || agent.description}
+            </div>
           </div>
           <Badge className="ms-auto">{agent.provider_id ? botModelText(agent.model) : 'geen model'}</Badge>
         </a>

@@ -9,7 +9,7 @@ import { createRequire } from 'node:module';
 const require = createRequire(import.meta.url);
 const { chromium } = require('playwright-core');
 const axeSource = fs.readFileSync(require.resolve('axe-core/axe.min.js'), 'utf8');
-const { createApp } = await import('../../server/app.ts');
+const { createApp } = await import('./server.mjs');
 const { testLanguage } = await import('./lang.mjs');
 const lang = testLanguage();
 
@@ -32,13 +32,23 @@ app.ctx.store.createMessage({ thread_id: th.id, role: 'assistant', author_type: 
 app.ctx.events.emit(owner.id, 'notification', { title: 'Toegankelijk is klaar', body: 'Het rapport staat klaar', link: `#/t/${th.id}`, kind: 'agent', agentId: agent.id });
 app.ctx.events.emit(owner.id, 'notification', { title: 'Ollama: 85% van je limiet gebruikt', body: 'Weeklimiet', kind: 'limit', level: 'warn', link: '#/settings/usage-limits' });
 
-const pages = ['/', `/t/${th.id}`, '/agents', `/agents/${agent.id}`, '/agents/new', '/inbox', '/tasks', '/more', '/search', '/search?q=toe', '/settings', '/settings/general', '/settings/appearance', '/settings/providers', '/settings/security', '/settings/data', '/settings/backups', '/settings/advanced', '/settings/bots', '/settings/apps', '/settings/usage', `/agents/${agent.id}?tab=instructies`, `/agents/${agent.id}?tab=meer`, `/agents/${agent.id}?tab=meer&meer=1`,
+// Instellingen since 12 Nov: the rows of the list (AI-diensten, Telefoon, Taal en uiterlijk, Regels, Back-ups,
+// Vergrendeling, Teams), "Meer mogelijkheden" and its pages that are not a module page. The old links (appearance,
+// advanced, bots, apps) only open these pages now. The bot page has no tabs any more: one fold "Meer mogelijkheden".
+const pages = ['/', `/t/${th.id}`, '/agents', `/agents/${agent.id}`, '/agents/new', '/inbox', '/tasks', '/more', '/search', '/search?q=toe', '/settings',
+  '/settings/providers', '/settings/telefoon', '/settings/general', '/settings/regels', '/settings/veilig', '/settings/slot', '/settings/teams', '/settings/meer',
+  '/settings/kant-en-klaar', '/settings/vanzelf', '/settings/bot-defaults', '/settings/ai-meer', '/settings/systeem', '/settings/security', '/settings/data', '/settings/backups', '/settings/usage',
+  `/agents/${agent.id}?meer=1`,
   '/settings/usage-limits', '/settings/notifications-meldingen', '/m/usage/status', '/m/usage/eiland', `/m/seen/${agent.id}`, '/m/browser/kluis',
   ...app.ctx.modules.map((m) => `/m/${m.id}/`)];
-// States behind a click or key: the usage popover in the chat header (a popover on wide screens, a bottom sheet on
-// phones); on wide screens also the Ctrl+K command palette (with results) and the notification bell's popover.
+// States behind a click or key: the usage popover of the chat (a popover on wide screens, a bottom sheet on phones)
+// and, since 12 Nov, the model switcher in the chat header (it comes first in the page, so the usage button is named
+// apart); on wide screens also the Ctrl+K command palette (with results) and the notification bell's popover.
 const opened = {
-  [`/t/${th.id}`]: [{ name: `/t/${th.id} (gebruik-popover)`, click: 'main button[aria-haspopup="dialog"]' }],
+  [`/t/${th.id}`]: [
+    { name: `/t/${th.id} (gebruik-popover)`, click: 'main button[aria-haspopup="dialog"]:not([data-testid="model-switch"])' },
+    { name: `/t/${th.id} (modelkiezer)`, click: 'main button[data-testid="model-switch"]' },
+  ],
   '/inbox': [
     { name: '/inbox (Ctrl+K-palet)', keys: ['Control+k', 't', 'o', 'e'], desktopOnly: true },
     { name: '/inbox (meldingen-bel)', click: `button[aria-label^="${lang.L('Meldingen')}"]`, desktopOnly: true },

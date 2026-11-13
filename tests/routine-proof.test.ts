@@ -283,6 +283,10 @@ test('proof only counts what this bot did during the run', async () => {
   const t = await startTestApp();
   try {
     const a = await t.agent();
+    // Saying what was not done is no claim that it was: a full report with such a sentence is an answer.
+    const said = (text: string) => gatherProof(t.app.ctx, t.app.ctx.store.agent(a.id)!, { fromMs: Date.now(), toMs: Date.now(), text });
+    assert.deepEqual([said('Alle 11 sites geven status 200. Ik heb niets gewijzigd en geen testleads verstuurd.').result, said('Ik heb het rapport niet verstuurd.').claims], ['answer', []]);
+    assert.deepEqual(said('Alle sites zijn groen. Ik heb het rapport naar de klant verstuurd.').claims, ['een verstuurd bericht']);
     const b = await t.agent({ name: 'Ander' });
     const agent = t.app.ctx.store.agent(a.id)!;
     const from = Date.now();

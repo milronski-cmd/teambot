@@ -1,11 +1,12 @@
 import { useEffect, useState } from 'react';
-import { ChevronDown, ExternalLink, RefreshCw } from 'lucide-react';
+import { ChevronDown, Cloud, Cpu, RefreshCw } from 'lucide-react';
 import { api, on } from '../../lib/api';
 import { t } from '../../lib/i18n';
 import { formatDate, formatDateTime, formatNumber, formatTime, relativeTime } from '../../lib/format';
-import { Badge, Button, Card, Field, Input, Spinner, cx, toastError } from '../../components/ui';
+import { Badge, Button, Card, CardHead, Field, Input, Spinner, cx, toastError, ExtLink } from '../../components/ui';
 import { ConnectCard, ConnectResult, type ConnectState } from '../../components/ConnectCard';
 import { freeStart } from '../cli-agents/runtime';
+import { OllamaInstallButton } from '../local-models/install';
 
 type Level = 'local' | 'no-store' | 'may-train';
 type Tools = 'tools' | 'text' | 'unknown';
@@ -69,15 +70,6 @@ const TOOLS: Record<Tools, string> = { tools: 'tools werken', text: 'alleen teks
 /** "14:05", or with the day when the reset is more than 20 hours away. */
 function when(ms: number): string {
   return ms - Date.now() > 20 * 3600_000 ? formatDateTime(ms, { weekday: 'short', hour: '2-digit', minute: '2-digit' }) : formatTime(ms);
-}
-
-function ExtLink({ href, children }: { href: string; children: React.ReactNode }) {
-  return (
-    <a className="inline-flex items-center gap-0.5 underline" href={href} target="_blank" rel="noreferrer">
-      {children}
-      <ExternalLink className="h-3 w-3 rtl-keep" aria-hidden />
-    </a>
-  );
 }
 
 /** The card state of a source that is on, from its last (free) check. */
@@ -154,14 +146,14 @@ export function FreeModelsSettings() {
   return (
     <div className="space-y-5">
       <p className="text-sm text-muted">
-        Is het model van een bot op, dan gaat TeamBot door op een gratis model dat je hier aanzet.{' '}
+        Is het model van een bot op, dan gaat TeamBot door op een gratis model dat je hier koppelt.{' '}
         <a className="font-semibold text-fg underline-offset-2 hover:underline" href="#/settings/engine-chain-doorschakelen">
           Doorschakelen instellen
         </a>
       </p>
       {v.engines.length > 0 && (
         <div className="space-y-2">
-          <h2 className="text-[15px] font-bold tracking-tight">Op deze computer</h2>
+          <CardHead icon={Cpu} tone="violet" title="Op deze computer" />
           <ul className="space-y-2" data-testid="free-engines">
             {v.engines.map((e) => (
               <EngineRow key={e.kind} s={e} more={more} onView={setV} reload={load} />
@@ -170,7 +162,7 @@ export function FreeModelsSettings() {
         </div>
       )}
       <div className="space-y-2">
-        <h2 className="text-[15px] font-bold tracking-tight">Online, met een gratis account</h2>
+        <CardHead icon={Cloud} tone="violet" title="Online, met een gratis account" />
         <ul className="space-y-2">
           {v.sources.map((s) => (
             <SourceRow key={s.kind} s={s} more={more} onView={setV} />
@@ -190,7 +182,7 @@ export function FreeModelsSettings() {
             <span className="text-xs text-muted">Gratis modellen worden hooguit één keer per dag getest.</span>
           </div>
           <ul className="space-y-1.5 text-xs leading-relaxed text-muted">
-            <li>Niets verlaat je pc tot je het hier aanzet.</li>
+            <li>Niets verlaat je pc tot je het hier koppelt.</li>
             <li>Eén account per aanbieder.</li>
             <li>De gratis modellen van OpenCode gebruikt TeamBot alleen via OpenCode zelf.</li>
             <li>Mistral, NVIDIA en Cerebras staan hier niet; koppel ze als gewone provider bij AI-diensten.</li>
@@ -204,8 +196,9 @@ export function FreeModelsSettings() {
 }
 
 /**
- * A free engine on this computer (OpenCode, Ollama …): always listed, with one clear action. Here → Aanzetten /
- * Uitzetten; not here yet → Installeren (OpenCode: TeamBot's own copy in one click) or the download page (Ollama).
+ * A free engine on this computer (OpenCode, Ollama …): always listed, with one action, in the same words as every row
+ * behind "AI toevoegen". Not here yet → Installeren (OpenCode: TeamBot's own copy; Ollama: its official installer,
+ * silently, then connected with a model and switched on); here → Koppelen; on → Testen. Uitzetten is under "Meer opties".
  */
 function EngineRow({ s, more, onView, reload }: { s: Source; more: boolean; onView(v: View): void; reload(): void }) {
   const [busy, setBusy] = useState(false);
@@ -242,17 +235,19 @@ function EngineRow({ s, more, onView, reload }: { s: Source; more: boolean; onVi
     }
   };
   const here = s.configured || !!setup?.installed;
+  const download = s.kind === 'ollama' && !here && !setup?.canInstall && !setup?.ownerOnly;
   let action: React.ReactNode = null;
   if (s.on)
+    // Looks again right away (the server checks the source at once; free).
     action = (
-      <Button size="sm" variant="ghost" loading={busy} onClick={() => put(false)}>
-        Uitzetten
+      <Button size="sm" loading={busy} onClick={() => put(true)}>
+        Testen
       </Button>
     );
   else if (here)
     action = (
       <Button size="sm" variant="primary" loading={busy} onClick={() => put(true)}>
-        Aanzetten
+        Koppelen
       </Button>
     );
   else if (setup?.canInstall)
@@ -261,17 +256,8 @@ function EngineRow({ s, more, onView, reload }: { s: Source; more: boolean; onVi
         Installeren
       </Button>
     );
-  else if (s.kind === 'ollama' && !setup?.ownerOnly)
-    action = (
-      <>
-        <a className="inline-flex h-8 items-center gap-1 rounded-lg bg-accent px-3 text-[13px] font-semibold text-accent-fg hover:opacity-90 coarse:h-11" href="https://ollama.com/download" target="_blank" rel="noreferrer">
-          Ollama downloaden <ExternalLink className="h-3.5 w-3.5 rtl-keep" aria-hidden />
-        </a>
-        <Button size="sm" onClick={reload}>
-          Opnieuw controleren
-        </Button>
-      </>
-    );
+  else if (download)
+    action = <OllamaInstallButton onDone={() => (reload(), void put(true))} />;
   const st = stateOf(s, busy);
   const label = s.on || busy ? st.label : here ? (s.configured ? 'Uit' : 'Staat op deze pc') : setup?.ownerOnly ? 'Alleen voor de eigenaar' : undefined;
   const line = installing
@@ -283,7 +269,7 @@ function EngineRow({ s, more, onView, reload }: { s: Source; more: boolean; onVi
         : s.kind === 'ollama'
           ? here
             ? 'Draait op je eigen computer, zonder limiet.'
-            : 'Installeer Ollama; daarna zet je het hier aan.'
+            : 'Nog niet op deze pc. Installeren zet Ollama klaar, met een model dat hier goed draait.'
           : 'Gratis; draait op je eigen computer.';
   return (
     <li data-testid={`free-engine-${s.kind}`}>
@@ -307,12 +293,32 @@ function EngineRow({ s, more, onView, reload }: { s: Source; more: boolean; onVi
           <>
             <p className="text-xs leading-relaxed text-muted">{s.limitNote}</p>
             {!s.configured && setup?.otherApp && <p className="text-xs text-muted">{t('Nu alleen gevonden in {0}; TeamBot installeert een eigen kopie.', setup.otherApp)}</p>}
-            {!s.configured && setup?.ownerOnly && <p className="text-xs text-muted">Dit draait op de eigen login van de computer waarop TeamBot staat. Alleen de eigenaar kan het aanzetten.</p>}
+            {!s.configured && setup?.ownerOnly && <p className="text-xs text-muted">Dit draait op de eigen login van de computer waarop TeamBot staat. Alleen de eigenaar kan het koppelen.</p>}
             {s.configured && <SourceDetails s={s} onNewKey={() => {}} />}
+            <SourceMore on={s.on} busy={busy} onOff={() => put(false)} onLook={download ? reload : undefined} />
           </>
         }
       />
     </li>
+  );
+}
+
+/** Under "Meer opties" of a row: switch a source that is on off again, and look again after installing it yourself. */
+function SourceMore({ on, busy, onOff, onLook }: { on: boolean; busy: boolean; onOff(): void; onLook?: () => void }) {
+  if (!on && !onLook) return null;
+  return (
+    <div className="flex flex-wrap gap-1.5">
+      {on && (
+        <Button size="sm" variant="ghost" loading={busy} onClick={onOff}>
+          Uitzetten
+        </Button>
+      )}
+      {onLook && (
+        <Button size="sm" variant="ghost" onClick={onLook}>
+          Opnieuw zoeken
+        </Button>
+      )}
+    </div>
   );
 }
 
@@ -359,14 +365,15 @@ function SourceRow({ s, more, onView }: { s: Source; more: boolean; onView(v: Vi
         state={st.state}
         stateLabel={st.label}
         action={
+          // On: look again (free); off: Koppelen (a source that needs a key asks it right under the card).
           s.on ? (
-            <Button size="sm" variant="ghost" loading={busy} onClick={() => put({ on: false })}>
-              Uitzetten
+            <Button size="sm" loading={busy} onClick={() => put({ on: true })}>
+              Testen
             </Button>
           ) : (
             !missingKey && (
               <Button size="sm" variant="primary" loading={busy} onClick={() => put({ on: true })}>
-                Aanzetten
+                Koppelen
               </Button>
             )
           )
@@ -377,6 +384,7 @@ function SourceRow({ s, more, onView }: { s: Source; more: boolean; onView(v: Vi
           <>
             <p className="text-xs leading-relaxed text-muted">{s.limitNote}</p>
             <SourceDetails s={s} onNewKey={() => setNewKey(true)} />
+            <SourceMore on={s.on} busy={busy} onOff={() => put({ on: false })} />
           </>
         }
       >

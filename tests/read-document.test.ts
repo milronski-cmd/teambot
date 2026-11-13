@@ -7,6 +7,7 @@ import AdmZip from 'adm-zip';
 import { startTestApp, type TestApp } from './helpers.js';
 import { docxText, documentText, pageList, readDocumentTool } from '../server/modules/folders/documents.js';
 import { toolLabel } from '../shared/toolLabels.js';
+import { fillWords } from '../shared/i18n-core.js';
 
 // A-39: reading a pdf in the bot's own folders is one read step, without approvals and without the terminal.
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -94,7 +95,7 @@ test('OpenCode-like engine reads a pdf attachment with read_document: no approva
     const L = logs();
     const prompt = L.filter((l) => l.method === 'session/prompt').at(-1)?.params?.text || '';
     assert.match(prompt, /uploads[\\/][^\s]*offerte-zonnepanelen\.pdf .*lees de tekst met de TeamBot-tool read_document/, 'the prompt names the reader');
-    assert.match(prompt, /read_document: één leesstap zonder toestemming/, 'the tools note says it needs no approval');
+    assert.match(prompt, /read_document: één leesstap zonder toestemming, geen script of terminalopdracht/, 'and says it needs no approval (with the attachment, not in the instructions of every turn)');
     const run = L.find((l) => l.pdf)?.pdf;
     assert.ok(run, 'scenario ran');
     assert.deepEqual(run.permissions, [{ kind: 'mcp', option: 'a' }], 'one step through TeamBot, no shell request');
@@ -145,7 +146,7 @@ test('without read_document (bot without file tools) the same engine falls back 
 test('the step reads "Las een document", and its detail names the attachment without its short id', () => {
   assert.equal(toolLabel({ name: 'read_document' }, false), 'Las een document');
   assert.equal(toolLabel({ name: 'read_document' }, true), 'Leest een document');
-  assert.equal(readDocumentTool.summarize!({ path: 'uploads\\ac62bc-offerte-zonnepanelen.pdf' }), 'Document lezen: offerte-zonnepanelen.pdf');
-  assert.equal(readDocumentTool.summarize!({ path: 'notities/uploads/ac62bc-plan.docx' }), 'Document lezen: notities/plan.docx');
-  assert.equal(readDocumentTool.summarize!({ path: 'rapport.pdf' }), 'Document lezen: rapport.pdf');
+  assert.equal(fillWords(readDocumentTool.summarize!({ path: 'uploads\\ac62bc-offerte-zonnepanelen.pdf' })), 'Document lezen: offerte-zonnepanelen.pdf');
+  assert.equal(fillWords(readDocumentTool.summarize!({ path: 'notities/uploads/ac62bc-plan.docx' })), 'Document lezen: notities/plan.docx');
+  assert.equal(fillWords(readDocumentTool.summarize!({ path: 'rapport.pdf' })), 'Document lezen: rapport.pdf');
 });

@@ -63,26 +63,77 @@ test('Word, Excel and PowerPoint keep their structure (mammoth, read-excel-file,
   assert.equal(documentKind(fs.readFileSync(fx('scan.pdf')), 'x'), 'pdf');
 });
 
-test('a scan without language data: honest about what was not read, nothing downloaded by itself', async () => {
+test('a scan before the language data is there: fetched by itself on first use, then the same call reads it', async (t) => {
+  // The real language data, served from this computer (the same files and hashes as the internet ones).
+  const cache = await realEngine();
+  if (!cache) return t.skip('language data could not be downloaded (offline?)');
+  let down = true;
+  const hits: string[] = [];
+  const srv = http.createServer((req, res) => {
+    hits.push(req.url || '');
+    const f = path.join(cache.dir, path.basename(req.url || ''));
+    if (down || !fs.existsSync(f)) return void res.writeHead(503).end();
+    res.writeHead(200, { 'content-length': fs.statSync(f).size });
+    fs.createReadStream(f).pipe(res);
+  });
+  await new Promise<void>((r) => srv.listen(0, '127.0.0.1', () => r()));
+  const port = (srv.address() as any).port;
+  setOcrForTests({ langs: OCR_LANGS.map((l) => ({ ...l, url: `http://127.0.0.1:${port}/${l.id}.traineddata` })) });
   const before = ocrEngine();
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'tb-ocr-none-'));
-  setOcrEngine(new OcrEngine(dir));
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'tb-ocr-first-'));
+  const e = new OcrEngine(dir);
+  setOcrEngine(e);
   try {
+    // A web page's pdf never starts a download (web_fetch reads without OCR).
+    const { pdfText } = await import('../server/modules/folders/documents.js');
+    assert.deepEqual((await pdfText(new Uint8Array(fs.readFileSync(fx('scan.pdf'))), undefined, { ocr: false })).unread, [1]);
+    assert.equal(hits.length, 0);
+
+    // No internet for a moment: an honest note that says it tries again, no dead end, no screen to visit.
     const d = await readDocument(fx('scan.pdf'));
     assert.match(d.text, new RegExp(`--- pagina 1 ---\\n${NO_TEXT_PAGE.replace(/[()]/g, '\\$&')}`));
     assert.deepEqual(d.pdf?.unread, [1]);
-    assert.match(d.notes.join(' '), /Pagina 1 is een scan zonder tekst\. Scans lezen kan nadat de eigenaar de taaldata heeft gedownload/);
-    await assert.rejects(readDocument(fx('scan.png')), /Dit is een afbeelding\. Scans lezen kan nadat/);
-    await assert.rejects(documentSourceText(fx('scan.pdf')), /geen leesbare tekst \(waarschijnlijk een scan\)\. Scans lezen kan nadat/);
-    assert.equal(await documentSourceText(fx('scan.png')), null, 'a picture is kept as a source without text, as before');
-    assert.equal(fs.existsSync(path.join(dir, 'models')), false, 'no download without a yes');
+    const note = d.notes.join(' ');
+    assert.match(note, /Pagina 1 is een scan zonder tekst\. De taaldata voor tekstherkenning \(± 10 MB\) kon nu niet worden opgehaald \(HTTP 503\); bij de volgende scan probeert TeamBot het opnieuw\./);
+    assert.doesNotMatch(note, /eigenaar|Bestanden ›|›/, 'nothing to do on another page first');
+    await assert.rejects(readDocument(fx('scan.png')), /Dit is een afbeelding\. De taaldata voor tekstherkenning .* opnieuw\./);
+    await assert.rejects(documentSourceText(fx('scan.pdf')), /geen leesbare tekst \(waarschijnlijk een scan\)\. De taaldata voor tekstherkenning/);
+    // A picture as a dossier source tries the same fetch; without it the source is kept without text.
+    const tried = hits.length;
+    assert.equal(await documentSourceText(fx('scan.png'), 'brief.png'), null);
+    assert.ok(hits.length > tried, 'a picture for a dossier tried to fetch the language data too');
+
+    // Back online: the very same calls fetch the data (checked against its hash) and read the scan; first a picture
+    // added to a dossier (memory/dossiers.ts), as read_document does.
+    down = false;
+    assert.match((await documentSourceText(fx('scan.png'), 'brief.png')) || '', /Totaal te betalen: 245 euro/);
+    assert.equal(e.status().state, 'ready');
+    const img = await documentText(fx('scan.png'));
+    assert.match(img, /Totaal te betalen: 245 euro/);
+    assert.match(img, /Gelezen met tekstherkenning \(OCR\)/);
+    assert.equal(e.status().state, 'ready');
+    assert.deepEqual(e.presentLangs().sort(), ['eng', 'nld']);
+    const pdf = await readDocument(fx('scan.pdf'));
+    assert.deepEqual(pdf.pdf?.ocr, [1]);
+    assert.match(pdf.text, /Factuur 2026-118/);
   } finally {
     setOcrEngine(before);
-    fs.rmSync(dir, { recursive: true, force: true });
+    setOcrForTests({ langs: null });
+    await e.release();
+    srv.close();
+    fs.rmSync(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
   }
 });
 
-test('language data: downloaded only on request, every file checked against its hash', async () => {
+test('"scans cannot be read in this installation" is one text (ocr.ts), also behind the download button', () => {
+  const walk = (dir: string): string[] => fs.readdirSync(dir, { withFileTypes: true }).flatMap((d) => (d.isDirectory() ? walk(path.join(dir, d.name)) : /\.ts$/.test(d.name) ? [path.join(dir, d.name)] : []));
+  const root = path.join(import.meta.dirname, '..');
+  const said = walk(path.join(root, 'server')).filter((f) => fs.readFileSync(f, 'utf8').includes('kan niet in deze installatie: het onderdeel voor tekstherkenning'));
+  assert.deepEqual(said.map((f) => path.relative(root, f).replace(/\\/g, '/')), ['server/modules/folders/ocr.ts']);
+  assert.match(fs.readFileSync(path.join(root, 'server', 'modules', 'folders', 'index.ts'), 'utf8'), /state === 'no-runtime'\) throw bad\(ocr\.problem\(\)\)/);
+});
+
+test('language data: every file checked against its hash before use', async () => {
   const files: Record<string, Buffer> = { '/nld.traineddata': Buffer.from('nederlands'.repeat(50)), '/eng.traineddata': Buffer.from('engels'.repeat(40)) };
   let bad = false;
   const srv = http.createServer((req, res) => {

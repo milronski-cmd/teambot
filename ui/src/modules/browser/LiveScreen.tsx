@@ -1,7 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { KeyRound } from 'lucide-react';
 import { api, authUrl } from '../../lib/api';
-import { cx, Spinner, toastError } from '../../components/ui';
+import { useApp } from '../../lib/store';
+import { cx, Spinner, toastError, useAsync } from '../../components/ui';
+import { computers, patchStatus, useLive } from './api';
 
 /** Keys relayed to the bot's browser while you have control (the server allows exactly these). */
 const KEYMAP: Record<string, string> = {
@@ -85,6 +87,32 @@ export function useScreenInput(agentId: string, active: boolean) {
     }, 120);
   };
   return { send, onClick, onKeyDown, onWheel };
+}
+
+/**
+ * A bot's computer as a panel shows and steers it (the browser dock and the large live view): its status, live; who
+ * holds it; your clicks and typing while you hold it, with the heartbeat that keeps your hold; and `post` for an action
+ * on it, after which the status is read again.
+ */
+export function useComputerControl(agentId: string) {
+  const me = useApp((s) => s.me);
+  const live = useLive(() => computers.get(agentId), ['computer.status', 'computer.config'], [agentId], patchStatus(agentId));
+  const { busy, run } = useAsync();
+  const status = live.data?.status;
+  const controller = status?.controller || null;
+  const iControl = !!(controller && controller.kind === 'user' && me && controller.userId === me.id);
+  const sticky = !!controller?.sticky;
+  // Whoever holds the browser can click and type, also while the bot is paused: that is exactly how you log in
+  // when the bot asks for it (browser_request_login pauses the bot and hands you the browser).
+  const scr = useScreenInput(agentId, iControl);
+  // Keep the human lease alive while you hold the computer from this panel.
+  useEffect(() => {
+    if (!iControl || sticky) return; // a pause has no heartbeat: it lasts until "Ga verder"
+    const t = setInterval(() => api.post(`/computers/${agentId}/heartbeat`, {}).catch(() => {}), 15_000);
+    return () => clearInterval(t);
+  }, [iControl, sticky, agentId]);
+  const post = (p: string, body: any = {}, ok?: string) => run(() => api.post(`/computers/${agentId}${p}`, body), ok).then((r) => (live.reload(), r));
+  return { ...live, me, status, controller, iControl, sticky, scr, busy, run, post };
 }
 
 /**

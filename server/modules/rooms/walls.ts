@@ -2,6 +2,7 @@ import type { Agent } from '../../core/types.js';
 import { bad } from '../../core/http.js';
 import type { RoomService } from './service.js';
 import type { BotPerms, Member, Room } from './types.js';
+import { PLACE } from '../../../shared/places.js';
 
 /**
  * Team walls for groups (0.4, package B2). A group belongs to one team (`rooms.workspace_id`, module teams):
@@ -95,7 +96,7 @@ export function joinRefusal(s: RoomService, teamId: string | null, agentId: stri
   const r = svc.access(agentId, teamId) as Reach;
   if (r === 'home') return null;
   const n = names(s, teamId, agentId);
-  if (r === 'none') return `${n.bot} hoort bij team “${n.home}” en heeft geen toegang tot team “${n.team}”, waar deze groep bij hoort. Geef ${n.bot} eerst meekijken of aansturen voor “${n.team}” (Instellingen › Teams).`;
+  if (r === 'none') return `${n.bot} hoort bij team “${n.home}” en heeft geen toegang tot team “${n.team}”, waar deze groep bij hoort. Geef ${n.bot} eerst meekijken of aansturen voor “${n.team}” (${PLACE.teams}).`;
   if (!crossTeam) return `${n.bot} hoort bij team “${n.home}”, en deze groep hoort bij team “${n.team}”. Zet eerst “Bots van andere teams toestaan” aan voor deze groep.`;
   return null;
 }
@@ -107,7 +108,7 @@ export function memberRefusal(s: RoomService, room: Room, agentId: string): stri
   const r = reachIn(s, room, agentId);
   if (r === 'home') return null;
   const n = names(s, team, agentId);
-  if (r === 'none') return `${n.bot} hoort bij team “${n.home}” en heeft geen toegang (meer) tot team “${n.team}”, waar deze groep bij hoort. ${n.bot} doet hier niet mee tot de eigenaar weer toegang geeft (Instellingen › Teams).`;
+  if (r === 'none') return `${n.bot} hoort bij team “${n.home}” en heeft geen toegang (meer) tot team “${n.team}”, waar deze groep bij hoort. ${n.bot} doet hier niet mee tot de eigenaar weer toegang geeft (${PLACE.teams}).`;
   if (!crossTeamOn(room)) return `${n.bot} hoort bij team “${n.home}”, en deze groep staat geen bots van andere teams toe. Zet “Bots van andere teams toestaan” aan om ${n.bot} mee te laten doen.`;
   return null;
 }

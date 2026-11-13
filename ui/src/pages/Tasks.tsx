@@ -12,11 +12,12 @@ import { teamApi, teamTaskRef, useTeamChanged, useTeamPick } from '../modules/te
 import { BotName, Chips, Fields, Linkified, SearchBox, When, dateLabel } from '../modules/teamdata/parts';
 import { type BoardTask, type ColumnId, type Place, COLUMNS, PHONE_ORDER, TEAM_STATUS_FOR, byPlace, matches, mergeTasks, timeValue } from './tasks/model';
 import { CheckBadge, TaskQuality } from '../modules/quality/parts';
-import type { QualityView } from '../modules/quality/api';
+import type { QualityView } from '../../../shared/quality.js';
 import { useTeamView } from '../modules/teams/scope';
 import { CostEstimate } from '../modules/usage/Estimate';
 import { TeamFilterNote } from '../modules/teams/FilterNote';
 import { hiddenTaskKeys } from '../shell/teamFilter';
+import { tText } from '../lib/format';
 
 /** The task a link asks to open (`#/tasks?open=b:<id>` or `t:<id>`, as Ctrl+K gives), else null. */
 function openParam(): string | null {
@@ -144,7 +145,7 @@ function StatusSelect({ t, onMoved, className }: { t: BoardTask; onMoved(): void
       className={className}
       disabled={busy}
       value={t.column === 'stopped' ? '' : t.column}
-      aria-label={`Status van ${t.title}`}
+      aria-label={tText('Status van {0}', t.title)}
       onChange={async (e) => {
         const to = e.target.value as ColumnId;
         if (!to) return;

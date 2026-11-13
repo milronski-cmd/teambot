@@ -1,10 +1,10 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import type { Agent, ChatMsg, ContentPart, Ctx, Message, Thread, ToolSpec } from '../core/types.js';
+import type { Agent, ChatMsg, ContentPart, Ctx, Message, Thread, ToolCall, ToolSpec } from '../core/types.js';
 import { carryBlock, pruneToolImages, saverSettings, shortenItems, type HistEdit, type HistItem, type HistoryInfo, type SaverSettings } from './context-budget.js';
 import { shortKey } from '../tools/selection.js';
 import { estimateTokens } from '../core/tokens.js';
-import { attachmentRows, ensureInWorkspace, isVideo, preparedNote } from './attachments.js';
+import { attachmentRows, ensureInWorkspace, isImage, isVideo, preparedNote } from './attachments.js';
 
 export { attachmentRows, ensureInWorkspace } from './attachments.js';
 
@@ -67,6 +67,9 @@ function userContent(ctx: Ctx, agent: Agent, m: Message, prefix: string, vision:
       notes.push(preparedNote(agent, a, local)!);
     } else if (isVideo(a)) {
       notes.push(`[bijlage: ${a.name} (${a.mime}, ${Math.round(a.size / 1024)} kB) — een video, staat in je werkmap als ${rel}. Je kunt het beeld niet bekijken en het geluid is niet uitgeschreven; zeg dat eerlijk als de vraag over de inhoud gaat.]`);
+    } else if (isImage(a)) {
+      // Not sent as an image (a model that cannot look at images, too large, or viewing switched off for this bot).
+      notes.push(`[bijlage: ${a.name} (${a.mime}, ${Math.round(a.size / 1024)} kB) — een afbeelding, staat in je werkmap als ${rel}. Je kunt het beeld niet bekijken; staat er tekst op, lees die met read_document. Zeg eerlijk dat je het niet ziet als de vraag over wat erop staat gaat.]`);
     } else {
       const doc = /pdf|wordprocessingml|spreadsheetml|presentationml/.test(a.mime) || /\.(pdf|docx|xlsx|pptx)$/i.test(a.name);
       notes.push(`[bijlage: ${a.name} (${a.mime}, ${Math.round(a.size / 1024)} kB) — staat in je werkmap als ${rel}${doc ? '; lees de tekst met read_document' : ''}]`);
@@ -115,6 +118,14 @@ function stableArgs(v: any): string {
     .sort()
     .map((k) => `${JSON.stringify(k)}:${stableArgs(v[k])}`)
     .join(',')}}`;
+}
+
+/**
+ * A stored tool call as the model wrote it: a call it made through `tools_call` (stored as the tool it names, with
+ * `via`) goes back as that `tools_call`, so the model reads its own steps and every call names a tool in its list.
+ */
+function wireCall(c: ToolCall): { id: string; name: string; args: any } {
+  return c.via ? { id: c.id, name: c.via, args: { name: c.name, args: c.args } } : { id: c.id, name: c.name, args: c.args };
 }
 
 /**
@@ -185,7 +196,7 @@ export function buildHistory(ctx: Ctx, agent: Agent, thread: Thread, opts: { bud
     } else if (m.role === 'assistant') {
       if (m.author_id === agent.id) {
         if (saver) for (const c of m.parts?.toolCalls || []) calls.set(c.id, `${c.name}:${stableArgs(c.args)}`);
-        raw.push({ ...item({ role: 'assistant', content: m.content || '', toolCalls: m.parts?.toolCalls?.map((c) => ({ id: c.id, name: c.name, args: c.args })), raw: m.parts?.raw }, m, 'assistant'), key: String(m.parts?.contextStats?.key || '') });
+        raw.push({ ...item({ role: 'assistant', content: m.content || '', toolCalls: m.parts?.toolCalls?.map(wireCall), raw: m.parts?.raw }, m, 'assistant'), key: String(m.parts?.contextStats?.key || '') });
       } else if (m.content) {
         raw.push(item({ role: 'user', content: `[${m.author_name || 'Andere bot'}]: ${m.content}` }, m, 'note'));
       }
@@ -197,7 +208,7 @@ export function buildHistory(ctx: Ctx, agent: Agent, thread: Thread, opts: { bud
             {
               role: 'tool',
               toolCallId: m.parts.toolResult.toolCallId,
-              toolName: m.parts.toolResult.name,
+              toolName: m.parts.toolResult.via || m.parts.toolResult.name,
               content: imgs.length ? [{ type: 'text', text: m.content || '(leeg)' }, ...imgs] : m.content || '(leeg)',
               isError: m.parts.toolResult.isError,
             },

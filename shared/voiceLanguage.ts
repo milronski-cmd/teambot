@@ -147,9 +147,6 @@ export function voicesFor<T extends SpeechModelInfo>(lang: string, models: reado
   return [...v.filter((m) => m.recommended), ...v.filter((m) => !m.recommended)];
 }
 
-/** The recommended local voice for a language (undefined: no free local voice for it yet). */
-export const recommendedVoice = <T extends SpeechModelInfo>(lang: string, models: readonly T[]): T | undefined => voicesFor(lang, models)[0];
-
 /** Pick for an automatic choice: the best one that is already installed, else the best one (to download). */
 export function preferInstalled<T extends SpeechModelInfo>(list: readonly T[], installed: (id: string) => boolean): T | undefined {
   return list.find((m) => installed(m.id)) || list[0];

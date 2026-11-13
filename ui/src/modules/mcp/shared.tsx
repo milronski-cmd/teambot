@@ -100,6 +100,8 @@ export interface Conn {
   /** Installed from the official MCP Registry (name, version, install option; newest version known from the cache). */
   registry?: { name: string; version: string; option: string; kind: string; identifier: string | null; installedAt: string; publishedAt: string | null; latest: string | null; updateAvailable: boolean } | null;
   dataDir?: string;
+  /** npx/uvx is not on this computer yet: "Installeren" gets TeamBot's own copy. */
+  needsRuntime?: 'node' | 'uv' | null;
   tools?: ToolView[];
   stderr?: string[];
   bound?: boolean;
@@ -160,6 +162,10 @@ export interface CatalogEntry {
   available: boolean;
   unavailableReason?: string;
   commandFound?: boolean;
+  /** npx/uvx: the program "Installeren" gets when it is not on this computer. */
+  runtime?: 'node' | 'uv';
+  /** What one click does: connect (nothing needed), login (only the service's login), form (a key or more first). */
+  oneClick?: 'connect' | 'login' | 'form';
   /** Only shown when searched for: the built-in Google connection does the same in one login. */
   advanced?: boolean;
   /** Built-in templates: TeamBot (trusted); package templates: the publisher signature. */

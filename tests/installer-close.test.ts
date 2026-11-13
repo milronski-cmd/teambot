@@ -34,8 +34,9 @@ test('installer: a running TeamBot and the helpers it started are ended, by fold
   const exe = path.join(inst, 'TeamBot.exe');
   fs.copyFileSync(process.execPath, exe);
   // The stand-in TeamBot: starts a helper (a system program, outside the folder) that inherits the install folder as
-  // its working folder, like the dictation PowerShell did, and keeps running.
-  const app = path.join(tmp, 'app.js');
+  // its working folder, like the dictation PowerShell did, and keeps running. A .cjs file: with the temporary folder
+  // inside the repo (TMP under .data/), a .js file would be read as an ES module by the repo's package.json.
+  const app = path.join(tmp, 'app.cjs');
   const helperPidFile = path.join(tmp, 'helper.pid');
   fs.writeFileSync(
     app,

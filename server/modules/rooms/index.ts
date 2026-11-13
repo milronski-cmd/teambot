@@ -1,11 +1,12 @@
-import type { Ctx, Module } from '../../core/types.js';
+import type { ActivityItem, Ctx, Module, Run, ToolDef } from '../../core/types.js';
 import { roomMigrations } from './schema.js';
+import { engineStep, pruneProgress, toolDone } from './progress.js';
 import { RoomService } from './service.js';
 import { Orchestrator } from './orchestration.js';
 import { Board } from './board.js';
 import { roomTools, teamTools } from './tools.js';
 import { roomRoutes } from './routes.js';
-import { systemPromptFor, turnContextFor } from './prompt.js';
+import { routeReminder, systemPromptFor, turnContextFor } from './prompt.js';
 import { installTeam, normalizeTeam } from './packages.js';
 import { backfillRooms, memberRefusal, roomTeam } from './walls.js';
 
@@ -25,6 +26,7 @@ const mod: Module = {
     const s = new RoomService(ctx);
     s.orch = new Orchestrator(s);
     const board = new Board(s);
+    s.board = board;
     instances.set(ctx, s);
 
     ctx.tools.registerGroup({ id: 'team', label: 'Team & samenwerking', description: 'Werk delegeren, overdragen, andere bots berichten, takenbord en groepsbestanden', defaultOn: true });
@@ -66,6 +68,7 @@ const mod: Module = {
     });
     ctx.hooks.systemPrompt.push(({ agent, thread }) => systemPromptFor(s, board, agent, thread));
     ctx.hooks.turnContext.push(({ agent, thread, input }) => turnContextFor(s, agent, thread, input));
+    ctx.hooks.turnContext.push(({ agent, thread, input }) => routeReminder(s, agent, thread, input));
     ctx.hooks.agentDeleted.push(({ agentId }) => {
       for (const r of ctx.store.all<any>("SELECT room_id FROM room_members WHERE kind = 'agent' AND ref_id = ?", agentId)) {
         const room = s.room(r.room_id);
@@ -78,9 +81,15 @@ const mod: Module = {
     });
 
     roomRoutes(ctx, s, board);
+    // "Alles stoppen": bot messages that still wait for their recipient are stopped too (orchestration.ts).
+    (ctx.hooks.stopAll ??= []).push(({ userId }) => void s.orch.stopQueued(userId));
 
     ctx.services.rooms = {
       roomForThread: (t: any) => s.roomForThread(t),
+      /** A TeamBot tool ran well in this run (tools/execute.ts): progress of its chain when it did more than read. */
+      toolDone: (run: Run, tool: ToolDef, risk: string) => toolDone(ctx, run, tool, risk),
+      /** A step of a CLI engine's own tools (agent/cli-loop.ts): progress of its chain when it wrote, ran or used an app. */
+      engineStep: (run: Run, item: ActivityItem) => engineStep(ctx, run, item),
       /** The team (module teams) a group belongs to, or null. */
       teamOf: (roomId: string) => {
         const r = s.room(roomId);
@@ -96,6 +105,14 @@ const mod: Module = {
         const r = s.room(roomId);
         return r ? s.ledger(r) : null;
       },
+      /** Is a hand-over of this board task to this bot still going (its turn, or its outcome on the way to the giver)? */
+      handedOver: (taskId: string, agentId: string) => s.orch.handedOver(taskId, agentId),
+      /** How many pieces of work a bot gave to colleagues in this turn of its own were stopped by the owner with it. */
+      stoppedGiven: (runId: string) => s.orch.stoppedGiven(runId),
+      /** Stop work between bots whose engine process is gone (service.ts watchDead); returns how many turns. */
+      watchDead: (at?: number) => s.watchDead(at),
+      /** Deliver every result that still waits for the bot that asked for it; returns how many turns were started. */
+      flushPending: (roomId?: string) => s.orch.flushPending(roomId),
       stopRoom: (roomId: string, reason: string) => {
         const r = s.room(roomId);
         return r ? s.stopRoom(r, null, reason) : 0;
@@ -160,6 +177,7 @@ const mod: Module = {
     }
     s.subscribe();
     s.reconcile();
+    pruneProgress(ctx);
   },
   stop(ctx: Ctx) {
     instances.get(ctx)?.unsubscribe();

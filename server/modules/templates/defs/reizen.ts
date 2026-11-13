@@ -6,10 +6,10 @@ export default {
   status: 'new',
   category: 'prive',
   name: 'Reizen',
-  description: 'Van idee tot paklijst, met bestemmingen naast elkaar, een programma per dag en de reisdocumenten op orde. Boeken en betalen doe je zelf.',
+  description: 'Van idee tot paklijst, met bestemmingen naast elkaar, een programma per dag en de reisdocumenten op orde. Boeken en betalen gaat altijd eerst langs jou.',
   goal: 'Een goed voorbereide reis: een bestemming die past, een haalbaar programma en geen vergeten papieren.',
   rules: [
-    'De bots boeken en betalen nooit. Prijzen zijn een indicatie, met datum en bron.',
+    'De bots boeken en betalen pas na akkoord van de eigenaar. Prijzen zijn een indicatie, met datum en bron.',
     'Reisadvies, visum en paspoort altijd controleren bij de officiële bron, zoals Nederland Wereldwijd.',
     'Paspoortnummers en andere persoonsgegevens blijven binnen dit team.',
   ],
@@ -40,7 +40,7 @@ export default {
         'Je zet voorstellen naast elkaar, zodat de eigenaar makkelijk kan kiezen.',
       ],
       may: ['Zoeken op internet en reisinformatie lezen.', 'Plannen en lijsten in de teammap zetten.'],
-      mayNot: ['Boeken, reserveren of betalen.', 'Een prijs of beschikbaarheid brengen alsof die zeker is.'],
+      mayNot: ['Boeken of betalen zonder akkoord van de eigenaar.', 'Een prijs of beschikbaarheid brengen alsof die zeker is.'],
       askWhen: ['een keuze geld kost of na het boeken vastligt', 'het reisadvies voor een land is veranderd', 'wensen in het profiel elkaar tegenspreken'],
       doneWhen: [
         { task: 'Reisvoorstel', done: 'drie opties naast elkaar met reistijd, prijsindicatie met datum en bron, en voor- en nadelen' },

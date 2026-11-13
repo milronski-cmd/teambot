@@ -146,14 +146,15 @@ test('hermes: preview → import → again → undo; Hermes untouched, keys neve
     assert.match(hermes.instructions, /persoonlijke assistent van Sam/);
     assert.equal(hermes.model, 'anthropic/claude-opus-4.7');
     assert.equal(hermes.provider_id, null, 'OpenRouter needs its key again');
-    assert.equal(hermes.access_mode, 'ask');
+    assert.equal(hermes.access_mode, 'full', 'the start of every new bot of the owner (agent/new-bot.ts)');
     assert.ok(writer.provider_id, 'LM Studio on this computer is linked');
     const lib = await t.api('GET', '/skills');
     const names = (Array.isArray(lib) ? lib : lib.skills).map((s: any) => s.name).sort();
     assert.deepEqual(names, ['blog-stijl', 'factuur-check']);
     const libId = (n: string) => (Array.isArray(lib) ? lib : lib.skills).find((s: any) => s.name === n).id;
-    assert.deepEqual(t.app.ctx.store.agent(hermes.id)!.skills, [libId('factuur-check')]);
-    assert.deepEqual(t.app.ctx.store.agent(writer.id)!.skills, [libId('blog-stijl')]);
+    // Every bot has the active skills (skills/defaults.ts): its own first, then the other's.
+    assert.deepEqual(t.app.ctx.store.agent(hermes.id)!.skills, [libId('factuur-check'), libId('blog-stijl')]);
+    assert.deepEqual(t.app.ctx.store.agent(writer.id)!.skills, [libId('blog-stijl'), libId('factuur-check')]);
     const routines = t.app.ctx.services.routines.list(hermes.user_id);
     assert.equal(routines.length, 4);
     assert.ok(routines.every((x: any) => x.status === 'paused'), 'every routine starts switched off');

@@ -9,6 +9,7 @@ import { interfaces } from '../mobile/reach.js';
 import { SiteError, copySnapshot, fmtBytes, scanFolder, skippedText, type ScanResult } from './snapshot.js';
 import { SitesServer, type Reach, type ServedSite } from './server.js';
 import { nlCount } from '../../core/i18n.js';
+import { fillWords, words, type Words } from '../../../shared/i18n-core.js';
 
 /**
  * Websites: a bot publishes a folder from its work folder as a small static site with its own unguessable link,
@@ -57,12 +58,14 @@ const cleanDays = (v: unknown): number => {
   return n > 0 ? Math.min(MAX_DAYS, n) : 0;
 };
 const normPath = (p: string) => (process.platform === 'win32' ? path.resolve(p).toLowerCase() : path.resolve(p));
-const daysText = (d: number) => (d === 1 ? 'verloopt na 1 dag' : d ? `verloopt na ${d} dagen` : 'verloopt niet');
+const daysText = (d: number) => (d === 1 ? words('verloopt na 1 dag') : d ? words('verloopt na {0} dagen', d) : words('verloopt niet'));
 
-export function summarizePublish(a: any): string {
+/** The publish step and approval card: TeamBot's words with the site's title (or folder) as written. */
+export function summarizePublish(a: any): Words {
   const reach = cleanReach(a?.reach);
   const days = cleanDays(a?.expires_days);
-  return `Website publiceren: ${str(a?.title, 80) || str(a?.path, 120) || 'werkmap'} · ${REACH_LABEL[reach].toLowerCase()} · ${daysText(days)}`;
+  const tpl = { local: 'Website publiceren: {0} · alleen deze computer · {1}', lan: 'Website publiceren: {0} · je netwerk · {1}', tailnet: 'Website publiceren: {0} · je tailnet · {1}' }[reach];
+  return words(tpl, str(a?.title, 80) || str(a?.path, 120) || words('werkmap'), daysText(days));
 }
 
 export class SiteService {
@@ -368,7 +371,7 @@ function botTools(svc: SiteService): ToolDef[] {
         if (!t.approved) {
           // the access mode let this through without a person (e.g. "Volledige toegang" that may publish): publishing still asks
           const r = await t.ctx.broker
-            .request({ userId: t.userId, agent: t.agent, thread: t.thread, run: t.run, kind: 'tool', tool: 'site_publish', input: a ?? {}, summary: summarizePublish(a), risk: 'danger', signal: t.signal })
+            .request({ userId: t.userId, agent: t.agent, thread: t.thread, run: t.run, kind: 'tool', tool: 'site_publish', input: a ?? {}, summary: fillWords(summarizePublish(a)), risk: 'danger', signal: t.signal })
             .catch(() => ({ approved: false }));
           if (!r.approved) return { text: 'De eigenaar heeft het publiceren niet goedgekeurd.', isError: true };
         }
@@ -382,7 +385,8 @@ function botTools(svc: SiteService): ToolDef[] {
             `Link: ${urls[0].url}`,
             urls.length > 1 ? `Op de computer van de eigenaar zelf: ${urls[urls.length - 1].url}` : '',
             `Bereikbaar: ${REACH_TEXT[reach]} Niet op het openbare internet.`,
-            `Verloopt: ${site.expires_days ? `over ${site.expires_days} ${site.expires_days === 1 ? 'dag' : 'dagen'}` : 'niet'}.`,
+            // One whole sentence per form, never "dag"/"dagen" as a value.
+            !site.expires_days ? 'Verloopt: niet.' : site.expires_days === 1 ? 'Verloopt: over 1 dag.' : `Verloopt: over ${site.expires_days} dagen.`,
             skipped ? `Niet meegenomen: ${skipped}.` : '',
             'Geef de link aan de gebruiker. Wijzigingen in de map komen pas online na opnieuw publiceren.',
           ]
@@ -399,7 +403,7 @@ function botTools(svc: SiteService): ToolDef[] {
       risk: 'read',
       description: 'Toon de websites die jij gepubliceerd hebt, met status en link.',
       parameters: { type: 'object', properties: {} },
-      summarize: () => 'Gepubliceerde websites bekijken',
+      summarize: () => words('Gepubliceerde websites bekijken'),
       async run(_a, t) {
         const mine = svc.list(t.userId).filter((s) => s.agent_id === t.agent.id);
         if (!mine.length) return 'Je hebt nog geen websites gepubliceerd.';
@@ -418,7 +422,7 @@ function botTools(svc: SiteService): ToolDef[] {
       risk: 'write',
       description: 'Haal een website die jij gepubliceerd hebt offline (de link werkt daarna niet meer). Geef de link, de map of de naam.',
       parameters: { type: 'object', properties: { site: { type: 'string', description: 'Link, map of naam van de site' } }, required: ['site'] },
-      summarize: (a) => `Website offline halen: ${str(a.site, 120)}`,
+      summarize: (a) => words('Website offline halen: {0}', str(a.site, 120)),
       async run(a, t) {
         const s = findSite(t, str(a.site, 2000));
         if (!s) return { text: 'Geen website van jou gevonden met die link, map of naam. Gebruik site_list.', isError: true };

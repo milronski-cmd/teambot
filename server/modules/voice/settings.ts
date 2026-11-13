@@ -5,79 +5,10 @@ import { LOCAL_MODELS, LOCAL_STT_DEFAULT, LOCAL_VOICE_EN_DEFAULT, type LocalMode
 import { localVoice } from './local/service.js';
 import { DEFAULT_HOTKEY, parseHotkey } from './hotkey.js';
 import { AUTO_APP, preferInstalled, resolveSttLanguage, sttModelLanguage, sttModelsFor, voicesFor } from '../../../shared/voiceLanguage.js';
+import type { AgentVoice, LiveMode, TtsEngine, VoiceSettings } from '../../../shared/voiceSettings.js';
 
-/** 'local' = free and on this computer (Piper); 'auto' = local when installed, else OpenAI, else the browser voice. */
-export type TtsEngine = 'auto' | 'local' | 'browser' | 'provider' | 'off';
-/** 'local' = free, on this computer (Parakeet/Whisper via sherpa-onnx). */
-export type SttEngine = 'local' | 'provider' | 'browser';
-export type LiveMode = 'direct' | 'agent';
-/**
- * Calls: 'local' = free turn-taking call (local STT → the bot → local TTS); 'realtime' = OpenAI Realtime (paid);
- * 'gemini' = Gemini Live (paid, or Google's free tier). The cloud kinds put a voice model in front of the bot.
- */
-export type CallEngine = 'local' | 'realtime' | 'gemini';
-/**
- * How you talk in a call: 'hold' = hold a key/button while you talk (push-to-talk), 'handsfree' = the microphone
- * listens and a pause ends your turn, 'auto' = hold on a computer and hands-free on a phone (ui/src/modules/voice/talk.ts).
- */
-export type CallTalk = 'auto' | 'hold' | 'handsfree';
-
-/**
- * Per-user voice settings (stored under settings key "voice"). Automatic choices follow the interface language:
- * stt.language 'auto-app', stt.localModel '' and tts.localVoice '' (see effectiveSettings).
- */
-export interface VoiceSettings {
-  /** language: 'auto-app' | 'auto' | 'auto-nl' | a fixed code (STT_LANGUAGES); localModel: '' = recommended for the language. */
-  stt: { engine: SttEngine; providerId: string | null; model: string; language: string; localModel: string };
-  tts: {
-    engine: TtsEngine;
-    providerId: string | null;
-    model: string;
-    voice: string;
-    speed: number;
-    instructions: string;
-    browserVoice: string;
-    /**
-     * Local voice ('' = the recommended voice for the interface language). Text in another language is read by
-     * an installed voice for that language; `localVoiceEn` is the one for English ('' = English with this voice).
-     */
-    localVoice: string;
-    localSpeaker: number;
-    localVoiceEn: string;
-    /** Start reading aloud while the bot is still writing (local voice; first sentence first). */
-    streaming: boolean;
-  };
-  call: { engine: CallEngine; bargeIn: boolean; silenceMs: number; talk: CallTalk };
-  realtime: { providerId: string | null; model: string; voice: string; transcribeModel: string; mode: LiveMode; sendContext: boolean; vad: 'semantic' | 'server' };
-  /** Gemini Live: a Google Gemini provider with an API key (AI Studio); uses the same mode and context choice as realtime. */
-  gemini: { providerId: string | null; model: string; voice: string };
-  /** Warn at 80 % and hang up at 100 % of this amount per call (USD). */
-  priceCapUsd: number;
-  maxMinutes: number;
-  keepTranscripts: boolean;
-  /** Delete voice-memo audio after N days (0 = keep). Transcripts stay in the chat. */
-  audioDays: number;
-  /** Delete cached spoken replies not played for N days. */
-  ttsCacheDays: number;
-  /** Desktop app: dictate into any program with a global key combination (off until the owner turns it on). */
-  hotkey: { enabled: boolean; accelerator: string };
-}
-
-/** Per-bot voice (agent.settings.voice). Empty fields fall back to the user defaults. */
-export interface AgentVoice {
-  engine?: TtsEngine | 'default';
-  providerId?: string | null;
-  model?: string;
-  voice?: string;
-  speed?: number;
-  instructions?: string;
-  browserVoice?: string;
-  localVoice?: string;
-  localSpeaker?: number;
-  autoRead?: boolean;
-  realtimeVoice?: string;
-  liveMode?: LiveMode | 'default';
-}
+/** The shapes: shared/voiceSettings.ts (the Spraak screens use the same). */
+export type { AgentVoice, LiveMode, VoiceSettings };
 
 export const DEFAULTS: VoiceSettings = {
   stt: { engine: 'local', providerId: null, model: '', language: AUTO_APP, localModel: '' },
@@ -88,8 +19,9 @@ export const DEFAULTS: VoiceSettings = {
   // in the chat), so it is a choice, never the default (0.4: the same brain in voice as in text).
   realtime: { providerId: null, model: 'gpt-realtime-2.1-mini', voice: 'marin', transcribeModel: 'gpt-4o-mini-transcribe', mode: 'agent', sendContext: true, vad: 'semantic' },
   gemini: { providerId: null, model: 'gemini-3.8-live', voice: 'Kore' },
-  priceCapUsd: 1,
-  maxMinutes: 30,
+  // No built-in brake: 0 = no price ceiling and no maximum length. The owner may set either himself.
+  priceCapUsd: 0,
+  maxMinutes: 0,
   keepTranscripts: true,
   audioDays: 0,
   ttsCacheDays: 30,
@@ -156,8 +88,8 @@ export function sanitize(raw: any): VoiceSettings {
       model: GEMINI_LIVE_MODELS.some((m) => m.id === gm.model) ? gm.model : DEFAULTS.gemini.model,
       voice: GEMINI_VOICES.includes(gm.voice) ? gm.voice : DEFAULTS.gemini.voice,
     },
-    priceCapUsd: num(r.priceCapUsd, 0.05, 50, DEFAULTS.priceCapUsd),
-    maxMinutes: Math.round(num(r.maxMinutes, 1, 120, DEFAULTS.maxMinutes)),
+    priceCapUsd: num(r.priceCapUsd, 0, 50, DEFAULTS.priceCapUsd),
+    maxMinutes: Math.round(num(r.maxMinutes, 0, 120, DEFAULTS.maxMinutes)),
     keepTranscripts: r.keepTranscripts === undefined ? DEFAULTS.keepTranscripts : !!r.keepTranscripts,
     audioDays: Math.round(num(r.audioDays, 0, 3650, DEFAULTS.audioDays)),
     ttsCacheDays: Math.round(num(r.ttsCacheDays, 1, 3650, DEFAULTS.ttsCacheDays)),

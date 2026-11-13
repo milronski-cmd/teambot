@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { FileText, Share2 } from 'lucide-react';
 import { api, upload } from '../../lib/api';
+import { navigate } from '../../lib/router';
 import { useApp } from '../../lib/store';
 import type { Thread } from '../../lib/types';
 import { Button, Card, EmptyState, Field, Page, PageHeader, Select, Spinner, Textarea, toastError } from '../../components/ui';
@@ -76,6 +77,7 @@ export function SharePage({ params }: { params: string[] }) {
   const send = async () => {
     if (!target) return;
     setBusy(true);
+    const from = location.hash;
     try {
       let threadId = target.slice(2);
       if (target.startsWith('a:')) threadId = (await api.post<Thread>('/threads', { agentId: target.slice(2) })).id;
@@ -88,7 +90,7 @@ export function SharePage({ params }: { params: string[] }) {
       }
       await api.post(`/threads/${threadId}/messages`, { content: note.trim() || (ids.length ? 'Gedeeld vanuit een andere app.' : ''), attachments: ids });
       await dropShare(meta.id);
-      location.hash = `#/t/${threadId}`;
+      navigate(`/t/${threadId}`, { from });
     } catch (e) {
       toastError(e);
     } finally {
@@ -143,7 +145,10 @@ export function SharePage({ params }: { params: string[] }) {
             <Button variant="primary" loading={busy} disabled={!target || (!note.trim() && !meta.files.length)} onClick={send}>
               Versturen
             </Button>
-            <Button variant="ghost" onClick={() => dropShare(meta.id).then(() => (location.hash = '#/'))}>
+            <Button variant="ghost" onClick={() => {
+                const from = location.hash;
+                void dropShare(meta.id).then(() => navigate('/', { from }));
+              }}>
               Weggooien
             </Button>
           </div>

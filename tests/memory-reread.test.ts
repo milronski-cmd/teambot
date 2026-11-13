@@ -69,13 +69,19 @@ test('with a free model: changed → a new version from the new text, gone → n
     t.app.ctx.providers.registerKind({ id: 'mock-local', label: 'Lokaal testmodel', type: 'api', group: 'local', billing: 'local', needsKey: false, description: 'test', models: ['lokaal-1'], defaultModel: 'lokaal-1', create: () => mockAdapter(t.script, t.requests) });
     await t.api('POST', '/providers', { kind: 'mock-local' });
     const { d, ids } = await setup(t);
+    // One call for the changed document: every fact the new text does not state, by id; the answer per fact.
     let prompts = 0;
+    let facts = 0;
     setShortCallFake((system, prompt) => {
-      if (/nieuwe versie/.test(system) && /<feit>/.test(prompt)) {
+      if (/nieuwe versie/.test(system) && /<feit id=/.test(prompt)) {
         prompts++;
-        if (/12 maart/.test(prompt)) return JSON.stringify({ status: 'changed', new: 'De levering van de twintig frames is op 19 maart', quote: 'De levering van de twintig frames is op 19 maart' });
-        if (/5 procent/.test(prompt)) return JSON.stringify({ status: 'gone', quote: '' });
-        return JSON.stringify({ status: 'same', quote: 'iets dat er niet staat' });
+        const ids = [...prompt.matchAll(/<feit id="(f\d+)">([^<]*)<\/feit>/g)];
+        facts = ids.length;
+        return JSON.stringify({
+          facts: ids.map(([, id, text]) =>
+            /12 maart/.test(text) ? { id, status: 'changed', new: 'De levering van de twintig frames is op 19 maart', quote: 'De levering van de twintig frames is op 19 maart' } : /5 procent/.test(text) ? { id, status: 'gone', quote: '' } : { id, status: 'same', quote: 'iets dat er niet staat' },
+          ),
+        });
       }
       if (/blok "NU"/.test(system)) return JSON.stringify({ summary: 'De Vries Fietsen bestelt twintig frames, levering op 19 maart. Betaling binnen 30 dagen.' });
       return '{}';
@@ -83,20 +89,54 @@ test('with a free model: changed → a new version from the new text, gone → n
     await t.api('POST', `/memory/dossiers/${d.id}/sources`, { kind: 'note', title: 'Afspraken De Vries', text: V2 });
     await t.app.ctx.services.memory.drain();
     const item = (id: string) => t.app.ctx.store.get<any>('memory_items', id);
-    assert.equal(prompts, 2, 'only the facts the new text does not state are re-read (delta)');
+    assert.equal(prompts, 1, 'one call for the changed dossier');
+    assert.equal(facts, 2, 'only the facts the new text does not state are read again (delta)');
     assert.equal(item(ids[0]).status, 'superseded');
     const neu = t.app.ctx.store.one<any>("SELECT * FROM memory_items WHERE supersedes_id = ? AND status = 'active'", ids[0]);
     assert.match(neu.content, /19 maart/, 'changed: the new version');
     assert.equal(item(ids[1]).status, 'superseded', 'gone: no longer holds');
     assert.match(item(ids[1]).invalid_reason, /staat niet meer/);
     assert.equal(item(ids[2]).status, 'active');
-    assert.match(t.app.ctx.store.get<any>('memory_dossiers', d.id).summary, /19 maart/);
+    // NU no longer says what stopped holding (no second call for it).
+    const nu = t.app.ctx.store.get<any>('memory_dossiers', d.id).summary;
+    assert.doesNotMatch(nu, /12 maart|5 procent/);
     // Undo of the "gone" step brings the fact back.
     const ch = t.app.ctx.store.one<any>("SELECT id FROM memory_changes WHERE record_id = ? AND op = 'invalidate'", ids[1]);
     await t.api('POST', `/memory/changes/${ch.id}/undo`);
     assert.equal(item(ids[1]).status, 'active');
   } finally {
     setShortCallFake(null);
+    await t.close();
+  }
+});
+
+test('a bot that writes in a dossier (dossier_write) marks it as changed, like every other change; the reread reads it once', async () => {
+  const t = await startTestApp();
+  try {
+    await t.api('PUT', '/memory/settings', { extractor: 'heuristic' });
+    const svc = t.app.ctx.services.memory.svc;
+    const d = (await t.api('POST', '/memory/dossiers', { title: 'Project Zolder' })).dossier;
+    const row = () => t.app.ctx.store.get<any>('memory_dossiers', d.id);
+    await rereadDue(svc, { force: true, choice: null });
+    const bot = await t.agent({ name: 'Schrijver', access_mode: 'auto' });
+    const th = await t.api('POST', '/threads', { agentId: bot.id });
+    t.script.push({ toolCalls: [{ name: 'dossier_write', args: { dossier: 'Project Zolder', content: 'De aannemer begint op 3 maart.' } }] }, { text: 'Genoteerd.' });
+    await t.say(th.id, 'De aannemer begint op 3 maart.');
+    assert.match(row().body, /De aannemer begint op 3 maart\./);
+    assert.ok(row().changed_at && (!row().reread_at || row().changed_at > row().reread_at), 'the dossier is marked as changed by the write');
+    const due = await rereadDue(svc, { force: true, choice: null });
+    assert.deepEqual(due.map((r) => r.dossierId), [d.id], 'the reread sees it');
+    assert.equal((await rereadDue(svc, { force: true, choice: null })).length, 0, 'once: reading it does not mark it again');
+    // The same text again changes nothing, so nothing is marked.
+    const before = row().changed_at;
+    t.script.push({ toolCalls: [{ name: 'dossier_write', args: { dossier: 'Project Zolder', content: 'De aannemer begint op 3 maart.' } }] }, { text: 'Stond er al.' });
+    await t.say(th.id, 'Nog eens.');
+    assert.equal(row().changed_at, before);
+    // The owner's own edit in Geheugen goes through the same write: marked too.
+    await new Promise((r) => setTimeout(r, 5));
+    await t.api('PATCH', `/memory/dossiers/${d.id}`, { body: 'De aannemer begint op 10 maart.' });
+    assert.ok(row().changed_at > before);
+  } finally {
     await t.close();
   }
 });

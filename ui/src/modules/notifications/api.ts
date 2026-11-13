@@ -4,6 +4,7 @@ import { parseHash } from '../../lib/router';
 import { toast } from '../../components/ui';
 import { translate } from '../../lib/i18n';
 import { approvalIdOfItem, approvalIdOfTag, approvalTag, closeHandledEverywhere, PageNotes, type NoteRegistration } from './handled';
+import { NOTIFY_LEVELS } from '../../../../shared/settings.js';
 
 export type NotifyLevel = 'all' | 'important' | 'none';
 
@@ -44,7 +45,8 @@ interface State {
 
 export const useNotifications = create<State>(() => ({ items: null, filter: 'all', more: false, unread: 0, prefs: null, panelOpen: false }));
 
-export const LEVEL_LABEL: Record<NotifyLevel, string> = { all: 'Alles', important: 'Alleen belangrijk', none: 'Niets' };
+/** The words of each level (shared/settings.ts, where a bot finds them too). */
+export const LEVEL_LABEL = Object.fromEntries(NOTIFY_LEVELS.map((l) => [l.value, l.label])) as Record<NotifyLevel, string>;
 
 /** What a kind is called in the list. */
 export const KIND_LABEL: Record<string, string> = {

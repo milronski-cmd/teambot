@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react';
 import { api } from '../lib/api';
 import { useApp } from '../lib/store';
-import { Button, Modal, Spinner, toast, toastError } from '../components/ui';
+import { Button, Modal, toast, useAsync } from '../components/ui';
+import { DeletePreview } from './BotDeleteDialog';
 import { t } from '../lib/i18n';
 import { formatBytes } from '../lib/format';
 import { isOwnWorkspace } from '../components/FolderName';
@@ -37,7 +38,7 @@ export function useCanDeleteHistory(): boolean {
 export function HistoryDeleteDialog({ target, open, onClose, onDone }: { target: HistoryTarget | null; open: boolean; onClose(): void; onDone?(): void }) {
   const [p, setP] = useState<BotPreview | RoomPreview | null>(null);
   const [err, setErr] = useState('');
-  const [busy, setBusy] = useState(false);
+  const { busy, run } = useAsync();
   const base = target ? `/${target.kind === 'agent' ? 'agents' : 'rooms'}/${target.id}/history` : '';
   useEffect(() => {
     if (!open || !base) return;
@@ -57,9 +58,8 @@ export function HistoryDeleteDialog({ target, open, onClose, onDone }: { target:
   // Only empty conversations (a new chat): nothing worth a deletion.
   const empty = !!p && !p.messages && !p.files;
 
-  const remove = async () => {
-    setBusy(true);
-    try {
+  const remove = () =>
+    run(async () => {
       await api.del(base);
       if (target.kind === 'agent') {
         const me = useApp.getState().me?.id;
@@ -72,12 +72,7 @@ export function HistoryDeleteDialog({ target, open, onClose, onDone }: { target:
       void useApp.getState().refreshThreads().catch(() => {});
       onClose();
       onDone?.();
-    } catch (e) {
-      toastError(e);
-    } finally {
-      setBusy(false);
-    }
-  };
+    });
 
   const goes: string[] = [];
   const stays: string[] = [];
@@ -132,41 +127,17 @@ export function HistoryDeleteDialog({ target, open, onClose, onDone }: { target:
       }
     >
       <div className="space-y-3 text-sm" data-testid="history-delete">
-        {err ? (
-          <p className="text-danger">{err}</p>
-        ) : !p ? (
-          <div className="flex justify-center py-4">
-            <Spinner />
-          </div>
-        ) : empty ? (
+        {empty ? (
           <p>Er is nog geen geschiedenis om te wissen.</p>
         ) : (
-          <>
-            <div>
-              <h3 className="mb-1 font-semibold">Dit gaat weg</h3>
-              <ul className="list-disc space-y-0.5 ps-5">
-                {goes.map((x) => (
-                  <li key={x}>{x}</li>
-                ))}
-              </ul>
-            </div>
-            <div>
-              <h3 className="mb-1 font-semibold">Dit blijft</h3>
-              <ul className="list-disc space-y-0.5 ps-5 text-muted">
-                {stays.map((x) => (
-                  <li key={x} className="break-words">
-                    {x}
-                  </li>
-                ))}
-              </ul>
-            </div>
+          <DeletePreview err={err} ready={!!p} goes={goes} stays={stays}>
             {people > 0 && <p>{t('{0, plural, one {Ook # ander lid ziet} other {Ook # andere leden zien}} het groepsgesprek daarna leeg.', people)}</p>}
-            {p.backups > 0 && (
+            {!!p?.backups && (
               <p className="text-xs text-muted">
                 {t('{0, plural, one {Er is al # back-up} other {Er zijn al # back-ups}} met deze gesprekken; zet je er een terug, dan komen ze terug.', p.backups)}
               </p>
             )}
-          </>
+          </DeletePreview>
         )}
       </div>
     </Modal>

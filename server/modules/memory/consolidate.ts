@@ -40,9 +40,11 @@ import { runEngine } from './engine.js';
 import { outputLanguage, ownerTextLanguage } from '../../agent/language.js';
 import { markCheck, confirmFact } from './refresh.js';
 import { mergeInto, supersedeBy, type ReportLine } from './maintenance.js';
-import { isOwnerMessage, modelBudgetOk, msgFlags, setMsgFlags } from './pipeline.js';
+import { ownerTyped, modelBudgetOk, msgFlags, setMsgFlags } from './pipeline.js';
 import { updateRecord } from './dossiers.js';
 import { linkedDossier } from './context.js';
+import { coreDossiers, writeBody, writeRefusal } from './living.js';
+import { lineKey } from './same.js';
 
 // ---------------------------------------------------------------------------- words that open or close a loop
 
@@ -681,28 +683,6 @@ export async function consolidateFacts(svc: MemoryService, o: ConsolidateOptions
   return counts;
 }
 
-/**
- * Does this sentence of the owner, by the patterns alone, end or finish something known — and where does it belong
- * (the part of what it ends)? The learner asks it for sentences that its model, or the pattern extractor, did not turn
- * into a fact: a small local model wrote one item for a turn with twelve updates, so "Klant Bakker heeft zijn
- * terugbetaling gekregen" never reached the check. Null when the patterns find nothing clear (then nothing is stored).
- */
-export async function patternTarget(svc: MemoryService, o: { userId: string; agent: Agent | null; threadId?: string | null; text: string; exclude?: Set<string> }): Promise<{ scope: MemoryItemRow['scope']; agentId: string | null; dossierId: string | null } | null> {
-  if (!doneSignal(o.text) && !endSignal(o.text) && !departedNames(o.text).length) return null;
-  const at = now();
-  // A probe that is not stored: the sentence as a note of the owner, said now.
-  const probe = { id: '', ref: '', user_id: o.userId, scope: 'about_you', agent_id: null, team_id: null, dossier_id: null, content: o.text, content_enc: null, sensitivity: 'normal', status: 'active', type: 'fact', flags: [], pinned: false, created_at: at, updated_at: at, valid_from: at } as unknown as MemoryItemRow;
-  const a: Actor = { userId: o.userId, agent: o.agent, threadId: o.threadId ?? null };
-  const reader = o.agent ? svc.readerFor(o.agent, o.threadId ? svc.store.thread(o.threadId) : null) : svc.userReader(o.userId);
-  const found = await candidatesFor(svc, a, reader, probe, o.exclude || new Set());
-  // The owner's own sentence: someone he says has left brings his open work along.
-  const cands = withChain(svc, a, reader, probe, found, o.exclude || new Set());
-  const hit = ruleEffects(svc, probe, cands).find((r) => r.effect === 'ends');
-  if (!hit) return null;
-  if (hit.c.kind === 'action') return { scope: 'dossier', agentId: null, dossierId: hit.c.rec.dossier_id };
-  return { scope: hit.c.row!.scope, agentId: hit.c.row!.agent_id ?? null, dossierId: hit.c.row!.dossier_id ?? null };
-}
-
 /** Patterns only, synchronously (explicit "onthoud dat", the memory page, a bot's own note): the clear cases now. */
 export function consolidateNow(svc: MemoryService, row: MemoryItemRow, o: { agent: Agent | null; trust: 'user' | 'agent' | 'customer'; threadId?: string | null }): ConsolidationCounts {
   const counts = zero();
@@ -768,6 +748,20 @@ export function closeFromRun(svc: MemoryService, agent: Agent, thread: Thread, r
   if (!text.trim()) return counts;
   const done = completionSentences(text).slice(0, 6);
   if (!done.length || !runEvidence(svc, run)) return counts;
+  closeDone(svc, agent, thread, done, { name: agent.name, actor: { type: 'agent', id: agent.id } }, counts);
+  if ((counts.closed || counts.invalidated) && msg) {
+    const notes = msgFlags(svc, msg.id);
+    const text = counts.closed + counts.invalidated === 1 ? 'Taak afgerond in het geheugen' : `${counts.closed + counts.invalidated} taken afgerond in het geheugen`;
+    setMsgFlags(svc, msg.id, thread.user_id, { ...notes, outcomes: [...(notes.outcomes || []), { action: 'closed', message: text }] });
+  }
+  return counts;
+}
+
+/**
+ * Sentences that say work is done close the open task (a note) or dossier action about it: one clear best match by the
+ * patterns (no model), with who said it as the source and an undo. Never a standing rule or a pinned note.
+ */
+function closeDone(svc: MemoryService, agent: Agent, thread: Thread, done: string[], by: { name: string; actor: { type: 'user' | 'agent'; id: string } }, counts: ConsolidationCounts): void {
   const a: Actor = { userId: thread.user_id, agent, threadId: thread.id };
   const reader = svc.readerFor(agent, thread);
   const acl = svc.aclSql(reader);
@@ -775,32 +769,54 @@ export function closeFromRun(svc: MemoryService, agent: Agent, thread: Thread, r
     .all<any>(`SELECT i.* FROM memory_items i WHERE ${acl.sql} AND i.status = 'active' AND i.type != 'instruction' AND i.sensitivity != 'sensitive' ORDER BY i.updated_at DESC LIMIT 300`, ...acl.params)
     .map((x) => svc.store.decode<MemoryItemRow>('memory_items', x))
     .filter((r) => isOpenTodo(r, svc.contentOf(r)));
-  const lines: ReportLine[] = [];
   for (const s of done) {
     if (detectSecret(s) || isInjectionLike(s)) continue;
-    // The completion itself is not stored as a note here (the learner decides that); a stand-in row carries the words.
+    // The completion itself is not stored as a note here (the review decides that); a stand-in row carries the words.
     const ts = now();
-    const probe = { id: `run:${run.id}`, ref: '', user_id: thread.user_id, scope: 'agent', agent_id: agent.id, dossier_id: linkedDossier(svc, thread.id), team_id: svc.homeTeam(agent), content: s, content_enc: null, sensitivity: 'normal', status: 'active', valid_from: ts, last_confirmed_at: ts, created_at: ts, key_norm: null, flags: [], pinned: false, type: 'event' } as any as MemoryItemRow;
-    const cands: Candidate[] = todos.filter((r) => mayTouch(svc, a, probe, r)).map((r) => ({ oid: '', kind: 'item', row: r, text: svc.contentOf(r), at: statedAt(r) }));
+    const probe = { id: `done:${thread.id}`, ref: '', user_id: thread.user_id, scope: 'agent', agent_id: agent.id, dossier_id: linkedDossier(svc, thread.id), team_id: svc.homeTeam(agent), content: s, content_enc: null, sensitivity: 'normal', status: 'active', valid_from: ts, last_confirmed_at: ts, created_at: ts, key_norm: null, flags: [], pinned: false, type: 'event' } as any as MemoryItemRow;
+    const cands: Candidate[] = todos.filter((r) => r.status === 'active' && mayTouch(svc, a, probe, r)).map((r) => ({ oid: '', kind: 'item', row: r, text: svc.contentOf(r), at: statedAt(r) }));
     for (const x of candidateActions(svc, a, probe)) cands.push({ oid: '', kind: 'action', rec: x.rec, text: x.rec.title, at: String(x.rec.created_at), dossierTitle: x.title });
     for (const r of ruleEffects(svc, probe, cands)) {
       if (r.c.kind === 'action') {
         const cur = svc.store.get<any>('memory_records', r.c.rec.id);
         if (cur?.status !== 'open') continue;
-        const id = closeAction(svc, thread.user_id, cur, { source: `${agent.name}: ${excerpt(s, 200)}`, actor: { type: 'agent', id: agent.id } });
+        closeAction(svc, thread.user_id, cur, { source: `${by.name}: ${excerpt(s, 200)}`, actor: by.actor });
         counts.closed++;
-        lines.push({ op: 'action', text: `Actie afgerond: ${excerpt(cur.title, 90)}`, changeIds: id ? [id] : [], refs: [`a:${cur.ref}`] });
-      } else if (r.c.row && !isProtected(r.c.row)) {
-        invalidateItem(svc, r.c.row, { reason: `afgerond volgens ${agent.name}: ${excerpt(s, 200)}`, actor: 'agent', actorId: agent.id });
+      } else if (r.c.row && !isProtected(r.c.row) && svc.itemRow(r.c.row.id)?.status === 'active') {
+        invalidateItem(svc, r.c.row, { reason: `afgerond volgens ${by.name}: ${excerpt(s, 200)}`, actor: by.actor.type, actorId: by.actor.id });
         counts.invalidated++;
       }
     }
+    // A line of a dossier's text that says this task is still open (one clear line): out of the text, to the dossier's
+    // archive, with undo — the text says what holds now.
+    const linked = linkedDossier(svc, thread.id);
+    const texts = [...coreDossiers(svc, agent), ...(linked ? [svc.store.decode<any>('memory_dossiers', svc.store.get('memory_dossiers', linked))] : [])];
+    for (const d0 of texts) {
+      const d = d0 && svc.store.decode<any>('memory_dossiers', svc.store.get('memory_dossiers', d0.id));
+      if (!d || writeRefusal(svc, agent, d)) continue;
+      const lines = String(d.body || '').split('\n');
+      const open = lines.map((l, i) => ({ l, i })).filter(({ l }) => lineKey(l) && !/^#{1,6}\s/.test(l.trim()) && TODO_RE.test(l) && !RECURRING_RE.test(l) && !RULE_WORDING.test(l) && sameTask(l, s));
+      if (open.length !== 1) continue;
+      lines.splice(open[0].i, 1);
+      try {
+        writeBody(svc, d.id, lines.join('\n'), { type: by.actor.type, id: by.actor.id, reason: `afgerond volgens ${by.name}: ${excerpt(s, 200)}` });
+        counts.closed++;
+      } catch (e: any) {
+        svc.ctx.log.warn('[memory] afgeronde taak uit de tekst van een dossier halen mislukt', e?.message || e);
+      }
+    }
   }
-  if ((counts.closed || counts.invalidated) && msg) {
-    const notes = msgFlags(svc, msg.id);
-    const text = counts.closed + counts.invalidated === 1 ? 'Taak afgerond in het geheugen' : `${counts.closed + counts.invalidated} taken afgerond in het geheugen`;
-    setMsgFlags(svc, msg.id, thread.user_id, { ...notes, outcomes: [...(notes.outcomes || []), { action: 'closed', message: text }] });
-  }
+}
+
+/**
+ * The owner says in a conversation that work is done ("De SEO van de website is bijgewerkt"): the open task or dossier
+ * action about it closes, by the patterns and without a model — also when no model can read the conversation.
+ */
+export function closeFromOwner(svc: MemoryService, agent: Agent, thread: Thread, ownerText: string): ConsolidationCounts {
+  const counts = zero();
+  if (outside(svc.audience(thread, thread.user_id))) return counts;
+  const done = completionSentences(ownerText).slice(0, 6);
+  if (done.length) closeDone(svc, agent, thread, done, { name: 'eigenaar', actor: { type: 'user', id: thread.user_id } }, counts);
   return counts;
 }
 
@@ -812,7 +828,7 @@ const BARE_DONE_RE = /^\s*(?:(?:ok[eé]?|oké|top|mooi|prima|ja|yes)[,!. ]+)?(?:
  * closed (it is the only open task the bot's message names), with undo under the owner's message.
  */
 export function captureDone(svc: MemoryService, m: Message, thread: Thread): boolean {
-  if (!isOwnerMessage(m, thread) || !BARE_DONE_RE.test(ownWords(m.content)) || svc.audience(thread, thread.user_id) !== 'private') return false;
+  if (!ownerTyped(m, thread) || !BARE_DONE_RE.test(ownWords(m.content)) || svc.audience(thread, thread.user_id) !== 'private') return false;
   const prev = svc.store.messages(thread.id, { limit: 6 }).filter((x) => x.seq < m.seq && (x.role === 'assistant' || x.role === 'user')).at(-1);
   if (!prev || prev.role !== 'assistant' || !prev.content) return false;
   const agent = svc.store.agent(prev.author_id || thread.agent_id);
@@ -856,34 +872,3 @@ export function captureDone(svc: MemoryService, m: Message, thread: Thread): boo
 }
 
 // ---------------------------------------------------------------------------- nightly: what came in otherwise
-
-/**
- * Maintenance: facts of the last week that no model checked yet (explicit, the memory page, bots' notes, dossier
- * notes, or learned while no model was free) are checked now — one call for up to 12 facts.
- */
-export async function consolidatePending(svc: MemoryService, userId: string, choice: ShortEngine | null, lines: ReportLine[], counts: Record<string, number>): Promise<number> {
-  if (!choice) return 0;
-  const since = new Date(Date.now() - 7 * 864e5).toISOString();
-  const rows = svc.store
-    .all<any>("SELECT * FROM memory_items WHERE user_id = ? AND status = 'active' AND consolidated_at IS NULL AND sensitivity != 'sensitive' AND source_trust != 'external' AND created_at >= ? AND source_kind != 'consolidation' ORDER BY created_at LIMIT 24", userId, since)
-    .map((r) => svc.store.decode<MemoryItemRow>('memory_items', r));
-  if (!rows.length) return 0;
-  const byAgent = new Map<string, MemoryItemRow[]>();
-  for (const r of rows) {
-    const k = r.created_by === 'agent' && r.created_by_agent ? r.created_by_agent : '';
-    (byAgent.get(k) || byAgent.set(k, []).get(k)!).push(r);
-  }
-  let calls = 0;
-  for (const [agentId, list] of byAgent) {
-    if (calls >= 1) break;
-    const agent = agentId ? svc.store.agent(agentId) : null;
-    const res = await consolidateFacts(svc, { userId, agent: agent && agent.user_id === userId ? agent : null, facts: list.slice(0, 12).map((row) => ({ row, trust: row.source_trust === 'user' ? 'user' : 'agent' })), choice, lines });
-    calls += res.calls;
-    counts.invalidated = (counts.invalidated || 0) + res.invalidated;
-    counts.closed = (counts.closed || 0) + res.closed;
-    counts.merged = (counts.merged || 0) + res.merged;
-    counts.contradictions = (counts.contradictions || 0) + res.superseded;
-    counts.review = (counts.review || 0) + res.check;
-  }
-  return calls;
-}

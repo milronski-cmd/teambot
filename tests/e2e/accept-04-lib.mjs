@@ -165,7 +165,7 @@ export function lastToolResult(req) {
  * after "TeamBot start opnieuw") and `close()`.
  */
 export async function startTeamBot({ dir, ai, port = PORT, beforeStart } = {}) {
-  const { createApp } = await import('../../server/app.ts');
+  const { createApp } = await import('./server.mjs');
   const tb = { dir, ai, port, app: null, token: '', owner: null, url: '' };
   const boot = async () => {
     const app = await createApp({ dataDir: dir, port, host: '127.0.0.1', mode: 'desktop', quiet: true });

@@ -7,6 +7,8 @@ import { Badge, Button, Field, Select, Spinner, Toggle, cx } from '../../compone
 import { BotAvatar, StackedFaces } from '../../components/BotFace';
 import { MoreInfo } from '../../components/MoreInfo';
 import { SkeletonCards } from '../../components/overview';
+import { t } from '../../lib/i18n';
+import { PLACE } from '../../../../shared/places.js';
 
 /**
  * A team from a template (A-14) or from a team package file (A-63), inside "Nieuwe groep": pick, look at the preview
@@ -55,7 +57,9 @@ function Preview({ p }: { p: TeamPreview }) {
               <div className="flex flex-wrap items-center gap-1.5">
                 <span className="font-semibold">{b.name}</span>
                 {b.groupRole === 'lead' && <Badge tone="accent">lead</Badge>}
-                <span className="text-xs text-muted">{b.role}</span>
+                <span className="text-xs text-muted" translate="no">
+                  {b.role}
+                </span>
               </div>
               <div className="mt-0.5 text-xs text-muted">
                 {ACCESS[b.access_mode] || b.access_mode}
@@ -119,9 +123,10 @@ export function TeamSource({ kind, onReady }: { kind: 'template' | 'import'; onR
       label: kind === 'template' ? 'Groepschat maken' : 'Importeren',
       disabled: pv.needsAcknowledge && !ack,
       run: async () => {
+        const from = location.hash;
         const r = await api.post<{ threadId: string }>('/rooms/packages/install', { ...(chosen.templateId ? { templateId: chosen.templateId } : { package: chosen.package }), provider_id: provider || undefined, acknowledge: ack });
         await Promise.all([useApp.getState().refreshAgents(), useApp.getState().refreshThreads()]);
-        navigate(`/t/${r.threadId}`);
+        navigate(`/t/${r.threadId}`, { from });
       },
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -175,7 +180,7 @@ export function TeamSource({ kind, onReady }: { kind: 'template' | 'import'; onR
           <Preview p={pv} />
           <Field label="AI voor deze bots" hint="Je kunt het per bot later aanpassen.">
             <Select value={provider} onChange={(e) => setProvider(e.target.value)}>
-              <option value="">Standaard (Instellingen › Algemeen)</option>
+              <option value="">{t('Standaard ({0})', t(PLACE.botDefaults))}</option>
               {providers.map((p) => (
                 <option key={p.id} value={p.id}>
                   {p.name}

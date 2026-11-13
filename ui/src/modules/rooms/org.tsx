@@ -3,8 +3,10 @@ import { Building2, MessagesSquare, Pencil, Plus, Trash2, UserPlus, X } from 'lu
 import { api, on } from '../../lib/api';
 import { useApp } from '../../lib/store';
 import { navigate } from '../../lib/router';
-import { askConfirm, Button, Card, EmptyState, Field, Input, Modal, Page, PageHeader, Select, Spinner, Textarea, cx, toast, toastError } from '../../components/ui';
+import { askConfirm, Button, Card, EmptyState, Field, Input, Modal, Page, PageHeader, Select, Spinner, Textarea, cx, toast, toastError, IconTile } from '../../components/ui';
 import { BotAvatar } from '../../components/BotFace';
+import { t } from '../../lib/i18n';
+import { tText } from '../../lib/format';
 
 /**
  * Organisatie (A-60, TEAM-06): teams as departments in a tree, each with a chief of staff, members with a title and
@@ -195,20 +197,20 @@ function MemberRow({ team, m }: { team: TeamView; m: TeamMember }) {
             className="mt-0.5 h-7 text-xs"
             value={title}
             placeholder="Functie, bijvoorbeeld Copywriter"
-            aria-label={`Functie van ${m.name}`}
+            aria-label={t('Functie van {0}', m.name)}
             onChange={(e) => setTitle(e.target.value)}
             onBlur={() => title !== m.title && put({ title })}
           />
         </div>
       </div>
-      <Select className="h-8 text-xs" value={m.role} aria-label={`Rol van ${m.name}`} onChange={(e) => put({ role: e.target.value })}>
+      <Select className="h-8 text-xs" value={m.role} aria-label={t('Rol van {0}', m.name)} onChange={(e) => put({ role: e.target.value })}>
         {(Object.keys(ROLE_LABEL) as TeamMember['role'][]).map((r) => (
           <option key={r} value={r}>
             {ROLE_LABEL[r]}
           </option>
         ))}
       </Select>
-      <Select className="h-8 text-xs" value={m.reports_to || ''} aria-label={`${m.name} rapporteert aan`} onChange={(e) => put({ reportsTo: e.target.value || null })}>
+      <Select className="h-8 text-xs" value={m.reports_to || ''} aria-label={t('{0} rapporteert aan', m.name)} onChange={(e) => put({ reportsTo: e.target.value || null })}>
         <option value="">Rapporteert aan niemand</option>
         {team.members
           .filter((x) => x.agent_id !== m.agent_id)
@@ -218,7 +220,7 @@ function MemberRow({ team, m }: { team: TeamView; m: TeamMember }) {
             </option>
           ))}
       </Select>
-      <Button size="iconSm" variant="ghost" aria-label={`${m.name} uit het team halen`} onClick={() => api.del(`/rooms/teams/${team.id}/members/${m.agent_id}`).catch(toastError)}>
+      <Button size="iconSm" variant="ghost" aria-label={t('{0} uit het team halen', m.name)} onClick={() => api.del(`/rooms/teams/${team.id}/members/${m.agent_id}`).catch(toastError)}>
         <X className="h-4 w-4" />
       </Button>
     </li>
@@ -243,9 +245,10 @@ function TeamCard({ team, depth, teams, onEdit, onSub }: { team: TeamView; depth
     if (!team.members.length) return toast('Voeg eerst bots aan de afdeling toe.', 'danger');
     setBusy(true);
     try {
+      const from = location.hash;
       const r = await api.post<{ threadId: string }>(`/rooms/teams/${team.id}/room`, {});
       await useApp.getState().refreshThreads();
-      navigate(`/t/${r.threadId}`);
+      navigate(`/t/${r.threadId}`, { from });
     } catch (e) {
       toastError(e);
     } finally {
@@ -259,7 +262,7 @@ function TeamCard({ team, depth, teams, onEdit, onSub }: { team: TeamView; depth
   return (
     <Card className="space-y-3 p-4" style={{ marginInlineStart: Math.min(depth, 4) * 24 }}>
       <div className="flex flex-wrap items-start gap-2">
-        <Building2 className="mt-0.5 h-5 w-5 shrink-0 text-accent" aria-hidden />
+        <IconTile icon={Building2} tone="teal" />
         <div className="min-w-0 flex-1">
           <h2 className="font-semibold">{team.name}</h2>
           <div className="text-xs text-muted">
@@ -269,16 +272,16 @@ function TeamCard({ team, depth, teams, onEdit, onSub }: { team: TeamView; depth
           {team.description && <p className="mt-1 text-sm text-muted">{team.description}</p>}
         </div>
         <div className="flex gap-1">
-          <Button size="iconSm" variant="ghost" aria-label={`${team.name} bewerken`} onClick={onEdit}>
+          <Button size="iconSm" variant="ghost" aria-label={tText('{0} bewerken', team.name)} onClick={onEdit}>
             <Pencil className="h-4 w-4" />
           </Button>
-          <Button size="iconSm" variant="ghost" aria-label={`${team.name} verwijderen`} onClick={remove}>
+          <Button size="iconSm" variant="ghost" aria-label={tText('{0} verwijderen', team.name)} onClick={remove}>
             <Trash2 className="h-4 w-4" />
           </Button>
         </div>
       </div>
       {chiefFirst.length > 0 ? (
-        <ul className="space-y-2" aria-label={`Leden van ${team.name}`}>
+        <ul className="space-y-2" aria-label={tText('Leden van {0}', team.name)}>
           {chiefFirst.map((m) => (
             <MemberRow key={m.agent_id} team={team} m={m} />
           ))}
@@ -288,7 +291,7 @@ function TeamCard({ team, depth, teams, onEdit, onSub }: { team: TeamView; depth
       )}
       {outside.length > 0 && (
         <div className="flex gap-2">
-          <Select className="min-w-0 flex-1" value={add} onChange={(e) => setAdd(e.target.value)} aria-label={`Bot toevoegen aan ${team.name}`}>
+          <Select className="min-w-0 flex-1" value={add} onChange={(e) => setAdd(e.target.value)} aria-label={t('Bot toevoegen aan {0}', team.name)}>
             <option value="">Bot toevoegen…</option>
             {outside.map((a) => (
               <option key={a.id} value={a.id}>

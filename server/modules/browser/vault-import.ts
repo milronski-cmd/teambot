@@ -1,5 +1,6 @@
 import crypto from 'node:crypto';
 import { MAX_ORIGINS, isInsecureOrigin, normalizeOrigin, parseTotp, type TotpSpec } from './vault.js';
+import { VAULT_IMPORT_MAX_BYTES } from '../../../shared/vault.js';
 
 /**
  * Vault import: logins from the CSV export of Bitwarden, 1Password, Chrome/Edge (and Firefox or any CSV with a website
@@ -10,7 +11,6 @@ import { MAX_ORIGINS, isInsecureOrigin, normalizeOrigin, parseTotp, type TotpSpe
  * hold a password).
  */
 
-export const IMPORT_MAX_BYTES = 2 * 1024 * 1024;
 export const IMPORT_MAX_ROWS = 2000;
 
 export class VaultImportError extends Error {}
@@ -255,7 +255,7 @@ export function notCsvHint(text: string): string | null {
 /** Parse a whole upload: format + candidates. Throws VaultImportError with a plain-Dutch message. */
 export function parseExport(text: string): { format: ImportFormat; candidates: ImportCandidate[] } {
   if (typeof text !== 'string' || !text.trim()) throw new VaultImportError('Dit bestand is leeg.');
-  if (Buffer.byteLength(text, 'utf8') > IMPORT_MAX_BYTES) throw new VaultImportError(`Dit bestand is te groot (maximaal ${IMPORT_MAX_BYTES / 1024 / 1024} MB). Splits het in kleinere bestanden.`);
+  if (Buffer.byteLength(text, 'utf8') > VAULT_IMPORT_MAX_BYTES) throw new VaultImportError(`Dit bestand is te groot (maximaal ${VAULT_IMPORT_MAX_BYTES / 1024 / 1024} MB). Splits het in kleinere bestanden.`);
   const hint = notCsvHint(text);
   if (hint) throw new VaultImportError(hint);
   const rows = parseCsv(text);

@@ -58,6 +58,17 @@ actor IrohTunnel {
         return sel.isRelay ? .relay : .direct
     }
 
+    /// After the app slept: the old connection may be dead without knowing it. Dial again, and keep the endpoint and
+    /// the loopback address, so the web view stays where it is.
+    func redial() {
+        guard endpoint != nil else { return }
+        connecting?.cancel()
+        connecting = nil
+        if let c = connection { try? c.close(errorCode: 0, reason: Data()) }
+        connection = nil
+        Task { _ = try? await self.connected() }
+    }
+
     func stop() async {
         listener?.cancel()
         listener = nil

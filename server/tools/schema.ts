@@ -4,9 +4,13 @@ import { Validator, type OutputUnit, type SchemaDraft } from '@cfworker/json-sch
  * Tool arguments checked against the tool's full JSON schema (nested objects, array items, enums, ranges, required
  * fields at every depth, $ref/$defs) with `@cfworker/json-schema` (MIT; no code generation, so it is safe in Electron).
  *
- * Two lenient steps first, because models (small ones most of all) write values as text:
- *  - coercion along the schema: "5" → 5 for a number, "true" → true for a boolean, '["a"]' → ["a"] for an array;
- *  - an optional argument that is null is left out (the tool sees it as not given), unless the schema allows null.
+ * Lenient steps first, because models (small ones most of all) write values as text, and a model that does not have
+ * the schema in front of it (a CLI engine loads tool schemas late) guesses the name of an argument:
+ *  - coercion along the schema: "5" → 5 for a number, "true" → true for a boolean, '["a"]' → ["a"] for an array, and
+ *    plain text where a list of texts is asked becomes a list of one;
+ *  - an optional argument that is null is left out (the tool sees it as not given), unless the schema allows null;
+ *  - a required argument under a guessed name (`task_id` for `id`, `skill` for `name`) is put under its own name
+ *    (guessedNames below).
  * `format` (uri, date-time, …) is not enforced: tools read those themselves and are often more forgiving.
  * The error names the exact place (`items/0/qty`) in a sentence the model can act on.
  */
@@ -78,11 +82,64 @@ function deref(root: any, s: any): any {
   return s;
 }
 
+/** The JSON-schema types a schema allows (its own and those of its anyOf/oneOf branches); empty = any. */
+const allowedTypes = (s: any) => new Set([...typesOf(s), ...[...(s?.anyOf || []), ...(s?.oneOf || [])].flatMap(typesOf)]);
+
+/** Does a value have a type this schema allows (after coercion)? A schema without types allows everything. */
+function fits(schema: any, v: any): boolean {
+  const types = allowedTypes(schema);
+  if (!types.size) return true;
+  const t = Array.isArray(v) ? 'array' : v === null ? 'null' : typeof v === 'number' && Number.isInteger(v) ? 'integer' : typeof v;
+  return types.has(t) || (t === 'integer' && types.has('number'));
+}
+
+/** The words of an argument name: "task_id", "taskId" and "task-id" → task, id. */
+const nameWords = (k: string) =>
+  k
+    .replace(/([a-z0-9])([A-Z])/g, '$1 $2')
+    .toLowerCase()
+    .split(/[^a-z0-9]+/)
+    .filter(Boolean);
+
+/**
+ * A required argument that was given under a name the tool does not know. Only when it is clear which one was meant:
+ * the unknown name holds the missing one as a word (`task_id`, `taskId`, `skill_name`), or exactly one required
+ * argument is missing and exactly one unknown argument was given (`skill` for `name`, `file` for `path`). The value must
+ * have the type the tool asks for. Such a call would fail anyway; this way it does what the model meant.
+ */
+function guessedNames(props: Record<string, any>, required: Set<string>, value: Record<string, any>, root: any, depth: number): Record<string, any> {
+  const has = (k: string) => value[k] !== undefined && value[k] !== null;
+  const missing = [...required].filter((r) => !has(r) && Object.hasOwn(props, r));
+  if (!missing.length) return value;
+  let stray = Object.keys(value).filter((k) => !Object.hasOwn(props, k) && has(k));
+  if (!stray.length) return value;
+  const out = { ...value };
+  const take = (to: string, from: string) => {
+    const p = deref(root, props[to]);
+    if (!fits(p, coerceArgs(p, value[from], depth + 1, root))) return false;
+    out[to] = value[from];
+    delete out[from];
+    stray = stray.filter((k) => k !== from);
+    return true;
+  };
+  const left: string[] = [];
+  for (const m of missing) {
+    const words = nameWords(m);
+    const named = stray.filter((k) => {
+      const w = nameWords(k);
+      return !!w.length && !!words.length && (words.every((x) => w.includes(x)) || w.every((x) => words.includes(x)));
+    });
+    if (named.length !== 1 || !take(m, named[0])) left.push(m);
+  }
+  if (left.length === 1 && stray.length === 1) take(left[0], stray[0]);
+  return out;
+}
+
 /** "5" → 5, "true" → true, '["a"]' → ["a"] where the schema asks for that type; nested along properties and items. */
 export function coerceArgs(schemaIn: any, value: any, depth = 0, root: any = schemaIn): any {
   const schema = deref(root, schemaIn);
   if (!schema || typeof schema !== 'object' || depth > MAX_DEPTH) return value;
-  const types = new Set([...typesOf(schema), ...[...(schema.anyOf || []), ...(schema.oneOf || [])].flatMap(typesOf)]);
+  const types = allowedTypes(schema);
   if (typeof value === 'string' && types.size && !types.has('string')) {
     const t = value.trim();
     if ((types.has('integer') && /^[+-]?\d+$/.test(t)) || (types.has('number') && t !== '' && Number.isFinite(Number(t)) && /^[+-]?(\d+\.?\d*|\.\d+)([eE][+-]?\d+)?$/.test(t))) return Number(t);
@@ -94,7 +151,11 @@ export function coerceArgs(schemaIn: any, value: any, depth = 0, root: any = sch
       } catch {
         /* stays text; the check names it */
       }
+      return value;
     }
+    // Plain text where a list of texts is asked ("rapport.md" for evidence, one name for a list of bots): a list of one.
+    const items = schema.items && typeof schema.items === 'object' && !Array.isArray(schema.items) ? deref(root, schema.items) : null;
+    if (t && types.has('array') && (!items || fits(items, value))) return [value];
     return value;
   }
   if (Array.isArray(value)) {
@@ -107,7 +168,7 @@ export function coerceArgs(schemaIn: any, value: any, depth = 0, root: any = sch
     if (!props) return value;
     const required = new Set<string>(Array.isArray(schema.required) ? schema.required : []);
     const out: Record<string, any> = {};
-    for (const [k, v] of Object.entries(value)) {
+    for (const [k, v] of Object.entries(guessedNames(props, required, value, root, depth))) {
       const p = Object.hasOwn(props, k) ? deref(root, props[k]) : undefined;
       if (v === null && !required.has(k) && p && typeof p === 'object' && (typesOf(p).length || p.anyOf || p.oneOf) && !allows(p, 'null')) continue;
       out[k] = p ? coerceArgs(p, v, depth + 1, root) : v;
@@ -142,7 +203,9 @@ function sentence(e: OutputUnit, schema: any): string {
     case 'required': {
       const m = /required property "([^"]+)"/.exec(e.error);
       const name = m ? (at ? `${at}/${m[1]}` : m[1]) : at;
-      return `Verplicht argument ontbreekt: ${name}`;
+      // What the argument is, in the tool's own words: a model without the schema in front of it can then fill it in.
+      const what = String(schemaAt(schema, name)?.description || '').replace(/\s+/g, ' ').trim().slice(0, 200);
+      return `Verplicht argument ontbreekt: ${name}${what ? ` — ${what.replace(/\.$/, '')}.` : ''}`;
     }
     case 'type': {
       const m = /Instance type "([^"]+)" is invalid\. Expected "([^"]+)"/.exec(e.error);

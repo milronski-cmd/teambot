@@ -2,9 +2,11 @@
 //  - the sidebar: pinned bots always in view, the chat list (a status dot per bot), "Wacht op jou", Taken, Marktplaats
 //    and Instellingen (0.4.2: Routines live in Taken, Geheugen in Instellingen; 0.4.5: Marktplaats its own place
 //    again), no "Meer"; the usage meters (one ring per subscription) at the bottom with their popover;
-//  - Instellingen: one flat list of at most nine plain rows (no group titles, no Geavanceerd); everything else under
-//    "Meer" of the row it belongs to, or on the overview of Bots en teams and Apps en apparaten: two clicks from the
-//    list; every page keeps its own link; the rarely needed ones also one click from the page they belong to;
+//  - Instellingen: one list where every row opens one thing: AI-diensten, Telefoon, Taal en uiterlijk, Regels,
+//    Back-ups, Vergrendeling; then "Van je bots": Bots, Teams, Geheugen, Kanalen, Apps, Bestanden; then "Meer
+//    mogelijkheden" (was Geavanceerd), where every optional function is one row. No overview pages (Bots en teams, Apps
+//    en bestanden) in between; old links still open the page that has it now; every page keeps its own link; the
+//    rarely needed ones also one click from the page they belong to;
 //  - "Geavanceerd tonen" (off by default) hides the expert panels without removing them;
 //  - three streams: routine runs and bot-to-bot threads never take over the owner's own conversation;
 //  - the phone: the tab bar from one list, a short "Meer", a way back to Instellingen; Ctrl+K finds everything;
@@ -20,7 +22,7 @@ import { createRequire } from 'node:module';
 
 const require = createRequire(import.meta.url);
 const { chromium } = require('playwright-core');
-const { createApp } = await import('../../server/app.ts');
+const { createApp } = await import('./server.mjs');
 
 const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'tb-layout-'));
 const app = await createApp({ dataDir: dir, port: 0, host: '127.0.0.1', mode: 'desktop', quiet: true });
@@ -139,28 +141,39 @@ try {
   await shot(d, 'stromen');
   await d.keyboard.press('Escape');
 
-  // Instellingen: one flat list of at most nine plain rows; every former Meer page keeps its own URL and opens inside
+  // Instellingen: one list, every row opens one thing; every other page keeps its own URL and opens inside
   // Instellingen, with the row it belongs to marked.
   await go(d, '#/more');
   check('desktop: de oude link #/more opent Instellingen', (await hash(d)) === '#/settings', await hash(d));
   const settingsNav = d.getByRole('navigation', { name: 'Instellingen' });
   // The entries of a row: "Meer" under its page, or the overview of a row without a page of its own.
   const moreNav = d.locator('#inhoud').getByRole('navigation', { name: /^(Meer|Onderdelen)$/ });
+  // One small title in the list ("Van je bots", a group), no headings.
   const groups = await settingsNav.getByRole('heading').allInnerTexts();
-  check('Instellingen: geen groepstitels', groups.length === 0, groups.join(', '));
+  check('Instellingen: geen koppen, alleen het kleine kopje "Van je bots"', groups.length === 0 && (await settingsNav.getByRole('group', { name: 'Van je bots' }).count()) === 1, groups.join(', '));
   const rowNames = (await settingsNav.locator('a').allInnerTexts()).map((r) => r.trim());
-  check('Instellingen: hoogstens 6 regels, geen Geavanceerd', rowNames.length <= 6 && !rowNames.includes('Geavanceerd'), rowNames.join(', '));
-  // Back-ups is part of the row "Privacy en back-ups" (six rows); Limieten is part of Gebruik.
-  check('Instellingen: één Back-ups, één Gebruik, geen Takenbord van groepen', rowNames.filter((r) => /back-ups/i.test(r)).length === 1 && rowNames.filter((r) => r === 'Gebruik').length === 1 && !rowNames.some((r) => ['Limieten', 'Takenbord van groepen'].includes(r)), rowNames.join(', '));
+  const ROWS = ['AI-diensten', 'Telefoon', 'Taal en uiterlijk', 'Regels', 'Back-ups', 'Vergrendeling', 'Bots', 'Teams', 'Geheugen', 'Kanalen', 'Apps', 'Bestanden', 'Meer mogelijkheden'];
+  check('Instellingen: de rijen in deze volgorde, Meer mogelijkheden precies één keer en als laatste', rowNames.join(',') === ROWS.join(','), rowNames.join(', '));
+  const botRows = (await settingsNav.getByRole('group', { name: 'Van je bots' }).locator('a').allInnerTexts()).map((r) => r.trim());
+  check('Instellingen › Van je bots: Bots, Teams, Geheugen, Kanalen, Apps, Bestanden', botRows.join(',') === 'Bots,Teams,Geheugen,Kanalen,Apps,Bestanden', botRows.join(', '));
+  // Gebruik and Limieten are under Meer mogelijkheden.
+  check('Instellingen: één Back-ups, geen Gebruik, Limieten of Takenbord van groepen', rowNames.filter((r) => /back-ups/i.test(r)).length === 1 && !rowNames.some((r) => ['Gebruik', 'Limieten', 'Takenbord van groepen'].includes(r)), rowNames.join(', '));
   for (const [h, row] of [
-    ['#/m/channels/', 'Apps en apparaten'],
-    ['#/m/mcp/', 'Apps en apparaten'],
-    ['#/m/memory/', 'Bots en teams'],
-    ['#/m/memory/dossiers', 'Bots en teams'],
-    ['#/settings/backups-app', 'Privacy en back-ups'],
-    ['#/settings/usage-limits', 'Gebruik'],
-    ['#/m/browser/kluis', 'Apps en apparaten'],
-    ['#/agents', 'Bots en teams'],
+    ['#/m/channels/', 'Kanalen'],
+    ['#/m/mcp/', 'Apps'],
+    ['#/m/memory/', 'Geheugen'],
+    ['#/m/memory/dossiers', 'Geheugen'],
+    ['#/m/folders/', 'Bestanden'],
+    ['#/settings/backups-app', 'Meer mogelijkheden'],
+    ['#/settings/usage-limits', 'Meer mogelijkheden'],
+    ['#/m/browser/kluis', 'Meer mogelijkheden'],
+    ['#/settings/free-models-gratis', 'Meer mogelijkheden'],
+    ['#/settings/veilig', 'Back-ups'],
+    ['#/settings/slot', 'Vergrendeling'],
+    ['#/settings/regels', 'Regels'],
+    ['#/settings/telefoon', 'Telefoon'],
+    ['#/settings/teams', 'Teams'],
+    ['#/agents', 'Bots'],
   ]) {
     await go(d, h);
     const cur = (await settingsNav.locator('a[aria-current="page"]').innerText().catch(() => '')).trim();
@@ -186,32 +199,54 @@ try {
   // (and inert), so read the settings list with includeHidden, then close the dialog.
   const dialogOpen = (await d.getByRole('dialog').count()) === 1;
   const behind = d.getByRole('navigation', { name: 'Instellingen', includeHidden: true });
-  check('#/m/channels/nieuw: diepe link werkt binnen Instellingen', dialogOpen && (await behind.locator('a[aria-current="page"]').innerText().catch(() => '')).trim() === 'Apps en apparaten', `dialoog open: ${dialogOpen}`);
-  check('#/m/channels/nieuw: met een weg terug naar Apps en apparaten', (await d.locator('#inhoud a[href="#/settings/apps"]').count()) === 2);
+  check('#/m/channels/nieuw: diepe link werkt binnen Instellingen', dialogOpen && (await behind.locator('a[aria-current="page"]').innerText().catch(() => '')).trim() === 'Kanalen', `dialoog open: ${dialogOpen}`);
+  // Kanalen is a row of the list itself: the way back is the list next to it (its title goes to Instellingen).
+  check('#/m/channels/nieuw: de lijst van Instellingen ernaast, met een weg terug naar Instellingen', (await d.locator('#inhoud a[href="#/m/channels/"][aria-current="page"]').count()) === 1 && (await d.locator('#inhoud a[href="#/settings"]').count()) >= 1);
   await d.keyboard.press('Escape');
   await d.getByRole('dialog').waitFor({ state: 'detached', timeout: 5000 }).catch(() => {});
-  // Teams (and the other bots-and-teams pages) on the overview of Bots en teams, one click from the list.
+  // The overviews Bots en teams and Apps en bestanden are gone: their old links open the row with that id (Bots, Apps),
+  // and Teams is a row of its own, also with one team (the option is there).
   await go(d, '#/settings/bots');
-  const teamsHref = await moreNav.getByRole('link', { name: /^Teams/ }).getAttribute('href').catch(() => '');
-  check('Bots en teams: Teams staat erbij (ook met één team: de optie is er)', teamsHref === '#/settings/teams-teams' && (await d.getByRole('heading', { level: 1 }).innerText()) === 'Bots en teams', teamsHref);
+  check('#/settings/bots (oude link naar Bots en teams): opent Bots; Teams is een eigen rij, ook met één team', (await hash(d)) === '#/agents' && (await settingsNav.getByRole('link', { name: 'Teams', exact: true }).getAttribute('href').catch(() => '')) === '#/settings/teams', await hash(d));
+  await go(d, '#/settings/apps');
+  check('#/settings/apps (oude link naar Apps en bestanden): opent Apps', (await hash(d)) === '#/m/mcp/', await hash(d));
   await go(d, '#/settings/general');
-  check('Algemeen › Meer: geen Netwerk en proxy zolang Geavanceerd tonen uit staat', (await moreNav.getByRole('link').count()) > 0 && !(await moreNav.getByRole('link', { name: 'Netwerk en proxy' }).count()));
-  // The old Geavanceerd page shows Algemeen, with the switch in view.
+  // Taal en uiterlijk is short: name, language, theme, colour and the style of the bot figures; nothing hangs under it.
+  const generalControls = await d.evaluate(() => [...document.querySelectorAll('#inhoud :is(input, [role=switch], [role=radiogroup], [role=combobox], select, textarea)')].filter((e) => !e.closest('nav[aria-label="Instellingen"]')).length);
+  const generalParts = (await d.getByRole('textbox', { name: 'Je naam' }).count()) + (await d.getByRole('radiogroup', { name: 'Thema' }).count()) + (await d.getByRole('radiogroup', { name: 'Kleur' }).count());
+  check('Taal en uiterlijk: naam, taal, thema, kleur en figuurtjes (hoogstens 5 instellingen), geen lijst "Meer"', generalControls <= 5 && generalParts === 3 && !(await moreNav.count()), `${generalControls} instellingen`);
+  // "Alle routines pauzeren" left Algemeen: Meer mogelijkheden › Standaarden voor routines (and the Routines page).
+  await go(d, '#/settings/routines-routines');
+  check('Alle routines pauzeren: onder Meer mogelijkheden › Standaarden voor routines', await d.getByRole('switch', { name: 'Alle routines pauzeren' }).isVisible().catch(() => false));
+  // The old link to the Geavanceerd page opens Meer mogelijkheden: the one place for everything optional, every
+  // function one row.
   await go(d, '#/settings/advanced');
-  check('#/settings/advanced (oude link): Algemeen met Geavanceerd tonen in beeld', (await d.getByRole('heading', { level: 1 }).innerText()) === 'Algemeen' && (await d.getByRole('switch', { name: 'Geavanceerd tonen' }).isVisible()));
+  check('#/settings/advanced (oude link): Meer mogelijkheden, met Netwerk en proxy en Deze computer', (await d.getByRole('heading', { level: 1 }).innerText()) === 'Meer mogelijkheden' && (await moreNav.getByRole('link', { name: /^Netwerk en proxy/ }).count()) === 1 && (await moreNav.getByRole('link', { name: /^Deze computer/ }).getAttribute('href')) === '#/settings/systeem');
+  {
+    const want = ['#/settings/cli-agents-cli', '#/settings/free-models-gratis', '#/m/browser/', '#/m/sites/', '#/m/rooms/organisatie', '#/settings/openbot-import-overstappen', '#/settings/kant-en-klaar', '#/settings/vanzelf'];
+    const have = await moreNav.locator('a').evaluateAll((as) => as.map((a) => a.getAttribute('href')));
+    const missing = want.filter((h) => have.filter((x) => x === h).length !== 1);
+    check('Meer mogelijkheden: elke optionele functie één rij (AI-programma’s, Gratis modellen, Computers, Websites, Organisatie, Overstappen, Kant-en-klare teams, Wat start vanzelf)', !missing.length, missing.join(', '));
+  }
+  await go(d, '#/settings/systeem');
+  check('Meer mogelijkheden › Deze computer: Geavanceerd tonen en pc wakker houden, met een pijl terug', (await d.getByRole('switch', { name: 'Geavanceerd tonen' }).isVisible()) && (await d.locator('#inhoud a[href="#/settings/meer"]').count()) >= 1);
   // Routines live in Taken: Taken stays marked on the routines pages; the old Groepen › Takenbord is the same board.
   await go(d, '#/m/routines/');
   check('#/m/routines/: zijbalk op Taken', (await side.locator('a[aria-current="page"]').innerText().catch(() => '')) === 'Taken');
   await go(d, '#/m/rooms/taken');
   check('#/m/rooms/taken (hetzelfde bord als Taken): zijbalk op Taken, niet binnen Instellingen', (await side.locator('a[aria-current="page"]').innerText().catch(() => '')) === 'Taken' && !(await settingsNav.count()));
-  // The bot page has tabs; #/agents/<id>?tab=<tab> opens one.
+  // The bot page: everything optional is a row under "Meer mogelijkheden"; an old link to a tab (?tab=rechten) opens it.
   await go(d, `#/agents/${sam.id}?tab=rechten`, 900);
   const noTeams = (await d.locator('[data-section="teams:teams"]').count()) === 0 && (await d.locator('[data-section="usage:cap"]').count()) === 1;
-  check('één team: geen onderdeel Teams op de botpagina', noTeams && (await d.locator('[data-section="core:tools"]').count()) === 1);
-  await go(d, '#/settings/security');
-  check('Privacy en back-ups wijst naar Waar staat mijn data?', (await moreNav.getByRole('link', { name: /Waar staat mijn data\?/ }).getAttribute('href').catch(() => '')) === '#/settings/data');
+  check('één team: geen onderdeel Teams op de botpagina (Meer mogelijkheden open, met Onderdelen en skills)', noTeams && (await d.getByTestId('bot-advanced').locator('details').first().evaluate((x) => x.open).catch(() => false)) && (await d.locator('[data-section="core:can"]').count()) === 1);
+  await go(d, '#/settings/geavanceerd');
+  check('Meer mogelijkheden wijst naar Privacy en gegevens', (await moreNav.getByRole('link', { name: /^Privacy en gegevens/ }).getAttribute('href').catch(() => '')) === '#/settings/data');
+  await go(d, '#/settings/veilig');
+  check('Back-ups: een back-up maken op één korte pagina', (await d.getByRole('button', { name: 'Nu een back-up maken' }).count()) === 1);
+  await go(d, '#/settings/slot');
+  check('Vergrendeling: een eigen rij met Vergrendeling instellen', (await d.getByRole('button', { name: 'Vergrendeling instellen' }).count()) === 1);
   await go(d, '#/settings/backups');
-  check('Back-ups: eigen tabblad met exporteren', (await d.getByRole('button', { name: 'Exporteren' }).count()) === 1);
+  check('Back-ups (volledig, onder Meer mogelijkheden): met exporteren', (await d.getByRole('button', { name: 'Exporteren' }).count()) === 1);
 
   // Two clicks: every page from the sidebar (click 1), then a link or tab on that page (click 2). What hangs under a
   // row of Instellingen is one click further: Instellingen › the row › the page.
@@ -236,24 +271,25 @@ try {
   await d.getByRole('button', { name: 'Meer opties' }).click();
   const memMore = await d.getByRole('menuitem').allInnerTexts();
   await d.keyboard.press('Escape');
-  // The rows of Instellingen, Taken (with the routines) and Wacht op jou: two clicks at most. "Waar staat mijn data?"
-  // is a row of Privacy en beveiliging (three clicks) since the unnamed lock left the sidebar. Uiterlijk is part of
-  // Algemeen (no page of its own); Nu bezig is a line on the Taken board while a bot works, else behind its "Meer
-  // opties" (checked below with the other rarely needed pages).
-  const want2 = ['tasks', 'inbox', 'm/usage', 'm/routines', 'settings/general', 'settings/providers', 'settings/security', 'settings/bots', 'settings/apps'];
+  // The rows of Instellingen, Taken (with the routines) and Wacht op jou: two clicks at most. "Privacy en gegevens"
+  // and the other optional pages are a row of Meer mogelijkheden (three clicks). Nu bezig is a line on the Taken board
+  // while a bot works, else behind its "Meer opties" (checked below with the other rarely needed pages).
+  const want2 = ['tasks', 'inbox', 'm/routines', 'settings/providers', 'settings/telefoon', 'settings/general', 'settings/regels', 'settings/veilig', 'settings/slot', 'agents', 'settings/teams', 'm/memory', 'm/channels', 'm/mcp', 'm/folders', 'settings/meer'];
   const missing2 = want2.filter((w) => !inTwo.has(w));
   check('de regels van Instellingen, Taken en Wacht op jou in hoogstens 2 klikken vanuit de zijbalk', !missing2.length, missing2.join(', ') || `${inTwo.size} bestemmingen`);
   // Groepschats (#/m/rooms/) are made from the "+" and live in the chat list: the page is a deep link and in Ctrl+K
-  // (below). Abonnement and Gratis are two of the three ways behind AI-diensten › Toevoegen (checked right after).
-  const want3 = ['settings/data', 'agents', 'm/channels', 'm/mcp', 'm/sites', 'm/browser', 'm/folders', 'm/voice/vergadering', 'm/memory', 'm/skills', 'settings/usage', 'settings/voice-spraak', 'settings/teams-teams', 'settings/mobile-telefoon', 'settings/websearch-zoeken'];
+  // (below). Abonnement and Gratis are two of the ways behind AI-diensten › Toevoegen (checked right after).
+  const want3 = ['settings/data', 'm/sites', 'm/browser', 'm/voice/vergadering', 'm/skills', 'm/usage', 'settings/usage', 'settings/voice-spraak', 'settings/teams-teams', 'settings/mobile-telefoon', 'settings/websearch-zoeken', 'settings/security', 'settings/backups', 'settings/network-proxy', 'settings/notifications-meldingen', 'settings/cli-agents-cli', 'settings/free-models-gratis', 'm/rooms/organisatie', 'settings/openbot-import-overstappen', 'settings/kant-en-klaar', 'settings/vanzelf'];
   const missing3 = want3.filter((w) => !reached.has(w));
-  check('de rest via zijn regel in Instellingen in hoogstens 3 klikken vanuit de zijbalk', !missing3.length && memTabs.includes('Dossiers') && memMore.some((t) => /^Opslag/.test(t.trim())), missing3.join(', ') || `${reached.size} bestemmingen`);
+  check('de rest via zijn regel in Instellingen in hoogstens 3 klikken vanuit de zijbalk', !missing3.length, missing3.join(', ') || `${reached.size} bestemmingen`);
+  check('Geheugen: Dossiers als tabblad, Opslag achter Meer opties', memTabs.includes('Dossiers') && memMore.some((t) => /^Opslag/.test(t.trim())), `tabbladen: ${memTabs.join(', ')}; meer: ${memMore.join(', ')}`);
   await go(d, '#/settings/providers', 500);
   await d.getByTestId('add-ai').click();
   const addDlg = d.getByRole('dialog', { name: 'AI toevoegen' });
-  check('AI-diensten › Toevoegen: Abonnement inloggen en Gratis', (await addDlg.locator('a[href="#/settings/cli-agents-cli"]').count()) === 1 && (await addDlg.locator('a[href="#/settings/free-models-gratis"]').count()) === 1);
+  // One row per kind of AI: Abonnement, Sleutel, Gratis, Op deze computer.
+  check('AI-diensten › Toevoegen: één rij per soort (Abonnement, Sleutel, Gratis, Op deze computer)', (await addDlg.locator('a[href="#/settings/cli-agents-cli"]').count()) === 1 && (await addDlg.getByRole('button', { name: /^Sleutel plakken/ }).count()) === 1 && (await addDlg.locator('a[href="#/settings/free-models-gratis"]').count()) === 1 && (await addDlg.locator('a[href="#/settings/ai-meer"]').count()) === 1);
   await d.keyboard.press('Escape');
-  // Rarely needed pages (their row only with Geavanceerd tonen): one click on the page they belong to. Limieten and
+  // Rarely needed pages: one click on the page they belong to. Limieten and
   // Back-ups beheren are the same as Gebruik en limieten and Back-ups; Concepten only matters when there are drafts
   // (then the phone settings say so).
   const onPage = async (h, name, role = 'any') => {
@@ -307,11 +343,11 @@ try {
   check('Instellingen: het zoekvak vindt ook verborgen onderdelen (proxy)', (await settingsNav.getByRole('link', { name: 'Netwerk en proxy' }).count()) === 1);
   await settingsNav.getByLabel('Zoek een instelling').fill('');
   // Switch on, everything shows; switch off again.
-  await go(d, '#/settings/advanced');
+  await go(d, '#/settings/systeem');
   await d.getByRole('switch', { name: 'Geavanceerd tonen' }).click();
   await d.waitForTimeout(600);
   check('Geavanceerd tonen wordt bewaard', app.ctx.store.settings(owner.id).ui?.advanced === true);
-  check('Algemeen › Meer (Geavanceerd tonen aan): ook Netwerk en proxy; de lijst van Instellingen blijft kort', (await moreNav.getByRole('link', { name: 'Netwerk en proxy' }).count()) === 1 && !(await settingsNav.getByRole('link', { name: 'Netwerk en proxy' }).count()));
+  check('Geavanceerd tonen aan: de lijst van Instellingen blijft dezelfde (geen tweede laag)', !(await settingsNav.getByRole('link', { name: 'Netwerk en proxy' }).count()) && (await settingsNav.locator('a').allInnerTexts()).map((r) => r.trim()).join(',') === ROWS.join(','));
   await go(d, '#/m/teamdata/');
   const advTabs = await d.getByRole('tab').allInnerTexts();
   check('Teamwerk (geavanceerd): ook beslissingen, gebeurtenissen, experimenten en tabellen', advTabs.length === 6, advTabs.join(', '));
@@ -335,7 +371,10 @@ try {
     ['Taken', '#/tasks'],
     ['Kanalen', '#/m/channels/'],
     ['proxy', '#/settings/network-proxy'],
-    ['back-up', '#/settings/backups'],
+    // "back-up": the row Back-ups of the list (make one, put one back); the full page (automatic, off-site, export)
+    // is under Meer mogelijkheden and found by what it has.
+    ['back-up', '#/settings/veilig'],
+    ['exporteren', '#/settings/backups'],
     ['Organisatie', '#/m/rooms/organisatie'],
   ]) {
     await go(d, `#/t/${chatMila.id}`, 300);
@@ -395,7 +434,6 @@ try {
   check('Alle teams tonen: weer alle taken en Alle teams in de kiezer', (await d.locator('#inhoud').innerText()).includes('Taak van Mila') && (await switcher.innerText()).includes('Alle teams'));
   // Access per bot in the bot editor (saved with Opslaan), and a move to another home team.
   const openTeams = async () => {
-    await d.getByRole('tab', { name: 'Meer', exact: true }).click();
     await d.evaluate(() => document.querySelectorAll('details').forEach((x) => (x.open = true)));
     const b = d.locator('[data-section="teams:teams"] h3 button');
     await b.waitFor({ timeout: 5000 });
@@ -480,7 +518,12 @@ try {
   await go(p, '#/more');
   await shot(p, 'telefoon-meer');
   await go(p, '#/m/channels/');
-  check('telefoon: een pagina onder een regel heeft een weg terug naar die regel', (await p.locator('#inhoud').getByRole('link', { name: 'Apps en apparaten' }).first().getAttribute('href')) === '#/settings/apps');
+  // Kanalen is a row of the list: back goes to Instellingen. A page under a row (the Kluis, under Meer mogelijkheden)
+  // goes back to that row.
+  check('telefoon: de pagina van een regel heeft een weg terug naar Instellingen', (await p.locator('#inhoud').getByRole('link', { name: 'Instellingen', exact: true }).first().getAttribute('href').catch(() => '')) === '#/settings');
+  await go(p, '#/m/browser/kluis');
+  check('telefoon: een pagina onder een regel heeft een weg terug naar die regel', (await p.locator('#inhoud').getByRole('link', { name: 'Meer mogelijkheden', exact: true }).first().getAttribute('href').catch(() => '')) === '#/settings/meer');
+  await go(p, '#/m/channels/');
   check('telefoon: tabblad Meer actief binnen Instellingen', (await p.getByRole('navigation', { name: 'Hoofdmenu' }).locator('a[aria-current="page"]').innerText()).trim() === 'Meer');
   const wide = [];
   for (const w of [390, 320]) {

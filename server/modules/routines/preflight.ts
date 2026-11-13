@@ -28,10 +28,6 @@ export interface Blocker {
 const CHANNEL_LINK = '#/m/channels';
 const APP_LINK = '#/m/mcp';
 
-function hasTable(ctx: Ctx, name: string): boolean {
-  return !!ctx.store.one("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?", name);
-}
-
 export function channelBlockers(ctx: Ctx, r: Pick<Routine, 'user_id' | 'options'>): Blocker[] {
   const d = r.options?.deliver;
   if (!d?.bindingId) return [];
@@ -51,7 +47,7 @@ export function appBlockers(ctx: Ctx, r: Pick<Routine, 'user_id' | 'options'>, a
   // A routine limited to other tool groups never uses the bot's apps.
   const groups = r.options?.override?.tool_groups;
   if (Array.isArray(groups) && !groups.includes('mcp')) return [];
-  if (!hasTable(ctx, 'mcp_bindings') || !hasTable(ctx, 'mcp_connections')) return [];
+  if (!ctx.store.hasTable('mcp_bindings') || !ctx.store.hasTable('mcp_connections')) return [];
   const rows = ctx.store.all<any>(
     `SELECT c.* FROM mcp_bindings b JOIN mcp_connections c ON c.id = b.connection_id
      WHERE b.agent_id = ? AND b.user_id = ? AND c.user_id = ? AND c.enabled = 1 AND c.verified_at IS NOT NULL`,

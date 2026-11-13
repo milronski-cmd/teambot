@@ -8,6 +8,7 @@ import { Badge, Button, Field, Input, Select, Spinner, Toggle, toast, toastError
 import { ReplyModal } from './BindingDetail';
 import { t } from '../../lib/i18n';
 import { ADAPTER_ICON, StatusBadge, type BindingView } from './shared';
+import { tText } from '../../lib/format';
 
 /** Bot editor section: the channels of this bot + the channel_send tool group. */
 export function AgentChannels({ agent, onChange }: { agent: Agent; onChange(p: Partial<Agent>): void }) {
@@ -38,7 +39,7 @@ export function AgentChannels({ agent, onChange }: { agent: Agent; onChange(p: P
               <li key={b.id}>
                 <a href={`#/m/channels/${b.id}`} className="flex items-center gap-2 px-3 py-2 text-sm hover:bg-surface-2">
                   <Icon className="h-4 w-4 text-accent" aria-hidden />
-                  <span className="min-w-0 flex-1 truncate">{b.name}</span>
+                  <span className="min-w-0 flex-1 truncate" translate="no">{b.name}</span>
                   {b.agent_id !== agent.id && <Badge>gedeeld: @{agent.name}</Badge>}
                   <StatusBadge status={b.status} enabled={b.enabled} link={b.link} health={b.health} />
                 </a>
@@ -111,9 +112,13 @@ function SendRules({ agentId, agentName, bindings }: { agentId: string; agentNam
             {rules.contacts.map((c) => (
               <li key={c.id} className="flex items-center gap-2 px-3 py-1.5">
                 <span className="min-w-0 flex-1 truncate">
-                  {c.label} <span className="font-mono text-xs text-muted">{c.target}</span> <span className="text-xs text-muted">· {c.binding || 'kanaal verwijderd'}</span>
+                  <span translate="no">{c.label}</span>{' '}
+                  <span className="font-mono text-xs text-muted" translate="no">
+                    {c.target}
+                  </span>{' '}
+                  <span className="text-xs text-muted">· {c.binding ? <bdi translate="no">{c.binding}</bdi> : 'kanaal verwijderd'}</span>
                 </span>
-                <Button size="icon" variant="ghost" aria-label={`${c.label} niet meer vrijgeven`} onClick={() => remove(c.id)}>
+                <Button size="icon" variant="ghost" aria-label={t('{0} niet meer vrijgeven', c.label)} onClick={() => remove(c.id)}>
                   <Trash2 className="h-4 w-4" />
                 </Button>
               </li>
@@ -186,17 +191,18 @@ export function ChannelHeader({ threadId }: { threadId: string; agentId: string 
     }, ch.paused ? 'Bot antwoordt weer' : 'Bot gepauzeerd in dit gesprek');
   return (
     <div className="flex items-center gap-1">
-      <a href={`#/m/channels/${ch.bindingId}`} className="hidden items-center gap-1 sm:inline-flex" title={`${ch.bindingName} — ${ch.title}`}>
+      {/* The channel's and the contact's names, and the bot's reason, as written: marked as a whole, TeamBot's few words translated here. */}
+      <a href={`#/m/channels/${ch.bindingId}`} className="hidden items-center gap-1 sm:inline-flex" title={`${ch.bindingName} — ${ch.title}`} translate="no">
         <Badge tone={ch.status === 'error' ? 'danger' : 'accent'}>
           <Icon className="h-3 w-3" aria-hidden /> {ch.adapterLabel}
           {ch.sender ? ` · ${ch.sender.label}` : ''}
-          {ch.sender?.is_owner ? ' (jij)' : ''}
+          {ch.sender?.is_owner ? ` ${t('(jij)')}` : ''}
         </Badge>
       </a>
       {ch.handoff && (
-        <span className="hidden sm:inline-flex" title={ch.handoff.reason}>
+        <span className="hidden sm:inline-flex" title={ch.handoff.reason} translate="no">
           <Badge tone="warn">
-            <Headset className="h-3 w-3" aria-hidden /> Doorgezet naar jou
+            <Headset className="h-3 w-3" aria-hidden /> {t('Doorgezet naar jou')}
           </Badge>
         </span>
       )}
@@ -210,7 +216,7 @@ export function ChannelHeader({ threadId }: { threadId: string; agentId: string 
       >
         {ch.paused ? <Play className="h-4 w-4" /> : <Pause className="h-4 w-4" />}
       </Button>
-      <Button size="icon" variant="ghost" aria-label={`Zelf antwoorden via ${ch.adapterLabel}`} title={`Zelf antwoorden via ${ch.adapterLabel}`} onClick={() => setReply(true)}>
+      <Button size="icon" variant="ghost" aria-label={tText('Zelf antwoorden via {0}', ch.adapterLabel)} title={tText('Zelf antwoorden via {0}', ch.adapterLabel)} onClick={() => setReply(true)}>
         <Reply className="h-4 w-4" />
       </Button>
       {reply && <ReplyModal open conversationId={ch.conversationId} title={ch.title} onClose={() => setReply(false)} />}

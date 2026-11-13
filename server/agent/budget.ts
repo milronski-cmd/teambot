@@ -1,13 +1,16 @@
 import type { Agent, Ctx, ProviderConfig, Run, Usage } from '../core/types.js';
 import { now } from '../core/db.js';
+import { estimateTokens } from '../core/tokens.js';
 import { estimateCost } from '../providers/pricing.js';
 import { userTz } from './prompt.js';
 import { sharedRunOf } from './shared.js';
 import { usdText } from '../core/i18n.js';
 import { effectiveBudget, isRestricted, memberBudgets, memberPolicy } from '../api/member-policy.js';
+import { PLACE } from '../../shared/places.js';
 
 /**
- * The daily budget (Instellingen › Kosten): what paid engines may spend per day, as an estimate from the usage log.
+ * The daily budget (PLACE.costs; the field itself is in Standaarden voor nieuwe bots): what paid engines may spend per
+ * day, as an estimate from the usage log.
  *
  * A day starts at midnight on the server's clock. The cost of a model call is only known once it is done, so a check
  * before a run alone let one long run (many tool steps) go far past the budget (acceptance round 6, B-70). The runner
@@ -95,7 +98,7 @@ export function budgetText(b: BudgetStop, tz?: string): string {
       ? `Daglimiet van ${usdText(b.limit)} bereikt: vandaag is ${usdText(b.spent)} gebruikt en de volgende stap kost naar schatting ${usdText(b.estimate)} (zoveel kostte de vorige).`
       : `Daglimiet van ${usdText(b.limit)} bereikt (vandaag ${usdText(b.spent)} gebruikt).`;
   const when = `Om ${resetClock(b.resetAt, tz)} begint een nieuwe dag en werkt de bot weer.`;
-  const raise = b.byAdmin ? 'Wil je vandaag verder, vraag de beheerder dan om een hoger dagbudget.' : 'Wil je vandaag verder, verhoog de limiet dan in Instellingen › Kosten.';
+  const raise = b.byAdmin ? 'Wil je vandaag verder, vraag de beheerder dan om een hoger dagbudget.' : `Wil je vandaag verder, verhoog de limiet dan in ${PLACE.costs}.`;
   return `${first} ${when} ${raise}`;
 }
 
@@ -177,8 +180,64 @@ export function recordUsage(ctx: Ctx, run: Run, agent: Agent, cfg: ProviderConfi
   const cost = ctx.providers.kind(cfg.kind)?.type === 'cli' ? (u.cost ?? null) : estimateCost(cfg.kind, model, u.input, u.output, u.cacheRead || 0, cfg.config);
   const usage = { ...u, cost: cost ?? undefined };
   const value = typeof u.value === 'number' ? u.value : cost;
-  ctx.store.insert('usage_log', { user_id: run.user_id, agent_id: agent.id, provider_id: cfg.id, model, input: u.input, output: u.output, cost: cost ?? 0, value: value ?? null, created_at: now() });
+  ctx.store.insert('usage_log', { user_id: run.user_id, agent_id: agent.id, provider_id: cfg.id, model, input: u.input, output: u.output, cost: cost ?? 0, value: value ?? null, ...(u.estimated ? { estimated: 1 } : {}), created_at: now() });
   const cur = ctx.store.run(run.id)!;
-  ctx.store.updateRun(run.id, { usage: { input: (cur.usage?.input || 0) + u.input, output: (cur.usage?.output || 0) + u.output, cost: (cur.usage?.cost || 0) + (cost || 0) } });
+  const estimated = cur.usage?.estimated || u.estimated;
+  ctx.store.updateRun(run.id, { usage: { input: (cur.usage?.input || 0) + u.input, output: (cur.usage?.output || 0) + u.output, cost: (cur.usage?.cost || 0) + (cost || 0), ...(estimated ? { estimated: true } : {}) } });
   return usage;
+}
+
+// ------------------------------------------------------------------ a call that ends without its result
+
+/**
+ * An engine that stops before its end (the owner's stop, a loop guard) throws its usual error with what it used so
+ * far on it: `throw withUsage(new Error('Gestopt'), usage)`. A CLI engine counts per step, so it knows.
+ */
+export function withUsage<E extends Error>(e: E, usage: Usage, model?: string | null): E {
+  return Object.assign(e, { usage, ...(model ? { model } : {}) });
+}
+
+/** What an engine said it used before it stopped (see withUsage); null when it said nothing. */
+export function usageOf(e: unknown): Usage | null {
+  const u = (e as { usage?: Usage } | null)?.usage;
+  return u && typeof u === 'object' && (Number(u.input) > 0 || Number(u.output) > 0) ? u : null;
+}
+
+/** The model an engine said it used (a CLI resolves "opus" or its default to a full id), when it is a model id. */
+export function modelSaid(said: unknown, asked: string): string {
+  return typeof said === 'string' && /^[\w.:/@+[\]-]{1,120}$/.test(said) ? said : asked;
+}
+
+/**
+ * A model call or CLI turn that ended without its result (stopped, steered, failed, a loop guard) used tokens too, and
+ * is counted like any other in the usage log, the daily budget and the bot's cap. On every kind of AI the same rule:
+ * the engine's own numbers when it gave them (a CLI engine reports per step: `reported`); otherwise, once the engine
+ * sent anything back, TeamBot's estimate from what it sent (`sent`, tokens) and what came back (`received`), marked
+ * as an estimate. An engine that sent nothing back (refused the call, stopped before it began) used nothing.
+ */
+export function recordUnfinished(ctx: Ctx, run: Run, agent: Agent, cfg: ProviderConfig, model: string, o: { reported?: Usage | null; sent?: number; received?: string }): Usage | null {
+  try {
+    if (!ctx.store.run(run.id)) return null; // the conversation was deleted meanwhile
+    const cli = ctx.providers.kind(cfg.kind)?.type === 'cli';
+    const said = o.reported && (o.reported.input > 0 || o.reported.output > 0) ? o.reported : null;
+    const u: Usage | null = said ? { ...said } : o.received?.trim() ? { input: Math.max(0, Math.round(o.sent || 0)), output: estimateTokens(o.received), estimated: true } : null;
+    if (!u) return null;
+    // An engine counts the output of a call when the call ends (Claude Code: message_delta); of the call it was in the
+    // middle of, it said almost nothing yet. At least what came back counts, then as an estimate.
+    const back = estimateTokens(o.received || '');
+    if (said && back > u.output) Object.assign(u, { output: back, estimated: true });
+    if (cli) {
+      // A CLI says its money only at the end of a turn. Its adapter knows the billing: 0 on the owner's subscription,
+      // `undefined` on a pay-per-use key (then the list price). Without a word from the adapter: the list price only
+      // for a CLI that reported a cost before (canCost). Its value is always the list price (an estimate).
+      const list = estimateCost(cfg.kind, model, u.input, u.output, u.cacheRead || 0, cfg.config);
+      const billing = o.reported ? o.reported.cost : canCost(ctx, agent, run.user_id, cfg) ? undefined : 0;
+      u.cost = billing === undefined ? (list ?? 0) : billing;
+      if (u.value === undefined && list !== null) u.value = list;
+    }
+    return recordUsage(ctx, run, agent, cfg, model, u);
+  } catch (e) {
+    ctx.log.warn('[usage] a stopped call was not counted', String(e));
+    return null;
+  }
 }

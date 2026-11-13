@@ -5,7 +5,7 @@ import { Markdown } from '../shell/Markdown';
 import { fileUrl, getBytes } from '../lib/api';
 import type { AttachmentRef } from '../lib/types';
 import { langForFile, useHighlight } from '../lib/highlight';
-import { formatBytes as bytesIn } from '../lib/format';
+import { formatBytes } from '../lib/format';
 
 const PdfView = lazy(() => import('./PdfView'));
 
@@ -29,10 +29,6 @@ export function previewKindOf(name: string, mime = ''): PreviewKind {
   if (e === '.md' || e === '.markdown' || m === 'text/markdown') return 'markdown';
   if (m.startsWith('text/') || m === 'application/json' || TEXT.has(e)) return 'text';
   return 'binary';
-}
-
-export function formatBytes(n: number) {
-  return bytesIn(n);
 }
 
 export interface PreviewSource {

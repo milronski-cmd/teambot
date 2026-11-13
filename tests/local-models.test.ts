@@ -13,7 +13,7 @@ import type { ChatMsg, ChatRequest, ToolSpec } from '../server/core/types.js';
 import { builtinKinds } from '../server/providers/kinds.js';
 import { cutNotice, kvBytesPerToken, toolCallsFromText } from '../server/providers/localmodels.js';
 import { isIntegrated, mergeNvidia, parseNvidiaSmi, parseWindowsGpus, type Hardware } from '../server/modules/local-models/hardware.js';
-import { GiB, bestDownload, budget, fitFor, fitLoaded, memoryNeed, recommend, type Candidate } from '../server/modules/local-models/advice.js';
+import { GiB, bestDownload, budget, fitFor, fitLoaded, memoryNeed, pickInstalled, recommend, roomyFor, type Candidate } from '../server/modules/local-models/advice.js';
 import { OLLAMA_CATALOG } from '../server/modules/local-models/catalog.js';
 import { cpuWarning, parsePs } from '../server/modules/local-models/ollama.js';
 import { PROBE_TOOLS, classifyProbe, probePlan, probeThink } from '../server/modules/local-models/probe.js';
@@ -124,14 +124,30 @@ test('advice: one model for a first bot — on this pc first, the biggest that f
   // Nothing installed: the best download.
   assert.deepEqual(recommend([], catalog(THIS_PC)), { id: 'qwen3:14b', installed: false });
   assert.deepEqual(recommend([], catalog(NO_GPU)), { id: 'qwen3:1.7b', installed: false });
-  // The real pc: two copies of the same model (a few bytes apart) fit; the loaded one wins. A 22 GB model is slow.
+  // The real pc: two copies of the same 35B model (a few bytes apart) fit on the card, but only just (15.4 of 16.6 GB
+  // by an estimate that is a lower bound). A 22 GB model is slow. Loaded on the card now = used last: that one.
   const installed: Candidate[] = [
-    { id: 'hf.co/mradermacher/Qwen3.6-35B-A3B-uncensored-heretic-i1-GGUF:IQ3_XS', size: 14484145728, fit: 'fits', tools: 'unknown' },
-    { id: 'qwen3.6-uncensored-snel:latest', size: 14484145455, fit: 'fits', tools: 'unknown', loaded: true },
+    { id: 'hf.co/mradermacher/Qwen3.6-35B-A3B-uncensored-heretic-i1-GGUF:IQ3_XS', size: 14484145728, fit: 'fits', tools: 'unknown', roomy: false },
+    { id: 'qwen3.6-uncensored-snel:latest', size: 14484145455, fit: 'fits', tools: 'unknown', loaded: true, roomy: false },
     { id: 'qwen3.6-uncensored:latest', size: 22136431163, fit: 'slow', tools: 'unknown' },
   ];
   assert.deepEqual(recommend(installed, catalog(THIS_PC)), { id: 'qwen3.6-uncensored-snel:latest', installed: true });
-  assert.equal(recommend(installed.map((c) => ({ ...c, loaded: false })), catalog(THIS_PC))!.id, 'qwen3.6-uncensored-snel:latest', 'not loaded: the plain Ollama name');
+  assert.equal(pickInstalled(installed)?.id, 'qwen3.6-uncensored-snel:latest');
+  // Not loaded (acceptance 12 Nov: connecting Ollama took the 34.7B model): a model that fits with room to spare, a
+  // good all-rounder first. With only the big ones installed: a download that fits well is the advice, and a
+  // connection starts on the smallest installed one that runs.
+  const cold = installed.map((c) => ({ ...c, loaded: false }));
+  const small: Candidate = { id: 'qwen3:1.7b', size: 1359292957, fit: 'fits', tools: 'unknown', firstBot: true, roomy: roomyFor(budget(THIS_PC), memoryNeed({ weights: 1359292957, kvPerToken: 114688 })) };
+  assert.equal(small.roomy, true);
+  assert.equal(roomyFor(budget(THIS_PC), memoryNeed({ weights: 14484145455, kvPerToken: 20480 })), false, 'the 35B model fills the card to the brim');
+  assert.deepEqual(recommend([...cold, small], catalog(THIS_PC)), { id: 'qwen3:1.7b', installed: true });
+  assert.equal(pickInstalled([...cold, small])?.id, 'qwen3:1.7b');
+  assert.deepEqual(recommend(cold, catalog(THIS_PC)), { id: 'qwen3:14b', installed: false });
+  assert.equal(pickInstalled(cold)?.id, 'qwen3.6-uncensored-snel:latest', 'nothing runs well: the smallest that runs, the plain Ollama name');
+  // Two that fit with room: the all-rounder from the list goes before a bigger unknown model; else the biggest.
+  const coder: Candidate = { id: 'some-coder:7b', size: 4.7e9, fit: 'fits', tools: 'yes', roomy: true };
+  assert.equal(pickInstalled([coder, small])?.id, 'qwen3:1.7b');
+  assert.equal(pickInstalled([coder, { ...small, firstBot: false }])?.id, 'some-coder:7b');
   // A model that cannot use tools is never advised; a model that is only slow gives way to a download that fits.
   assert.deepEqual(recommend([{ id: 'gemma:2b', size: 1.7e9, fit: 'fits', tools: 'no' }], catalog(THIS_PC)), { id: 'qwen3:14b', installed: false });
   assert.deepEqual(recommend([installed[2]], catalog(THIS_PC)), { id: 'qwen3:14b', installed: false });
@@ -370,7 +386,7 @@ test('Ollama: a tool call that comes back as text (OpenAI layer and native) is r
 
 const QWEN3_INFO = { 'general.architecture': 'qwen3', 'qwen3.block_count': 36, 'qwen3.attention.head_count': 32, 'qwen3.attention.head_count_kv': 8, 'qwen3.attention.key_length': 128, 'qwen3.attention.value_length': 128, 'qwen3.embedding_length': 4096, 'qwen3.context_length': 40960 };
 
-async function fakeOllama() {
+async function fakeOllama(port = 0) {
   const st = {
     tags: [
       { name: 'qwen3:8b', model: 'qwen3:8b', size: 5225387677, digest: 'd8', details: { parameter_size: '8.2B', quantization_level: 'Q4_K_M', context_length: 40960 }, capabilities: ['completion', 'tools', 'thinking'] },
@@ -414,7 +430,7 @@ async function fakeOllama() {
       res.end('{}');
     });
   });
-  await new Promise<void>((r) => s.listen(0, '127.0.0.1', () => r()));
+  await new Promise<void>((r) => s.listen(port, '127.0.0.1', () => r()));
   return { url: `http://127.0.0.1:${(s.address() as AddressInfo).port}`, st, close: () => new Promise<void>((r) => s.close(() => r())) };
 }
 
@@ -502,7 +518,9 @@ test('module: the card data, a cached tool test, a download with progress, "use 
     const used = await t.api('POST', '/local-models/use', { model: 'qwen3:8b' });
     assert.equal(used.providerId, p.id);
     assert.equal(t.app.ctx.providers.config(p.id)!.config.defaultModel, 'qwen3:8b');
-    assert.equal(t.app.ctx.store.getSetting(t.app.ctx.auth.owner()!.id, 'defaultModel', ''), 'qwen3:8b');
+    // One default model: the connection's own. The user has no second value that could say something else.
+    assert.equal(t.app.ctx.store.getSetting(t.app.ctx.auth.owner()!.id, 'defaultModel', ''), '');
+    assert.equal((await t.api('GET', '/settings')).defaultModel, 'qwen3:8b');
     await assert.rejects(t.api('POST', '/local-models/use', { model: 'bestaat-niet' }), /staat niet in Ollama/);
   } finally {
     await t.close();
@@ -529,5 +547,108 @@ test('module: Ollama not running → said plainly, no advice that cannot be foll
     await assert.rejects(t.api('POST', '/local-models/pull', { model: 'qwen3:1.7b' }), /Ollama draait niet/);
   } finally {
     await t.close();
+  }
+});
+
+// ------------------------------------------------------------------ "Installeren" when Ollama is not on this pc
+
+/** A free port on this computer (nothing listens on it until the stand-in Ollama is "installed"). */
+async function freePort(): Promise<number> {
+  const s = http.createServer();
+  await new Promise<void>((r) => s.listen(0, '127.0.0.1', () => r()));
+  const port = (s.address() as AddressInfo).port;
+  await new Promise<void>((r) => s.close(() => r()));
+  return port;
+}
+
+test('Installeren: Ollama missing → its signed installer runs silently, Ollama is connected with a model, a bot answers', async () => {
+  // A stand-in for ollama.com (the installer) and for Ollama, which only answers once the installer ran.
+  const setup = Buffer.alloc(300_000, 7);
+  const site = http.createServer((_rq, res) => (res.writeHead(200, { 'content-type': 'application/octet-stream', 'content-length': setup.length }), res.end(setup)));
+  await new Promise<void>((r) => site.listen(0, '127.0.0.1', () => r()));
+  const port = await freePort();
+  let ol: Awaited<ReturnType<typeof fakeOllama>> | null = null;
+  const steps: string[] = [];
+  const plan = {
+    url: `http://127.0.0.1:${(site.address() as AddressInfo).port}/download/OllamaSetup.exe`,
+    file: 'OllamaSetup.exe',
+    async verify(file: string) {
+      steps.push(`verify ${fs.statSync(file).size}`);
+      return true;
+    },
+    async install() {
+      steps.push('install');
+      ol = await fakeOllama(port);
+      ol.st.tags = []; // a fresh Ollama has no models
+    },
+    async start() {
+      steps.push('start');
+    },
+  };
+  const t = await startTestApp({ modules: [createLocalModelsModule({ hardware: async () => THIS_PC, hardwareTtlMs: 0, installPlan: () => plan, installWaitMs: 3000 })] });
+  try {
+    t.app.ctx.providers.kind('ollama')!.baseUrl = `http://127.0.0.1:${port}/v1`;
+    assert.equal((await t.api('GET', '/local-models')).ollama.running, false, 'Ollama is not on this pc');
+    const first = await t.api('POST', '/local-models/install', {});
+    assert.equal(first.phase, 'download');
+    const seen: string[] = [];
+    const off = t.app.ctx.events.on('localmodels.install', (e: any) => seen.push(e.data?.phase ?? e.phase));
+    const end = await until(() => t.api('GET', '/local-models/install'), (s: any) => s && (s.phase === 'done' || s.phase === 'error'), 20_000);
+    off();
+    assert.equal(end.phase, 'done', end.error);
+    assert.deepEqual(steps, [`verify ${setup.length}`, 'install'], 'checked before it ran; Ollama answered, so no extra start');
+    assert.ok(!fs.existsSync(path.join(t.dir, 'downloads', 'OllamaSetup.exe')), 'the installer is cleaned up');
+    // Connected, with the download that runs well on this pc (nothing was installed yet).
+    const p = t.app.ctx.store.all<any>("SELECT * FROM providers WHERE kind = 'ollama'").map((r) => t.app.ctx.providers.config(r.id)!)[0];
+    assert.ok(p, 'Ollama is connected');
+    assert.equal(p.config?.defaultModel, 'qwen3:14b');
+    assert.deepEqual(ol!.st.pulls.map((x: any) => x.model), ['qwen3:14b']);
+    assert.equal(end.model, 'qwen3:14b');
+    // No further step: a bot on Ollama without a model of its own answers, with a window that fits it.
+    const a = await t.api('POST', '/agents', { name: 'Lokaal', provider_id: p.id, access_mode: 'auto' });
+    const th = await t.api('POST', '/threads', { agentId: a.id });
+    const msgs = await t.say(th.id, 'Hoi', 15_000);
+    const answer = msgs.filter((m: any) => m.role === 'assistant').at(-1)!;
+    assert.equal(answer.status, 'done', answer.parts?.error);
+    assert.equal(answer.content, 'hoi');
+    assert.equal(ol!.st.chats.at(-1).model, 'qwen3:14b');
+    assert.ok(ol!.st.chats.at(-1).options.num_ctx >= 16384, `a window that fits the bot, not Ollama's 4K: ${ol!.st.chats.at(-1).options.num_ctx}`);
+    assert.ok(seen.length > 0, 'progress was sent as it went');
+  } finally {
+    await t.close();
+    await (ol as any)?.close();
+    await new Promise<void>((r) => site.close(() => r()));
+  }
+});
+
+test('Installeren: a download that is not signed by Ollama is never run; a computer without a silent install says what to do', async () => {
+  const setup = Buffer.alloc(1000, 1);
+  const site = http.createServer((_rq, res) => (res.writeHead(200, { 'content-length': setup.length }), res.end(setup)));
+  await new Promise<void>((r) => site.listen(0, '127.0.0.1', () => r()));
+  const port = await freePort();
+  let ran = false;
+  let plan: any = {
+    url: `http://127.0.0.1:${(site.address() as AddressInfo).port}/OllamaSetup.exe`,
+    file: 'OllamaSetup.exe',
+    verify: async () => false,
+    install: async () => void (ran = true),
+    start: async () => {},
+  };
+  const t = await startTestApp({ modules: [createLocalModelsModule({ hardware: async () => THIS_PC, hardwareTtlMs: 0, installPlan: () => plan, installWaitMs: 500 })] });
+  try {
+    t.app.ctx.providers.kind('ollama')!.baseUrl = `http://127.0.0.1:${port}/v1`;
+    await t.api('POST', '/local-models/install', {});
+    const end = await until(() => t.api('GET', '/local-models/install'), (s: any) => s && (s.phase === 'done' || s.phase === 'error'), 10_000);
+    assert.equal(end.phase, 'error');
+    assert.match(end.error, /niet ondertekend door Ollama; er is niets geïnstalleerd/);
+    assert.equal(ran, false);
+    assert.ok(!fs.existsSync(path.join(t.dir, 'downloads', 'OllamaSetup.exe')));
+    assert.equal(t.app.ctx.store.all("SELECT id FROM providers WHERE kind = 'ollama'").length, 0, 'nothing connected');
+    // Linux: Ollama's installer needs a password; TeamBot says where to get it instead of failing silently.
+    plan = null;
+    await assert.rejects(t.api('POST', '/local-models/install', {}), /installeert TeamBot Ollama niet zelf.*ollama\.com\/download/);
+  } finally {
+    await t.close();
+    await new Promise<void>((r) => site.close(() => r()));
   }
 });

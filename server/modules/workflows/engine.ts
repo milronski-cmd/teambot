@@ -1,9 +1,10 @@
 import { sha256 as sha } from '../../core/util.js';
 import crypto from 'node:crypto';
-import { Cron } from 'croner';
 import type { Agent, Ctx, Thread } from '../../core/types.js';
 import { bad, notFound, str } from '../../core/http.js';
 import { defineTable, newId, now } from '../../core/db.js';
+import { plannerOf, type Planned } from '../routines/planner.js';
+import { nextRunAfter, systemTimezone, type Schedule as PlanSchedule } from '../routines/schedule.js';
 import { quoteUntrusted } from '../routines/triggers.js';
 import { TEMPLATES, fromTemplate } from './templates.js';
 import { MAX_STEPS, MAX_VISITS, MAX_WORKFLOWS, STEP_TIMEOUT_MIN, type RunStatus, type RunTrigger, type Schedule, type Step, type TraceItem, type Workflow, type WorkflowRun } from './types.js';
@@ -60,15 +61,25 @@ export function renderPrompt(prompt: string, o: { input: string; previous: strin
   return out;
 }
 
-export function cronOf(s: Schedule): string | null {
+/** A workflow's schedule in the planner's terms (days of the week and a time, in the owner's time zone); null: none. */
+export function planOf(s: Schedule): PlanSchedule | null {
   if (s.kind === 'none') return null;
-  const [h, m] = s.time.split(':').map(Number);
-  return s.kind === 'daily' ? `${m} ${h} * * *` : `${m} ${h} * * ${s.days.join(',')}`;
+  return { kind: 'weekly', days: s.kind === 'daily' ? [0, 1, 2, 3, 4, 5, 6] : s.days, times: [s.time] };
 }
+
+/** The workflows' name in the planner. */
+const SOURCE = 'workflows';
+/** A time that passed longer ago than this (the pc slept, the clock jumped) is skipped, not started late. */
+const LATE_MS = 10 * 60_000;
 
 export class WorkflowEngine {
   private active = new Map<string, AbortController>();
-  private crons = new Map<string, Cron>();
+  /** Takes the workflows out of the planner again. */
+  private off: (() => void) | null = null;
+  /** The planner's time of the previous look: a schedule time after it and not after now is due. */
+  private lookedAt = 0;
+  /** Workflow → the planner's time it was made or changed in this session. */
+  private savedAt = new Map<string, number>();
   private stopped = false;
 
   constructor(private ctx: Ctx) {}
@@ -143,7 +154,8 @@ export class WorkflowEngine {
   view(w: Workflow) {
     const last = this.ctx.store.one<any>('SELECT id, status, created_at, finished_at FROM workflow_runs WHERE workflow_id = ? ORDER BY created_at DESC LIMIT 1', w.id);
     const { webhook_hash, user_id, ...rest } = w;
-    return { ...rest, webhook: !!webhook_hash, nextRun: this.crons.get(w.id)?.nextRun()?.toISOString() || null, lastRun: last || null };
+    const next = this.off ? this.nextRun(w, plannerOf(this.ctx)!.now()) : null;
+    return { ...rest, webhook: !!webhook_hash, nextRun: next === null ? null : new Date(next).toISOString(), lastRun: last || null };
   }
 
   list(userId: string) {
@@ -230,8 +242,6 @@ export class WorkflowEngine {
       store.exec('DELETE FROM workflow_versions WHERE workflow_id = ?', w.id);
       store.exec('DELETE FROM workflows WHERE id = ?', w.id);
     });
-    this.crons.get(w.id)?.stop();
-    this.crons.delete(w.id);
     this.ctx.audit(userId, 'workflow.deleted', { workflowId: w.id, name: w.name });
     this.changed(userId, w.id);
     return { ok: true };
@@ -276,26 +286,67 @@ export class WorkflowEngine {
   }
 
   // ---------------- schedule ----------------
+  // No clock of its own: the workflows are a source of the one planner (routines/planner.ts). It looks once a minute
+  // and at the moment the soonest workflow is due; a workflow whose time has come since the previous look starts.
 
-  private resync(w: Workflow) {
-    this.crons.get(w.id)?.stop();
-    this.crons.delete(w.id);
-    const pattern = w.enabled ? cronOf(w.schedule) : null;
-    if (!pattern || this.stopped) return;
+  /** The next time this workflow starts by itself after `from` (ms), or null: off, or no schedule. */
+  private nextRun(w: Workflow, from: number): number | null {
+    const plan = w.enabled ? planOf(w.schedule) : null;
+    if (!plan) return null;
+    const tz = this.ctx.services.routines?.engine?.userTz?.(w.user_id) || systemTimezone();
     try {
-      const job = new Cron(pattern, () => {
-        const cur = this.ctx.store.get<Workflow>('workflows', w.id);
-        if (!cur || !cur.enabled) return;
-        try {
-          this.start(cur, { trigger: 'schedule', input: '', startedBy: 'Schema' });
-        } catch (e: any) {
-          this.ctx.log.warn(`[workflows] geplande run van ${cur.id} overgeslagen: ${e?.message || e}`);
-        }
-      });
-      this.crons.set(w.id, job);
+      return nextRunAfter(plan, tz, from);
     } catch (e: any) {
       this.ctx.log.warn(`[workflows] schema van ${w.id} ongeldig: ${e?.message || e}`);
+      return null;
     }
+  }
+
+  private scheduled(userId?: string): Workflow[] {
+    return this.ctx.store.find<Workflow>('workflows', userId ? { user_id: userId, enabled: true } : { enabled: true }).filter((w) => w.schedule.kind !== 'none');
+  }
+
+  /** A look of the planner: start every workflow whose time has come since the previous look (or since it was last saved). */
+  private look(at: number) {
+    const from = this.lookedAt || at;
+    this.lookedAt = at;
+    if (this.stopped) return;
+    for (const w of this.scheduled()) {
+      const due = this.nextRun(w, Math.max(from, this.savedAt.get(w.id) || 0));
+      if (due === null || due > at || at - due > LATE_MS) continue;
+      try {
+        this.start(w, { trigger: 'schedule', input: '', startedBy: 'Schema' });
+      } catch (e: any) {
+        this.ctx.log.warn(`[workflows] geplande run van ${w.id} overgeslagen: ${e?.message || e}`);
+      }
+    }
+    this.resync();
+  }
+
+  /**
+   * Ask the planner for a look at the moment the soonest workflow is due. `saved`: this workflow was just made or
+   * changed, so a time of its schedule that passed before now does not count for it.
+   */
+  private resync(saved?: Workflow) {
+    const planner = this.off ? plannerOf(this.ctx) : null;
+    if (!planner) return;
+    const at = planner.now();
+    if (saved) this.savedAt.set(saved.id, at);
+    const next = this.scheduled()
+      .map((w) => this.nextRun(w, Math.max(this.lookedAt || at, this.savedAt.get(w.id) || 0)))
+      .filter((x): x is number => x !== null);
+    if (next.length) planner.kick(SOURCE, Math.min(...next) - at);
+  }
+
+  /** For the planner's list: the workflows that start by themselves, with their next time. */
+  private planned(userId: string, at: number): Planned[] {
+    const out: Planned[] = [];
+    for (const w of this.scheduled(userId)) {
+      const next = this.nextRun(w, at);
+      const first = w.steps.find((s) => s.kind === 'bot');
+      if (next !== null) out.push({ kind: 'workflow', id: w.id, userId, agentId: first?.kind === 'bot' ? first.agentId : null, title: w.name, at: new Date(next).toISOString(), model: true, link: `#/m/workflows/w/${w.id}` });
+    }
+    return out;
   }
 
   // ---------------- runs ----------------
@@ -590,16 +641,30 @@ export class WorkflowEngine {
 
   startAll() {
     this.recover();
-    for (const w of this.ctx.store.all<any>('SELECT id FROM workflows WHERE enabled = 1')) {
-      const full = this.ctx.store.get<Workflow>('workflows', w.id);
-      if (full) this.resync(full);
-    }
+    const planner = plannerOf(this.ctx);
+    if (!planner) return;
+    // Nothing from before this start is started late: only a time that comes from now on counts.
+    this.lookedAt = planner.now();
+    this.off = planner.register({
+      id: SOURCE,
+      everyMs: 60_000,
+      look: (at) => this.look(at),
+      planned: (userId, at) => this.planned(userId, at),
+      // "Alles stoppen" (the planner's stop): a workflow that is busy or waits stops too ("Gestopt door jou", it can be
+      // resumed where it stopped). Otherwise it would start its next step by itself after the stop.
+      stop: (userId) => {
+        const runs = this.activeRuns(userId);
+        for (const r of runs) this.stopRun(userId, r.id);
+        return runs.length;
+      },
+    });
+    this.resync();
   }
 
   stopAll() {
     this.stopped = true;
-    for (const c of this.crons.values()) c.stop();
-    this.crons.clear();
+    this.off?.();
+    this.off = null;
     for (const ac of this.active.values()) ac.abort();
   }
 

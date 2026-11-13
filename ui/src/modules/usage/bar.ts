@@ -2,7 +2,7 @@
  * The usage bar's words and colours: pure helpers without the DOM (the unit tests load them). Texts are Dutch source
  * templates through `t` (lib/format's tText), so the extractor sees them and the interface language applies.
  */
-import { formatDate, formatDuration, formatPercent, formatTime, interfaceLocale, tText as t } from '../../lib/format.js';
+import { formatDate, formatDuration, formatList, formatPercent, formatTime, interfaceLocale, tText as t } from '../../lib/format.js';
 
 export type BarTone = 'ok' | 'warn' | 'danger' | 'unknown';
 export type SourceStatus = 'available' | 'low' | 'limited' | 'offline' | 'unknown';
@@ -136,10 +136,5 @@ export function sourceSentence(s: BarSourceLike, now = Date.now()): string {
 /** "Claude en ChatGPT" in the interface language, for the shared-pot sentence. */
 export function sharedWith(families: string[], locale = interfaceLocale()): string {
   const names = [...new Set(families.map((f) => (f === 'claude' ? 'Claude' : f === 'codex' ? 'ChatGPT' : '')).filter(Boolean))];
-  if (!names.length) return '';
-  try {
-    return new Intl.ListFormat(locale, { type: 'conjunction' }).format(names);
-  } catch {
-    return names.join(', ');
-  }
+  return formatList(names, locale);
 }

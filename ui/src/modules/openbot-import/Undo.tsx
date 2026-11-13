@@ -1,9 +1,10 @@
 import { useEffect, useState } from 'react';
 import { CheckCircle2, Undo2 } from 'lucide-react';
-import { Button, Card, Modal, Spinner, toastError } from '../../components/ui';
+import { Button, Card, Modal, Spinner, useAsync } from '../../components/ui';
 import { useApp } from '../../lib/store';
 import { t } from '../../lib/i18n';
 import { type UndoPlan, type UndoResult, hermesApi, obApi } from './api';
+import { ErrorNote } from './parts';
 
 type From = 'openbot' | 'hermes';
 const apiOf = (from: From) => (from === 'hermes' ? hermesApi : obApi);
@@ -15,25 +16,19 @@ const apiOf = (from: From) => (from === 'hermes' ? hermesApi : obApi);
 function UndoDialog({ onClose, onDone, from }: { onClose(): void; onDone(r: UndoResult): void; from: From }) {
   const [plan, setPlan] = useState<(UndoPlan & { memories?: number }) | null>(null);
   const [error, setError] = useState('');
-  const [busy, setBusy] = useState(false);
+  const { busy, run } = useAsync();
   useEffect(() => {
     apiOf(from)
       .undoPlan()
       .then(setPlan)
       .catch((e) => setError(e?.message || String(e)));
   }, []);
-  const go = async () => {
-    setBusy(true);
-    try {
+  const go = () =>
+    run(async () => {
       const r = await apiOf(from).undo();
       await useApp.getState().load();
       onDone(r);
-    } catch (e) {
-      toastError(e);
-    } finally {
-      setBusy(false);
-    }
-  };
+    });
   const removed = plan?.teams.filter((x) => x.remove) || [];
   const kept = plan?.teams.filter((x) => !x.remove && x.note) || [];
   return (
@@ -53,9 +48,7 @@ function UndoDialog({ onClose, onDone, from }: { onClose(): void; onDone(r: Undo
       }
     >
       {error ? (
-        <p role="alert" className="rounded-lg bg-danger-soft px-3 py-2 text-sm text-danger">
-          {error}
-        </p>
+        <ErrorNote text={error} />
       ) : !plan ? (
         <Spinner />
       ) : !plan.available ? (

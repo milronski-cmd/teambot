@@ -89,7 +89,7 @@ direct* of *Onderweg via TeamBot-verbinding*.
 
 - **TeamBot-verbinding (voor iedereen, sinds 0.4.4)**: geen Tailscale, account of routerinstellingen. Op de pc
   *Instellingen › Telefoon* (sinds 0.4.5 staat de QR-code er meteen en gaat de verbinding vanzelf aan); in de app
-  *Scan de QR-code op je computer*, het enige op het eerste scherm (de code met een adres alleen als de camera niet
+  *QR-code scannen*, de enige knop op het eerste scherm (de code met een adres alleen als de camera niet
   mag). Werkt thuis en onderweg, versleuteld tot op de pc (iroh: direct waar het kan, anders via een relay die alleen versleutelde gegevens
   ziet). De QR-code bevat de sleutel van de pc (`n=`), die de app vastpint. Code: `TeamBot/Connection/IrohTunnel.swift`
   (IrohLib 1.2.0 via SwiftPM, zie `project.yml`): een lokale proxy op `127.0.0.1:<vaste poort>` waar elke

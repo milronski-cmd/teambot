@@ -3,23 +3,29 @@ import type { Ctx, Module } from '../../core/types.js';
 import { ah, bad, notFound, str, user } from '../../core/http.js';
 import { encodeFace } from '../../../shared/botface.js';
 import { normalizeTeam, previewTeam } from '../rooms/packages.js';
+import { ownStartAccess, startOwnBot } from '../skills/templates.js';
 import { describeSchedule, normalizeSchedule, systemTimezone } from '../routines/schedule.js';
 import { accentOf, buildPackage } from './build.js';
 import { isEmptyProfile, profileFromAnswers, profileText, teamsProfile } from './profile.js';
 import { TEMPLATE_DEFS, templateDef } from './registry.js';
 import { botInstructions, teamInstructions } from './render.js';
 import { resolveSkills } from './skills.js';
+import { fillTeamProfile, intakeContext, startIntake, teamQuestions } from './intake.js';
 import type { RoutineSuggestion, TemplateDef } from './types.js';
 import { validateRegistry } from './validate.js';
 
 /**
  * Team templates (0.4, package R): ready teams for a type of business, for private life and general ones, each with
- * one team lead and 2–4 bots (the empty team has only its lead), a short profile questionnaire, suggested catalogue
- * skills, optional specialist fields and suggested routines that come in switched off. Always optional: TeamBot
- * never creates a team by itself. The definitions are data (./defs, one file per template); installing goes through
- * the rooms module's team-package install, so bots start on "vraagt toestemming" and nothing personal travels along.
- * With the teams module (package B) the template becomes one team: its bots get that team as home, the lead is the
- * team lead and the answers fill the team's business profile.
+ * exactly one team lead and 2–4 bots (the empty team has only its lead), a few profile questions, suggested catalogue
+ * skills, optional specialist fields and suggested routines that come in switched off. The definitions are data
+ * (./defs, one file per template); installing goes through the rooms module's team-package install, so nothing
+ * personal travels along. With the teams module (package B) the template becomes one team: its bots get that team as
+ * home and the template's lead is always the team lead.
+ *
+ * No form: choosing a template makes the team at once with an empty profile. The owner's main bot (hoofdbot; made in
+ * the same step when there is none yet) asks the template's questions in its own chat, one at a time, and writes the
+ * answers into the team's business profile (./intake.ts). `answers` in the API still fill the profile directly: the
+ * main bot uses that when it makes a team itself.
  */
 
 function routineView(r: RoutineSuggestion) {
@@ -94,6 +100,8 @@ function teamsApi(ctx: Ctx) {
     update: (userId: string, id: string, data: any): any => t.update(userId, id, data),
     setHome: (userId: string, teamId: string, agentId: string) => t.setHome(userId, teamId, agentId),
     remove: (userId: string, id: string) => (typeof t.remove === 'function' ? t.remove(userId, id) : undefined),
+    /** The owner's main bot, made now when there is none yet (teams service `ensureMain`). */
+    ensureMain: (userId: string, o: { provider_id?: string | null; model?: string; among?: string[] }): { id: string; created: boolean } | null => (typeof t.ensureMain === 'function' ? t.ensureMain(userId, o) : null),
   };
 }
 
@@ -114,13 +122,23 @@ export function buildForUser(ctx: Ctx, userId: string, d: TemplateDef, body: any
   const pkg = buildPackage(d, { profile, values, skills: withSkills ? res.byBot : undefined, profileInInstructions: o.profileInInstructions });
   const missing = res.suggestions.filter((x) => !x.available);
   if (withSkills && missing.length) warnings.push(missing.length === 1 ? `1 voorgestelde skill staat niet in de catalogus en wordt overgeslagen: ${missing[0].id}.` : `${missing.length} voorgestelde skills staan niet in de catalogus en worden overgeslagen: ${missing.map((x) => x.id).join(', ')}.`);
-  return { pkg, profile, warnings, suggestions: res.suggestions, withSkills };
+  return { pkg, profile, values, warnings, suggestions: res.suggestions, withSkills };
+}
+
+/**
+ * A bot from a template that ships with TeamBot starts at "Volledige toegang" (skills/templates.ts startOwnBot): it
+ * does its work without asking; paying always asks (tools/broker.ts) and its routines stay paused. A template from
+ * someone else (a file, another catalogue) keeps starting at "Vraagt toestemming" (previewTemplate).
+ */
+function worksByItself(ctx: Ctx, userId: string, agents: { id: string }[]) {
+  for (const a of agents || []) startOwnBot(ctx, userId, a.id, 'teamsjabloon');
 }
 
 /**
  * Create the team from a template: a team (teams module) with the template's bots and its lead as team lead, the
- * group chat for the team, and the business profile. All or nothing for the bots (rooms install); a new team is
- * removed again when that fails. Nothing runs by itself: routines are paused, bots ask first.
+ * group chat for the team, and the business profile (empty unless `answers` are given). All or nothing for the bots
+ * (rooms install); a new team is removed again when that fails. Routines are paused. An owner without a main bot gets
+ * one in the same step, on the same AI as the team (`main` in the result).
  */
 export async function installForUser(ctx: Ctx, userId: string, d: TemplateDef, body: any) {
   const install = ctx.services.rooms?.installTeam;
@@ -152,12 +170,15 @@ export async function installForUser(ctx: Ctx, userId: string, d: TemplateDef, b
     throw e;
   }
   const warnings = [...b.warnings, ...(r.warnings || [])];
+  worksByItself(ctx, userId, r.agents);
+  const leadName = d.bots.find((x) => x.lead)?.name;
+  const leadBot = r.agents.find((a: any) => a.role === 'lead') || r.agents.find((a: any) => a.name === leadName) || null;
 
   if (teams && team) {
     for (const a of r.agents) teams.setHome(userId, team.id, a.id);
-    const lead = r.agents.find((a: any) => a.role === 'lead');
+    // Every template has exactly one lead (validate.ts): it is the team lead. Only a team that already had a lead keeps its own.
     const patch: any = {};
-    if (lead && (createdTeam || !team.lead_agent_id)) patch.leadAgentId = lead.id;
+    if (leadBot && (createdTeam || !team.lead_agent_id)) patch.leadAgentId = leadBot.id;
     if (!createdTeam && !isEmptyProfile(b.profile)) {
       // An existing team keeps what the owner already wrote; only empty fields are filled in.
       const cur = team.profile || {};
@@ -192,8 +213,24 @@ export async function installForUser(ctx: Ctx, userId: string, d: TemplateDef, b
   // The profile and where the team came from, on the group chat of the team too (the team profile is the source).
   const room = ctx.store.get<any>('rooms', r.room.id);
   // The log already has this as one plain line: the rooms install writes "team.installed" (source: sjabloon).
-  ctx.store.update('rooms', r.room.id, { settings: { ...(room?.settings || {}), profile: b.profile, template: { id: d.id, version: d.version }, ...(team ? { teamId: team.id } : {}) } });
-  return { teamId: team?.id || null, roomId: r.room.id, threadId: r.room.thread_id, agents: r.agents, profile: b.profile, warnings: [...new Set(warnings)] };
+  ctx.store.update('rooms', r.room.id, { settings: { ...(room?.settings || {}), profile: b.profile, answers: b.values, template: { id: d.id, version: d.version }, ...(team ? { teamId: team.id } : {}) } });
+
+  // A main bot is always there: made now when the owner has none, on the AI the team's bots got.
+  let main: { id: string; name: string; created: boolean } | null = null;
+  if (teams && team) {
+    try {
+      const on = ctx.store.agent(leadBot?.id || r.agents[0]?.id);
+      // `among`: a bot of this team that TeamBot made main bot by itself (there was no bot yet) hands the role to the team's own main bot.
+      const m = teams.ensureMain(userId, { provider_id: on?.provider_id ?? null, model: on?.model || '', among: r.agents.map((a: any) => a.id) });
+      if (m?.created) startOwnBot(ctx, userId, m.id, 'hoofdbot');
+      if (m) main = { id: m.id, name: ctx.store.agent(m.id)?.name || '', created: m.created };
+    } catch (e: any) {
+      warnings.push(`De hoofdbot kon niet worden gemaakt: ${String(e?.message || e).slice(0, 160)}`);
+    }
+  }
+  const leadId = (team && teams ? teams.own(userId, team.id).lead_agent_id : null) || leadBot?.id || null;
+  const lead = leadId ? { id: leadId, name: ctx.store.agent(leadId)?.name || '' } : null;
+  return { teamId: team?.id || null, teamName: team?.name || name, roomId: r.room.id, threadId: r.room.thread_id, agents: r.agents, lead, main, profile: b.profile, warnings: [...new Set(warnings)] };
 }
 
 const def = (req: Request) => {
@@ -229,6 +266,8 @@ const mod: Module = {
         const pv = previewTeam(ctx, u.id, normalizeTeam(b.pkg));
         return {
           ...pv,
+          // What the bots really start with (installForUser → worksByItself), not the safe level of a foreign package.
+          bots: pv.bots.map((x) => ({ ...x, access_mode: ownStartAccess(ctx, u.id, x.access_mode) })),
           templateId: d.id,
           version: d.version,
           note: d.note || '',
@@ -241,7 +280,27 @@ const mod: Module = {
         };
       }),
     );
-    api.post('/team-templates/:id/install', ah(async (req) => installForUser(ctx, user(req).id, def(req), req.body || {})));
+    /**
+     * `intake: true` (the app's "Team maken"): the main bot then starts in its own chat with the template's questions;
+     * `chat` in the answer is that conversation. Without it nothing runs (other callers, the main bot's own tool).
+     */
+    api.post(
+      '/team-templates/:id/install',
+      ah(async (req) => {
+        const u = user(req);
+        const out = await installForUser(ctx, u.id, def(req), req.body || {});
+        let chat: { agentId: string; threadId: string } | null = null;
+        if (req.body?.intake === true && out.teamId) {
+          try {
+            chat = startIntake(ctx, u.id, out.teamId);
+          } catch (e) {
+            ctx.log.error('[templates] the main bot could not start about the new team', e);
+          }
+        }
+        return { ...out, chat };
+      }),
+    );
+    ctx.hooks.turnContext.push(({ agent, userId, input }) => intakeContext(ctx, agent.id, userId, input));
 
     ctx.services.teamTemplates = {
       /** All template definitions (data). */
@@ -268,6 +327,12 @@ const mod: Module = {
         if (!d) throw notFound('Onbekend teamsjabloon');
         return installForUser(ctx, userId, d, body);
       },
+      /** A team from a template: its questions, the answers so far and what is still open (null: not from a template). */
+      questionsFor: (userId: string, teamId: string) => teamQuestions(ctx, userId, teamId),
+      /** Answers by question key → the team's business profile, added to what is there (null: not from a template). */
+      fillProfile: (userId: string, teamId: string, answers: unknown) => fillTeamProfile(ctx, userId, teamId, answers),
+      /** The main bot starts in its own chat with the questions of this new team → `{ agentId, threadId }` or null. */
+      startIntake: (userId: string, teamId: string) => startIntake(ctx, userId, teamId),
       /** The profile stored on a team's group chat made from a template. */
       profileFor: (roomId: string) => ctx.store.get<any>('rooms', roomId)?.settings?.profile || null,
     };

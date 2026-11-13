@@ -5,7 +5,7 @@ import { t } from '../../lib/i18n';
 import { navigate, query } from '../../lib/router';
 import { useApp } from '../../lib/store';
 import { Badge, Button, Card, EmptyState, Field, Input, Modal, Page, PageHeader, Tabs, Toggle, toast, useAsync } from '../../components/ui';
-import { Menu, Skeleton, SkeletonRows } from '../../components/overview';
+import { Fold, Menu, Skeleton, SkeletonRows } from '../../components/overview';
 import { Segmented } from '../../components/SettingControls';
 import { StartModal, WorkflowRow } from '../workflows/Pages';
 import { useWorkflows, type Workflow } from '../workflows/api';
@@ -110,9 +110,10 @@ function useRoutineActions() {
     confirm: (r: RoutineView) => run(() => api.post(`/routines/${r.id}/confirm`, {}), 'Routine bevestigd en actief'),
     duplicate: (r: RoutineView) =>
       run(async () => {
+        const from = location.hash;
         const c = await api.post<RoutineView>(`/routines/${r.id}/duplicate`, {});
         toast('Kopie gemaakt; die staat op pauze tot je hem hervat', 'ok');
-        navigate(`/m/routines/r/${c.id}?tab=settings`);
+        navigate(`/m/routines/r/${c.id}?tab=settings`, { from });
       }),
   };
 }
@@ -262,6 +263,26 @@ export function GlobalLimits({ onSaved }: { onSaved?(g: GlobalSettings): void })
           <Input type="number" min={0} step={0.5} value={g.maxCostPerDayUsd} onChange={(e) => setG({ ...g, maxCostPerDayUsd: Number(e.target.value) })} />
         </Field>
       </div>
+      {/* Limits on how many: none until the owner sets one (open when one is set). */}
+      <Fold card={false} title="Meer limieten" hint="Standaard geen" defaultOpen={g.maxRoutines > 0 || g.maxRemindersPerBot > 0 || g.maxTriggersPerRoutine > 0 || g.maxQueuedRuns > 0 || g.maxChain > 0}>
+        <div className="grid gap-4 sm:grid-cols-2">
+          <Field label="Hoogstens zoveel routines" hint="Herinneringen, vaste taken en wachtpunten tellen mee. 0 = geen limiet.">
+            <Input type="number" min={0} value={g.maxRoutines} onChange={(e) => setG({ ...g, maxRoutines: Number(e.target.value) })} />
+          </Field>
+          <Field label="Hoogstens zoveel herinneringen per bot" hint="0 = geen limiet.">
+            <Input type="number" min={0} value={g.maxRemindersPerBot} onChange={(e) => setG({ ...g, maxRemindersPerBot: Number(e.target.value) })} />
+          </Field>
+          <Field label="Hoogstens zoveel triggers per routine" hint="0 = geen limiet.">
+            <Input type="number" min={0} value={g.maxTriggersPerRoutine} onChange={(e) => setG({ ...g, maxTriggersPerRoutine: Number(e.target.value) })} />
+          </Field>
+          <Field label="Hoogstens zoveel wachtende runs per routine" hint="Komt er dan nog een bij, dan wordt die overgeslagen. 0 = geen limiet.">
+            <Input type="number" min={0} value={g.maxQueuedRuns} onChange={(e) => setG({ ...g, maxQueuedRuns: Number(e.target.value) })} />
+          </Field>
+          <Field label="Hoogstens zoveel routines na elkaar" hint="Bij Daarna starten. 0 = geen limiet.">
+            <Input type="number" min={0} value={g.maxChain} onChange={(e) => setG({ ...g, maxChain: Number(e.target.value) })} />
+          </Field>
+        </div>
+      </Fold>
       <div className="flex justify-end">
         <Button variant="primary" onClick={save} loading={busy}>
           Opslaan
@@ -353,7 +374,7 @@ export function RoutinesPage() {
                 { label: 'Projecten', icon: <Target />, href: '#/m/routines/werk/projecten' },
                 { label: 'Kansen', icon: <Lightbulb />, href: '#/m/routines/werk/kansen' },
                 'sep',
-                { label: 'Limieten', icon: <Gauge />, onSelect: () => setLimits(true) },
+                { label: 'Limieten voor routines', icon: <Gauge />, onSelect: () => setLimits(true) },
                 { label: 'Eerder gemist', icon: <PowerOff />, checked: missedAll, onSelect: () => setMissedAll(!missedAll) },
               ]}
             >
@@ -510,10 +531,11 @@ export function RoutineDetailPage({ params }: { params: string[] }) {
     const pre = query().get('agent');
     const agentId = agents.find((a) => a.id === pre)?.id || agents[0]?.id || '';
     const save = async (d: Draft) => {
+      const from = location.hash;
       const created = await api.post<RoutineView>('/routines', d);
       toast('Routine aangemaakt', 'ok');
       // Open on what was just set up (schedule and task), not on Triggers.
-      navigate(`/m/routines/r/${created.id}?tab=settings`);
+      navigate(`/m/routines/r/${created.id}?tab=settings`, { from });
     };
     return (
       <Page>
@@ -541,9 +563,10 @@ export function RoutineDetailPage({ params }: { params: string[] }) {
   };
   const remove = () =>
     run(async () => {
+      const from = location.hash;
       await api.del(`/routines/${r.id}${delThread ? '?deleteThread=1' : ''}`);
       toast('Routine verwijderd', 'ok');
-      navigate('/m/routines');
+      navigate('/m/routines', { from });
     });
 
   return (
@@ -567,7 +590,8 @@ export function RoutineDetailPage({ params }: { params: string[] }) {
               variant="secondary"
               items={[
                 r.status === 'active' && { label: 'Pauzeren', icon: <Pause />, onSelect: () => void act.pause(r) },
-                r.status !== 'active' && r.status !== 'draft' && { label: 'Hervatten', icon: <Play />, onSelect: () => void act.resume(r) },
+                // A paused routine has its Aanzetten in the box under the title.
+                r.status === 'completed' && { label: 'Hervatten', icon: <Play />, onSelect: () => void act.resume(r) },
                 !!r.thread_id && { label: 'Naar het gesprek', icon: <MessageSquare />, href: `#/t/${r.thread_id}` },
                 { label: 'Dupliceren', icon: <Copy />, onSelect: () => void act.duplicate(r) },
                 'sep',
@@ -587,7 +611,15 @@ export function RoutineDetailPage({ params }: { params: string[] }) {
         }
       />
       <div className="mx-auto max-w-3xl space-y-4 px-4 py-4 sm:px-6">
-        {r.status === 'paused' && r.paused_reason && <div className={r.paused_reason.startsWith('Automatisch') ? 'rounded-control bg-danger-soft px-3 py-2.5 text-sm text-danger' : 'rounded-control bg-surface-2 px-3 py-2.5 text-sm text-muted'}>{r.paused_reason}</div>}
+        {/* Paused (by the owner, a bot, or by itself after failures): why, and the one button that turns it back on. */}
+        {r.status === 'paused' && (
+          <div className={`flex flex-wrap items-center gap-x-3 gap-y-2 rounded-control px-3 py-2.5 text-sm ${r.paused_reason?.startsWith('Automatisch') ? 'bg-danger-soft text-danger' : 'bg-surface-2 text-muted'}`}>
+            <span className="min-w-0 flex-1 [overflow-wrap:anywhere]">{r.paused_reason || 'Gepauzeerd'}</span>
+            <Button size="sm" variant="primary" icon={<Play className="h-4 w-4" />} onClick={() => void act.resume(r)} loading={act.busy}>
+              Aanzetten
+            </Button>
+          </div>
+        )}
         {r.status === 'draft' && <div className="rounded-control bg-warn-soft px-3 py-2.5 text-sm text-warn">{r.created_by === 'agent' ? t('{0} stelt deze routine voor. Hij start pas na “Bevestigen”.', agent?.name || 'De bot') : 'Een concept: hij start pas na “Bevestigen”.'}</div>}
         <div className="flex flex-wrap gap-x-6 gap-y-1 text-sm">
           <span>

@@ -1,9 +1,12 @@
 import React, { useEffect, useState } from 'react';
 import * as DialogPrimitive from '@radix-ui/react-dialog';
 import { create } from 'zustand';
-import { ArrowLeft, X, Loader2 } from 'lucide-react';
-import { uiLocale } from '../lib/i18n';
+import { ArrowLeft, ExternalLink, X, Loader2 } from 'lucide-react';
+import type { LucideIcon } from 'lucide-react';
+import { translate, uiLocale } from '../lib/i18n';
+import { useIsDesktop } from '../lib/media';
 import { listTimeIn, shortAgo } from '../lib/format';
+import { copyToClipboard } from '../lib/clipboard';
 import { BotAvatar } from './BotFace';
 
 /**
@@ -32,7 +35,7 @@ export function Button({ variant = 'secondary', size = 'md', loading, icon, clas
   // Disabled: a primary button turns into a calm grey surface (a half-transparent accent was a glaring grey-white disc
   // in the dark theme, e.g. the send button of an empty chat bar); the others fade.
   const v = {
-    primary: 'bg-btn text-btn-fg shadow-[inset_0_1px_0_rgb(255_255_255/0.3)] hover:brightness-105 active:translate-y-px disabled:bg-surface-3 disabled:text-muted disabled:shadow-none disabled:hover:brightness-100',
+    primary: 'bg-btn text-btn-fg hover:opacity-90 disabled:bg-surface-3 disabled:text-muted disabled:hover:opacity-100',
     secondary: 'border border-line-strong bg-surface text-fg hover:bg-surface-2 disabled:opacity-45',
     ghost: 'text-muted hover:bg-surface-2 hover:text-fg disabled:opacity-45',
     danger: 'bg-danger text-danger-fg hover:opacity-90 disabled:opacity-45',
@@ -41,7 +44,7 @@ export function Button({ variant = 'secondary', size = 'md', loading, icon, clas
   const s = {
     // On a touch screen every button is at least 44 px high (Apple/Google touch-target guidance; checklist A-26, A-87).
     sm: 'h-8 px-3 text-[13px] gap-1.5 coarse:h-11',
-    md: 'h-10 px-[18px] text-sm gap-2 coarse:h-11',
+    md: 'h-9 px-3.5 text-sm gap-2 coarse:h-11',
     lg: 'h-11 px-5 text-[15px] gap-2',
     icon: 'h-9 w-9 justify-center coarse:h-11 coarse:w-11',
     // Small icon-only button (message toolbar). 'sm' + "h-7 w-7 p-0" kept px-3 (Tailwind v4 does not resolve conflicts
@@ -50,13 +53,13 @@ export function Button({ variant = 'secondary', size = 'md', loading, icon, clas
   }[size];
   // The control radius (8 px) unless the caller sets its own (rounded-full for a round send button): the same
   // reason as above, two radius classes do not resolve by order.
-  const radius = /(^|\s)rounded(-|\s|$)/.test(className || '') ? '' : 'rounded-[12px]';
+  const radius = /(^|\s)rounded(-|\s|$)/.test(className || '') ? '' : 'rounded-control';
   return (
     <button
       type={type}
       {...p}
       disabled={disabled || loading}
-      className={cx('inline-flex shrink-0 select-none items-center font-semibold transition-[background-color,filter,transform] disabled:cursor-not-allowed', v, s, radius, className)}
+      className={cx('inline-flex shrink-0 select-none items-center font-medium transition-[background-color,opacity] disabled:cursor-not-allowed', v, s, radius, className)}
     >
       {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : icon}
       {children}
@@ -154,11 +157,52 @@ export function Card({ className, children, ...p }: React.HTMLAttributes<HTMLDiv
   );
 }
 
-/** Small section title inside a page or card. */
-export function SectionTitle({ children, action, className }: { children: React.ReactNode; action?: React.ReactNode; className?: string }) {
+/**
+ * The icon tiles (the settings list, every card head) have one quiet look: a grey tile with the icon in the muted text
+ * colour. The tone names are still accepted from callers, but they all draw the same.
+ */
+export type Tone = 'orange' | 'violet' | 'teal' | 'blue' | 'rose' | 'amber' | 'neutral';
+const TILE = 'bg-surface-3 text-muted';
+export const TONE_TILE: Record<Tone, string> = { orange: TILE, violet: TILE, teal: TILE, blue: TILE, rose: TILE, amber: TILE, neutral: TILE };
+
+/** The icon of a card, a row or a page. `sm` (a row of a menu) is the bare icon; the others sit in a quiet grey tile. Decorative. */
+export function IconTile({ icon: Icon, tone = 'neutral', size = 'md', className }: { icon: LucideIcon; tone?: Tone; size?: 'sm' | 'md' | 'lg' | 'xl'; className?: string }) {
+  // xl: the tile next to a page title (the same 40 px tile as the settings pages).
   return (
-    <div className={cx('flex items-center justify-between gap-3', className)}>
-      <h2 className="text-[15px] font-bold tracking-tight">{children}</h2>
+    <span className={cx('flex shrink-0 items-center justify-center', size === 'xl' ? 'size-10 rounded-xl' : 'rounded-lg', size === 'sm' ? 'size-5 text-muted' : size === 'lg' ? 'size-9' : size === 'xl' ? '' : 'size-8', size !== 'sm' && TONE_TILE[tone], className)} aria-hidden>
+      <Icon className={size === 'sm' ? 'h-4 w-4' : size === 'lg' ? 'h-5 w-5' : size === 'xl' ? 'h-[22px] w-[22px]' : 'h-[18px] w-[18px]'} />
+    </span>
+  );
+}
+
+/**
+ * The head of a card: the icon tile, the title and (optional) one short line under it and something on the right.
+ * RULE: every card on a settings page starts with this (or with SettingsSection, which uses it), always with an icon,
+ * so a page reads at a glance. `as` is the heading level (h2 on a page, h3 inside another section).
+ */
+export function CardHead({ icon, tone, title, hint, action, className, id, as: H = 'h2' }: { icon: LucideIcon; tone?: Tone; title: React.ReactNode; hint?: React.ReactNode; action?: React.ReactNode; className?: string; id?: string; as?: 'h2' | 'h3' }) {
+  return (
+    <div className={cx('flex flex-wrap items-center gap-x-3 gap-y-1', className)}>
+      <IconTile icon={icon} tone={tone} />
+      <div className="min-w-[min(100%,9rem)] flex-1">
+        <H id={id} className="text-[15px] font-bold leading-snug tracking-tight [overflow-wrap:anywhere]">
+          {title}
+        </H>
+        {hint && <p className="text-xs leading-relaxed text-muted">{hint}</p>}
+      </div>
+      {action}
+    </div>
+  );
+}
+
+/** Small section title inside a page or card (with `icon`: the same icon tile as a card head). */
+export function SectionTitle({ children, action, className, icon, tone }: { children: React.ReactNode; action?: React.ReactNode; className?: string; icon?: LucideIcon; tone?: Tone }) {
+  return (
+    <div className={cx('flex flex-wrap items-center justify-between gap-x-3 gap-y-2', className)}>
+      <div className="flex min-w-0 items-center gap-3">
+        {icon && <IconTile icon={icon} tone={tone} />}
+        <h2 className="text-[15px] font-bold leading-snug tracking-tight">{children}</h2>
+      </div>
       {action}
     </div>
   );
@@ -179,9 +223,9 @@ export function Spinner({ className }: { className?: string }) {
   return <Loader2 className={cx('h-4 w-4 animate-spin text-muted', className)} />;
 }
 
-export function EmptyState({ icon, art, title, children, action }: { icon?: React.ReactNode; art?: React.ReactNode; title: string; children?: React.ReactNode; action?: React.ReactNode }) {
+export function EmptyState({ icon, art, title, children, action, compact }: { icon?: React.ReactNode; art?: React.ReactNode; title: string; children?: React.ReactNode; action?: React.ReactNode; /** Inside a card: less air around it. */ compact?: boolean }) {
   return (
-    <div className="flex flex-col items-center justify-center gap-3 px-6 py-14 text-center">
+    <div className={cx('flex flex-col items-center justify-center gap-3 text-center', compact ? 'px-4 py-6' : 'px-6 py-14')}>
       {art && <div className="mb-1">{art}</div>}
       {icon && !art && <div className="mb-1 flex h-12 w-12 items-center justify-center rounded-2xl bg-surface-2 text-muted [&_svg]:h-5 [&_svg]:w-5">{icon}</div>}
       <div className="text-base font-bold tracking-tight">{title}</div>
@@ -320,7 +364,7 @@ export function Tabs<T extends string>({ tabs, value, onChange }: { tabs: { id: 
           aria-selected={value === t.id}
           onClick={() => onChange(t.id)}
           className={cx(
-            'h-8 shrink-0 whitespace-nowrap rounded-full px-3.5 text-[13px] transition-colors coarse:h-10',
+            'h-8 shrink-0 whitespace-nowrap rounded-full px-3.5 text-[13px] transition-colors coarse:h-11',
             value === t.id ? 'bg-surface-3 font-semibold text-fg' : 'font-medium text-muted hover:bg-surface-2 hover:text-fg',
           )}
         >
@@ -351,18 +395,32 @@ const WIDTH = { xl: 'max-w-xl', '2xl': 'max-w-2xl', '3xl': 'max-w-3xl', '4xl': '
 export type PageWidth = keyof typeof WIDTH;
 
 /** Page title area: big title, calm subtitle, actions on the right. `width` matches the page body below it. */
-export function PageHeader({ title, subtitle, actions, back, width = '4xl' }: { title: React.ReactNode; subtitle?: React.ReactNode; actions?: React.ReactNode; back?: { href: string; label: string }; width?: PageWidth }) {
+export function PageHeader({ title, subtitle, actions, back: given, width = '4xl', icon, tone }: { title: React.ReactNode; subtitle?: React.ReactNode; actions?: React.ReactNode; back?: { href: string; label: string }; width?: PageWidth; /** The page's icon tile, as on the settings pages. */ icon?: LucideIcon; tone?: Tone }) {
+  // On the phone every page has a way back: a page that names none (Taken, Marktplaats, Automatisch … are reached from
+  // the "Meer" tab there, and have no sidebar next to them) goes back to Meer. The tabs themselves need none.
+  const desktop = useIsDesktop();
+  const tabRoot = /^#?\/?(inbox|more|start)?\/?(\?.*)?$/.test(typeof location === 'undefined' ? '' : location.hash);
+  const back = given || (!desktop && !tabRoot ? { href: '#/more', label: translate('Meer') } : undefined);
   return (
     <div className={cx('mx-auto px-4 pb-2 pt-5 sm:px-6 sm:pt-8', WIDTH[width])}>
       <div className="flex flex-wrap items-end justify-between gap-x-4 gap-y-3">
         <div className="min-w-0">
           {back && (
-            <a href={back.href} className="mb-2 inline-flex items-center gap-1.5 text-[13px] font-medium text-muted hover:text-fg">
-              <ArrowLeft className="h-3.5 w-3.5" /> {back.label}
+            // The same round arrow as the way back in Instellingen (pages/Settings.tsx BackLink): one look for "back".
+            <a href={back.href} className="group mb-2 inline-flex min-h-9 items-center gap-2 text-[13px] font-medium text-muted transition-colors hover:text-fg coarse:min-h-11">
+              <span className="grid h-7 w-7 place-items-center rounded-full border border-line bg-surface transition-colors group-hover:border-fg/30">
+                <ArrowLeft className="h-4 w-4 rtl-flip" aria-hidden />
+              </span>
+              {back.label}
             </a>
           )}
-          <h1 className="text-xl font-bold leading-tight tracking-tight sm:text-[22px]">{title}</h1>
-          {subtitle && <p className="mt-1 max-w-2xl text-[13px] leading-snug text-muted">{subtitle}</p>}
+          <div className="flex items-center gap-3">
+            {icon && <IconTile icon={icon} tone={tone} size="xl" />}
+            <div className="min-w-0">
+              <h1 className="text-xl font-bold leading-tight tracking-tight sm:text-[22px]">{title}</h1>
+              {subtitle && <p className="mt-1 max-w-2xl text-[13px] leading-snug text-muted">{subtitle}</p>}
+            </div>
+          </div>
         </div>
         {actions && <div className="flex flex-wrap gap-2">{actions}</div>}
       </div>
@@ -391,6 +449,11 @@ export function toast(text: string, tone: Toast['tone'] = 'neutral') {
 export function toastError(e: any) {
   // "This stays on the computer" (a paired phone, 403 mobile_denied) is a calm reason, not a red error.
   toast(e?.message || String(e), e?.code === 'mobile_denied' ? 'neutral' : 'danger');
+}
+/** Copy text (also over plain http on a phone) and say so ("Gekopieerd", or `ok`); when it cannot, say how by hand (`fail`). */
+export async function copyText(text: string, ok = 'Gekopieerd', fail = 'Kopiëren lukt hier niet; selecteer de tekst en kopieer handmatig'): Promise<void> {
+  if (await copyToClipboard(text)) toast(ok, 'ok');
+  else toast(fail, 'danger');
 }
 /**
  * A toast that says something is running and is then replaced by its outcome: one message, not two (it stays until
@@ -505,6 +568,16 @@ export function Toaster() {
   );
 }
 
+/** A link that opens in the browser, underlined, with the small "opens elsewhere" arrow. */
+export function ExtLink({ href, children }: { href: string; children: React.ReactNode }) {
+  return (
+    <a className="inline-flex items-center gap-0.5 underline" href={href} target="_blank" rel="noreferrer">
+      {children}
+      <ExternalLink className="h-3 w-3 rtl-keep" aria-hidden />
+    </a>
+  );
+}
+
 /** Small async helper for buttons: runs fn, shows errors as toast. */
 export function useAsync() {
   const [busy, setBusy] = useState(false);
@@ -532,6 +605,16 @@ export function timeAgo(iso: string): string {
 /** Chat-list style time: today → 14:05, yesterday → "gisteren", this week → weekday, else → 3 nov. */
 export function listTime(iso: string): string {
   return listTimeIn(iso, Date.now(), uiLocale());
+}
+
+/** A day heading above messages or log rows: "Vandaag", "Gisteren", else the weekday and date (the year when it is another year). */
+export function dayLabel(iso: string): string {
+  const d = new Date(iso);
+  const today = new Date();
+  const y = new Date(Date.now() - 864e5);
+  if (d.toDateString() === today.toDateString()) return 'Vandaag';
+  if (d.toDateString() === y.toDateString()) return 'Gisteren';
+  return d.toLocaleDateString(uiLocale(), { weekday: 'long', day: 'numeric', month: 'long', year: d.getFullYear() === today.getFullYear() ? undefined : 'numeric' });
 }
 
 FORM_COMPONENTS.add(Input);

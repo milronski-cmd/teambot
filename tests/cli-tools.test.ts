@@ -11,9 +11,13 @@ import { startTestApp, type TestApp } from './helpers.js';
 import { BRIDGE_PROTOCOL_VERSIONS, PermissionBridge, type BridgeRegistration, type StdioServer } from '../server/modules/cli-agents/bridge.js';
 import { makeScope } from '../server/modules/cli-agents/context.js';
 import { nativeExclusions, servedTools, teambotTools, toolsNote } from '../server/modules/cli-agents/toolhost.js';
-import { LOADER_NAME } from '../server/tools/selection.js';
+import { CALL_NAME, FIND_NAME } from '../server/tools/selection.js';
 import { codexMcpArgs } from '../server/modules/cli-agents/codex.js';
 import { acpMcpServer, isTeambotToolCall } from '../server/modules/cli-agents/acp.js';
+
+// These tests are about bots that are not the main bot: without this the first bot would be it (teams `autoMain`,
+// covered in works-right-away.test.ts).
+process.env.TEAMBOT_TEST_NO_AUTO_MAIN = '1';
 
 const children = new Set<ReturnType<typeof spawn>>();
 /** Minimal MCP stdio client for the generated bridge script (what Claude Code / Codex / an ACP agent would do). */
@@ -101,8 +105,8 @@ test('TeamBot MCP server: tools scoped to the run, native duplicates left out, p
   const t = await startTestApp();
   const bridge = new PermissionBridge(t.dir);
   try {
-    // The whole set, as Codex and OpenCode get it (and Claude Code with "fewer tools per turn" off); the selection for
-    // Claude Code has its own test below.
+    // The whole set in the list ("fewer tools" off); the small list with tools_find and tools_call has its own test
+    // below (and tests/light-step.test.ts).
     const whole = { settings: { contextSaver: { selectTools: false } } };
     const r = await runWithTools(t, bridge, whole);
     assert.ok(!r.srv.args.join(' ').includes(r.reg.token), 'token never in argv');
@@ -112,7 +116,7 @@ test('TeamBot MCP server: tools scoped to the run, native duplicates left out, p
     const init = await c.req('initialize', { protocolVersion: '2025-06-18', capabilities: {}, clientInfo: { name: 'test', version: '1' } });
     assert.equal(init.result.serverInfo.name, 'teambot');
     const names = await c.list();
-    for (const n of ['memory_search', 'memory_remember', 'message_bot', 'delegate_task', 'share_file', 'browser_open', 'skill_draft', 'routine_create', 'ask_user', 'notify_user']) assert.ok(names.includes(n), `${n} offered`);
+    for (const n of ['memory_search', 'memory_remember', 'message_bot', 'delegate_task', 'share_file', 'browser_open', 'skill_save', 'routine_create', 'ask_user', 'notify_user']) assert.ok(names.includes(n), `${n} offered`);
     for (const n of ['write_file', 'read_file', 'run_command', 'edit_file', 'web_search']) assert.ok(!names.includes(n), `${n} left out for Claude Code (native)`);
     // Claude Code has no WebFetch (not in current versions, and --restricted drops it): TeamBot's web_fetch stays.
     assert.ok(names.includes('web_fetch'), 'web_fetch offered to Claude Code');
@@ -122,7 +126,7 @@ test('TeamBot MCP server: tools scoped to the run, native duplicates left out, p
     const sys = await t.app.ctx.services.runner.systemPrompt(agent, t.app.ctx.store.thread(r.th.id)!);
     const known = new Set([...t.app.ctx.tools.list().map((x) => x.name), ...(await t.app.ctx.tools.forAgent(agent, t.app.ctx.store.thread(r.th.id)!)).map((x) => x.name)]);
     const mentioned = toolWords(sys + '\n\n' + toolsNote(names, 'claude'), known);
-    assert.ok(mentioned.includes('memory_search') && mentioned.includes('memory_remember'), 'the memory prompt names its tools');
+    assert.ok(mentioned.includes('memory_search') && mentioned.includes('dossier_write'), 'the memory prompt names its tools');
     const native = nativeExclusions('claude', 'ask');
     for (const m of mentioned) assert.ok(names.includes(m) || native.has(m), `prompt names ${m}, but the CLI bot does not have it`);
     assert.match(toolsNote(names, 'claude'), /mcp__teambot__/);
@@ -169,7 +173,12 @@ test('TeamBot MCP server: tools scoped to the run, native duplicates left out, p
     const pol = await runWithTools(t, bridge, { tool_policy: { message_bot: 'deny' } }, 'codex', { override: { access_mode: 'readonly' } });
     const pn = await pol.host.names();
     assert.ok(!pn.includes('message_bot') && !pn.includes('memory_remember'), 'policy deny and override narrowing apply');
-    assert.ok(pn.includes('web_fetch'), 'Codex keeps TeamBot web tools');
+    assert.ok(pn.includes('web_fetch') && pn.includes('web_search'), 'Codex keeps TeamBot web tools');
+    // …also for what is outside the list: not there to find, refused when called.
+    const hidden = await pol.host.call(FIND_NAME, { query: '' }, new AbortController().signal);
+    assert.match(hidden.content[0].text, /routine_list/);
+    assert.doesNotMatch(hidden.content[0].text, /message_bot|memory_remember/);
+    for (const n of ['message_bot', 'memory_remember']) assert.equal((await pol.host.call(CALL_NAME, { name: n, args: {} }, new AbortController().signal)).isError, true, `${n} refused through tools_call`);
     pol.reg.dispose();
   } finally {
     killAll();
@@ -196,7 +205,7 @@ test('TeamBot MCP server: write tool → TeamBot approval (approve runs it, deny
     const res1 = await p1;
     assert.equal(res1.result.isError, false, res1.result.content[0].text);
     assert.ok(r.holds[0] === true && r.holds.at(-1) === false, 'idle timer paused while the tool ran');
-    const mem = t.app.ctx.store.all<any>("SELECT * FROM memory_items WHERE agent_id = ? AND status != 'deleted'", r.a.id);
+    const mem = t.app.ctx.store.all<any>("SELECT * FROM memory_items WHERE created_by_agent = ? AND status != 'deleted'", r.a.id);
     assert.ok(mem.some((m) => /groen/.test(m.body || m.content || m.text || JSON.stringify(m))), 'saved in TeamBot memory');
 
     const before = t.app.ctx.store.all<any>('SELECT id FROM memory_items').length;
@@ -240,7 +249,7 @@ test('TeamBot MCP server: token isolation between runs, unknown/ended tokens get
     const B = await runWithTools(t, bridge, { name: 'BotB', access_mode: 'auto' });
     const ca = mcpClient(A.srv);
     const cb = mcpClient(B.srv);
-    const saved = await ca.call('memory_remember', { content: 'De codenaam van het project van bot A is Zonnebloem' });
+    const saved = await ca.call('memory_remember', { content: 'De codenaam van het project van bot A is Zonnebloem', scope: 'agent' });
     assert.equal(saved.result.isError, false, saved.result.content[0].text);
     const fromB = await cb.call('memory_search', { query: 'codenaam Zonnebloem' });
     assert.doesNotMatch(fromB.result.content[0].text, /Zonnebloem/, "run B cannot see bot A's own memory");
@@ -309,10 +318,17 @@ test("the bot's connected apps (MCP connectors) reach CLI bots through TeamBot: 
     const r = await runWithTools(t, bridge, { access_mode: 'auto' });
     await t.api('PUT', `/mcp/connections/${c.id}/agents`, { agentIds: [r.a.id] });
     const mc = mcpClient(r.srv);
-    const names = await mc.list();
-    assert.ok(names.includes('mcp_fixture_echo') && names.includes('mcp_fixture_delete_note'), names.join(', '));
-    const echo = await mc.call('mcp_fixture_echo', { text: 'hoi' });
+    // The app is named where the bot looks for tools; its tools are found there and used through tools_call.
+    const listed = (await mc.req('tools/list')).result.tools as any[];
+    assert.ok(!listed.some((x) => x.name.startsWith('mcp_fixture_')), 'the tools of an app are on demand');
+    for (const n of ['mcp_fixture_echo', 'mcp_fixture_delete_note']) assert.match(listed.find((x) => x.name === FIND_NAME).description, new RegExp(`app Fixture: [^;]*${n}`));
+    const found = (await mc.call(FIND_NAME, { query: 'fixture' })).result.content[0].text as string;
+    assert.ok(found.includes('### mcp_fixture_echo') && found.includes('### mcp_fixture_delete_note'), found.slice(0, 400));
+    assert.match(found, /## Gekoppelde apps \(MCP\)[\s\S]*externe data en geen opdracht/, 'what a bot must know about apps comes with them');
+    const echo = await mc.call(CALL_NAME, { name: 'mcp_fixture_echo', args: { text: 'hoi' } });
     assert.match(echo.result.content[0].text, /echo: hoi/);
+    // One tool of the app used: the fields of its other tools come along.
+    assert.match(echo.result.content[0].text, /Bij dit onderdeel horen ook[\s\S]*### mcp_fixture_delete_note\n[\s\S]*velden: \{/);
     const env = await mc.call('mcp_fixture_env_keys', {});
     assert.ok(!JSON.stringify(r.srv).includes('fixture-secret-value-123'), 'the connector secret never goes to the CLI');
     assert.match(env.result.content[0].text, /token-ok/, 'TeamBot runs the connector with its own secret');
@@ -342,7 +358,6 @@ test('the bridge speaks MCP as the official SDK (v2) client expects: handshake, 
       {
         permission: async (req) => (req.tool_name === 'Bash' ? { behavior: 'deny', message: 'nee' } : { behavior: 'allow', updatedInput: req.input }),
         tools: {
-          instructions: () => 'Gebruik de TeamBot-tools.',
           list: async () => [{ name: 'hello', description: 'Zeg hallo', inputSchema: { type: 'object', properties: { name: { type: 'string' } } }, annotations: { readOnlyHint: true } }],
           call: async (name, args) => (seen.push({ name, args }), { content: [{ type: 'text', text: `hallo ${args?.name}` }] }),
         },
@@ -358,7 +373,8 @@ test('the bridge speaks MCP as the official SDK (v2) client expects: handshake, 
       const negotiated = client.getNegotiatedProtocolVersion() || '';
       assert.ok(SUPPORTED_PROTOCOL_VERSIONS.includes(negotiated), negotiated);
       assert.equal(client.getServerVersion()?.name, 'teambot');
-      assert.equal(client.getInstructions(), 'Gebruik de TeamBot-tools.');
+      // What a bot must know about the tools is in the instructions TeamBot gives every engine, not sent a second time.
+      assert.equal(client.getInstructions(), undefined);
       const tools = (await client.listTools()).tools.map((x) => x.name);
       assert.deepEqual(tools, ['permission_prompt', 'hello']);
       const r: any = await client.callTool({ name: 'hello', arguments: { name: mode } });
@@ -384,102 +400,91 @@ test('the bridge speaks MCP as the official SDK (v2) client expects: handshake, 
   }
 });
 
-test('fewer TeamBot tools per turn for Claude Code: likely parts plus tools_load, list_changed, parts stay for the session; Codex gets the whole set', async (tt) => {
+test('a small list for every CLI engine: the core, tools_find and tools_call over the bridge; the same list every turn', async (tt) => {
   const t = await startTestApp();
   const bridge = new PermissionBridge(t.dir);
   try {
     const groups = [...GROUPS, 'rehearsal'];
     const q = 'Wat staat er vandaag op mijn planning?';
     const r = await runWithTools(t, bridge, { name: 'Baas', tool_groups: groups }, 'claude', {}, { prompt: q, system: true });
-    const c = mcpClient(r.srv, { relist: true });
+    const c = mcpClient(r.srv);
     const init = await c.req('initialize', { protocolVersion: '2025-06-18', capabilities: {}, clientInfo: { name: 'test', version: '1' } });
-    assert.equal(init.result.capabilities.tools.listChanged, true, 'the server says its list can change (Claude Code only lists again then)');
+    assert.equal(init.result.capabilities.tools.listChanged, undefined, 'the list never changes within a run');
+    assert.equal(init.result.instructions, undefined);
     const specs = async () => (await c.req('tools/list')).result.tools as any[];
     const first = await specs();
     const listed = first.map((x) => x.name);
-    const names = await r.host.names();
-    assert.ok(names.includes(LOADER_NAME), 'tools_load is among the names (for --allowedTools and the tool note)');
-    for (const n of listed) assert.ok(names.includes(n), `${n} listed, so the bot may use it`);
-    assert.ok(listed.length < names.length, `${listed.length} of ${names.length} listed`);
-    for (const n of ['memory_search', 'memory_remember', 'ask_user', 'notify_user', 'plan_update', 'share_file', LOADER_NAME]) assert.ok(listed.includes(n), `${n} always listed`);
-    assert.ok(!listed.includes('routine_create'), 'routines not listed for this question');
-    // A browser bot's prompt names its browser tools, so that part is promised and listed.
-    assert.ok(listed.includes('browser_open'), 'named by the system prompt');
-    // What the prompt promises is there: every TeamBot tool the system prompt names is listed (or native to the CLI).
+    assert.deepEqual(await r.host.names(), listed, 'the names for --allowedTools and the tool note are the list');
+    for (const n of ['memory_search', 'dossier_get', 'dossier_write', 'ask_user', 'notify_user', 'plan_update', 'share_file', 'skill_load', 'delegate_task', FIND_NAME, CALL_NAME]) assert.ok(listed.includes(n), `${n} always listed`);
+    for (const n of ['routine_create', 'browser_click', 'memory_remember', 'task_create', 'rehearsal_start']) assert.ok(!listed.includes(n), `${n} is found on demand`);
+    assert.ok(listed.includes('browser_open') && listed.includes('ask_bot'), 'the way into the browser and a question for a colleague are in the list');
+    // What the prompt says a bot has: every TeamBot tool it names is listed, native to the CLI, or found by that name.
     const agent = t.app.ctx.store.agent(r.a.id)!;
-    const known = new Set([...t.app.ctx.tools.list().map((x) => x.name), ...(await t.app.ctx.tools.forAgent(agent, t.app.ctx.store.thread(r.th.id)!)).map((x) => x.name)]);
+    const all = (await t.app.ctx.tools.forAgent(agent, t.app.ctx.store.thread(r.th.id)!)).map((x) => x.name);
+    const known = new Set([...t.app.ctx.tools.list().map((x) => x.name), ...all]);
     const native = nativeExclusions('claude', 'ask');
-    for (const m of toolWords(r.system, known)) assert.ok(listed.includes(m) || native.has(m), `the system prompt names ${m}, but it is not listed`);
-    // The note (built from every name) says how to get the rest.
-    assert.match(toolsNote(names, 'claude'), /tools_load/);
-    assert.doesNotMatch(toolsNote(names.filter((n) => n !== LOADER_NAME), 'claude'), /tools_load/);
-    const loader = first.find((x) => x.name === LOADER_NAME);
-    const loadable: string[] = loader.inputSchema.properties.names.items.enum;
-    for (const p of loadable) assert.ok(loader.description.includes(`- ${p}:`), `${p} named in the description`);
-    assert.ok(loadable.includes('routines'), loadable.join(', '));
-    const part = loadable.find((p) => p !== 'routines')!;
-    const partTool = (await t.app.ctx.tools.forAgent(agent, t.app.ctx.store.thread(r.th.id)!)).find((x) => (x.app ? `app:${x.app}` : x.group) === part)!.name;
-    assert.equal(loader.annotations.readOnlyHint, true);
-    assert.equal(loader._meta['anthropic/alwaysLoad'], true, 'Claude Code never hides tools_load behind its own tool search');
-    assert.ok(first.filter((x) => x.name !== LOADER_NAME).every((x) => !x._meta), 'the other tools as before');
+    const everything = (await c.call(FIND_NAME, { query: '' })).result.content[0].text as string;
+    const named = toolWords(r.system + '\n\n' + toolsNote(listed, 'claude'), known);
+    for (const m of named) assert.ok(listed.includes(m) || native.has(m) || new RegExp(`\\b${m}\\b`).test(everything), `the prompt names ${m}, but the bot cannot reach it`);
+    assert.ok(named.includes('dossier_write') && named.includes('memory_search'), named.join(', '));
+    assert.match(r.system, /zoek je met tools_find en gebruik je met tools_call/);
+    assert.match(toolsNote(listed, 'claude'), /mcp__teambot__/);
+    // Every tool outside the list is named in the description of tools_find.
+    const find = first.find((x) => x.name === FIND_NAME);
+    for (const n of all.filter((x) => !listed.includes(x) && !native.has(x))) assert.ok(new RegExp(`\\b${n}\\b`).test(find.description), `${n} is named in tools_find`);
+    assert.equal(find.annotations.readOnlyHint, true);
+    // Claude Code never hides the list behind its own tool search (ENABLE_TOOL_SEARCH): it is small on purpose. Only a
+    // tool outside it that the instructions name goes along by name (teambot_find for a bot that is not the main bot):
+    // Claude Code calls nothing that is not in its list.
+    const byName = first.filter((x) => x._meta?.['anthropic/alwaysLoad'] === false).map((x) => x.name);
+    assert.ok(first.every((x) => x._meta?.['anthropic/alwaysLoad'] === true || byName.includes(x.name)));
+    assert.ok(byName.includes('teambot_find') && byName.includes('teambot_do'), byName.join(', '));
+    for (const n of byName) assert.ok(new RegExp(`\\b${n}\\b`).test(r.system), `${n}: by name only because the instructions name it`);
+    for (const n of named.filter((m) => !native.has(m) && all.includes(m))) assert.ok(listed.includes(n), `the instructions name ${n}: Claude Code can call it by that name`);
     // Measured as the model sees the definitions (name, description, schema).
     const s1 = servedTools(r.run.id)!;
     tt.diagnostic(`Claude Code, ${groups.join(',')}: ${s1.sent}/${s1.of} tools listed, ~${s1.tokens} of ~${s1.full} tokens`);
-    assert.ok(s1.tokens < s1.full * 0.7, `~${s1.tokens} of ~${s1.full} tokens`);
+    assert.ok(s1.tokens < s1.full * 0.4, `~${s1.tokens} of ~${s1.full} tokens`);
+    assert.equal(s1.sent, listed.length - 2 - byName.length);
+    assert.ok(s1.leftOut.includes('Routines') && s1.leftOut.includes('Browser'), s1.leftOut.join(', '));
 
-    // A tool the bot may use but that is not listed (known from an earlier list): checked against the whole set, and
-    // its part stays from now on.
-    const used = await c.call('routine_list', {});
+    // Found and used in the same run, over the bridge, as the tool itself.
+    const found = await c.call(FIND_NAME, { query: 'routine_list' });
+    assert.match(found.result.content[0].text, /### routine_list\n[\s\S]*velden: \{/);
+    const used = await c.call(CALL_NAME, { name: 'routine_list', args: {} });
     assert.equal(used.result.isError, false, used.result.content[0].text);
-    assert.ok((await specs()).some((x) => x.name === 'routine_create'), 'a used part stays');
-
-    // tools_load: the CLI hears that its list changed, lists again, and only then gets the result (its next step has
-    // the tools).
-    const callId = c.lastId() + 1;
-    const loaded = await c.call(LOADER_NAME, { names: [part] });
-    assert.equal(loaded.result.isError, false, loaded.result.content[0].text);
-    assert.ok(loaded.result.content[0].text.includes(partTool), loaded.result.content[0].text);
-    const note = c.seen.indexOf('notifications/tools/list_changed');
-    const relist = c.seen.indexOf(`response:${callId + 1}`);
-    assert.ok(note >= 0 && note < relist && relist < c.seen.indexOf(`response:${callId}`), c.seen.join(' '));
-    const second = await specs();
-    assert.ok(second.some((x) => x.name === partTool), 'loaded part listed');
-    for (const n of listed) assert.ok(second.some((x) => x.name === n), `the list only grows (${n})`);
-    const loader2 = second.find((x) => x.name === LOADER_NAME);
-    assert.ok(!loader2 || !loader2.inputSchema.properties.names.items.enum.includes(part), 'a loaded part is no longer offered to load');
-    const unknown = await c.call(LOADER_NAME, { names: ['bestaat-niet'] });
-    assert.equal(unknown.result.isError, true, 'only parts the bot has');
-    assert.ok(!c.seen.slice(note + 1).includes('notifications/tools/list_changed'), 'nothing changed: no notification');
-    const saved = t.app.ctx.store.thread(r.th.id)!.provider_state[r.cfg.id].teambotParts[r.a.id];
-    assert.ok(saved.includes(part) && saved.includes('routines'), JSON.stringify(saved));
+    assert.ok(r.events.some((e) => e.type === 'activity' && /^TeamBot · /.test(e.item.title) && !/Hulpmiddel/.test(e.item.title)), 'the step is the tool’s own');
+    // A tool the CLI still knows from an earlier session and calls by its own name works too.
+    const direct = await c.call('routine_list', {});
+    assert.equal(direct.result.isError, false, direct.result.content[0].text);
+    const unknown = await c.call(CALL_NAME, { name: 'bestaat_niet', args: {} });
+    assert.equal(unknown.result.isError, true, 'only tools the bot has');
+    assert.ok(!c.seen.includes('notifications/tools/list_changed'), 'nothing changes: no notification');
+    assert.deepEqual((await specs()).map((x) => x.name), listed, 'the same list after using tools outside it');
+    assert.equal(t.app.ctx.store.thread(r.th.id)!.provider_state?.[r.cfg.id]?.teambotParts, undefined, 'nothing is kept per session');
     c.close();
     r.reg.dispose();
 
-    // The next turn of the same session starts with what the session has (the list stays the same: prompt caching).
+    // The next turn of the same chat: the same list, byte for byte (prompt caching).
     const r2 = await runWithTools(t, bridge, {}, 'claude', {}, { prompt: 'Dank je', system: true, reuse: { a: r.a, th: r.th } });
     const c2 = mcpClient(r2.srv);
-    const next = (await c2.req('tools/list')).result.tools.map((x: any) => x.name);
-    assert.deepEqual(next, second.map((x) => x.name), 'same list as the end of the previous turn');
+    assert.equal(JSON.stringify((await c2.req('tools/list')).result.tools), JSON.stringify(first));
     c2.close();
     r2.reg.dispose();
 
-    // Codex (lists again only behind a feature flag) and OpenCode: the whole set, no tools_load.
+    // Codex and OpenCode get the same small list (they needed the whole set before: they do not list again).
     for (const engine of ['codex', 'acp'] as const) {
       const x = await runWithTools(t, bridge, { tool_groups: groups }, engine, {}, { prompt: q, system: true });
       const xl = (await x.host.list()).map((s) => s.name);
-      assert.deepEqual(xl, await x.host.names(), `${engine}: the whole set`);
-      assert.ok(!xl.includes(LOADER_NAME));
+      assert.deepEqual(xl, await x.host.names());
+      assert.deepEqual(xl.filter((n) => n !== 'web_search'), listed.filter((n) => !byName.includes(n)), `${engine}: the same list, plus the search a Claude Code has itself`);
       x.reg.dispose();
     }
-    // "Fewer tools per turn" off (contextSaver.selectTools): Claude Code gets the whole set too.
+    // "Fewer tools" off (contextSaver.selectTools): the whole set in the list, on every engine.
     const off = await runWithTools(t, bridge, { tool_groups: groups, settings: { contextSaver: { selectTools: false } } }, 'claude', {}, { prompt: q, system: true });
     const ol = (await off.host.list()).map((s) => s.name);
-    assert.ok(!ol.includes(LOADER_NAME) && ol.includes('routine_create') && ol.includes('browser_open'));
+    assert.ok(!ol.includes(FIND_NAME) && !ol.includes(CALL_NAME) && ol.includes('routine_create') && ol.includes('browser_click'));
     off.reg.dispose();
-    // A delegation word in the question brings the team tools along at once.
-    const del = await runWithTools(t, bridge, { tool_groups: groups }, 'claude', {}, { prompt: 'Delegeer dit aan een collega', system: true });
-    assert.ok((await del.host.list()).some((s) => s.name === 'delegate_task'));
-    del.reg.dispose();
   } finally {
     killAll();
     bridge.stop();
@@ -487,7 +492,7 @@ test('fewer TeamBot tools per turn for Claude Code: likely parts plus tools_load
   }
 });
 
-test('one turn of a Claude Code main bot: the answer counts the TeamBot tools it was listed; the CLI loads the rest with tools_load', async (tt) => {
+test('one turn of a Claude Code main bot: the answer counts the TeamBot tools it was listed; the CLI reaches the rest in the same run', async (tt) => {
   const FAKE_CLAUDE = path.join(path.dirname(fileURLToPath(import.meta.url)), 'fixtures', 'cli-agents-fake-claude.mjs');
   const t = await startTestApp();
   try {
@@ -502,17 +507,19 @@ test('one turn of a Claude Code main bot: the answer counts the TeamBot tools it
     const after = await turn(null);
     const b = before.parts.contextStats!;
     const n = after.parts.contextStats!;
-    tt.diagnostic(`TeamBot tools per turn: before ~${b.parts.tools} tokens (${b.tools.sent}/${b.tools.of}), after ~${n.parts.tools} tokens (${n.tools.sent}/${n.tools.of})`);
-    assert.equal(b.tools.sent, b.tools.of, 'before: every tool');
+    tt.diagnostic(`TeamBot tools per turn: everything ~${b.parts.tools} tokens (${b.tools.sent}/${b.tools.of}), the small list ~${n.parts.tools} tokens (${n.tools.sent}/${n.tools.of})`);
+    assert.equal(b.tools.sent, b.tools.of, 'off: every tool');
     assert.ok(n.tools.sent < n.tools.of && n.tools.leftOut.length > 0, JSON.stringify(n.tools));
-    assert.ok(n.parts.tools < b.parts.tools * 0.7, `${n.parts.tools} vs ${b.parts.tools}`);
+    assert.ok(n.parts.tools < b.parts.tools * 0.4, `${n.parts.tools} vs ${b.parts.tools}`);
     assert.ok(n.shortened.savedTokens > 0);
-    // The fake Claude Code loaded every part and listed again after list_changed: nothing is out of reach.
-    assert.match(after.content, /tools_load/);
-    const [listed, extra = ''] = after.content.replace('TeamBot-tools: ', '').split(' · na tools_load: ');
-    const all = new Set([...listed.split(', '), ...extra.split(', ')].filter(Boolean));
-    for (const w of before.content.replace('TeamBot-tools: ', '').split(', ')) assert.ok(all.has(w), `${w} reachable after tools_load`);
-    assert.ok(extra.includes('routine_create'), after.content);
+    // The fake Claude Code looked up everything outside its list and used one of them: nothing is out of reach.
+    assert.match(after.content, /via tools_find: /);
+    const [listed, rest = ''] = after.content.replace('TeamBot-tools: ', '').split(' · via tools_find: ');
+    const [found] = rest.split(' · tools_call ');
+    const all = new Set([...listed.split(', '), ...found.split(', ')].filter(Boolean));
+    for (const w of before.content.replace('TeamBot-tools: ', '').split(', ')) assert.ok(all.has(w), `${w} listed or found`);
+    assert.ok(found.split(', ').includes('routine_create'), after.content);
+    assert.match(after.content, /tools_call routine_list: gelukt/);
   } finally {
     await t.close();
   }

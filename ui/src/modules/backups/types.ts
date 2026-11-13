@@ -79,37 +79,6 @@ export interface UpdatesView {
   rollback?: { available: boolean; to?: string; backup?: string; since?: string; reason?: string; installer?: { version: string; size: number; source: string } };
 }
 
-/** Why a downloaded update waits (server/modules/backups/app-update.ts WaitReason). */
-export type WaitReason =
-  | { kind: 'runs'; count: number }
-  | { kind: 'routines'; count: number }
-  | { kind: 'routine-soon'; name: string; at: string }
-  | { kind: 'backup' }
-  | { kind: 'chatting'; at: string }
-  | { kind: 'user' }
-  | { kind: 'unknown' };
-
-/** Mirror of /api/app-update (server/modules/backups/app-update.ts AppUpdateView). */
-export interface AppUpdateView {
-  version: string;
-  managed: boolean;
-  auto: 'on' | 'notify' | 'off';
-  channel: { text: string; input: string; source: 'env' | 'saved' | 'built-in' | 'none'; error?: string };
-  state:
-    | { phase: 'off'; reason: string }
-    | { phase: 'idle'; checkedAt?: string }
-    | { phase: 'checking' }
-    | { phase: 'available'; version: string; notes?: string }
-    | { phase: 'downloading'; version: string; percent: number }
-    | { phase: 'ready'; version: string }
-    | { phase: 'error'; message: string };
-  off?: 'no-channel' | 'unpackaged' | 'channel' | 'server' | 'dev';
-  waitingFor: WaitReason[];
-  soon: boolean;
-  skipped: string | null;
-  lastCheckAt?: string;
-}
-
 /** The desktop bridge (desktop/preload.ts); absent in a browser or on a phone. */
 export interface DesktopBridge {
   restart?(): Promise<boolean>;

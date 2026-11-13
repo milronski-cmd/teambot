@@ -1,6 +1,6 @@
 // Marketplace first view, measured in the real UI (B-01/B-12): headless Edge/Chrome against TeamBot with a TEMP data
-// folder (never your own data), cold start every time. Sources are simulated with network delays (13 GitHub
-// collections whose archives take 2.5-4 s, the MCP Registry from tests/fixtures/market with answers of 0.1-3 s), so
+// folder (never your own data), cold start every time. Sources are simulated with network delays (GitHub's
+// repository search of 2.5 s, the skill directory of 0.3 s, the MCP Registry from tests/fixtures/market with answers of 0.1-3 s), so
 // nothing goes to the internet; with MARKET_SPEED_LIVE=1 the same run goes against the real internet (no accounts).
 // Measures: first cards on the Skills tab, first internet cards, first app cards, apps visible without searching;
 // takes screenshots (desktop 1360 px and phone 390x844) of the cold first view.
@@ -9,11 +9,10 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { createRequire } from 'node:module';
-import AdmZip from 'adm-zip';
 
 const require = createRequire(import.meta.url);
 const { chromium } = require('playwright-core');
-const { createApp } = await import('../../server/app.ts');
+const { createApp } = await import('./server.mjs');
 const { FEATURED } = await import('../../server/modules/mcp/registry.ts');
 
 const LIVE = process.env.MARKET_SPEED_LIVE === '1';
@@ -28,8 +27,6 @@ const check = (name, ok, detail = '') => {
 };
 
 // ---- simulated sources ----
-const SHA = 'd'.repeat(40);
-const MIT = 'MIT License\n\nCopyright (c) 2026 Voorbeeld\n\nPermission is hereby granted, free of charge, to any person obtaining a copy of this software...\n';
 const TOPICS = [
   ['pdf-forms', 'Fill in and check PDF forms step by step.'],
   ['react-review', 'Review React components for accessibility and state bugs.'],
@@ -38,30 +35,24 @@ const TOPICS = [
   ['test-plan', 'Turn a feature description into a test plan with edge cases.'],
   ['brand-voice', 'Rewrite marketing copy in a consistent brand voice.'],
 ];
-const REPOS = Array.from({ length: 13 }, (_, i) => `voorbeeld/collectie-${String(i + 1).padStart(2, '0')}`);
-const ZIPS = new Map(
-  REPOS.map((repo, ri) => {
-    const z = new AdmZip();
-    const top = `${repo.split('/')[1]}-${SHA}`;
-    z.addFile(`${top}/LICENSE`, Buffer.from(MIT));
-    for (let k = 0; k < 3; k++) {
-      const [name, desc] = TOPICS[(ri + k) % TOPICS.length];
-      z.addFile(`${top}/skills/${name}/SKILL.md`, Buffer.from(`---\nname: ${name}-${ri + 1}\ndescription: ${desc}\n---\n\n# ${name}\n\nWork step by step.\n`));
-    }
-    z.addZipComment(SHA);
-    return [repo, z.toBuffer()];
-  }),
-);
+const REPOS = Array.from({ length: 40 }, (_, i) => ({ full_name: `voorbeeld/skills-${String(i + 1).padStart(2, '0')}`, name: `skills-${String(i + 1).padStart(2, '0')}`, description: TOPICS[i % TOPICS.length][1], stargazers_count: 5000 - i * 100, license: { spdx_id: 'MIT' }, pushed_at: '2026-11-01T00:00:00Z', created_at: '2026-06-01T00:00:00Z' }));
 const res = (url, body, headers = {}) => ({ status: 200, contentType: 'application/json', url, body: Buffer.isBuffer(body) ? body : Buffer.from(JSON.stringify(body)), headers });
 const st = (url, s, headers = {}) => ({ status: s, contentType: '', url, body: Buffer.alloc(0), headers });
+/** The open search of the Skills view: GitHub's repository search takes 2.5 s, the skill directory 0.3 s, ClawHub 0.8 s. */
 const githubSim = async (url) => {
-  const n = Number(/collectie-(\d\d)/.exec(url)?.[1] || 0);
-  await sleep(url.includes('codeload') ? 2500 + (n % 4) * 500 : 300);
-  let m = /^https:\/\/github\.com\/(voorbeeld\/collectie-\d\d)\/archive\/HEAD\.zip$/.exec(url);
-  if (m) return st(url, 302, { location: `https://codeload.github.com/${m[1]}/zip/${SHA}` });
-  m = /^https:\/\/codeload\.github\.com\/(voorbeeld\/collectie-\d\d)\/zip\/[0-9a-f]{40}$/.exec(url);
-  if (m) return res(url, ZIPS.get(m[1]));
-  if (url.startsWith('https://api.github.com/repos/')) return res(url, { full_name: url.split('/repos/')[1], stargazers_count: 120 + n, license: { spdx_id: 'MIT' } });
+  if (url.startsWith('https://api.github.com/search/repositories?')) {
+    await sleep(2500);
+    const page = Number(new URL(url).searchParams.get('page')) || 1;
+    return res(url, { total_count: REPOS.length, items: REPOS.slice((page - 1) * 30, page * 30) });
+  }
+  if (url.startsWith('https://skills.sh/api/skills/')) {
+    await sleep(300);
+    return res(url, { skills: TOPICS.map(([name], i) => ({ source: REPOS[i].full_name, skillId: name, name, installs: 9000 - i * 1000 })), total: TOPICS.length, hasMore: false, page: 0 });
+  }
+  if (url.startsWith('https://clawhub.ai/api/v1/skills?')) {
+    await sleep(800);
+    return res(url, { items: TOPICS.map(([name, summary], i) => ({ ownerHandle: 'voorbeeld', slug: name, displayName: name, summary, stats: { stars: 400 - i * 10, downloads: 9000 - i * 500 }, createdAt: Date.now() - (i + 1) * 86400000, updatedAt: Date.now() - i * 3600000, latestVersion: { version: '1.0.0', license: 'MIT' } })), nextCursor: null });
+  }
   return st(url, 404);
 };
 const registrySim = async (url) => {
@@ -76,15 +67,15 @@ async function boot() {
   const app = await createApp({ dataDir: dir, port: 0, host: '127.0.0.1', mode: 'desktop', quiet: true });
   if (!LIVE) {
     app.ctx.services.skills.setFetcher(githubSim);
-    app.ctx.services.skills.setCollections(REPOS.map((repo) => ({ repo, note: '' })));
     app.ctx.services.mcp.setRegistryFetcher(registrySim);
   }
   return { app, dir, token: app.ctx.auth.ensureLocalOwner() };
 }
 
 const browser = await chromium.launch({ channel: process.env.TEAMBOT_E2E_BROWSER || (process.platform === 'win32' ? 'msedge' : 'chrome'), headless: true });
-const CARD = 'main ul.grid > li > button';
-const INTERNET_CARD = 'main ul.grid > li > button:not([data-card=starter])';
+// An app card from the register has its one-click status line under it, in one wrapper (RegistryApps QuickAppCard).
+const CARD = 'main ul.grid > li > button, main ul.grid > li > [data-card], main ul.grid > li > div > [data-card=app]';
+const INTERNET_CARD = 'main ul.grid > li > button:not([data-card=starter]), main ul.grid > li > [data-card=app], main ul.grid > li > div > [data-card=app], main ul.grid > li > [data-card=open][data-kind=repo]';
 
 /** Open TeamBot, then the marketplace at `hash`, and time the first card (and the first internet card). */
 async function firstView(viewport, hash, shot, label) {
@@ -123,13 +114,13 @@ try {
   const desk = { width: 1360, height: 900 };
   const phone = { width: 390, height: 844 };
   const pre = LIVE ? 'market-live' : 'market';
-  // Since 0.4 the Skills tab opens on TeamBot's own pinned catalogue; the open collections measured here are a
-  // configured extra source (setCollections / TEAMBOT_SKILL_COLLECTIONS), opened with ?bron=internet.
-  const sk = await firstView(desk, '#/m/skills/skills?bron=internet', `${pre}-skills-desktop`, 'Skills, desktop, koud');
+  // The Skills tab opens on TeamBot's own pinned catalogue (no network); measured here is the view next to it,
+  // "Openbaar" (?bron=open): the directory's skills show while GitHub's search is still answering.
+  const sk = await firstView(desk, '#/m/skills/skills?bron=open', `${pre}-skills-desktop`, 'Skills, desktop, koud');
   check('Skills: eerste kaarten binnen 2 s (koud)', sk.firstCard < 2000, `${sk.firstCard} ms`);
   check('Skills: eerste internetkaarten binnen 8 s (koud)', sk.firstInternet < 8000, `${sk.firstInternet} ms`);
   // Live: the phone runs are left out (each cold run downloads every collection again and uses GitHub API quota).
-  const skp = LIVE ? null : await firstView(phone, '#/m/skills/skills?bron=internet', `${pre}-skills-phone`, 'Skills, telefoon, koud');
+  const skp = LIVE ? null : await firstView(phone, '#/m/skills/skills?bron=open', `${pre}-skills-phone`, 'Skills, telefoon, koud');
   if (skp) check('Skills telefoon: eerste kaarten binnen 2 s', skp.firstCard < 2000, `${skp.firstCard} ms`);
   if (skp) check('Skills telefoon: geen horizontale scroll', skp.overflow <= 0, `${skp.overflow}px`);
   const ap = await firstView(desk, '#/m/skills/apps', `${pre}-apps-desktop`, 'Apps, desktop, koud');

@@ -55,7 +55,7 @@ Object.assign(process.env, {
 });
 delete process.env.TEAMBOT_DATA;
 
-const { createApp } = await import('../../server/app.ts');
+const { createApp } = await import('./server.mjs');
 const { mockAdapter } = await import('../helpers.ts');
 const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'tb-parity-small-'));
 const app = await createApp({ dataDir: dir, port: Number(process.env.TEAMBOT_E2E_PORT) || 0, host: '127.0.0.1', mode: 'desktop', quiet: true });

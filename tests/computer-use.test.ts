@@ -27,7 +27,6 @@ import {
   type TaskGrant,
 } from '../server/modules/browser/screen-policy.js';
 import { asciiJson } from '../server/modules/browser/screen.js';
-import { toolOutputToMcpContent } from '../server/tools/images.js';
 import type { Capabilities } from '../server/modules/browser/capabilities.js';
 import type { ComputerService } from '../server/modules/browser/service.js';
 
@@ -364,10 +363,6 @@ test('desktop_computer: screenshot is a real image with the coordinate system, a
     assert.equal(shot.input.outW, 1280);
     assert.deepEqual(shot.input.policy.allow, ['notepad'], 'the driver masks with the bot policy');
     assert.equal(fake.calls.filter((c) => ['click', 'type', 'key'].includes(c.action)).length, 0);
-    // other engine paths (MCP bridge for CLI engines) get the same image as MCP image content
-    const mcp = toolOutputToMcpContent(t.app.ctx, r);
-    assert.equal(mcp[0].type, 'text');
-    assert.ok(mcp.some((c) => c.type === 'image' && c.mimeType === 'image/jpeg' && c.data.length > 0));
 
     // through the runner: the image is part of the tool result the (vision) model gets
     const th = await t.api('POST', '/threads', { agentId: a.id });
@@ -573,11 +568,15 @@ test('levels, scope and phone access: owner only, explicit confirmation for all 
     const routes: any[] = t.app.ctx.services.mobileRoutes;
     for (const p of ['/computers/desktop/stop', '/computers/:agentId/screen/stream', '/computers/:agentId/screen/pause', '/computers/:agentId/stop']) assert.ok(routes.some((r) => r.path === p), p);
     assert.ok(!routes.some((r) => r.path.includes('/config')), 'a phone can never change the level');
-    // system prompt explains the level and the rules
+    // The level and the rules come with the desktop tools when the bot looks them up (tools/selection.ts), not in the
+    // prompt of every step.
     const th = await t.api('POST', '/threads', { agentId: a.id });
-    t.script.push({ text: 'ok' });
+    t.script.push({ toolCalls: [{ name: 'tools_find', args: { query: 'bureaublad' } }] }, { text: 'ok' });
     await t.say(th.id, 'hoi');
-    const sys = t.requests[t.requests.length - 1].system;
+    assert.doesNotMatch(t.requests[t.requests.length - 1].system, /## Het bureaublad/);
+    const sys = t.app.ctx.store.messages(th.id).find((m) => m.role === 'tool')!.content;
+    assert.match(sys, /### desktop_computer\n/);
+    assert.match(sys, /## Het bureaublad\n/);
     assert.match(sys, /Volledige toegang/);
     assert.match(sys, /desktop_computer/);
     assert.match(sys, /desktop_request_takeover/);

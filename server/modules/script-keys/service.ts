@@ -3,6 +3,7 @@ import { newId, now } from '../../core/db.js';
 import { bad, notFound } from '../../core/http.js';
 import { rememberSecret } from '../../core/secrets.js';
 import { sharedRunOf } from '../../agent/shared.js';
+import { PLACE } from '../../../shared/places.js';
 
 /**
  * "Sleutels voor scripts": secrets of the owner that a bot's own scripts get as environment variables under a name the
@@ -347,13 +348,13 @@ export class ScriptKeys {
     if (target === 'agent') {
       const a = this.agentOf(userId, targetId);
       if (!a) throw notFound('Bot niet gevonden');
-      if (scope && (this.teams?.teamOf?.(a.id) ?? null) !== scope) throw bad(`Deze sleutel is alleen voor team “${this.teamName(scope)}”, en ${a.name} hoort bij een ander team. Kies een andere sleutel, of zet de sleutel op alle teams (Instellingen › Teams).`);
+      if (scope && (this.teams?.teamOf?.(a.id) ?? null) !== scope) throw bad(`Deze sleutel is alleen voor team “${this.teamName(scope)}”, en ${a.name} hoort bij een ander team. Kies een andere sleutel, of zet de sleutel op alle teams (${PLACE.teams}).`);
       const clash = this.ctx.store.one<{ id: string }>("SELECT k.id FROM script_key_grants g JOIN script_keys k ON k.id = g.key_id WHERE g.target = 'agent' AND g.target_id = ? AND k.name = ? AND k.id != ?", a.id, name, keyId || '');
       if (clash) throw bad(`${a.name} heeft al een sleutel met de naam ${name}. Haal die eerst weg${renaming ? ', of kies een andere naam' : ''}.`);
     } else {
       const t = this.teamOf(userId, targetId);
       if (!t) throw notFound('Team niet gevonden');
-      if (scope && scope !== t.id) throw bad(`Deze sleutel is alleen voor team “${this.teamName(scope)}”. Geef hem aan dat team, of zet de sleutel op alle teams (Instellingen › Teams).`);
+      if (scope && scope !== t.id) throw bad(`Deze sleutel is alleen voor team “${this.teamName(scope)}”. Geef hem aan dat team, of zet de sleutel op alle teams (${PLACE.teams}).`);
       const clash = this.ctx.store.one<{ id: string }>("SELECT k.id FROM script_key_grants g JOIN script_keys k ON k.id = g.key_id WHERE g.target = 'team' AND g.target_id = ? AND k.name = ? AND k.id != ?", t.id, name, keyId || '');
       if (clash) throw bad(`Team “${t.name}” heeft al een sleutel met de naam ${name}. Haal die eerst weg${renaming ? ', of kies een andere naam' : ''}.`);
     }

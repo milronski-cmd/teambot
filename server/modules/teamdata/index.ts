@@ -115,12 +115,17 @@ CREATE TABLE teamdata_import_tables (
     // the place of the plain ones); with one team, or without access, nothing about teams shows in its tools.
     const withTeam = teamdataTools(svc, { teamParam: true }).filter((t) => t.name !== 'team_execute' && t.name !== 'team_import_file');
     ctx.tools.addProvider((agent) => (svc.otherReadable(agent.id).length ? withTeam : []));
-    ctx.hooks.systemPrompt.push(({ agent }) => {
-      if (agent.access_mode === 'chat' || !ctx.tools.groupEnabled(agent, GROUP)) return null;
-      // Only name what this bot may really use (readonly bots get no team_execute).
-      const exec = ctx.tools.get('team_execute');
-      const canWrite = !!exec && ctx.broker.decide(agent, exec) !== 'deny';
-      return teamdataPrompt(agent, ctx.store.user(agent.user_id)?.name || '', canWrite, svc.otherReadable(agent.id));
+    // How the team database works: in the prompt while its tools are listed, otherwise with what tools_find finds
+    // (tools/selection.ts), so a bot that never touches the tables does not carry it in every step.
+    ctx.tools.addGuide({
+      parts: [GROUP],
+      text: ({ agent }) => {
+        if (agent.access_mode === 'chat' || !ctx.tools.groupEnabled(agent, GROUP)) return null;
+        // Only name what this bot may really use (readonly bots get no team_execute).
+        const exec = ctx.tools.get('team_execute');
+        const canWrite = !!exec && ctx.broker.decide(agent, exec) !== 'deny';
+        return teamdataPrompt(agent, ctx.store.user(agent.user_id)?.name || '', canWrite, svc.otherReadable(agent.id));
+      },
     });
     teamdataRoutes(ctx, svc);
 
@@ -130,9 +135,8 @@ CREATE TABLE teamdata_import_tables (
     ctx.services.projects = projects;
     ctx.services.kansen = kansen;
     for (const t of [...projectTools(projects, ctx), ...kansTools(kansen, ctx)]) ctx.tools.register(t);
-    // Only for the bot that runs the projects (the main bot) and only when it may really start one: a prompt that names
-    // these tools keeps them in every call, which pushed the tools of connected apps behind tools_load for every bot,
-    // and promised a read-only bot a tool it does not have. Other bots load "Projecten en kansen" when they need it.
+    // Only for the bot that runs the projects (the main bot) and only when it may really start one (a read-only bot is
+    // never promised a tool it does not have). Other bots find "projecten en kansen" when they need it.
     const startTool = ctx.tools.get('project_start');
     ctx.hooks.systemPrompt.push(({ agent }) =>
       agent.access_mode === 'chat' || !ctx.tools.groupEnabled(agent, GROUP) || !ctx.services.teams?.isMain?.(agent.id) || !startTool || ctx.broker.decide(agent, startTool) === 'deny'

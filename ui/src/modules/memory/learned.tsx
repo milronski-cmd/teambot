@@ -2,18 +2,21 @@ import React, { useState } from 'react';
 import { Archive, Brain, Check, FolderOpen, GitMerge, Link2, ListChecks, MessageSquare, Pencil, Pin, PinOff, Play, RefreshCw, ShieldAlert, Sparkles, Undo2, User, X } from 'lucide-react';
 import { api } from '../../lib/api';
 import { navigate } from '../../lib/router';
-import { Badge, Button, Card, EmptyState, Input, cx, timeAgo, toast, useAsync } from '../../components/ui';
+import { Badge, Button, Card, EmptyState, Input, cx, timeAgo, toast, useAsync, CardHead, IconTile } from '../../components/ui';
 import { MoreInfo } from '../../components/MoreInfo';
 import { Menu } from '../../components/overview';
 import { ErrorBox, ForgetDialog, ItemEditor, Loading } from './parts';
 import { type MemItem, engineLabel, fmtDate, memPath, SCOPE_LABEL, STATUS_LABEL, TYPE_LABEL, useMem } from './lib';
-import { t, translate } from '../../lib/i18n';
+import { ownText, t, translate } from '../../lib/i18n';
+import { Words } from '../../components/Words';
 import { formatSeconds, formatUsd } from '../../lib/format';
 
 /** Learned item as returned by /memory/learned, /memory/profile and the learned-map. */
 export interface LearnedItem extends MemItem {
   how: string;
   changeId: string | null;
+  /** A line of a dossier's text that was learned from a message (not a note of its own). */
+  line?: boolean;
   replaced: { id: string; ref: string; content: string; status: string } | null;
   brief?: boolean;
   autoBrief?: boolean;
@@ -86,9 +89,7 @@ export function ReportCard({ monthly = false }: { monthly?: boolean }) {
   return (
     <Card className="p-4">
       <div className="flex flex-wrap items-start gap-2">
-        <div className="rounded-lg bg-accent-soft p-2 text-accent" aria-hidden>
-          <Sparkles className="h-4 w-4" />
-        </div>
+        <IconTile icon={Sparkles} tone="violet" />
         <div className="min-w-0 flex-1">
           <h2 className="text-sm font-semibold">{r ? reportTitle(r) : 'Geheugen-onderhoud'}</h2>
           <p className="text-xs text-muted">
@@ -175,10 +176,10 @@ export function LearnedRow({ item, onChanged }: { item: LearnedItem; onChanged?(
     <li className="tb-in px-4 py-3">
       <div className="flex items-start gap-2">
         <div className="min-w-0 flex-1">
-          <p className={cx('break-words text-sm leading-relaxed', item.status === 'superseded' && 'text-muted line-through')}>{item.content}</p>
+          <p className={cx('break-words text-sm leading-relaxed', item.status === 'superseded' && 'text-muted line-through')} translate="no">{item.content}</p>
           {item.replaced && (
             <p className="text-xs text-muted">
-              vervangt <span className="line-through">{item.replaced.content}</span>
+              vervangt <span className="line-through" translate="no">{item.replaced.content}</span>
             </p>
           )}
           <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted">
@@ -202,7 +203,9 @@ export function LearnedRow({ item, onChanged }: { item: LearnedItem; onChanged?(
           label={t('Acties voor: {0}', item.content.slice(0, 60))}
           className="-me-2 -mt-1"
           items={[
-            live && { label: 'Klopt niet, aanpassen', icon: <Pencil />, onSelect: () => setEdit(true) },
+            // A line of a dossier's text (no note of its own): changed in that dossier; undo takes it out again.
+            live && !item.line && { label: 'Klopt niet, aanpassen', icon: <Pencil />, onSelect: () => setEdit(true) },
+            !!item.line && { label: 'Bekijken', icon: <Pencil />, onSelect: () => navigate(memPath('dossiers/' + item.dossier_id)) },
             !!item.changeId &&
               live && {
                 label: 'Ongedaan maken',
@@ -214,7 +217,7 @@ export function LearnedRow({ item, onChanged }: { item: LearnedItem; onChanged?(
                     onChanged?.();
                   }, item.replaced ? 'Teruggezet naar de vorige versie' : 'Ongedaan gemaakt'),
               },
-            item.status !== 'superseded' && { label: 'Vergeten…', icon: <X />, danger: true, onSelect: () => setForget(true) },
+            item.status !== 'superseded' && !item.line && { label: 'Vergeten…', icon: <X />, danger: true, onSelect: () => setForget(true) },
           ]}
         />
       </div>
@@ -227,11 +230,13 @@ export function LearnedRow({ item, onChanged }: { item: LearnedItem; onChanged?(
 /** What was learned when and from where; open conversations that will be learned from once they are quiet. */
 export function RecentLearned({ limit = 12 }: { limit?: number }) {
   const r = useMem<{ items: LearnedItem[]; pending: { threadId: string; title: string; due_at: string; status: string }[] }>(`/memory/learned?limit=${limit}`);
+  // Said plainly when conversations cannot be read in the background, and why (the bots keep their dossiers anyway).
+  const eng = useMem<{ blocked: string | null }>('/memory/engine');
   if (r.error) return <ErrorBox error={r.error} retry={r.reload} />;
   return (
     <section className="space-y-2">
-      <div className="flex flex-wrap items-baseline justify-between gap-2">
-        <h2 className="text-[15px] font-bold tracking-tight">Recent geleerd</h2>
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <CardHead className="min-w-0 flex-1" icon={Brain} tone="violet" title="Recent geleerd" />
         {!!r.data?.pending.length && (
           <span className="inline-flex items-center gap-1.5 text-xs text-muted">
             <RefreshCw className="h-3 w-3" aria-hidden />
@@ -239,6 +244,12 @@ export function RecentLearned({ limit = 12 }: { limit?: number }) {
           </span>
         )}
       </div>
+      {eng.data?.blocked && (
+        <Card className="flex items-start gap-2 border-warn/40 bg-warn-soft p-3 text-sm" role="status">
+          <ShieldAlert className="mt-0.5 h-4 w-4 shrink-0 text-warn" aria-hidden />
+          <span>{t('Gesprekken worden nu niet op de achtergrond nagelezen. {0} Je bots houden hun dossiers zelf bij, en wat je met “onthoud dat …” vraagt, wordt meteen onthouden.', translate(eng.data.blocked))}</span>
+        </Card>
+      )}
       {!r.data ? (
         <Loading rows={4} />
       ) : (
@@ -294,7 +305,7 @@ function ProfileItem({ item, onChanged }: { item: LearnedItem; onChanged(): void
           </form>
         ) : (
           <button className="text-start text-sm hover:underline" onClick={() => setEditing(true)} title="Klik om aan te passen">
-            {item.content}
+            <span translate="no">{item.content}</span>
           </button>
         )}
         <div className="mt-0.5 flex flex-wrap items-center gap-x-2 text-xs text-muted">
@@ -310,24 +321,29 @@ function ProfileItem({ item, onChanged }: { item: LearnedItem; onChanged(): void
               bron
             </a>
           )}
-          {item.replaced && <span>· was: {item.replaced.content}</span>}
+          {item.replaced && (
+            <span>
+              · <Words text="was: {0}" values={[item.replaced.content]} />
+            </span>
+          )}
           {item.type !== 'fact' && <span>· {TYPE_LABEL[item.type]}</span>}
         </div>
       </div>
       {!editing && (
-        <div className="flex shrink-0 gap-1">
-          <Button size="sm" variant="ghost" icon={<Pencil className="h-3.5 w-3.5" />} onClick={() => setEditing(true)} aria-label={`Aanpassen: ${item.content}`}>
-            <span className="sr-only sm:not-sr-only">Aanpassen</span>
-          </Button>
+        <div className="flex shrink-0 text-muted">
+          <Button size="sm" variant="ghost" icon={<Pencil className="h-3.5 w-3.5" />} onClick={() => setEditing(true)} aria-label={t('Aanpassen: {0}', item.content)} title="Aanpassen" />
           <Button
             size="sm"
             variant="ghost"
             icon={item.brief ? <PinOff className="h-3.5 w-3.5" /> : <Pin className="h-3.5 w-3.5" />}
             loading={busy}
-            aria-label={item.brief ? `Niet meer altijd laden: ${item.content}` : `Altijd laden: ${item.content}`}
+            // The memory as written in its label: the label is made here in the reader's language, so the page leaves it.
+            translate="no"
+            aria-label={item.brief ? ownText('Niet meer altijd laden: {0}', item.content) : ownText('Altijd laden: {0}', item.content)}
+            title={item.brief ? t('Niet meer altijd laden') : t('Altijd laden')}
             onClick={() => run(async () => (await api.post(`/memory/items/${item.id}/${item.brief ? 'unpin' : 'pin'}`, {}), onChanged()), item.brief ? 'Niet meer altijd geladen' : 'Elke bot weet dit nu altijd')}
           />
-          <Button size="sm" variant="ghost" icon={<X className="h-3.5 w-3.5" />} onClick={() => setForget(true)} aria-label={`Vergeten: ${item.content}`} />
+          <Button size="sm" variant="ghost" icon={<X className="h-3.5 w-3.5" />} onClick={() => setForget(true)} aria-label={t('Vergeten: {0}', item.content)} title="Vergeten" />
         </div>
       )}
       {forget && <ForgetDialog item={item} onClose={() => setForget(false)} onDone={() => (setForget(false), onChanged())} />}

@@ -5,6 +5,7 @@ import { modules as allModules } from '../server/modules/index.js';
 import { createRoutinesModule } from '../server/modules/routines/index.js';
 import type { RoutineEngine } from '../server/modules/routines/engine.js';
 import type { DutyService } from '../server/modules/routines/duties/service.js';
+import type { WorkLoop } from '../server/modules/routines/duties/work.js';
 import type { FetchResult } from '../server/modules/routines/triggers.js';
 import type { ChatRequest } from '../server/core/types.js';
 
@@ -36,6 +37,10 @@ export interface Env {
   t: TestApp;
   engine: RoutineEngine;
   duties: DutyService;
+  /** The work loop (off under the test runner; `workNow` lets it look once). */
+  work: WorkLoop;
+  /** Let the work loop look once, now, and wait for the turns it starts. Returns how many it started. */
+  workNow(): Promise<number>;
   clock: { now: number };
   userId: string;
   site: FakeSite;
@@ -69,8 +74,15 @@ export async function setup(o: { start?: string; free?: boolean } = {}): Promise
   const ctx = t.app.ctx;
   const engine: RoutineEngine = ctx.services.routines.engine;
   const duties: DutyService = ctx.services.routines.duties;
+  const work: WorkLoop = ctx.services.routines.work;
   const userId = ctx.store.one<{ id: string }>('SELECT id FROM users LIMIT 1')!.id;
   ctx.store.setSetting(userId, 'timezone', TZ);
+  // What the owner of these tests set up: the overview every day at 08:00, and no check-in of the main bot (that would
+  // bring the overview itself). A fresh install has neither (tests/planner.test.ts). The tests about the overview call
+  // briefing.tick() at the moments they choose, so the planner does not look at it for them here.
+  ctx.store.setSetting(userId, 'proactive.checkin', { enabled: false, time: '08:00' });
+  ctx.store.setSetting(userId, 'proactive', { briefing: 'dag' });
+  ctx.services.teams?.briefing?.stop();
   const events: any[] = [];
   ctx.events.subscribe((e: any) => events.push(e));
   let free: Env['free'] = null;
@@ -85,6 +97,20 @@ export async function setup(o: { start?: string; free?: boolean } = {}): Promise
     t,
     engine,
     duties,
+    work,
+    async workNow() {
+      work.enabled = true;
+      try {
+        const n = await work.tick();
+        // (A turn that ends looks again by itself; with the loop off again that look does nothing.)
+        work.enabled = false;
+        await work.idle();
+        await engine.idle();
+        return n;
+      } finally {
+        work.enabled = false;
+      }
+    },
     clock,
     userId,
     site,
@@ -112,6 +138,13 @@ export async function setup(o: { start?: string; free?: boolean } = {}): Promise
     duty: (agentId, key) => duties.duties(userId, agentId).find((r) => r.options.duty!.key === key),
   };
   return env;
+}
+
+/**
+ * The owner picks built-in examples for a bot (catalog.ts), deliberately: no bot gets a vaste taak by itself any more.
+ */
+export async function give(env: Env, agent: { id: string }, keys: string[]) {
+  for (const key of keys) await env.t.api('POST', '/proactive/duties', { agentId: agent.id, key });
 }
 
 /** A team with a website: PATCH the (first or given) team's profile. */

@@ -59,7 +59,7 @@ for (const l of langs) {
 // ---------- 2. the app ----------
 if (!staticOnly) {
   const { chromium } = require('playwright-core');
-  const { createApp } = await import('../../server/app.ts');
+  const { createApp } = await import('./server.mjs');
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'tb-i18n-'));
   const app = await createApp({ dataDir: dir, port: 0, host: '127.0.0.1', mode: 'desktop', quiet: true });
   const token = app.ctx.auth.ensureLocalOwner();
@@ -223,7 +223,12 @@ if (!staticOnly) {
   } finally {
     await browser.close();
     await app.close();
-    fs.rmSync(dir, { recursive: true, force: true });
+    // Windows keeps a file of a just-closed database locked for a moment: retry, and never fail the check on cleanup.
+    try {
+      fs.rmSync(dir, { recursive: true, force: true, maxRetries: 20, retryDelay: 250 });
+    } catch {
+      console.log(`Map nog in gebruik, later weghalen: ${dir}`);
+    }
   }
 }
 

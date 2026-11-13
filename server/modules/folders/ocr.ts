@@ -4,16 +4,18 @@
  * - Recognition: tesseract.js (Apache-2.0), WebAssembly, in its own worker thread (the event loop is not blocked).
  * - Pages of a pdf without a text layer are rendered to grey pixels with PDFium in WebAssembly (@hyzyla/pdfium, MIT);
  *   pdf.js keeps reading every pdf that has text.
- * - Language data: tessdata_fast (Apache-2.0), Dutch and English, pinned to release 4.1.0. Downloaded only after the
- *   owner said yes (Bestanden › Scans lezen), every file checked against its SHA-256 before use, into the data folder
- *   (`<data>/models/ocr/tessdata_fast-4.1.0`). tesseract.js is told to read only that folder: it never fetches
- *   anything itself.
+ * - Language data: tessdata_fast (Apache-2.0), Dutch and English, pinned to release 4.1.0 (± 10 MB). Fetched by itself
+ *   the first time a bot reads a scan (`ensure`), or earlier from the card in Bestanden; every file checked against
+ *   its SHA-256 before use, into the data folder (`<data>/models/ocr/tessdata_fast-4.1.0`). Did the download fail (no
+ *   internet), the bot says so and the next scan tries again. tesseract.js is told to read only that folder: it never
+ *   fetches anything itself.
  * - Limits: at most MAX_OCR_PAGES pages per read, one page at a time, a time limit per page; what was not read is said.
  */
 import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import { createRequire } from 'node:module';
+import { fetchVerified } from '../../core/util.js';
 
 export interface OcrLang {
   id: string;
@@ -37,7 +39,10 @@ export const MAX_OCR_PAGES = 20;
 const PAGE_TIMEOUT_MS = 90_000;
 const IDLE_MS = 2 * 60_000;
 
-export const OCR_HINT = 'Scans lezen kan nadat de eigenaar de taaldata heeft gedownload: Bestanden › Scans en foto’s lezen (± 10 MB, eenmalig).';
+const RETRY = 'bij de volgende scan probeert TeamBot het opnieuw';
+/** Why a scan was not read although TeamBot tried to fetch the language data (no internet, a site that is down). */
+export const OCR_HINT = `De taaldata voor tekstherkenning (± 10 MB) kon nu niet worden opgehaald; ${RETRY}.`;
+const NO_RUNTIME = 'Scans lezen kan niet in deze installatie: het onderdeel voor tekstherkenning ontbreekt. Installeer TeamBot opnieuw.';
 
 const req = createRequire(import.meta.url);
 
@@ -147,38 +152,9 @@ export class OcrEngine {
         const verified = this.verified();
         for (const l of this.langs) {
           const dest = path.join(this.dir, `${l.id}.traineddata`);
-          if (fs.existsSync(dest) && fs.statSync(dest).size === l.size && (await sha256File(dest)) === l.sha256) {
-            this.dl.done += l.size;
-            verified[l.id] = l.sha256;
-            continue;
-          }
-          const part = dest + '.part';
-          const r = await fetchImpl(l.url, { redirect: 'follow', signal: AbortSignal.timeout(20 * 60_000) });
-          if (!r.ok || !r.body) throw new Error(`HTTP ${r.status}`);
-          const hash = crypto.createHash('sha256');
-          const out = fs.createWriteStream(part);
-          let n = 0;
-          try {
-            const reader = r.body.getReader();
-            for (;;) {
-              const { value, done } = await reader.read();
-              if (done) break;
-              n += value.byteLength;
-              if (n > l.size) throw new Error('groter dan verwacht');
-              hash.update(value);
-              this.dl.done += value.byteLength;
-              if (!out.write(value)) await new Promise((res) => out.once('drain', res));
-            }
-          } finally {
-            await new Promise((res) => out.end(res));
-          }
-          if (n !== l.size || hash.digest('hex') !== l.sha256) {
-            fs.rmSync(part, { force: true });
-            throw new Error('de controle van het bestand klopte niet');
-          }
-          fs.renameSync(part, dest);
+          const fetched = await fetchVerified(fetchImpl, l, dest, { timeoutMs: 20 * 60_000, onBytes: (n) => (this.dl.done += n) });
           verified[l.id] = l.sha256;
-          fs.writeFileSync(this.marker(), JSON.stringify(verified, null, 1));
+          if (fetched) fs.writeFileSync(this.marker(), JSON.stringify(verified, null, 1));
         }
         fs.writeFileSync(this.marker(), JSON.stringify(verified, null, 1));
         return this.presentLangs().length === this.langs.length;
@@ -192,7 +168,21 @@ export class OcrEngine {
     return this.dl.running;
   }
 
-  /** Remove the language data (Bestanden › Scans en foto's lezen › Verwijderen). */
+  /** Ready to read a scan: the language data is there, or is fetched now (once; a failed try is tried again next time). */
+  async ensure(): Promise<boolean> {
+    if (this.ready()) return true;
+    if (ocrRuntimeProblem()) return false;
+    await this.download();
+    return this.ready();
+  }
+
+  /** In plain words why a scan cannot be read right now (after `ensure` said no). */
+  problem(): string {
+    if (ocrRuntimeProblem()) return NO_RUNTIME;
+    return this.dl.error ? `De taaldata voor tekstherkenning (± 10 MB) kon nu niet worden opgehaald (${this.dl.error}); ${RETRY}.` : OCR_HINT;
+  }
+
+  /** Remove the language data (the card in Bestanden); the next scan fetches it again. */
   async remove() {
     await this.release();
     fs.rmSync(this.dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
@@ -298,16 +288,6 @@ export class OcrEngine {
   }
 }
 
-function sha256File(file: string): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const h = crypto.createHash('sha256');
-    fs.createReadStream(file)
-      .on('data', (c) => h.update(c))
-      .on('end', () => resolve(h.digest('hex')))
-      .on('error', reject);
-  });
-}
-
 /** Grey pixels as a binary PGM (P5) image, which Tesseract's image library reads natively. */
 export function pgm(gray: Uint8Array, w: number, h: number): Buffer {
   return Buffer.concat([Buffer.from(`P5\n${w} ${h}\n255\n`, 'latin1'), Buffer.from(gray.buffer, gray.byteOffset, w * h)]);
@@ -321,9 +301,6 @@ export function setOcrEngine(e: OcrEngine | null) {
 export function ocrEngine(): OcrEngine | null {
   return shared;
 }
-
-/** Image types read with OCR (by extension, checked again by magic bytes). */
-export const IMAGE_EXT = /\.(png|jpe?g|bmp|tiff?|webp|gif|pbm|pgm|ppm)$/i;
 export function isImage(buf: Buffer): boolean {
   const b = buf;
   return (

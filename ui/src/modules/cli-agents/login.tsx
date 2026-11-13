@@ -1,17 +1,9 @@
 import { useState } from 'react';
 import { Copy, ExternalLink, SquareTerminal } from 'lucide-react';
 import { api } from '../../lib/api';
-import { Button, Input, Spinner, toast, useAsync } from '../../components/ui';
+import { Button, Input, Spinner, useAsync, copyText } from '../../components/ui';
 import type { DeviceLoginView } from './runtime';
-
-async function copy(text: string) {
-  try {
-    await navigator.clipboard.writeText(text);
-    toast('Gekopieerd', 'ok');
-  } catch {
-    toast('Kopiëren lukte niet — selecteer de tekst handmatig', 'danger');
-  }
-}
+import { t } from '../../lib/i18n';
 
 /** Start the login of a CLI: a device/paste login TeamBot shows itself, or a command for a terminal. */
 export async function startLogin(id: string): Promise<{ mode: 'device' | 'terminal'; login?: DeviceLoginView; command?: string }> {
@@ -26,7 +18,7 @@ function TerminalLogin({ id, command, desktop }: { id: string; command: string; 
         <code className="min-w-0 flex-1 break-all rounded-md bg-surface px-2 py-1.5 font-mono text-xs" translate="no">
           {command}
         </code>
-        <Button size="icon" variant="ghost" className="h-7 w-7 shrink-0" aria-label={`Kopieer: ${command}`} onClick={() => copy(command)}>
+        <Button size="icon" variant="ghost" className="h-7 w-7 shrink-0" aria-label={t('Kopieer: {0}', command)} onClick={() => copyText(command)}>
           <Copy className="h-3.5 w-3.5" />
         </Button>
       </div>
@@ -130,7 +122,7 @@ export function LoginBox({ id, label, command, desktop, login, setLogin, termina
               <code className="rounded-md bg-surface px-2.5 py-1 font-mono text-lg font-bold tracking-widest" translate="no">
                 {login!.code}
               </code>
-              <Button size="icon" variant="ghost" aria-label="Code kopiëren" onClick={() => copy(login!.code!)}>
+              <Button size="icon" variant="ghost" aria-label="Code kopiëren" onClick={() => copyText(login!.code!)}>
                 <Copy className="h-4 w-4" />
               </Button>
             </div>

@@ -4,13 +4,13 @@ import type { Agent, Ctx, User } from '../../../core/types.js';
 import { newId, now } from '../../../core/db.js';
 import { isRestricted, memberPolicy } from '../../../api/member-policy.js';
 import { isPrivateIp } from '../../../tools/builtin/web.js';
-import { isPrivateAddress } from '../policy.js';
 import { HostKeyRejected, capture, connectSsh, lastLine, mismatchMessage, wrapSh } from '../remote.js';
 import { HttpLike, type ComputerService } from '../service.js';
 import { HetznerProvider } from './hetzner.js';
 import { DigitalOceanProvider } from './digitalocean.js';
 import { buildCloudInit, genKeyPair } from './cloudinit.js';
 import { CloudApiError, defaultChoice, estimate, type CloudEstimate, type CloudOptions, type CloudProvider, type CloudServer, type CreateServerInput } from './provider.js';
+import { PLACE } from '../../../../shared/places.js';
 
 /**
  * Cloud-VM per bot (CMP-07 part 2): TeamBot creates a VM through a cloud API (Hetzner, DigitalOcean), gives it a cloud-init
@@ -109,7 +109,7 @@ export class CloudVmService {
   allowedFor(userId: string): { allowed: boolean; reason?: string } {
     const u = this.ctx.store.user(userId);
     if (isRestricted(this.ctx, u) && !memberPolicy(this.ctx).allowCloudVm)
-      return { allowed: false, reason: "Cloud-VM's staan op deze server uit voor leden. De eigenaar of een beheerder kan ze toestaan bij Instellingen › Gebruikers (met je eigen token en op je eigen kosten)." };
+      return { allowed: false, reason: `Cloud-VM's staan op deze server uit voor leden. De eigenaar of een beheerder kan ze toestaan bij ${PLACE.users} (met je eigen token en op je eigen kosten).` };
     return { allowed: true };
   }
 
@@ -233,7 +233,7 @@ export class CloudVmService {
 
   private ipOk(ip: string) {
     if (this.allowPrivateIps) return net.isIP(ip) > 0;
-    return net.isIP(ip) > 0 && !isPrivateAddress(ip) && !isPrivateIp(ip);
+    return net.isIP(ip) > 0 && !isPrivateIp(ip);
   }
 
   private agentOf(vm: CloudVm): Agent | null {

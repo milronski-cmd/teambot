@@ -197,6 +197,35 @@ export function claudeContextFromUsage(u: any): number | null {
   return used > 0 ? used : null;
 }
 
+/** Claude's token counts of one model call (`usage` of a message or of the result line). */
+type ClaudeCounts = { input_tokens: number; cache_read_input_tokens: number; cache_creation_input_tokens: number; output_tokens: number };
+const COUNT_KEYS = ['input_tokens', 'cache_read_input_tokens', 'cache_creation_input_tokens', 'output_tokens'] as const;
+
+/**
+ * What one model call of a Claude Code turn reported on the way (`message_start`, `message_delta`, an `assistant`
+ * line), by message id: the highest count per field, as each later line of the same call repeats or raises it. A turn
+ * that is stopped never writes its result line; this is then what it used (`claudeUsage`).
+ */
+export function noteClaudeCall(calls: Map<string, ClaudeCounts>, id: unknown, u: any) {
+  if (typeof id !== 'string' || !id || !u || typeof u !== 'object') return;
+  const cur = calls.get(id) || { input_tokens: 0, cache_read_input_tokens: 0, cache_creation_input_tokens: 0, output_tokens: 0 };
+  for (const k of COUNT_KEYS) cur[k] = Math.max(cur[k], Number(u[k]) || 0);
+  calls.set(id, cur);
+}
+
+/** TeamBot's usage from Claude's counts (the result line, or the sum of the calls noted so far). */
+export function claudeUsage(counts: Iterable<Partial<ClaudeCounts> | null | undefined>): { input: number; output: number; cacheRead: number } {
+  const out = { input: 0, output: 0, cacheRead: 0 };
+  for (const u of counts) {
+    if (!u) continue;
+    const cache = Number(u.cache_read_input_tokens) || 0;
+    out.cacheRead += cache;
+    out.input += (Number(u.input_tokens) || 0) + cache + (Number(u.cache_creation_input_tokens) || 0);
+    out.output += Number(u.output_tokens) || 0;
+  }
+  return out;
+}
+
 /** Context window of the model from Claude Code's result line (`modelUsage[model].contextWindow`). */
 export function claudeContextWindow(result: any, model?: string): number | null {
   const mu = result?.modelUsage;

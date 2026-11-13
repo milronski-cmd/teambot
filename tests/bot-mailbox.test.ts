@@ -156,12 +156,15 @@ test('ask_bot loop protection: no asking back (cycle), depth, ping-pong rate per
     assert.match(of('Bo')[1], /Bericht verstuurd aan Cy/);
     assert.match(of('Cy')[0], /delegatiediepte van 2/);
     assert.equal(m.calls.filter((c) => c.bot === 'Dex').length, 0);
-    // Two messages reached Bo; only the one with reply=true woke Ada (the notification did not).
+    // Two messages reached Bo; only the one with reply=true woke Ada. The notification did not, but Ada is still told
+    // how it ended: a note in her conversation, without a turn.
     const toBo = deleg(t).filter((d: any) => d.to_agent_id !== a.id && d.task.startsWith('vraag'));
     assert.equal(toBo.length, 2);
     assert.ok(toBo.every((d: any) => d.status === 'done'));
     const notes = msgs(t, th.id).filter((x) => x.parts.kind === 'delegation_result');
-    assert.equal(notes.length, 1);
+    assert.equal(notes.length, 2);
+    assert.equal(notes.filter((x) => /heeft je melding afgehandeld/.test(x.content)).length, 1);
+    assert.equal(t.app.ctx.store.all<any>("SELECT id FROM runs WHERE thread_id = ? AND json_extract(meta, '$.team.kind') = 'followup'", th.id).length, 1, 'one follow-up turn: only for the question');
 
     // Chain budget: a tiny token cap stops further messages in the same chain.
     await t.api('PUT', '/rooms/defaults', { maxChainTokens: 10, maxAsksPerPairPerHour: 50 });

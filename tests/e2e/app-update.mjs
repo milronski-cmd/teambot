@@ -32,7 +32,7 @@ delete process.env.TEAMBOT_DATA;
 delete process.env.TEAMBOT_UPDATE_URL;
 delete process.env.TEAMBOT_UPDATE_CHANNEL;
 
-const { createApp } = await import('../../server/app.ts');
+const { createApp } = await import('./server.mjs');
 const { UpdateFlow } = await import('../../desktop/update-flow.ts');
 const { updateBlockers } = await import('../../server/modules/backups/app-update.ts');
 const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'tb-app-update-'));

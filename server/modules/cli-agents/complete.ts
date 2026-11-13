@@ -16,6 +16,9 @@ export async function cliComplete(def: CliDef, bin: string, req: { model?: strin
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'tb-cli-complete-'));
   const model = req.model && req.model !== 'default' ? req.model : '';
   const timeoutMs = req.timeoutMs ?? 150_000;
+  // An older Claude Code without --no-session-persistence keeps a session for this call anyway: its own folder for
+  // exactly this temp folder (the name carries the random suffix), which goes with it afterwards. Nothing else.
+  let trace = '';
   try {
     let args: string[];
     let outFile = '';
@@ -23,8 +26,15 @@ export async function cliComplete(def: CliDef, bin: string, req: { model?: strin
     const env: Record<string, string> = {};
     if (def.engine === 'claude') {
       // Without the owner's own Claude Code context (settings, claude.ai skills, CLAUDE.md, auto-memory), as in bot runs.
+      // And without a trace in it: no session of this one question under his ~/.claude/projects (with auto-memory off
+      // not even a folder), where every call would otherwise leave a folder named after its own temp folder.
       const f = await claudeFeatures(bin);
       args = ['-p', req.prompt, '--output-format', 'text', '--append-system-prompt', `${req.system}\n\n${ACCOUNT_NOTE}`, '--max-turns', '1', '--permission-mode', 'plan', '--strict-mcp-config'];
+      // No tools at all: with tools a strong model goes and reads the files the question names, and the one turn ends
+      // in "Error: Reached max turns (1)" instead of an answer (seen live: the second look "gaf geen duidelijk antwoord").
+      if (f.tools) args.push('--tools', '');
+      if (f.noSession) args.push('--no-session-persistence');
+      else trace = path.join(process.env.CLAUDE_CONFIG_DIR || path.join(os.homedir(), '.claude'), 'projects', dir.replace(/[^a-zA-Z0-9]/g, '-'));
       if (f.settingSources) args.push('--setting-sources', 'project,local');
       if (f.settings) args.push('--settings', JSON.stringify({ claudeMdExcludes: ownerMemoryExcludes(dir, os.homedir()) }));
       env.CLAUDE_CODE_DISABLE_AUTO_MEMORY = '1';
@@ -57,6 +67,8 @@ export async function cliComplete(def: CliDef, bin: string, req: { model?: strin
     const fatal = stopOn ? fatalStderrError(r.stderr) : null;
     if (fatal) throw new Error(`${def.label} gaf een fout: ${fatal}`);
     const text = (outFile && fs.existsSync(outFile) ? fs.readFileSync(outFile, 'utf8') : r.stdout).trim();
+    // Claude Code prints this instead of an answer when the model wanted a tool: an error, never the answer.
+    if (def.engine === 'claude' && /^Error: Reached max turns \(\d+\)$/.test(text)) throw new Error(`${def.label} gaf geen antwoord: het model wilde eerst een tool gebruiken`);
     if (!text) {
       // OpenCode 2.x: "Error: Free usage limit reached …" (with colour codes) on stderr and exit 1.
       const err = def.id === 'opencode' ? /(?:^|\s)Error:\s*(.+)$/m.exec(lastOutput(r.stderr, 400))?.[1]?.trim() : '';
@@ -66,5 +78,6 @@ export async function cliComplete(def: CliDef, bin: string, req: { model?: strin
     return text;
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
+    if (trace) fs.rmSync(trace, { recursive: true, force: true });
   }
 }

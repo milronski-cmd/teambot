@@ -6,7 +6,7 @@ import { startTestApp, type TestApp } from './helpers.js';
 import { msgs, settle, team, until } from './team-mock.js';
 import { CliLoopWatch, LoopGuard, loopLimits } from '../server/agent/loops.js';
 import { isCorrection } from '../server/modules/quality/lessons.js';
-import { looksLikePath, parseEvidence } from '../server/modules/quality/evidence.js';
+import { inspectEvidence, looksLikePath, parseEvidence, runSteps } from '../server/modules/quality/evidence.js';
 import { taskKey } from '../server/modules/quality/skills.js';
 
 /**
@@ -252,7 +252,7 @@ test('two bots cannot claim the same task; others see who has it; the owner can 
 test('a bot that repeats the same tool call stops by itself, says what it tried and asks for help', async () => {
   const t = await startTestApp();
   try {
-    const { a, th } = await bot(t);
+    const { a, th } = await bot(t, 'Bo', { settings: { quality: { loopGuard: { repeat: 3 } } } });
     const call = { name: 'read_file', args: { path: 'bestaat-niet.txt' } };
     t.script.push(
       { toolCalls: [call] },
@@ -307,8 +307,8 @@ test('loop guard rules: same result again is no progress, a changed result is; i
   assert.equal(idle.endStep()?.kind, 'idle', 'three steps in a row without anything new');
 
   assert.equal(loopLimits({ settings: { quality: { loopGuard: false } } } as any), null);
-  assert.deepEqual(loopLimits({ settings: {} } as any), { repeat: 3, idle: 6 }, 'on by default');
-  assert.deepEqual(loopLimits({ settings: { quality: { loopGuard: { repeat: 50, idle: 1 } } } } as any), { repeat: 10, idle: 3 }, 'bounded');
+  assert.deepEqual(loopLimits({ settings: {} } as any), { repeat: 10, idle: 20 }, 'on by default: only a bot that is really stuck');
+  assert.deepEqual(loopLimits({ settings: { quality: { loopGuard: { repeat: 5000, idle: 1 } } } } as any), { repeat: 1000, idle: 3 }, 'bounded');
 
   const w = new CliLoopWatch({ repeat: 3, idle: 6 });
   const item = (title: string) => ({ kind: 'tool', title, ts: '' });
@@ -345,6 +345,7 @@ test('a CLI bot repeating the same step is stopped too', async () => {
   try {
     const m = await team(t);
     const c = await m.cliBot('Codi');
+    await t.api('PATCH', `/agents/${c.id}`, { settings: { ...(c.settings || {}), quality: { loopGuard: { repeat: 3 } } } });
     const th = await t.api('POST', '/threads', { agentId: c.id });
     m.script('Codi', { activity: [1, 2, 3, 4].map(() => ({ kind: 'tool', title: 'Opdracht: npm test' })), text: 'Ik probeer het opnieuw' });
     await t.say(th.id, 'Maak de tests groen');
@@ -357,11 +358,12 @@ test('a CLI bot repeating the same step is stopped too', async () => {
   }
 });
 
-test('an owner correction becomes a lesson for that bot, visible in Geheugen and under the message, with undo', async () => {
+test('an owner correction becomes a lesson for that bot, in its own working notes, visible under the message, with undo; for everyone only when he says so; a plain "voortaan" request is no lesson', async () => {
   const t = await startTestApp();
   try {
     const m = await team(t);
     const bo = await m.bot('Bo', { tool_groups: ['team', 'memory'] });
+    const cas = await m.bot('Cas', { tool_groups: ['team', 'memory'] });
     const th = await t.api('POST', '/threads', { agentId: bo.id });
     m.script('Bo', { text: 'Ik heb de offerte als Word-bestand voor je klaargezet.' }, { text: 'Begrepen, voortaan als PDF.' }, { text: 'Graag gedaan.' });
     m.script('?', { text: '{"lesson":"Offertes stuur je als PDF, niet als Word-bestand."}' });
@@ -369,27 +371,28 @@ test('an owner correction becomes a lesson for that bot, visible in Geheugen and
     await t.say(th.id, 'Nee, zo doen we dat niet. Offertes gaan altijd als PDF naar de klant.');
     await t.app.ctx.services.quality.drain();
     const owner = msgs(t, th.id).filter((x) => x.role === 'user').at(-1)!;
-    // (0.4 F2: a lesson is for the bot's whole team; the bot it came from is its author.)
-    const item = t.app.ctx.store.one<any>("SELECT * FROM memory_items WHERE created_by_agent = ? AND type = 'lesson'", bo.id);
-    assert.ok(item, 'a lesson in memory');
-    assert.equal(item.status, 'active');
-    assert.equal(item.scope, 'shared');
-    assert.equal(item.source_ref, owner.id, 'the source is the owner’s own message');
+    // Bo's own: a line in its working notes, with what the owner told it (one place, one copy), not a team lesson.
+    const notesOf = (id: string) => String(t.app.ctx.store.one<any>("SELECT body FROM memory_dossiers WHERE core = 'notes' AND created_by_agent = ?", id)?.body || '');
+    assert.match(notesOf(bo.id), /## Opdrachten van de eigenaar[\s\S]*Offertes stuur je als PDF, niet als Word-bestand\./, 'in Bo’s own working notes');
+    assert.equal(t.app.ctx.store.one<any>("SELECT COUNT(*) AS n FROM memory_items WHERE type = 'lesson'").n, 0, 'no lesson for the whole team');
+    assert.doesNotMatch(notesOf(cas.id), /PDF/, 'not another bot’s');
     const lesson = await t.api('GET', `/quality/lessons?agentId=${bo.id}`);
     assert.equal(lesson.length, 1);
     assert.equal(lesson[0].content, 'Offertes stuur je als PDF, niet als Word-bestand.');
     const map = await t.api('GET', `/memory/thread/${th.id}/learned-map`);
-    assert.ok(map.byMessage[owner.id]?.some((x: any) => x.id === item.id), 'shown under the owner’s message');
+    assert.ok(map.byMessage[owner.id]?.length, 'shown under the owner’s message');
     // The lesson reached the checker with what the bot did and what the owner said; the next turn can use it.
     const req = m.calls.filter((c) => c.bot === '?').at(-1)!.req;
     assert.match(String(req.messages[0].content), /Word-bestand[\s\S]*zo doen we dat niet/);
 
     const row = t.app.ctx.store.one<any>('SELECT change_id FROM quality_lessons WHERE agent_id = ?', bo.id);
     await t.api('POST', `/memory/changes/${row.change_id}/undo`);
-    assert.notEqual(t.app.ctx.store.one<any>('SELECT status FROM memory_items WHERE id = ?', item.id).status, 'active', 'undo works');
+    assert.doesNotMatch(notesOf(bo.id), /PDF/, 'undo works');
 
-    // A thank-you is no lesson.
+    // A thank-you is no lesson; a plain request with "voortaan" neither (the bot carries it out).
     await t.say(th.id, 'Top, dank je!');
+    m.script('Bo', { text: 'Staat op 9:30.' });
+    await t.say(th.id, 'Zet die routine voortaan op 9:30 in plaats van 9:00.');
     await t.app.ctx.services.quality.drain();
     assert.equal((await t.api('GET', `/quality/lessons?agentId=${bo.id}`)).length, 1);
 
@@ -403,6 +406,15 @@ test('an owner correction becomes a lesson for that bot, visible in Geheugen and
     const all = await t.api('GET', `/quality/lessons?agentId=${bo.id}`);
     assert.equal(all.find((x: any) => /dinsdag/.test(x.content || '') || x.action === 'none')?.action, 'none');
     assert.match(all[0].content, /Volgende keer eerst even bellen/, 'kept in the owner’s own words');
+
+    // When he says it is for everyone: a lesson of the team, which Cas gets too.
+    m.script('Bo', { text: 'Ik heb het rapport als Word-bestand gemaakt.' }, { text: 'Begrepen.' });
+    m.script('?', { text: '{"lesson":"Rapporten maak je als PDF, voor alle bots."}' });
+    await t.say(th.id, 'Maak het rapport');
+    await t.say(th.id, 'Nee, dat klopt niet: rapporten altijd als PDF, dat geldt voor alle bots.');
+    await t.app.ctx.services.quality.drain();
+    const team1 = t.app.ctx.store.one<any>("SELECT * FROM memory_items WHERE type = 'lesson' AND status = 'active'");
+    assert.ok(team1 && team1.scope === 'shared', 'a lesson for the whole team');
   } finally {
     await t.close();
   }
@@ -499,7 +511,7 @@ test('recurring work done well → a skill suggestion (no install); every bot th
     t.script.push({ text: 'Ik maak een concept.' });
     await t.api('POST', `/quality/suggestions/${inbox.suggestions[0].id}`, { decision: 'accept' });
     await t.waitIdle(th.id);
-    assert.ok(msgs(t, th.id).some((m) => m.role === 'user' && /skill_draft/.test(m.content)), 'the bot is asked to draft one');
+    assert.ok(msgs(t, th.id).some((m) => m.role === 'user' && /skill_save/.test(m.content)), 'the bot is asked to save one');
     assert.equal((await t.api('GET', '/quality/inbox')).suggestions.length, 0);
 
     // A chat-only bot gets no such rule.
@@ -515,12 +527,48 @@ test('recurring work done well → a skill suggestion (no install); every bot th
 test('helpers: corrections, evidence, task kinds', () => {
   for (const s of ['Nee, zo doen we dat niet.', 'Dat klopt niet, de prijs is exclusief btw.', 'Doe dit voortaan anders: eerst bellen.', 'Volgende keer graag in het Engels.', "That's not how we do it here"]) assert.ok(isCorrection(s), s);
   for (const s of ['nee', 'Top, dank je!', 'Onthoud dat ik in Delft woon', 'Wat is de hoofdstad van Frankrijk?']) assert.ok(!isCorrection(s), s);
+  // What he tells this bot to do from now on is that bot's own order (its working notes), not a lesson for the team.
+  assert.ok(!isCorrection('Nee, voortaan stuur je offertes als PDF.'));
   assert.deepEqual(parseEvidence('a.md\n- https://x.nl/p\n\n'), ['a.md', 'https://x.nl/p']);
   assert.deepEqual(parseEvidence([{ path: 'b.pdf' }, 'b.pdf', 'msg_123456789']), ['b.pdf', 'msg_123456789']);
   assert.ok(looksLikePath('rapporten/q3.pdf') && looksLikePath('C:\\Werk\\a.txt') && looksLikePath('offerte.md'));
   assert.ok(!looksLikePath('Ik heb het bestand gemaakt.') && !looksLikePath('https://x.nl/a.pdf'));
   assert.equal(taskKey('Weekrapport SEO 12 november'), taskKey('Weekrapport SEO week 47'));
   assert.notEqual(taskKey('Weekrapport SEO'), taskKey('Offerte zonnepanelen'));
+});
+
+test('evidence of a CLI bot: a path with a remark after it is that file, a command\'s output is a real step, a failed step is not "gelukt"', async () => {
+  const t = await startTestApp();
+  try {
+    const { a, th, ws } = await bot(t);
+    const agent = t.app.ctx.store.agent(a.id)!;
+    fs.mkdirSync(path.join(ws, 'Campagne (2)'), { recursive: true });
+    const file = path.join(ws, 'Campagne (2)', 'INRICHTING.md');
+    fs.writeFileSync(file, '# Inrichting\nAlles staat goed.\n');
+    const run = t.app.ctx.store.createRun({ thread_id: th.id, agent_id: a.id, user_id: a.user_id, trigger: 'user', status: 'done' } as any);
+    t.app.ctx.store.createMessage({
+      thread_id: th.id,
+      role: 'assistant',
+      author_type: 'agent',
+      author_id: a.id,
+      author_name: 'Bo',
+      content: 'Klaar.',
+      run_id: run.id,
+      parts: {
+        activity: [
+          { kind: 'tool', title: 'Voerde uit: npm test', out: 'ℹ tests 1671\nℹ pass 1671\nℹ fail 0', ts: new Date().toISOString() },
+          { kind: 'tool_error', title: 'Lukte niet: een opdracht uitvoeren: npm run lint', detail: 'Exit code 1', ts: new Date().toISOString() },
+        ],
+      },
+    } as any);
+    const steps = runSteps(t.app.ctx, run.id);
+    assert.deepEqual(steps.map((s) => [s.ok, s.out]), [[true, 'ℹ tests 1671\nℹ pass 1671\nℹ fail 0'], [false, 'Exit code 1']]);
+    const ev = inspectEvidence(t.app.ctx, { userId: a.user_id, agent, steps, values: [`${file} (118 regels, 8572 bytes; grep bevestigt sectie 3)`, 'ℹ pass 1671', `${path.join(ws, 'bestaat-niet.md')} (leeg)`] });
+    assert.deepEqual(ev.map((e) => [e.type, e.ok]), [['file', true], ['output', true], ['file', false]]);
+    assert.match(ev[0].excerpt || '', /Alles staat goed/);
+  } finally {
+    await t.close();
+  }
 });
 
 test('deleting a bot releases its claims', async () => {
@@ -542,8 +590,8 @@ test('team databases per team (B2): task #1 of two teams gets its own second loo
   const t = await startTestApp();
   try {
     // Two teams; the first is the default team.
-    const home = await t.api('POST', '/teams', { name: 'Thuis' });
-    const shop = await t.api('POST', '/teams', { name: 'Webshop' });
+    const home = await t.api('POST', '/teams', { name: 'Thuis', starterRules: false });
+    const shop = await t.api('POST', '/teams', { name: 'Webshop', starterRules: false });
     const bo = await bot(t, 'Bo');
     const kim = await bot(t, 'Kim');
     await t.api('PUT', `/teams/${home.id}/bots/${bo.a.id}`);

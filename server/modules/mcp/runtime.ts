@@ -13,6 +13,17 @@ import { googleServer } from './google.js';
 import { AuthRequiredError, TeamBotOAuthProvider, getConn, patchOAuth, refreshIfNeeded } from './oauth.js';
 import { riskFromAnnotations, riskOf, stricter, toolHash } from './risk.js';
 import { cleanError, guardedFetch, killTree, maskSecrets, mayUsePrivateNetwork, mayUseStdio, pidAlive, resolveKV, sleep, withTimeout } from './util.js';
+import { find as findToolchain, toolchainOf, type ToolchainId } from '../../core/runtimes.js';
+
+/** npx/uvx is not on this computer and TeamBot has no own copy yet: Apps offers "Installeren" (core/runtimes.ts). */
+export class ToolchainMissingError extends Error {
+  constructor(
+    public toolchain: ToolchainId,
+    name: string,
+  ) {
+    super(toolchain === 'node' ? `${name} heeft Node.js (npx) nodig en dat staat nog niet op deze computer. Klik in Apps op “Installeren”: TeamBot haalt het zelf op (ongeveer 3 MB).` : `${name} heeft Python-hulpprogramma uv (uvx) nodig en dat staat nog niet op deze computer. Klik in Apps op “Installeren”: TeamBot haalt het zelf op (ongeveer 15 MB).`);
+  }
+}
 
 export type RuntimeState = 'stopped' | 'starting' | 'ready' | 'backoff' | 'error' | 'auth_required';
 
@@ -181,8 +192,15 @@ export class McpManager {
         cwd = this.connDir(c);
         fs.mkdirSync(cwd, { recursive: true });
       }
-      const env: Record<string, string> = {};
+      let env: Record<string, string> = {};
       for (const [k, v] of Object.entries(safeEnv(values))) if (typeof v === 'string') env[k] = v;
+      // npx/uvx: the copy on this computer, else TeamBot's own (put in front of PATH, also for what npx starts itself).
+      const needs = path.isAbsolute(c.command) ? null : toolchainOf(c.command);
+      if (needs) {
+        const tc = findToolchain(needs, this.ctx.config.dataDir);
+        if (!tc) throw new ToolchainMissingError(needs, label(c));
+        env = tc.env(env);
+      }
       const t = new StdioClientTransport({ command: c.command, args: c.args || [], env, cwd, stderr: 'pipe' });
       t.stderr?.on('data', (chunk: Buffer) => this.pushStderr(r, chunk));
       return t;
@@ -271,6 +289,11 @@ export class McpManager {
       r.transport = transport;
       r.pid = (transport as any)?.pid ?? null;
       await this.closeClient(r);
+      if (e instanceof ToolchainMissingError) {
+        // Not a crash: nothing to retry until the owner clicks "Installeren".
+        this.setState(r, 'error', e.message);
+        throw e;
+      }
       if (e instanceof AuthRequiredError || e instanceof UnauthorizedError || /\b401\b|unauthorized/i.test(String(e?.message))) {
         if (c.auth === 'oauth') {
           this.markAuthRequired(c.id);

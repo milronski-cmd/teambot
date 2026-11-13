@@ -5,7 +5,8 @@
  */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { startTestApp } from './helpers.js';
+import { mockAdapter, startTestApp } from './helpers.js';
+import { setShortCallFake } from '../server/agent/short-call.js';
 import type { TestApp } from './helpers.js';
 
 /** Frozen turn context of a message (group threads keep one per bot). */
@@ -150,7 +151,7 @@ test('eval: bot forgets own notes directly, but forgetting what is about the use
   try {
     const a = await t.agent();
     const th = await t.api('POST', '/threads', { agentId: a.id });
-    t.script.push({ toolCalls: [{ name: 'memory_remember', args: { content: 'Release staat gepland op vrijdag' } }] }, { text: 'ok' });
+    t.script.push({ toolCalls: [{ name: 'memory_remember', args: { content: 'Release staat gepland op vrijdag', scope: 'agent' } }] }, { text: 'ok' });
     await t.say(th.id, 'plan');
     const own = (await t.api('GET', '/memory/items?scope=agent')).items[0];
     t.script.push({ toolCalls: [{ name: 'memory_forget', args: { id: `m:${own.ref}` } }] }, { text: 'ok' });
@@ -235,11 +236,12 @@ test('eval: ACL isolation between users (items, search, refs, context) and betwe
     assert.doesNotMatch(om.find((m) => m.role === 'tool')!.content, /start in maart/);
     assert.doesNotMatch(String(ctxOf(om[0]) || ''), /Kraken/);
 
-    // Between bots of one user: agent memory is private, shared is explicit.
+    // Between bots of one user: a bot's own note (scope agent) is private; everything else is shared by default
+    // (tests/memory-living.test.ts).
     const a = await t.agent({ name: 'Alfa' });
     const b = await t.agent({ name: 'Bravo' });
     const tha = await t.api('POST', '/threads', { agentId: a.id });
-    t.script.push({ toolCalls: [{ name: 'memory_remember', args: { content: 'Alfa-notitie: de staging server heet orion' } }] }, { text: 'ok' });
+    t.script.push({ toolCalls: [{ name: 'memory_remember', args: { content: 'Alfa-notitie: de staging server heet orion', scope: 'agent' } }] }, { text: 'ok' });
     await t.say(tha.id, 'noteer de server');
     const thb = await t.api('POST', '/threads', { agentId: b.id });
     t.script.push({ toolCalls: [{ name: 'memory_search', args: { query: 'staging server orion' } }] }, { text: 'ok' });
@@ -330,7 +332,7 @@ test('eval: secrets are excluded everywhere (explicit capture, tool, import), wi
     const th = await t.api('POST', '/threads', { agentId: a.id });
     t.script.push({ toolCalls: [{ name: 'memory_remember', args: { content: 'GitHub token ghp_abcdefghijklmnopqrstuvwxyz0123456789' } }] }, { text: 'ok' });
     const msgs = await t.say(th.id, 'Onthoud dat mijn wachtwoord Zomer2026! is');
-    assert.match(ctxOf(userMsg(msgs)), /Opgeslagen geheimen/);
+    assert.match(ctxOf(userMsg(msgs)), /Instellingen › Meer mogelijkheden › Kluis/);
     assert.match(msgs.find((m) => m.role === 'tool')!.content, /GitHub-token/);
     const imp = await t.api('POST', '/memory/import', { text: '- pincode: 4821\n- creditcard 4111 1111 1111 1111' });
     assert.equal(imp.counts.rejected, 2);
@@ -361,7 +363,7 @@ test('eval: quota behaviour — writes stop with a clear message, proposals are 
     for (let i = 0; i < 10; i++) await t.api('POST', '/memory/items', { content: `Botnotitie ${i} ${i * 31337}`, scope: 'agent', agentId: a.id });
     const notes: any[] = [];
     t.app.ctx.events.on('notification', (e: any) => notes.push(e.data));
-    t.script.push({ toolCalls: [{ name: 'memory_remember', args: { content: 'Te veel notities' } }] }, { text: 'ok' });
+    t.script.push({ toolCalls: [{ name: 'memory_remember', args: { content: 'Te veel notities', scope: 'agent' } }] }, { text: 'ok' });
     const msgs = await t.say(th.id, 'nog eentje');
     assert.match(msgs.find((m) => m.role === 'tool')!.content, /quotum/i);
     // Acceptance A-46 (filled to the limit live): what is learned or saved without the user watching also reaches
@@ -427,17 +429,25 @@ test('eval: idempotency — retrying the same message or tool call never writes 
     t.script.push({ text: 'ok' });
     await t.say(th.id, 'Onthoud dat ik elke dinsdag sport');
     assert.equal((await t.api('GET', '/memory/items?status=all')).items.length, 1);
-    // Rejected automatic proposals are not proposed again (owner chose "always propose" for what is recognised).
+    // Rejected automatic proposals are not proposed again (the owner chose "first as a proposal" for what the review
+    // finds: every line of the review waits for him in Te beoordelen).
+    t.app.ctx.providers.registerKind({ id: 'mock-local', label: 'Lokaal testmodel', type: 'api', group: 'local', billing: 'local', needsKey: false, description: 'test', models: ['lokaal-1'], defaultModel: 'lokaal-1', create: () => mockAdapter(t.script, t.requests) });
+    await t.api('POST', '/providers', { kind: 'mock-local' });
     await t.api('PUT', '/memory/settings', { autoApply: 'never' });
+    setShortCallFake((system) => (/Je bent het geheugen van TeamBot/.test(system) ? 'Eigenaar: Ik hou van wandelen in de bergen' : ''));
     t.script.push({ text: 'ok' });
     await t.say(th.id, 'Ik hou van wandelen in de bergen.');
+    await t.app.ctx.services.memory.drain();
     const p = (await t.api('GET', '/memory/review')).proposals.find((x: any) => /wandelen/.test(x.item.content));
     assert.ok(p, 'auto proposal');
+    assert.doesNotMatch(String(t.app.ctx.store.one<any>("SELECT body FROM memory_dossiers WHERE core = 'owner'").body), /wandelen/, 'not written before the owner says yes');
     await t.api('POST', `/memory/items/${p.item.id}/reject`);
     t.script.push({ text: 'ok' });
     await t.say(th.id, 'Ik hou van wandelen in de bergen.');
+    await t.app.ctx.services.memory.drain();
     assert.equal((await t.api('GET', '/memory/review')).proposals.filter((x: any) => /wandelen/.test(x.item.content)).length, 0);
   } finally {
+    setShortCallFake(null);
     await t.close();
   }
 });

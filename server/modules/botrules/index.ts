@@ -5,6 +5,7 @@ import { HttpError, ah, bad, notFound, own, str, user } from '../../core/http.js
 import { impactOf } from '../../tools/broker.js';
 import { APPS, isParseError, parseRule, type ParsedRule } from './parse.js';
 import { applyRules, ruleMatches, type CallInfo, type StoredRule } from './match.js';
+import { reviewRulesFor } from './review.js';
 
 /**
  * Own rules in plain words (docs/modules/botrules.md, package P6). The owner writes a rule per bot or per team; it is
@@ -137,11 +138,15 @@ export class BotRules {
     return rules.find((r) => r.effect === decision && ruleMatches(r, c)) ?? null;
   }
 
-  /** Rules TeamBot cannot pin down in code: Auto Review checks every change against them. */
-  reviewTexts(agent: Pick<Agent, 'id' | 'user_id'>): string[] {
-    return this.forAgent(agent)
-      .filter((r) => r.review)
-      .map((r) => r.text);
+  /**
+   * The rules TeamBot cannot pin down in code that name one concrete step (review.ts), for the reviewer model: a rule
+   * about money or messages only for a step that can pay or send; `strong` = clearly such a step, so a failed check
+   * asks the owner instead of letting it through. Asked by the permission gate only (tools/gate.ts).
+   */
+  reviewFor(agent: Agent, tool: Pick<ToolDef, 'name' | 'risk'> & { impact?: ToolDef['impact']; internal?: boolean; group?: string }, args?: any): { texts: string[]; strong: boolean } {
+    const rules = this.forAgent(agent);
+    if (!rules.some((r) => r.review)) return { texts: [], strong: false };
+    return reviewRulesFor(rules, { ...this.callInfo(agent, tool, args ?? {}), group: tool.group });
   }
 
   agentDeleted(agentId: string, userId: string) {
@@ -209,7 +214,6 @@ export function plainView(ctx: Ctx, r: StoredRule) {
 
 const instances = new WeakMap<Ctx, BotRules>();
 const stops = new WeakMap<Ctx, () => void>();
-export const botRulesOf = (ctx: Ctx) => instances.get(ctx);
 
 const mod: Module = {
   id: 'botrules',
@@ -344,8 +348,8 @@ const mod: Module = {
         const r = svc.reason(agent, tool, args, decision);
         return r ? { text: r.text, effect: r.effect } : null;
       },
-      /** Rules Auto Review checks (the owner's words). */
-      reviewTexts: (agent: Agent) => svc.reviewTexts(agent),
+      /** The review rules that apply to one step, and whether a failed check must ask (`strong`). */
+      reviewFor: (agent: Agent, tool: any, args?: any) => svc.reviewFor(agent, tool, args),
       forAgent: (agent: Agent) => svc.forAgent(agent).map((r) => plainView(ctx, r)),
       exportUser: (userId: string) => svc.exportUser(userId),
       _service: svc,

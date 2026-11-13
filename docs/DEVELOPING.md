@@ -12,6 +12,7 @@ npm run dev:server   # API op http://127.0.0.1:4747  (TEAMBOT_DATA=... voor een 
 npm run dev:ui       # Vite op http://localhost:5173 (proxy naar 4747)
 npm run typecheck    # server + ui (TypeScript 7)
 npm test             # node:test, tests/**/*.test.ts
+npm run dup:check    # niets dubbel of dood: ongebruikte bestanden/exports (knip) en het aantal tools
 ```
 
 Desktop-modus print een URL met `#token=...` (lokale eigenaar, geen wachtwoord). Servermodus vraagt bij eerste bezoek een
@@ -30,6 +31,27 @@ TEAMBOT_DEV_SERVER=http://127.0.0.1:4748 npm run dev:ui
 PowerShell: `$env:TEAMBOT_DATA='.data\dev'; npm run dev:server -- --mode desktop --port 4748` en in een tweede venster
 `$env:TEAMBOT_DEV_SERVER='http://127.0.0.1:4748'; npm run dev:ui`. Ook `npm run desktop:dev` gebruikt zonder
 `TEAMBOT_DATA` de map van je geïnstalleerde TeamBot.
+
+Een desktopserver haalt twee minuten na de start vanzelf het zoekmodel op (±124 MB). `npm test` slaat dat altijd over;
+een e2e- of proefserver doet hetzelfde met `TEAMBOT_NO_AUTO_DOWNLOAD=1` (`fetchesModelBySelf` in
+`server/modules/memory/index.ts`). Slim zoeken met de hand aanzetten downloadt het wel.
+
+## Niets dubbel (`npm run dup:check`)
+
+Per taak één onderdeel. Draai `npm run dup:check` vóór je iets oplevert; het faalt als:
+
+- een bestand of een export door niets in het product gebruikt wordt (knip in productiemodus, instellingen in
+  `knip.json`). Haal het weg. Gebruikt alleen een test het (een testhaak zoals `setOcrForTests`), controleer dat en zet
+  het dan op de lijst met `node scripts/dup-check.mjs --update` (`scripts/dup-baseline.json`);
+- een toolnaam twee keer geregistreerd wordt, of een bot met Volledige toegang meer tools krijgt dan het getal in
+  `tests/dup-guard.test.ts`. Een nieuwe taak hoort eerst bij een bestaande tool; komt er echt een tool bij, verhoog dat
+  getal dan bewust in dezelfde wijziging (en verlaag het als je tools samenvoegt).
+
+knip is geen afhankelijkheid van TeamBot (het komt dus niet in de installer): het script haalt het op met
+`npx --yes knip@5`, daarvoor is internet nodig. Vaste regels die hierbij horen: gevaarlijke opdrachten staan alleen
+in `server/tools/builtin/command-risk.ts`, "komt dit van de eigenaar zelf?" alleen in `server/agent/owner-turn.ts`,
+"ligt dit pad binnen die map?" alleen in `isInside` (`server/tools/builtin/files.ts`), en getallen die het scherm en
+de server allebei tonen in `shared/` (zoals `shared/loopGuard.ts`).
 
 ## Architectuur in één scherm
 

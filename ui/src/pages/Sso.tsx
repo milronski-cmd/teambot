@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Copy, KeyRound, Layers, ShieldCheck, Users } from 'lucide-react';
 import { api } from '../lib/api';
-import { askConfirm, Badge, Button, Card, Field, Input, Spinner, timeAgo, toast, toastError, useAsync } from '../components/ui';
+import { askConfirm, Badge, Button, Card, Field, Input, Spinner, timeAgo, useAsync, CardHead, copyText } from '../components/ui';
 import { translate, uiLocale } from '../lib/i18n';
 import { Listbox } from '../components/Listbox';
 import { MoreInfo } from '../components/MoreInfo';
@@ -35,8 +35,6 @@ interface Discovery {
   userinfo_endpoint?: string | null;
   code_challenge_methods_supported?: string[] | null;
 }
-
-const copy = (text: string, what = 'Gekopieerd') => navigator.clipboard?.writeText(text).then(() => toast(what, 'ok'), () => toast('Kopiëren lukte niet', 'danger'));
 
 const EVENT_LABEL: Record<string, string> = {
   'sso.login': 'ingelogd met SSO',
@@ -114,8 +112,7 @@ export function SsoCard() {
   return (
     <Card className="space-y-4 p-5">
       <div className="flex flex-wrap items-center gap-2">
-        <ShieldCheck className="h-4 w-4" />
-        <h2 className="text-[15px] font-bold tracking-tight">Inloggen met SSO</h2>
+        <CardHead icon={ShieldCheck} tone="rose" title="Inloggen met SSO" />
         {v.active ? <Badge tone="ok">aan</Badge> : <Badge>uit</Badge>}
         {v.active && v.requireSso && <Badge tone="warn">verplicht</Badge>}
       </div>
@@ -129,7 +126,7 @@ export function SsoCard() {
           <div className="flex flex-wrap items-center gap-2">
             <span className="text-muted">Redirect-URI:</span>
             <code className="break-all">{v.redirectUri}</code>
-            <Button size="sm" variant="ghost" icon={<Copy className="h-3.5 w-3.5" />} onClick={() => copy(v.redirectUri, 'Redirect-URI gekopieerd')}>
+            <Button size="sm" variant="ghost" icon={<Copy className="h-3.5 w-3.5" />} onClick={() => copyText(v.redirectUri, 'Redirect-URI gekopieerd')}>
               Kopiëren
             </Button>
           </div>
@@ -301,8 +298,7 @@ export function ScimCard() {
   return (
     <Card className="space-y-4 p-5">
       <div className="flex flex-wrap items-center gap-2">
-        <Users className="h-4 w-4" />
-        <h2 className="text-[15px] font-bold tracking-tight">Gebruikers koppelen (SCIM)</h2>
+        <CardHead icon={Users} tone="blue" title="Gebruikers koppelen (SCIM)" />
         {v.token ? <Badge tone="ok">actief</Badge> : <Badge>uit</Badge>}
       </div>
       <p className="text-xs text-muted">
@@ -311,7 +307,7 @@ export function ScimCard() {
       <Field label="SCIM-adres (Tenant URL)" hint={v.publicBaseSource === 'request' ? 'Afgeleid van de huidige pagina; stel bij “Inloggen met SSO” het vaste adres van TeamBot in.' : 'Vul dit in bij je provider, met de sleutel hieronder als “Secret Token”.'}>
         <div className="flex gap-2">
           <Input readOnly value={v.endpoint} onFocus={(e) => e.currentTarget.select()} spellCheck={false} aria-label="SCIM-adres (Tenant URL)" />
-          <Button icon={<Copy className="h-4 w-4" />} onClick={() => copy(v.endpoint, 'SCIM-adres gekopieerd')} aria-label="SCIM-adres kopiëren">
+          <Button icon={<Copy className="h-4 w-4" />} onClick={() => copyText(v.endpoint, 'SCIM-adres gekopieerd')} aria-label="SCIM-adres kopiëren">
             Kopiëren
           </Button>
         </div>
@@ -332,7 +328,7 @@ export function ScimCard() {
           <div className="font-medium text-warn">Kopieer deze sleutel nu: hij wordt maar één keer getoond.</div>
           <div className="flex gap-2">
             <Input readOnly value={fresh} onFocus={(e) => e.currentTarget.select()} aria-label="Nieuwe SCIM-sleutel" spellCheck={false} className="font-mono" />
-            <Button icon={<Copy className="h-4 w-4" />} onClick={() => copy(fresh, 'Sleutel gekopieerd')}>
+            <Button icon={<Copy className="h-4 w-4" />} onClick={() => copyText(fresh, 'Sleutel gekopieerd')}>
               Kopiëren
             </Button>
           </div>
@@ -421,8 +417,7 @@ export function ScimGroupsCard() {
   return (
     <Card className="space-y-4 p-5">
       <div className="flex flex-wrap items-center gap-2">
-        <Layers className="h-4 w-4" />
-        <h2 className="text-[15px] font-bold tracking-tight">Groepen uit je provider (SCIM)</h2>
+        <CardHead icon={Layers} tone="blue" title="Groepen uit je provider (SCIM)" />
         <Badge>{d.groups.length}</Badge>
       </div>
       <p className="text-xs text-muted">

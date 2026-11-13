@@ -85,6 +85,36 @@ eigen team; "Over jou" blijft persoonlijk. De geheugentest (`npm run memory:benc
 | P1 automatische entity-resolutie en consolidatie | ✔ entity-merge; samenvatten binnen de doelomvang door het onderhoud (met bronnen, undo); "Samenvoegen" op verzoek blijft een voorstel | `cleanup.ts`, `lifecycle.consolidate` |
 | P1 back-ups/restore met tombstone-bescherming | ✔ bij terugzetten gaan de vergeet-blokkades van nu mee (`restore-tombstones.json`), wat ze raken wordt opnieuw vergeten, daarna wordt de FTS herbouwd en worden de vectoren tegen hun records gecontroleerd | `index.ts` |
 
+## Levende dossiers (0.4.4, `living.ts`)
+
+Het geheugen dat een bot altijd ziet, is een kleine set dossiers met een lopende tekst (`memory_dossiers.body`) die
+de bots zelf bijhouden. Geen instelling: het werkt op een lege installatie vanaf het eerste bericht.
+
+- **Kerndossiers** (`memory_dossiers.core`), leeg aangemaakt zodra ze nodig zijn, met neutrale namen:
+  `owner` *Eigenaar* (één, voor alle teams), `overview` *Overzicht* en `lessons` *Lessen* (per team), `notes`
+  *Werknotities van <bot>* (per bot, het enige dat privé is). Ze staan in de **systeemprompt** van elke beurt
+  (`systemPromptText` → `coreContext`), dus bij elke engine; een engine met een eigen sessie (Codex, ACP) krijgt ze
+  ook in de beurt waarin ze veranderden. Niet in een gesprek waar anderen meelezen of met een klant.
+- **Andere dossiers** (een project, klant, persoon, onderwerp) staan er op titel bij; de tekst komt mee zodra het
+  gesprek het dossier noemt (bestaande koppeling) of via `dossier_get`.
+- **Schrijven**: `dossier_write` met `add` (standaard; wat er al staat komt er niet nog eens bij), `replace`
+  (`old_text` precies één keer) of `rewrite`. Een onbekende naam maakt een nieuw dossier voor het hele team.
+  Geweigerd: geheimen, iets dat op verzoek is vergeten, een geplante instructie na inhoud van buiten, en een tekst
+  boven het maximum (`BODY_LIMITS`: 5000 / 6000 / 3000 / 3000 tekens voor de kerndossiers, 8000 voor een onderwerp).
+  De bot krijgt de getallen terug en schrijft het dossier eerst korter.
+- **Archief en geschiedenis**: regels die uit een dossier verdwijnen, worden een tijdlijnregel van dat dossier
+  (`memory_records`, `data.archive`), vindbaar met `memory_search`; elke schrijfactie bewaart de vorige tekst in
+  `memory_changes` (ongedaan maken).
+- **Losse notities** (`memory_remember`, en wat de leerstap opvangt) zijn standaard gedeeld met het team en staan
+  onder de dossiers in beeld tot een bot ze in een dossier zet (`processed`, of vanzelf als de woorden erin staan);
+  dan gaan ze naar het archief.
+- **Update van een oudere installatie**: `foldOnce` zet één keer, zonder model, de losse notities onder een paar
+  kopjes in de kerndossiers (dubbele regels één keer), archiveert ze in één batch (één keer ongedaan maken zet alles
+  terug) en laat alles wat niet duidelijk past staan. De hoofdbot krijgt één regel in zijn werknotities om de
+  dossiers na te lopen; er wordt geen routine of taak aangemaakt.
+
+Tests: `tests/memory-living.test.ts` (de eerste test is een lege installatie).
+
 ## Geheugen overnemen uit een andere assistent (0.4.4)
 
 **Geheugen › Opslag › Geheugen overnemen uit ChatGPT, Claude of Gemini** (`ui/src/modules/memory/assistant-import.tsx`,
@@ -193,7 +223,7 @@ Het ja voor het ingebouwde model geldt voor de hele installatie (`settings('', '
   5. *Documenten*: max. 2 passende stukken uit dossierbronnen (woorden + betekenis; ook uit pdf en Word);
   6. *Eerdere gesprekken*: max. 2 episodes van dezelfde bot (alleen privégesprekken); niet een samenvatting die alleen
      herhaalt wat inmiddels niet meer geldt (een afgeronde taak).
-  Een notitie in een **gearchiveerd klantdossier** staat nooit in het blok; `memory_search` en `dossier_search` vinden
+  Een notitie in een **gearchiveerd klantdossier** staat nooit in het blok; `memory_search` en `dossier_get` vinden
   haar wel, en een gesprek dat de klant noemt maakt het dossier weer actief.
   Een feit waarvan de herzien-datum voorbij is staat er met "kan veranderd zijn", een feit dat het onderhoud niet kon
   bevestigen met "te controleren"; de systeemprompt zegt de bot dat hij dat dan eerlijk zegt en het vraagt als het
@@ -660,7 +690,7 @@ en *Alles ongedaan maken*, plus de omvang van elk deel tegenover zijn doel, en e
 **Klantenservice met veel klanten** (0.4.4): elke klant een dossier (soort *klant*) met een eigen, kleine doelomvang
 (`targets.client`, standaard 40; daarboven samenvatten en archiveren zoals bij elk deel). Een klant waar in
 `archiveAfterDays` (180) niets mee gebeurde (geen wijziging, notitie, gesprek of gebruik) gaat met zijn dossier naar het
-archief: buiten het blok van elke beurt, wel gevonden door `memory_search` en `dossier_search`, en weer actief zodra een
+archief: buiten het blok van elke beurt, wel gevonden door `memory_search` en `dossier_get`, en weer actief zodra een
 gesprek de klant noemt (of het dossier opnieuw wordt aangemaakt). Een gearchiveerde klant houdt een kwart van de
 doelomvang (min. 5). Grenzen per eigenaar: 1000 actieve dossiers en 10.000 met het archief (serverlimieten
 `dossiers`/`dossiersTotal`); vóór 0.4.4 was het 500 in totaal, ook het archief, zodat een klantenservice met 500 klanten
@@ -681,7 +711,7 @@ in totaal bij een quotum van 500, 0 van de 15 belangrijke kwijt, 12 opruimversla
   plek: besluit ("besloten", "we kiezen voor"), actie ("moet", "voor vrijdag", wie + wanneer, of `owner`/`due`), afgerond
   ("de offerte is verstuurd" sluit de open actie waar het over gaat), gebeurtenis ("vanochtend gebeld"), persoon of
   organisatie ("Piet is de contactpersoon"), bron (een link) of notitie. Zonder dossier: dat van het gesprek, anders het
-  dossier dat de zin noemt. De uitgebreide tools (`dossier_create`, `dossier_add`, `dossier_update`) staan in een eigen
+  dossier dat de zin noemt. De uitgebreide tools (`dossier_note`, `dossier_add`, `dossier_update`, `memory_get`) staan in een eigen
   deel van de toollijst (`memory:dossiers`, aan met "Geheugen"): ze werken nog, maar gaan bij een volle toollijst niet
   standaard mee (pakket Y).
 - **Een terugkerend onderwerp zonder dossier**: de klant of het project van een gesprek (het `subject` van de leerder,
@@ -795,10 +825,9 @@ Voor elke bot, welke rol ook, met of zonder geheugen (`context.ts` › `currentR
 | `memory_remember` | write | Opslaan via de pijplijn (direct of voorstel, zie boven) |
 | `memory_update` | write | Nieuwe versie (eigen botnotitie) of wijzigingsvoorstel (andermans data); `still_valid` = bevestigen |
 | `memory_forget` | write + danger-bevestiging voor andermans/gedeelde data | Hard vergeten met bon |
-| `dossier_search` | read | Dossiers waar de bot toegang toe heeft; met een zoekterm ook gearchiveerde (een klant die terugkomt) |
+| `dossier_write` | write | De tekst van een dossier bijwerken (add / replace / rewrite), met een maximum per dossier; maakt het dossier aan als het er nog niet is (voor het hele team). Zie "Levende dossiers" |
 | `dossier_get` | read | Samenvatting, besluiten, acties, tijdlijn, personen, bronnen, notities; `query` zoekt in documenten (woorden + betekenis) |
 | `dossier_note` | write | Eén zin in het dossier (van het gesprek, of het genoemde): TeamBot kiest besluit / actie / afgerond / gebeurtenis / persoon / organisatie / bron / notitie; bestaat het dossier nog niet, dan een voorstel (of aangemaakt, als de eigenaar dat toestond) |
-| `dossier_create` | write | Nieuw dossier (eerst alleen voor deze bot) — deel `memory:dossiers` |
 | `dossier_add` | write | event / decision / action / person / organization / note / source (URL, tekst of een tekst-, pdf- of Word-bestand uit de werkmap) — deel `memory:dossiers` |
 | `dossier_update` | write | Samenvatting/status van een dossier of status/eigenaar/deadline van een regel — deel `memory:dossiers` |
 
@@ -1084,7 +1113,7 @@ en dossiernotities hebben geen eigen team: ze volgen hun dossier (één plek om 
 standaardteam; null = geen muren: geen teamsmodule, nog geen teams, of een gedeelde bot in het gesprek van een lid —
 die leest het geheugen van dat lid). `aclSql` en `readableDossiers` voegen het team toe; alles wat items, dossiers,
 regels, bronnen en documentdelen leest gaat daarlangs: per-beurt-context, `memory_search`/`memory_get`,
-`dossier_search`/`dossier_get`, slim leren (`<bekend>`), de dienst `ctx.services.memory.search/searchAsync/dossiers`.
+`dossier_get`, slim leren (`<bekend>`), de dienst `ctx.services.memory.search/searchAsync/dossiers`.
 De afgeleide stores beslissen nooit: woordindex en vectoren worden gerangschikt binnen de dossiers die de lezer mag
 lezen (`chunkMatch`/`chunkScores` met `dossierIds`) en daarna per regel opnieuw gecontroleerd. Een bot zonder team
 (onbekend voor de teamsmodule) bereikt geen enkel team (fail closed). Schrijven: `teamWriteRefusal`,
@@ -1134,7 +1163,7 @@ het doelteam) wordt overgeslagen; het quotum van het doelteam geldt. Twee wegen:
 **Kennisbank van specialisten (pakket S).** `ctx.services.memory.dossiers.create(userId, { title, agentId })` zet het
 dossier in het thuisteam van die bot en eerst alleen voor die bot; schrijven namens de bot
 (`dossiers.addEvent/…/addSource(…, agentId)`, `remember(…, { agentId, createdBy: 'agent' })`) houdt zich aan zijn
-muren. Een bot die zelf `dossier_create` gebruikt, maakt het dossier in zijn eigen team; een gelijknamig dossier van
+muren. Een bot die met `dossier_write` een dossier maakt, maakt het in zijn eigen team; een gelijknamig dossier van
 een ander team wordt nooit teruggegeven of genoemd.
 
 **Eén team = rustig.** Met één team toont de pagina geen teamfilter, geen teamlabels en geen teamkeuzes, en staan er
@@ -1290,10 +1319,10 @@ Nieuw in 0.4.5:
 Geheugen per team (0.4 B, golf 2):
 - `tests/teams-isolation.test.ts` (probes, elk zonder toegang / meekijken / aansturen, via de echte tool-lus en een
   nep-Ollama): `memory_search` op woorden en op betekenis (vectoren), `memory_get`, het per-beurtblok (kennis én
-  documenten), `dossier_search`, `dossier_get` met documenten, documentdelen via `memory_search`, een
+  documenten), `dossier_get` (lijst en inhoud, met documenten), documentdelen via `memory_search`, een
   gesprekssamenvatting van team B, de teamregel van B in de systeemprompt van A (altijd geweigerd), en elke
   schrijfweg (`memory_remember` in B's dossier, `dossier_add`, `dossier_update`, `memory_update`, `memory_forget`,
-  delen dat in B landt, `dossier_create` dat B's dossier teruggeeft): zonder toegang alles dicht, met meekijken lezen
+  delen dat in B landt, `dossier_write` dat in B's dossier schrijft of het teruggeeft): zonder toegang alles dicht, met meekijken lezen
   maar nooit schrijven. Plus: B's eigen bots lezen en schrijven B's geheugen, regels per team en voor alle teams,
   kennis voor alle teams leest elke bot maar wijzigt geen enkele bot, het teamfilter van de eigenaar.
 - `tests/memory-teams.test.ts`: update vanaf 0.3 (alles in "Mijn team", dezelfde zichtbaarheid per bot, een nieuw team

@@ -1,4 +1,4 @@
-// Instellingen › Hoe gaat het met TeamBot? (17.1) in a real browser: on the computer and on a paired phone (device
+// Instellingen › Status van TeamBot (17.1) in a real browser: on the computer and on a paired phone (device
 // session, 402 px), the coloured line, "Meer informatie" with the numbers, no console errors, axe-core WCAG 2.2 A/AA
 // in light and dark. Then a real 1.3 s block of the server turns the line orange (after the start-up minutes).
 // Usage: npm run build:ui && node --import tsx tests/e2e/health-ui.mjs   (TEAMBOT_E2E_BROWSER=chrome|msedge)
@@ -74,7 +74,7 @@ try {
   await page.waitForTimeout(800);
   await page.evaluate(() => (location.hash = '#/settings/health-status'));
   await page.getByRole('heading', { name: 'TeamBot hapert soms' }).waitFor({ timeout: 15_000 }).catch(() => fail('oranje kop niet gezien'));
-  if (!(await page.getByText(/langer dan een seconde stil/).count())) fail('de reden staat er niet in woorden');
+  if (!(await page.getByText(/Het afgelopen uur stond TeamBot (één|\d+) keer stil \(/).count())) fail('de reden staat er niet in woorden');
   if (!(await page.locator('[data-level="warn"]').count())) fail('oranje lijn ontbreekt');
   step('na een echte blokkade van 1,3 s: oranje lijn met de reden in gewone woorden');
   await ctx.close();
@@ -82,5 +82,5 @@ try {
   await browser.close();
   await t.close();
 }
-console.log(failures.length ? `\n${failures.length} fout(en)` : '\nHoe gaat het met TeamBot?: alles in orde');
+console.log(failures.length ? `\n${failures.length} fout(en)` : '\nStatus van TeamBot: alles in orde');
 process.exit(failures.length ? 1 : 0);

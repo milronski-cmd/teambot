@@ -140,6 +140,9 @@ test('no memory without a concrete proposal right before a plain yes', async () 
 test('yes to a proposal the bot made with memory_remember approves it (undo goes back to the proposal); a turn that read files stays a proposal', async () => {
   const { t, th } = await setup();
   try {
+    // Shared memory by default: a bot's note about the owner applies at once. It is a proposal when the owner chose
+    // to review what bots write.
+    await t.api('PUT', '/memory/settings', { botWrites: 'propose' });
     t.script.push({ toolCalls: [{ name: 'memory_remember', args: { content: 'Ik ben vegetariër', scope: 'about_you' } }] }, { text: 'Ik heb voorgesteld om te onthouden dat je vegetariër bent. Klopt dat?' });
     await t.say(th.id, 'Ik eet geen vlees.');
     const p = (await items(t)).find((i) => i.content === 'Ik ben vegetariër');

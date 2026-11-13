@@ -1,6 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { changedFields, dirtySectionKeys, flushSections, listNl, prepareSections, stableJson, unsavedLabels } from '../ui/src/lib/editorSave.js';
+import { changedFields, dirtySectionKeys, flushSections, prepareSections, stableJson, unsavedLabels } from '../ui/src/lib/editorSave.js';
+import { formatList } from '../shared/format.js';
 
 // The bot editor has one "Opslaan" for everything (ui/src/lib/editorSave.ts). Before, the main button did not save the
 // Computer section ("Mijn bureaublad", "Privé-container", "Eigen server (SSH)") and the choice was lost without a word.
@@ -24,8 +25,8 @@ test('changed fields: only what the owner edited counts, server bookkeeping does
 test('unsaved labels are readable and without duplicates', () => {
   assert.deepEqual(unsavedLabels(['model', 'provider_id', 'tool_policy', 'tool_groups'], ['Computer & bestanden']), ['Model', 'Tools', 'Computer & bestanden']);
   assert.deepEqual(unsavedLabels(['avatar', 'color'], []), ['Gezicht']);
-  assert.equal(listNl(['Naam']), 'Naam');
-  assert.equal(listNl(['Naam', 'Tools', 'Computer & bestanden']), 'Naam, Tools en Computer & bestanden');
+  assert.equal(formatList(['Naam'], 'nl-NL'), 'Naam');
+  assert.equal(formatList(['Naam', 'Tools', 'Computer & bestanden'], 'nl-NL'), 'Naam, Tools en Computer & bestanden');
 });
 
 test('the main save flushes every dirty section, reports failures and skips clean ones', async () => {

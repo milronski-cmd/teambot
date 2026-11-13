@@ -8,6 +8,7 @@ import { whatsNew } from './changelog.js';
 import { Offsite } from './offsite.js';
 import { patchUpdateState, readUpdateState, recordStart, rollbackInfo, type UpdateEntry } from './updates.js';
 import { registerAppUpdate } from './app-update.js';
+import { plannerOf } from '../routines/planner.js';
 
 /**
  * Back-ups (Instellingen › Back-ups) and updates of TeamBot itself (package N). See docs/modules/backups.md.
@@ -256,9 +257,9 @@ const mod: Module = {
     startSchedule(ctx, svc);
   },
 
-  stop() {
-    stopSchedule?.();
-    stopSchedule = null;
+  stop(ctx) {
+    stops.get(ctx)?.();
+    stops.delete(ctx);
   },
 };
 
@@ -308,18 +309,32 @@ function noteVersionChange(ctx: Ctx) {
   }
 }
 
-let stopSchedule: (() => void) | null = null;
+/** The automatic backup of each running app (a test process runs several). */
+const stops = new WeakMap<Ctx, () => void>();
+const SOURCE = 'backups';
+const GAP_MS = 23 * 3600_000;
 
-/** Daily automatic backup while TeamBot runs (first check two minutes after start, then every hour). */
+/**
+ * The daily automatic backup while TeamBot runs: a source of the one planner (routines/planner.ts), with a look two
+ * minutes after start and then every hour, and a backup when the last automatic one is 23 hours old. It calls no
+ * model; the owner sees it in "Wat start vanzelf", with when it comes next.
+ */
 function startSchedule(ctx: Ctx, svc: BackupService) {
-  stopSchedule?.();
-  const run = async () => {
+  stops.get(ctx)?.();
+  const planner = plannerOf(ctx);
+  if (!planner) return;
+  // The last automatic backup of this run on the planner's clock; before the first one, the newest in the folder.
+  let madeAt: number | null = null;
+  const due = (now: number) => {
+    const last = madeAt ?? Date.parse(svc.list().find((b) => b.kind === 'auto')?.createdAt || '');
+    return Number.isFinite(last) ? Math.max(now, last + GAP_MS) : now;
+  };
+  const run = async (now: number) => {
     const s = svc.settings();
-    if (!s.auto) return;
-    const last = svc.list().find((b) => b.kind === 'auto');
-    if (last && Date.now() - Date.parse(last.createdAt) < 23 * 3600_000) return;
+    if (!s.auto || due(now) > now) return;
     try {
       const b = await svc.make({ kind: 'auto', includeWork: s.includeWork });
+      madeAt = now;
       ctx.log.info(`[backups] automatische back-up gemaakt: ${b.name}`);
     } catch (e: any) {
       ctx.log.error('[backups] automatische back-up mislukt', e?.message || e);
@@ -327,14 +342,17 @@ function startSchedule(ctx: Ctx, svc: BackupService) {
       if (owner) ctx.events.emit(owner.id, 'notification', { title: 'Automatische back-up mislukt', body: String(e?.message || e).slice(0, 300), link: '#/settings/backups-app', kind: 'warning' });
     }
   };
-  const first = setTimeout(() => void run(), 2 * 60_000);
-  const every = setInterval(() => void run(), 3600_000);
-  first.unref?.();
-  every.unref?.();
-  stopSchedule = () => {
-    clearTimeout(first);
-    clearInterval(every);
-  };
+  stops.set(ctx, planner.register({
+    id: SOURCE,
+    everyMs: 3600_000,
+    firstMs: 2 * 60_000,
+    look: (now) => run(now),
+    // For the owner (the backup is of the whole installation), while automatic backups are on.
+    planned: (userId, now) =>
+      svc.settings().auto && ctx.auth.owner()?.id === userId
+        ? [{ kind: 'backup', id: SOURCE, userId, agentId: null, title: 'Automatische back-up van je gegevens', at: new Date(planner.lookAt(SOURCE, due(now)) ?? due(now)).toISOString(), model: false, link: '#/settings/backups-app' }]
+        : [],
+  }));
 }
 
 export default mod;

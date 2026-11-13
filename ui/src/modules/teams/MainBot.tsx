@@ -8,7 +8,8 @@ import type { Agent } from '../../lib/types';
 import { teamsApi, useMainBot } from './api';
 
 /**
- * The main bot (hoofdbot, package C): the owner makes it himself, at most one. These parts are self-contained, so the
+ * The main bot (hoofdbot, package C): there is always exactly one; TeamBot picks the first bot by itself and the owner
+ * can hand the role to another bot. Nothing here has to be chosen before bots work. These parts are self-contained, so the
  * shell and the new-bot flow only mount them:
  *  - MainBotChoice   "Gewone bot of hoofdbot" in the new-bot flow (`<MainBotChoice agent={draft} onChange={set} />`);
  *  - MainBotSection  the bot editor section "Hoofdbot" (make this bot the main bot, or a normal bot again);
@@ -79,24 +80,13 @@ export function MainBotSection({ agent }: { agent: Agent; onChange(patch: Partia
   if (!agent.id) return <p className="text-sm text-muted">{typeof agent.settings?.mainBot === 'string' ? 'Deze bot wordt je hoofdbot.' : 'Kies bij ‘Soort bot’ of deze bot je hoofdbot wordt.'}</p>;
   if (main === undefined) return <Spinner />;
   const make = async () => {
-    if (!(await askConfirm(t('{0} wordt je hoofdbot. Is {1} teamleider, dan is hij dat daarna niet meer.', agent.name, agent.name), { ok: 'Hoofdbot maken' }))) return;
+    const text = main ? t('{0} wordt je hoofdbot en {1} wordt een gewone bot. Is {0} teamleider, dan is hij dat daarna niet meer.', agent.name, main.name) : t('{0} wordt je hoofdbot. Is {1} teamleider, dan is hij dat daarna niet meer.', agent.name, agent.name);
+    if (!(await askConfirm(text, { ok: 'Hoofdbot maken' }))) return;
     setBusy(true);
     try {
       const r = await teamsApi.setMain(agent.id);
       toast(t('{0} is nu je hoofdbot', agent.name), 'ok');
       for (const n of r.notes) toast(n);
-    } catch (e) {
-      toastError(e);
-    } finally {
-      setBusy(false);
-    }
-  };
-  const normal = async () => {
-    if (!(await askConfirm(t('{0} wordt een gewone bot. Hij geeft andere teams dan geen werk meer, tot je dat per team weer instelt.', agent.name), { ok: 'Gewone bot maken' }))) return;
-    setBusy(true);
-    try {
-      await teamsApi.clearMain();
-      toast(t('{0} is nu een gewone bot', agent.name), 'ok');
     } catch (e) {
       toastError(e);
     } finally {
@@ -110,24 +100,20 @@ export function MainBotSection({ agent }: { agent: Agent; onChange(patch: Partia
           <Crown className="mt-0.5 h-4 w-4 shrink-0 text-accent" aria-hidden />
           <span>{t('{0} is je hoofdbot: je vaste voordeur. Hij geeft de teams werk, controleert het en meldt terug.', agent.name)}</span>
         </p>
-        <div className="flex flex-wrap items-center gap-3">
-          <a className="text-sm font-semibold text-accent hover:underline" href="#/m/teams/alle">
-            Alle teams bekijken
-          </a>
-          <Button size="sm" loading={busy} onClick={normal}>
-            Gewone bot maken
-          </Button>
-        </div>
+        <p className="text-sm text-muted">Er is altijd één hoofdbot. Wil je een andere, open dan die bot en maak hem hoofdbot.</p>
+        <a className="text-sm font-semibold text-accent hover:underline" href="#/m/teams/alle">
+          Alle teams bekijken
+        </a>
       </div>
     );
   if (main)
     return (
-      <p className="text-sm text-muted">
-        {t('Je hoofdbot is {0}. Er kan er maar één zijn.', main.name)}{' '}
-        <a className="underline" href="#/m/teams/alle">
-          Alle teams
-        </a>
-      </p>
+      <div className="space-y-3">
+        <p className="text-sm text-muted">{t('Je hoofdbot is {0}. Er is er altijd één.', main.name)}</p>
+        <Button size="sm" icon={<Crown className="h-4 w-4" />} loading={busy} onClick={make}>
+          {t('{0} hoofdbot maken', agent.name)}
+        </Button>
+      </div>
     );
   return (
     <div className="space-y-3">
@@ -139,23 +125,5 @@ export function MainBotSection({ agent }: { agent: Agent; onChange(patch: Partia
         {t('{0} hoofdbot maken', agent.name)}
       </Button>
     </div>
-  );
-}
-
-/** The main bot on top of a chat list (the phone's Chats): one tap to the front door. Nothing without a main bot. */
-export function MainBotEntry({ className }: { className?: string }) {
-  const main = useMainBot();
-  if (!main || main.archived) return null;
-  return (
-    <a href={`#/a/${main.id}`} className={cx('flex items-center gap-3 rounded-xl px-2 py-2.5 hover:bg-surface-2', className)}>
-      <BotAvatar bot={main} size={44} />
-      <span className="min-w-0 flex-1">
-        <span className="block truncate text-[15px] font-semibold">{main.name}</span>
-        <span className="flex items-center gap-1 text-xs text-muted">
-          <Crown className="h-3.5 w-3.5" aria-hidden /> Hoofdbot
-        </span>
-      </span>
-      <ChevronRight className="rtl-flip h-4 w-4 text-muted" aria-hidden />
-    </a>
   );
 }

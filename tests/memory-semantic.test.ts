@@ -85,6 +85,43 @@ test('a fact stored in other words is found by meaning: search page, per-turn co
   }
 });
 
+test('what went out of a dossier’s text into its archive is found like the note it once was: by meaning, and the line that matches is shown — also among several', async () => {
+  const t = await startTestApp();
+  const o = await startFakeOllama();
+  try {
+    await withOllama(t, o);
+    const a = await t.agent({ name: 'Ada' });
+    const mem = t.app.ctx.services.memory;
+    const owner = mem.living.core(a.id).find((d: any) => d.core === 'owner');
+    const me = { type: 'user' as const, id: t.app.ctx.auth.owner()!.id };
+    // The bot rewrote the dossier shorter: three lines went to its archive, as one entry.
+    mem.living.write(owner.id, '- Ik woon in Utrecht\n- Mijn hond heet Bram en is een labrador\n- Ik drink thee\n- Mijn auto is een blauwe Volvo', me);
+    mem.living.write(owner.id, '- Ik woon in Utrecht', me);
+    await drain(t);
+    assert.equal(vectors(t, 'record').length, 1, 'the archive entry has a vector');
+    const search = async (query: string) => {
+      const th = await t.api('POST', '/threads', { agentId: a.id });
+      t.script.push({ toolCalls: [{ name: 'memory_search', args: { query } }] }, { text: 'ok' });
+      const msgs = await t.say(th.id, 'zoek even');
+      return String(msgs.filter((m: any) => m.role === 'tool').at(-1)?.content || '');
+    };
+    // Asked in other words ("wagen" is "auto" by meaning, no word in common): found, with the line that answers.
+    assert.match(await search('Welke wagen rijd ik?'), /Uit het archief van “Eigenaar”[^\n]*Volvo/);
+    // By its words: the matching line of the entry, not its first line.
+    const dog = await search('labrador hond');
+    assert.match(dog, /Uit het archief van “Eigenaar”[^\n]*Mijn hond heet Bram en is een labrador/);
+    assert.doesNotMatch(dog.split('\n').find((l) => /archief/.test(l)) || '', /Ik drink thee/);
+    // Forgotten: the vector goes with it.
+    const rec = t.app.ctx.store.one<any>("SELECT id, ref FROM memory_records WHERE kind = 'event'");
+    mem.forget(me.id, `g:${rec.ref}`);
+    assert.equal(t.app.ctx.store.get<any>('memory_records', rec.id).status, 'forgotten');
+    assert.equal(vectors(t, 'record').length, 0);
+  } finally {
+    await o.close();
+    await t.close();
+  }
+});
+
 test('vectors follow the record: never for sensitive items, gone with forget (and its tombstone) and trash, rebuilt by reindex', async () => {
   const t = await startTestApp();
   const o = await startFakeOllama();

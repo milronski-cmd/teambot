@@ -10,7 +10,7 @@ import { createRequire } from 'node:module';
 
 const require = createRequire(import.meta.url);
 const { chromium } = require('playwright-core');
-const { createApp } = await import('../../server/app.ts');
+const { createApp } = await import('./server.mjs');
 
 const step = (s) => console.log(`• ${s}`);
 const fail = (s) => {
@@ -93,8 +93,7 @@ try {
   watch(op);
   await op.goto(`${app.url}/#token=${token}`);
   await op.goto(`${app.url}/#/agents/${bot.id}`);
-  // "Delen met het team" is a closed section on the tab Meer (behind "Meer opties").
-  await op.getByRole('tab', { name: /^Meer/ }).click();
+  // "Delen met het team" is a closed section of the bot page, inside "Geavanceerd".
   await op.evaluate(() => document.querySelectorAll('details').forEach((x) => (x.open = true)));
   const secBtn = op.getByRole('button', { name: /Delen met het team/ });
   await secBtn.waitFor({ timeout: 20000 });

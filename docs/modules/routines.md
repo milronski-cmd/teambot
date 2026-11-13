@@ -34,7 +34,8 @@ Een cloud-worker die altijd aan staat valt buiten deze module (plan §26: opt-in
 2. **Claim** in één transactie: `INSERT OR IGNORE` in `routine_runs` met een **unieke `run_key`**
    (`<routine>@<geplande tijd>`; triggers: `<routine>@trg:<trigger>:<delivery-id of sha256>`), daarna `next_run_at` vooruit.
    Herstart, dubbele timer, gelijktijdige tick of een opnieuw afgeleverde webhook kan dus nooit een tweede run maken.
-3. Per routine draait er één run tegelijk (wachtrij max. 20). Een geplande run terwijl de vorige nog loopt → *Overgeslagen*.
+3. Per routine draait er één run tegelijk; de rest wacht op zijn beurt, zoveel als er komen (alleen een maximum dat de
+   eigenaar zelf instelt, `maxQueuedRuns`, slaat er een over). Een geplande run terwijl de vorige nog loopt → *Overgeslagen*.
 4. Limieten worden gecontroleerd (per routine en globaal, per kalenderdag in de tijdzone): max. runs en max. geschatte
    kosten. Bereikt → bonnetje *Limiet bereikt* + één melding per dag.
 5. De opdracht gaat als bericht in het **eigen routinegesprek** (thread `kind: 'routine'`, één per routine) en start de bot
@@ -51,18 +52,22 @@ Een cloud-worker die altijd aan staat valt buiten deze module (plan §26: opt-in
      opdrachtbericht (geen dubbele prompt). Annuleren kan tijdens wachten of lopen. **Bij de eerste fout al een melding**
      (“Routine X mislukt … Nieuwe poging 2 van 3 om 08:01”), niet pas na de laatste poging.
    - 401/402/403, ongeldige sleutel, tegoed/abonnement op, geen provider → routine **pauzeert zichzelf direct** + melding.
-   - Andere fouten → na *N* fouten op rij (standaard 3) automatische pauze + melding.
+   - Andere fouten → na *N* fouten op rij (standaard 3) automatische pauze + melding met waarom en *Aanzetten* (een
+     bescherming tegen verbruik aan iets wat stuk is, geen rem: de pagina van de routine heeft één knop *Aanzetten*).
    - Kon de bot niet eens starten (bot verwijderd, interne fout) → *Mislukt* + melding; nooit stil.
    - Herstart tijdens een run → *Onderbroken* (nooit automatisch herhaald i.v.m. bijwerkingen; “Hervatten” in het gesprek).
-   - Time-out per run (standaard 30 min, ook als hij op goedkeuring wacht) → geannuleerd.
+   - Geen tijdslimiet per run (standaard 0 = geen): een lange klus wordt niet afgebroken. Een run die blijft hangen
+     staat als *bezig* in de schermen en stopt met *Alles stoppen*. Een tijdslimiet is een instelling van de routine
+     (`timeoutMinutes`, hoogstens 14 dagen); bereikt → geannuleerd.
    - **Belangrijk** (`options.important`): de run draait nooit onder het minimumniveau van Instellingen › Gratis
      doorschakelen (standaard Claude of Codex; zie [engine-chain](engine-chain.md)). Pauzeert de runner hem omdat
      daarbinnen niets beschikbaar is, dan wacht de routine tot de hervattijd van de runner (status *Wacht*,
      `meta.limitWait.important`, hoogstens 6× op rij), wat de routine ook kiest bij een limiet, en gaat dan vanzelf
      verder. De melding komt van de runner (één, ook op de telefoon).
-   - **Alles stoppen** (`POST /api/stop-all`): lopende runs stoppen via hun taak; runs die in de wachtrij of op een
-     nieuwe poging wachten worden ook geannuleerd (“Alles gestopt”), zodat er niets een paar minuten later opnieuw
-     begint. De schema's zelf lopen door (daarvoor is de noodrem).
+   - **Alles stoppen** (`POST /api/stop-all`, of *Alle bots stoppen* in het systeemvak): lopende runs stoppen via hun
+     taak; runs die in de wachtrij of op een nieuwe poging wachten worden ook geannuleerd (“Alles gestopt”, via
+     `hooks.stopAll`), zodat er niets een paar minuten later opnieuw begint. De schema's zelf lopen door (daarvoor is
+     de noodrem).
 7. **Goedkeuringen en vragen** gaan via de bestaande Broker naar `thread.user_id` = eigenaar van de routine, met link naar
    het routinegesprek (gecontroleerd + getest). Een routine kan de toegangsmodus/tools van de bot alleen **beperken**.
 
@@ -220,9 +225,9 @@ bericht; het staat wel in de thread met een event) en `ratePerMinute` (1–60, s
 |---|---|
 | `GET /routines/meta` | modus, uptime (startedAt/lastTickAt), tijdzones, webhook-basis-URL + bereikbaarheid, presets, standaarden, globale limieten, `emailAvailable`/`chatAvailable` |
 | `POST /routines/chat-match` | chatbericht-trigger uitproberen (`{ ok, matches }` of `{ ok: false, error }`) |
-| `GET/PUT /routines/settings` | globale limieten + noodrem (`paused`, `maxRunsPerDay`, `maxCostPerDayUsd`) |
+| `GET/PUT /routines/settings` | Standaarden voor routines: noodrem `paused` en limieten, elk 0 = geen (de standaard): `maxRunsPerDay`, `maxCostPerDayUsd`, `maxRoutines` (alles samen), `maxRemindersPerBot`, `maxTriggersPerRoutine`, `maxQueuedRuns` (per routine), `maxChain` (routines na elkaar). Een keten komt nooit terug bij een routine die er al in zat: dat is de bescherming tegen een lus, geen limiet |
 | `POST /routines/preview` | schema valideren → tekst, volgende 5 runs, runs/dag |
-| `GET /routines?agentId=&teamId=` · `POST /routines` | lijst (per bot of per team) / aanmaken |
+| `GET /routines?agentId=&teamId=` · `POST /routines` | lijst (per bot of per team) / aanmaken: dezelfde velden als bewerken (ook het platte schema van `routine_create`: `times`, `days`, `schedule_kind` …) en `status` `active` of `paused`; een veld dat een routine niet neemt geeft 400 met wat wel kan, er wordt niets gemaakt |
 | `GET/PATCH/DELETE /routines/:id` (`?deleteThread=1`) | detail (incl. triggers) / bewerken / verwijderen |
 | `POST /routines/:id/{pause,resume,confirm,duplicate,run}` | pauzeren, hervatten, concept bevestigen, dupliceren (gepauzeerd, zonder webhooks), Nu testen |
 | `POST /routines/:id/run-after` `{ at }` | *Start na de reset om …* (0.4.4, P3, uit de kostenschatting): één run zoals *Nu uitvoeren* die tot `at` wacht (status `retrying`, `meta.startAfter`; overleeft een herstart, te annuleren als elke wachtende run). Hooguit 8 dagen vooruit, één tegelijk per routine (409). Voor een taak maakt `engine.createOnceAt()` een eenmalige routine |
@@ -230,7 +235,6 @@ bericht; het staat wel in de thread met een event) en `ratePerMinute` (1–60, s
 | `GET /routines/runs/summary?hours=` | aantallen per status (met `no_result` apart) en runs die op een limiet-reset wachten |
 | `GET /routines/missed?days=` · `POST /routines/missed/seen` | *Gemist terwijl je pc uit stond*: per periode de routines, aantallen, eerste/laatste, ingehaald of overgeslagen |
 | `GET /routines/attention?hours=` · `POST /routines/attention/seen` | *Wat niet gebeurde*: recente runs zonder uitkomst (niet gedraaid, gemist, mislukt, zonder resultaat, limiet …) |
-| `POST /stop-all` (vóór de kernroute) | runs in de wachtrij of op een nieuwe poging annuleren; daarna stopt de kern de lopende taken |
 | `GET/POST /routines/:id/triggers` · `GET/PATCH/DELETE /routines/triggers/:id` | triggers |
 | `POST /routines/triggers/:id/rotate` · `PUT /routines/triggers/:id/secret` | geheim roteren (eenmalig getoond) / eigen geheim instellen |
 | `POST /routines/triggers/:id/test` · `GET /routines/triggers/:id/events` | testpayload of “nu controleren” / gebeurtenissen |

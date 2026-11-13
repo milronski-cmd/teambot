@@ -131,26 +131,29 @@ test('the owner makes one main bot; a second one, a reused choice or a template 
     assert.equal(t.app.ctx.services.teams.canWrite(c.baas.id, c.bouw.id), false);
     await t.api('DELETE', `/teams/${later.id}`);
 
-    // Only one main bot: no new choice, no promotion of another bot.
-    await assert.rejects(t.api('POST', '/teams/main/intent', {}), /Je hebt al een hoofdbot: Baas/);
-    await assert.rejects(t.api('PUT', `/teams/main/${c.kim.id}`, {}), /Je hebt al een hoofdbot: Baas\. Er kan er maar één zijn/);
+    // Only one main bot, always: another bot that becomes it takes the role over (nothing to undo first).
+    const swap = await t.api('PUT', `/teams/main/${c.kim.id}`, {});
+    assert.equal(swap.main.id, c.kim.id);
+    assert.match(swap.notes.join(' '), /Baas is nu een gewone bot/);
+    assert.equal(t.app.ctx.services.teams.canDirect(c.baas.id, c.bouw.id), false, 'the old main bot no longer directs other teams');
+    assert.equal((await t.api('PUT', `/teams/main/${c.baas.id}`, {})).main.id, c.baas.id);
     // A template that carries the flag, or a used token, makes a normal bot.
     const tpl = await t.api('POST', '/agents/import', { format: 'teambot.agent/v1', name: 'Sjabloon', settings: { mainBot: true } });
     assert.equal(t.app.ctx.services.teams.isMain(tpl.id), false);
     assert.equal(t.app.ctx.store.agent(tpl.id)!.settings.mainBot, undefined);
-    // The main bot cannot be a team lead (it stands above the teams).
-    await assert.rejects(t.api('PATCH', `/teams/${c.webshop.id}`, { leadAgentId: c.baas.id }), /hoofdbot en staat boven de teams/);
-
-    // Back to a normal bot, then an existing bot becomes the main bot; a lead stops being lead, and says so.
-    await t.api('DELETE', '/teams/main');
-    assert.equal((await t.api('GET', '/teams/main')).main, null);
+    // "Gewone bot maken": there is always a main bot, so the oldest bot that leads no team takes over.
+    assert.equal((await t.api('DELETE', '/teams/main')).main.id, c.kim.id);
     assert.equal(t.app.ctx.services.teams.canDirect(c.baas.id, c.bouw.id), false);
+    // An existing bot becomes the main bot; a lead stops being lead, and says so.
     const r = await t.api('PUT', `/teams/main/${c.lea.id}`, {});
     assert.equal(r.main.id, c.lea.id);
-    assert.match(r.notes[0], /Lea is geen teamleider meer van team “Webshop”/);
+    assert.match(r.notes.join(' '), /Lea is geen teamleider meer van team “Webshop”/);
     assert.equal((await t.api('GET', `/teams/${c.webshop.id}`)).leadAgentId, null);
-    // A used token cannot be used again.
-    await t.api('DELETE', '/teams/main');
+    // The main bot stands above the teams: made team lead, it hands the main role to another bot.
+    await t.api('PATCH', `/teams/${c.webshop.id}`, { leadAgentId: c.lea.id });
+    assert.equal((await t.api('GET', `/teams/${c.webshop.id}`)).leadAgentId, c.lea.id);
+    assert.equal((await t.api('GET', '/teams/main')).main.id, c.kim.id);
+    // An unknown or used token makes a normal bot.
     const used = await o.bot('Nog een', { settings: { mainBot: 'mbi_onbekend' } });
     assert.equal(t.app.ctx.services.teams.isMain(used.id), false);
     // A bot without the team tools gets them when it becomes the main bot (it must hand work on), and is told so.
@@ -294,12 +297,17 @@ test('refused in code: another team without aansturen, around a wall via a leade
     const [toBen, toLars, toBaas] = toolOf(t, 'Kim');
     assert.match(toBen, /Geweigerd door TeamBot: Ben hoort bij team “Bouw”, en Kim mag dat team niet aansturen/);
     assert.match(toLars, /Geweigerd door TeamBot: Lars mag team “Bouw” aansturen en Kim niet/);
-    assert.match(toBaas, /Geweigerd door TeamBot: Baas is de hoofdbot en krijgt alleen opdrachten van de eigenaar/);
-    assert.equal(deleg(t, c.ben.id).length + deleg(t, c.lars.id).length + deleg(t, c.baas.id).length, 0);
+    // The main bot is above all teams: a bot of any team can hand work back to it or ask it (12 nov).
+    assert.doesNotMatch(toBaas, /Geweigerd door TeamBot/);
+    assert.equal(deleg(t, c.ben.id).length + deleg(t, c.lars.id).length, 0);
+    assert.equal(deleg(t, c.baas.id).length, 1, 'the question reached the main bot');
+    assert.equal(t.app.ctx.services.teams.delegateError(c.kim.id, c.baas.id), null);
     // "Bots die je kunt aanspreken" never lists them.
     assert.ok(!t.app.ctx.services.teams.delegateError(c.kim.id, c.lea.id));
 
-    // A chain main → leader → lead → bot: the bot's 4th hop is refused, and its task already said so.
+    // A chain main → leader → lead → bot: the bot's 4th hop is refused, and its task already said so. (The standard
+    // depth is generous; this owner set it to 3.)
+    await t.api('PUT', '/rooms/defaults', { maxDelegationDepth: 3 });
     o.script('Baas', { toolCalls: [{ name: 'delegate_task', args: { bot: 'Lars', task: 'Regel de test', expected_output: 'verslag', wait: true } }] }, { text: 'Gedaan.' });
     o.script('Lars', { toolCalls: [{ name: 'delegate_task', args: { bot: 'Bob', task: 'Regel de test', expected_output: 'verslag', wait: true } }] }, { text: 'Bob regelde het.' });
     o.script('Bob', { toolCalls: [{ name: 'delegate_task', args: { bot: 'Ben', task: 'Test de pagina', expected_output: 'verslag', wait: true } }] }, { text: 'Ben testte het.' });

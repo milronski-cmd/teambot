@@ -1,3 +1,5 @@
+import { SETTINGS_PAGES, SETTINGS_ROWS, type SettingsRowDef } from '../../../shared/settings.js';
+
 /**
  * Command palette (Ctrl+K), the pure part: the index of pages and settings, matching and ranking, grouping and the
  * recent list. No React here, so it is unit-tested (tests/palette.test.ts). The component is shell/CommandPalette.tsx.
@@ -191,15 +193,16 @@ export function pageWords(key: string): string[] {
 
 /** Words for settings tabs. Keys: the tab id in #/settings/<id>. */
 const SETTING_WORDS: Record<string, string[]> = {
-  general: ['taal', 'language', 'tijdzone', 'naam', 'wakker', 'slaapstand', 'pc wakker houden', 'energie', 'geavanceerd', 'geavanceerd tonen', 'expert', 'eenvoudig', 'dagbudget', 'standaardmodel'],
-  appearance: ['uiterlijk', 'thema', 'donker', 'licht', 'dark mode', 'weergave', 'kleur', 'kleuren', 'accentkleur', 'logokleur', 'lavendel', 'gezichten', 'figuurtjes', 'stijl', 'glad', 'vilt'],
+  general: ['taal', 'language', 'naam', 'thema', 'donker', 'licht', 'dark mode', 'uiterlijk', 'weergave', 'kleur', 'kleuren', 'accentkleur', 'logokleur', 'lavendel', 'gezichten', 'figuurtjes', 'stijl', 'glad', 'vilt'],
+  regels: ['regels', 'eigen regels', 'toestemming', 'nooit', 'eerst vragen', 'mag altijd'],
+  'kant-en-klaar': ['kant-en-klaar', 'sjabloon', 'sjablonen', 'team uit een sjabloon', 'voorbeeldteam', 'webshop', 'privé-team'],
+  vanzelf: ['wat start vanzelf', 'automatisch', 'gepland', 'planning', 'check-in', 'overzicht', 'leerronde', 'hoe vaak', 'uit zichzelf'],
+  slot: ['vergrendeling', 'app-vergrendeling', 'pincode', 'vingerafdruk', 'slot', 'beveiliging'],
   providers: ['ai', 'ai-providers', 'providers', 'diensten', 'api-sleutel', 'engine', 'model', 'sleutel', 'api key', 'claude', 'openai', 'codex', 'ollama', 'gemini', 'koppelen'],
   usage: ['kosten', 'budget', 'uitgaven', 'geld', 'dagbudget'],
-  security: ['beveiliging', 'wachtwoord', 'sessies', 'apparaten', 'toegang', 'tokens', 'automation', 'app-vergrendeling', 'pincode', 'vingerafdruk', 'logboek'],
+  security: ['beveiliging', 'wachtwoord', 'sessies', 'apparaten', 'toegang', 'tokens', 'automation', 'logboek'],
   data: ['gegevens', 'data', 'waar staat mijn data', 'datamap', 'privacy', 'diagnose', 'verwijderen'],
   backups: ['back-up', 'backup', 'terugzetten', 'herstellen', 'export', 'exporteren', 'veiligheidskopie'],
-  bots: ['bots', 'teams', 'groepen', 'geheugen', 'gebruikers', 'kennisbanken'],
-  apps: ['apps', 'apparaten', 'telefoon', 'computers', 'kanalen', 'websites', 'bestanden', 'koppelingen'],
   users: ['gebruikers', 'leden', 'uitnodigen', 'rollen', 'sso', 'scim'],
   'mobile-telefoon': ['telefoon', 'mobiel', 'iphone', 'android', 'koppelen', 'push', 'tailscale', 'qr', 'pwa'],
   'usage-limits': ['limieten', 'gebruik', 'waarschuwing', 'quota', 'statusvenster'],
@@ -216,75 +219,48 @@ const SETTING_WORDS: Record<string, string[]> = {
   'health-status': ['hoe gaat het', 'traag', 'hapert', 'vastlopen', 'stilstand', 'snelheid', 'prestaties', 'geheugen', 'status', 'gezondheid'],
   'websearch-zoeken': ['zoeken op internet', 'zoekmachine', 'web search', 'zoekdienst', 'keenable', 'parallel', 'tavily', 'exa', 'brave', 'duckduckgo', 'searxng', 'jina', 'pagina lezen', 'pdf lezen'],
   'images-afbeeldingen': ['afbeeldingen maken', 'afbeelding', 'plaatje', 'foto', 'beeld', 'image', 'banner', 'illustratie', 'dall-e', 'flux'],
+  telefoon: ['telefoon', 'mobiel', 'iphone', 'android', 'koppelen', 'qr'],
+  teams: ['teams', 'team', 'nieuw team', 'teamnaam'],
+  veilig: ['back-up', 'backup', 'terugzetten', 'herstellen', 'veiligheidskopie'],
+  meer: ['meer mogelijkheden', 'geavanceerd', 'meer instellingen', 'alles', 'extra', 'aanzetten', 'installeren'],
+  systeem: ['wakker', 'slaapstand', 'geavanceerd tonen', 'pc', 'computer'],
+  'bot-defaults': ['standaard', 'standaardmodel', 'tijdzone', 'dagbudget', 'budget', 'nieuwe bots', 'taal van bots'],
+  'ai-meer': ['lokale modellen', 'ollama', 'andere dienst', 'gemini', 'groq', 'mistral', 'modelgegevens'],
   'network-proxy': ['proxy', 'netwerk', 'bedrijfsnetwerk', 'kantoor', 'http proxy', 'no proxy', 'firewall', 'internetverbinding'],
 };
 
-/**
- * Instellingen ("het moet cleaner, overzichtelijker"): ONE flat list of plain rows, without group titles and without a
- * catch-all "Geavanceerd". Used by the Settings navigation, the pages hosted under Instellingen and the palette.
- *
- * A row opens its `main` entry directly (Algemeen, AI-diensten …), or - without one - a short overview page of its
- * entries (Bots en teams, Apps en apparaten). Everything else that belongs to a row is in `more`: shown as one list of
- * links under the row's page ("Meer"), so every entry is two clicks away and listed exactly once.
- *
- * RULE for new entries: add them to the `more` of the row they belong to. A row is only for what a normal person
- * needs regularly; the list stays at most six rows (tests/palette.test.ts). A module tab that is listed nowhere lands
- * under Algemeen, so nothing is ever lost.
- *
- * An entry is one of:
- *  - a settings tab id (#/settings/<id>), e.g. `general` or `mobile-telefoon` (module tabs are `<module>-<tab>`);
- *  - a page key with a slash: a module page `<module>/<path>` (#/m/<module>/<path>), or `agents/` for Alle bots.
- */
-export interface SettingsRowDef {
-  /** Also the settings tab id of the overview page of a row without `main` (#/settings/<id>). */
-  id: string;
-  title: string;
-  /** Name of a lucide icon (resolved by the component). */
-  icon: string;
-  main?: string;
-  more?: { title?: string; items: string[] }[];
-}
-export const SETTINGS_ROWS: SettingsRowDef[] = [
-  // Algemeen holds the name, the language and the look (Uiterlijk) on one page; Meldingen is the first entry under it.
-  { id: 'general', title: 'Algemeen', icon: 'Settings2', main: 'general', more: [{ items: ['notifications-meldingen', 'voice-spraak', 'notifications/', 'openbot-import-overstappen', 'health-status', 'network-proxy'] }] },
-  { id: 'ai', title: 'AI-diensten', icon: 'Sparkles', main: 'providers', more: [{ items: ['cli-agents-cli', 'free-models-gratis', 'websearch-zoeken', 'images-afbeeldingen', 'engine-chain-doorschakelen'] }] },
-  // Groepen and Workflows have their own places (not listed here).
-  { id: 'bots', title: 'Bots en teams', icon: 'Bot', more: [{ items: ['agents/', 'teams-teams', 'memory/', 'specialists/', 'teams/alle', 'routines-routines', 'users'] }] },
-  {
-    id: 'apps',
-    title: 'Apps en apparaten',
-    icon: 'MonitorSmartphone',
-    more: [
-      { title: 'Apparaten', items: ['mobile-telefoon', 'browser/', 'remote-desktop/', 'mobile/concepten'] },
-      { title: 'Apps en kanalen', items: ['channels/', 'mcp/', 'sites/'] },
-      { title: 'Bestanden', items: ['folders/', 'folders-teammap', 'folders/prullenbak', 'browser/kluis', 'voice/vergadering', 'voice/'] },
-    ],
-  },
-  { id: 'privacy', title: 'Privacy en back-ups', icon: 'Lock', main: 'security', more: [{ items: ['backups', 'data', 'skills-uitgevers'] }] },
-  { id: 'gebruik', title: 'Gebruik', icon: 'Gauge', main: 'usage/', more: [{ items: ['usage'] }] },
-];
+// The list of Instellingen itself (its rows, their entries and the words of each) is in shared/settings.ts, where every
+// bot finds the same words through teambot_find.
+export { SETTINGS_ROWS, type SettingsRowDef } from '../../../shared/settings.js';
 /** The row that takes every module tab that is listed nowhere. */
-const CATCH_ALL = 'general';
+const CATCH_ALL = 'meer';
 const isPageKey = (item: string) => item.includes('/');
 const moreOf = (r: SettingsRowDef) => (r.more || []).flatMap((s) => s.items);
 /** The key of a row in the navigation: its main entry, else its own overview page. */
 const rowKey = (r: SettingsRowDef) => r.main || r.id;
 const LISTED = new Set(SETTINGS_ROWS.flatMap((r) => [rowKey(r), ...moreOf(r)]));
-/** Entries that the page of their row already links to itself (AI-diensten › Abonnement, Gratis): not again under "Meer". */
-const LINKED_IN_PAGE = new Set(['cli-agents-cli', 'free-models-gratis']);
+/** Entries that the page of their row already links to itself: not again under that row. None today. */
+const LINKED_IN_PAGE = new Set<string>([]);
 
 /**
- * Rarely needed entries: under "Meer" only with "Geavanceerd tonen" on (Algemeen › Meer opties), when the filter finds
- * them, or while that page is open. Each is also linked from the page it belongs to (Bestanden › Prullenbak, Groepen ›
- * Organisatie, Computers › Kluis …), and Ctrl+K finds every one.
+ * Entries shown only with "Geavanceerd tonen" on. Empty since "Meer mogelijkheden" is one row of its own: everything
+ * optional is listed there for everyone, so there is no second, hidden layer. (The filter itself stays, for a future need.)
  */
-export const ADVANCED_ONLY = new Set(['remote-desktop/', 'network-proxy', 'skills-uitgevers', 'mobile/concepten', 'engine-chain-doorschakelen', 'specialists/', 'teams/alle', 'rooms/organisatie', 'routines-routines', 'voice/', 'browser/kluis', 'folders/prullenbak', 'folders-teammap']);
+export const ADVANCED_ONLY = new Set<string>([]);
 
 /**
  * Settings links that show another entry: never listed themselves (one Back-ups, one Gebruik). Their links keep working
- * and mark the entry they belong to. `advanced` is the old Geavanceerd page: its one switch lives under Algemeen now.
+ * and mark the entry they belong to. `advanced` and `geavanceerd` are the old links to what is now "Meer mogelijkheden";
+ * `appearance` and `meldingen` were pages of their own and are part of another page now.
  */
-export const SETTINGS_ALIASES: Record<string, string> = { 'backups-app': 'backups', 'usage-limits': 'usage/', advanced: 'general', appearance: 'general' };
+export const SETTINGS_ALIASES: Record<string, string> = {
+  'backups-app': 'backups',
+  'usage-limits': 'usage/',
+  advanced: 'meer',
+  geavanceerd: 'meer',
+  appearance: 'general',
+  meldingen: 'notifications-meldingen',
+};
 
 /** The entry a settings link shows (an alias shows the entry it belongs to). */
 export const settingsRowOf = (key: string | null): string | null => (key && SETTINGS_ALIASES[key]) || key;
@@ -302,28 +278,22 @@ export function isSubEntry(id: string): boolean {
   return rowKey(row) !== key && row.id !== key;
 }
 
-/** The row of a settings tab id or a page key, as { id, title } (the palette's "Instellingen · <row>"). */
-export function settingsGroupOf(id: string): { id: string; title: string } {
-  const r = settingsParentOf(id);
-  return { id: r.id, title: r.title };
+/** Where an entry lives, for the palette: "Instellingen" for the page of a row itself, else "Instellingen · <row>". */
+function settingsPlace(id: string): string {
+  const key = settingsRowOf(id) || id;
+  const r = settingsParentOf(key);
+  return rowKey(r) === key ? 'Instellingen' : `Instellingen · ${r.title}`;
 }
 
 /** Search words for a settings tab (also used by the filter on the Settings page). */
 export function settingWords(tabId: string): string[] {
-  // Uiterlijk (thema, kleur) is part of the Algemeen page.
-  return tabId === 'general' ? [...SETTING_WORDS.general, ...SETTING_WORDS.appearance] : SETTING_WORDS[tabId] || [];
+  return SETTING_WORDS[tabId] || [];
 }
 
 /** Pages of the app itself (not a module) that live under Instellingen. */
 const CORE_PAGES: Record<string, { title: string; href: string }> = { 'agents/': { title: 'Alle bots', href: '#/agents' } };
-/** A different name in Instellingen where the entry's own title would be unclear next to its neighbours. */
-const ENTRY_TITLES: Record<string, string> = {
-  'notifications/': 'Alle meldingen',
-  'memory/': 'Geheugen',
-  'websearch-zoeken': 'Zoeken op internet',
-  'routines-routines': 'Standaarden voor routines',
-  'openbot-import-overstappen': 'Overstappen van OpenBot',
-};
+/** The name of every entry in Instellingen (shared/settings.ts); a module's own title only for an entry not described there. */
+const ENTRY_TITLES: Record<string, string> = Object.fromEntries(Object.entries(SETTINGS_PAGES).map(([k, p]) => [k, p.title]));
 /** Detail pages shown inside Instellingen under their list page (the list stays marked in the navigation). */
 const HOSTED_DETAIL: Record<string, string> = { 'mcp/c': 'mcp/', 'rooms/groep': 'rooms/', 'teams/': 'teams-teams' };
 /** Modules whose every page (tabs, details) lives under their first page in Instellingen: Geheugen. */
@@ -363,6 +333,8 @@ export interface SettingsNavRow extends SettingsRow {
   icon: string;
   /** False for a row without a page of its own: its page is the overview of `more`. */
   hasMain: boolean;
+  /** A list of what the bots have (the second part of the list), not a setting. */
+  work: boolean;
   /** The entries under "Meer" (for a row without a page of its own: its whole overview), in sections. */
   more: { title?: string; rows: SettingsRow[] }[];
 }
@@ -395,13 +367,13 @@ function allRows(tabs: { id: string; label: string }[], modules: ModuleShape[]):
     }
     const main = r.main ? entry(r.main) : null;
     if (r.main ? !main : !more.some((s) => s.rows.length)) continue;
-    out.push({ id: r.id, icon: r.icon, key: rowKey(r), kind: main?.kind || 'tab', title: r.title, href: main?.href || `#/settings/${r.id}`, hasMain: !!main, more: more.filter((s) => s.rows.length) });
+    out.push({ id: r.id, icon: r.icon, key: rowKey(r), kind: main?.kind || 'tab', title: r.title, href: main?.href || `#/settings/${r.id}`, hasMain: !!main, work: !!r.work, more: more.filter((s) => s.rows.length) });
   }
   return out;
 }
 
 /**
- * The Settings list: one flat list of rows (at most nine), from the settings tabs that exist (`tabs`, already filtered
+ * The Settings list: one flat list of rows (at most eight), from the settings tabs that exist (`tabs`, already filtered
  * for the user's role) and the pages of the modules. Each row carries its entries for "Meer": rarely needed ones
  * (ADVANCED_ONLY) only with `advanced` ("Geavanceerd tonen") or while that entry is `current`; entries the row's page
  * links to itself are left out. A row without a page of its own and without entries is dropped. Pure, so it is
@@ -438,36 +410,45 @@ export function staticEntries(modules: ModuleShape[], o: IndexOpts = {}): Palett
     { id: 'chats', kind: 'page', title: 'Chats', href: '#/', icon: 'MessageCircle', keywords: ['gesprekken', 'start', 'home'] },
     { id: 'inbox', kind: 'page', title: 'Wacht op jou', href: '#/inbox', icon: 'Inbox', keywords: ['goedkeuringen', 'vragen', 'inbox', 'toestemming'] },
     { id: 'tasks', kind: 'page', title: 'Taken', href: '#/tasks', icon: 'ListChecks', keywords: ['takenbord', 'kanban', 'to-do', 'werk', 'opdrachten'] },
-    { id: 'agents', kind: 'page', title: 'Alle bots', subtitle: `Instellingen · ${settingsGroupOf('agents/').title}`, href: '#/agents', icon: 'Bot', keywords: PAGE_WORDS['agents/'] },
+    { id: 'agents', kind: 'page', title: 'Alle bots', subtitle: settingsPlace('agents/'), href: '#/agents', icon: 'Bot', keywords: PAGE_WORDS['agents/'] },
   ];
   for (const m of modules) {
     for (const p of m.pages || []) {
       const key = `${m.id}/${p.path}`;
       if (p.bare || SKIP_PAGES.has(key)) continue;
-      // A page under Instellingen says so ("Instellingen · Apps en apparaten"); others name their module.
-      const sub = settingsHostOf(key) ? `Instellingen · ${settingsGroupOf(key).title}` : p.path && p.title !== m.label ? m.label : undefined;
+      // A page under Instellingen says so ("Instellingen · Meer mogelijkheden"); others name their module.
+      const sub = settingsHostOf(key) ? settingsPlace(key) : p.path && p.title !== m.label ? m.label : undefined;
       out.push({ id: key, kind: 'page', title: p.title, subtitle: sub, href: `#/m/${m.id}/${p.path}`, icon: `page:${m.id}`, keywords: [...(PAGE_WORDS[key] || []), ...(p.path ? [] : [m.label]), ...(ENTRY_TITLES[key] ? [ENTRY_TITLES[key]] : [])] });
     }
   }
+  const has = (id: string) => modules.some((m) => (m.settingsTabs || []).some((t) => `${m.id}-${t.id}` === id));
   const core: { id: string; title: string }[] = [
-    { id: 'general', title: 'Algemeen' },
-    { id: 'appearance', title: 'Uiterlijk' },
-    { id: 'providers', title: 'AI-diensten' },
-    { id: 'usage', title: 'Kosten' },
-    { id: 'bots', title: 'Bots en teams' },
-    { id: 'apps', title: 'Apps en apparaten' },
-    { id: 'security', title: 'Beveiliging' },
-    { id: 'data', title: 'Waar staat mijn data?' },
-    { id: 'backups', title: 'Back-ups' },
-    ...(o.isAdmin && o.serverMode ? [{ id: 'users', title: 'Gebruikers' }] : []),
+    { id: 'general', title: ENTRY_TITLES.general },
+    { id: 'providers', title: ENTRY_TITLES.providers },
+    ...(has('mobile-telefoon') ? [{ id: 'telefoon', title: ENTRY_TITLES.telefoon }] : []),
+    ...(has('teams-teams') ? [{ id: 'teams', title: ENTRY_TITLES.teams }] : []),
+    { id: 'regels', title: ENTRY_TITLES.regels },
+    { id: 'veilig', title: ENTRY_TITLES.veilig },
+    { id: 'slot', title: ENTRY_TITLES.slot },
+    { id: 'meer', title: SETTINGS_ROWS.find((r) => r.id === 'meer')!.title },
+    { id: 'kant-en-klaar', title: ENTRY_TITLES['kant-en-klaar'] },
+    { id: 'vanzelf', title: ENTRY_TITLES.vanzelf },
+    { id: 'bot-defaults', title: ENTRY_TITLES['bot-defaults'] },
+    { id: 'ai-meer', title: ENTRY_TITLES['ai-meer'] },
+    { id: 'systeem', title: ENTRY_TITLES.systeem },
+    { id: 'usage', title: ENTRY_TITLES.usage },
+    { id: 'security', title: ENTRY_TITLES.security },
+    { id: 'data', title: ENTRY_TITLES.data },
+    { id: 'backups', title: ENTRY_TITLES.backups },
+    ...(o.isAdmin && o.serverMode ? [{ id: 'users', title: ENTRY_TITLES.users }] : []),
   ];
-  const sub = (id: string) => `Instellingen · ${settingsGroupOf(id).title}`;
+  const sub = settingsPlace;
   for (const t of core) out.push({ id: `settings:${t.id}`, kind: 'setting', title: t.title, subtitle: sub(t.id), href: `#/settings/${t.id}`, icon: 'Settings', keywords: SETTING_WORDS[t.id] || [] });
   for (const m of modules)
     for (const t of m.settingsTabs || []) {
       if (t.adminOnly && !o.isAdmin) continue;
       const id = `${m.id}-${t.id}`;
-      out.push({ id: `settings:${id}`, kind: 'setting', title: t.title, subtitle: sub(id), href: `#/settings/${id}`, icon: 'Settings', keywords: [...(SETTING_WORDS[id] || []), m.label, ...(ENTRY_TITLES[id] ? [ENTRY_TITLES[id]] : [])] });
+      out.push({ id: `settings:${id}`, kind: 'setting', title: ENTRY_TITLES[id] || t.title, subtitle: sub(id), href: `#/settings/${id}`, icon: 'Settings', keywords: [...(SETTING_WORDS[id] || []), m.label, t.title] });
     }
   return out;
 }

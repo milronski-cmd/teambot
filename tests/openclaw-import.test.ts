@@ -123,7 +123,7 @@ test('openclaw: preview writes nothing; import makes bots, skills (off), routine
     assert.deepEqual([res.counts.bots, res.counts.routines, res.counts.skills], [2, 3, 2]);
     const clawd = (await t.api('GET', '/agents')).find((a: any) => a.name === 'Clawd');
     assert.match(clawd.instructions, /persoonlijke assistent[\s\S]*Persoonlijkheid/);
-    assert.equal(clawd.access_mode, 'ask');
+    assert.equal(clawd.access_mode, 'full', 'the start of every new bot of the owner (agent/new-bot.ts)');
     assert.equal(clawd.settings.importedFrom.app, 'openclaw');
 
     // Skills: through the importer, attached to the bot that had it, but switched off.

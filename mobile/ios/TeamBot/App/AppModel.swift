@@ -115,6 +115,48 @@ final class AppModel: ObservableObject {
         await refresh()
     }
 
+    // MARK: opening the app
+
+    private var backgroundedAt: Date?
+
+    /// At launch. Paired and agreed before: the conversations show at once on the last address that worked, and the
+    /// check runs behind them. Otherwise the app waits for the check (first use, or consent is still to be asked).
+    func launch() async {
+        guard case .checking(var p) = phase, consent.grantedVersion != nil else {
+            await refresh()
+            return
+        }
+        if HostAddress.kind(of: p.baseURL) == .teambotLink {
+            guard let id = p.irohId, let base = try? await IrohTunnel.shared.start(id: id, relay: p.irohRelay) else {
+                await refresh()
+                return
+            }
+            p.baseURL = base
+        }
+        guard case .checking = phase else { return }
+        phase = .connected(p)
+        // Not tied to the waiting screen, which disappears now.
+        Task { await self.refresh() }
+    }
+
+    func wentToBackground() {
+        backgroundedAt = Date()
+    }
+
+    /// Back in the app. After a short moment away nothing has to be checked again; after longer the TeamBot
+    /// connection dials again right away (it may have died while the app slept) and the links are checked behind
+    /// the conversations.
+    func cameBack() async {
+        guard let since = backgroundedAt else { return }
+        backgroundedAt = nil
+        if case .connected(let p) = phase {
+            // Also picks up consent withdrawn in iOS Settings.
+            if Date().timeIntervalSince(since) < 20, consent.grantedVersion != nil { return }
+            if HostAddress.kind(of: p.baseURL) == .teambotLink { await IrohTunnel.shared.redial() }
+        }
+        await refresh()
+    }
+
     // MARK: honest status per link
 
     /// Asks every known address of the pc at once (without the token) and decides which link is broken.
@@ -132,7 +174,7 @@ final class AppModel: ObservableObject {
         } while checkAgain
     }
 
-    private func check() async {
+    private func check(again: Bool = false) async {
         guard let p = pairing else { return }
         let attempts = await probe(p)
         guard pairing?.deviceId == p.deviceId else { return } // unpaired meanwhile
@@ -143,42 +185,64 @@ final class AppModel: ObservableObject {
             await forget()
             phase = .revoked
         case .problem(let problem):
+            // The conversations are on screen: one missed answer (the app just woke up, the network just changed)
+            // does not take them away. Only when the second try fails too.
+            if case .connected = phase, !again {
+                try? await Task.sleep(nanoseconds: 1_500_000_000)
+                await check(again: true)
+                return
+            }
             phase = .problem(p, problem)
         }
     }
 
-    /// Wifi, Tailscale and https addresses first (Pairing.candidates), the TeamBot connection last. It is dialed at the
-    /// same time, so away from home its answer is there when the wifi addresses give up; when an address answers
-    /// first, it is stopped again.
+    /// Every address is asked at the same time: wifi, Tailscale and https (Pairing.candidates) and the TeamBot
+    /// connection. The first proven answer decides, so away from home the app does not wait until the wifi addresses
+    /// give up. At home wifi answers first and the TeamBot connection is stopped again.
     private func probe(_ p: Pairing) async -> [LinkDiagnosis.Attempt] {
         let client = self.client
-        var teambotLink: Task<LinkDiagnosis.Attempt, Never>?
-        if let id = p.irohId {
-            let relay = p.irohRelay
-            teambotLink = Task {
-                do {
-                    let base = try await IrohTunnel.shared.start(id: id, relay: relay)
-                    let outcome = await client.hello(base: base, pairing: p, timeout: 15)
-                    // No answer through it: start fresh next time (sockets may be stale after the app slept).
-                    if case .hello = outcome {} else { await IrohTunnel.shared.stop() }
-                    return LinkDiagnosis.Attempt(url: base, outcome: outcome)
-                } catch {
-                    return LinkDiagnosis.Attempt(url: IrohTunnel.placeholder, outcome: .unreachable)
-                }
-            }
-        }
-        let classic = await probeAddresses(p, client: client)
-        guard let teambotLink else { return classic }
-        let answered = classic.contains { a in
+        guard let id = p.irohId else { return await probeAddresses(p, client: client) }
+        let relay = p.irohRelay
+        let urls = p.candidates
+        let link = Int.max
+        func proven(_ a: LinkDiagnosis.Attempt) -> Bool {
             if case .hello(let h) = a.outcome, h.verified { return true }
             return false
         }
-        if answered {
-            teambotLink.cancel()
-            Task { await IrohTunnel.shared.stop() }
-            return classic
+        let out = await withTaskGroup(of: (Int, LinkDiagnosis.Attempt).self) { group -> [(Int, LinkDiagnosis.Attempt)] in
+            for (i, url) in urls.enumerated() {
+                group.addTask {
+                    let outcome = await client.hello(base: url, pairing: p)
+                    return (i, LinkDiagnosis.Attempt(url: url, outcome: outcome))
+                }
+            }
+            group.addTask {
+                do {
+                    let base = try await IrohTunnel.shared.start(id: id, relay: relay)
+                    let outcome = await client.hello(base: base, pairing: p, timeout: 15)
+                    return (link, LinkDiagnosis.Attempt(url: base, outcome: outcome))
+                } catch {
+                    return (link, LinkDiagnosis.Attempt(url: IrohTunnel.placeholder, outcome: .unreachable))
+                }
+            }
+            var got: [(Int, LinkDiagnosis.Attempt)] = []
+            for await r in group {
+                got.append(r)
+                if proven(r.1) {
+                    group.cancelAll()
+                    break
+                }
+            }
+            return got
         }
-        return classic + [await teambotLink.value]
+        let addressWon = out.contains { $0.0 != link && proven($0.1) }
+        let linkAnswered = out.contains { r in
+            if r.0 == link, case .hello = r.1.outcome { return true }
+            return false
+        }
+        // Not needed, or no answer through it: start fresh next time (sockets may be stale after the app slept).
+        if addressWon || !linkAnswered { await IrohTunnel.shared.stop() }
+        return out.sorted { $0.0 < $1.0 }.map { $0.1 }
     }
 
     private func probeAddresses(_ p: Pairing, client: HostClient) async -> [LinkDiagnosis.Attempt] {

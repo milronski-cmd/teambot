@@ -11,7 +11,7 @@ import { createRequire } from 'node:module';
 
 const require = createRequire(import.meta.url);
 const { chromium } = require('playwright-core');
-const { createApp } = await import('../../server/app.ts'); // run with: node --import tsx tests/e2e/smoke.mjs
+const { createApp } = await import('./server.mjs'); // run with: node --import tsx tests/e2e/smoke.mjs
 
 const step = (s) => console.log(`• ${s}`);
 const fail = (s) => {
@@ -59,15 +59,18 @@ try {
   await page.goto(`${app.url}/#token=${token}`);
   await page.getByText('Welkom bij TeamBot').waitFor({ timeout: 15000 });
   step('onboarding (welkomstscherm) zichtbaar');
-  // Privacy in one click from the welcome screen (§15 "waar staat mijn data?"); elsewhere it is the first row of
+  // Privacy in one click from the welcome screen (§15 "Privacy en gegevens"); elsewhere it is the first row of
   // Instellingen › Gegevens en privacy (the unnamed lock next to Instellingen in the sidebar is gone).
-  if ((await page.getByRole('link', { name: 'Waar staat mijn data?' }).count()) < 1) fail('welkom: link "Waar staat mijn data?" ontbreekt op het welkomstscherm');
-  if (await page.getByRole('navigation', { name: 'Hoofdmenu' }).getByRole('link', { name: 'Waar staat mijn data?' }).count()) fail('zijbalk: het losse slotje staat er nog');
+  if ((await page.getByRole('link', { name: 'Privacy en gegevens' }).count()) < 1) fail('welkom: link "Privacy en gegevens" ontbreekt op het welkomstscherm');
+  if (await page.getByRole('navigation', { name: 'Hoofdmenu' }).getByRole('link', { name: 'Privacy en gegevens' }).count()) fail('zijbalk: het losse slotje staat er nog');
 
-  // Connect the fake model as an OpenAI-compatible provider via the settings UI.
-  await page.goto(`${app.url}/#/settings/providers?meer=1`);
+  // Connect the fake model as an OpenAI-compatible provider via the settings UI: AI-diensten (empty: the ways in) ›
+  // "Op deze computer" (a model on this pc, or another service) › search › the row's one action "Koppelen".
+  await page.goto(`${app.url}/#/settings/providers`);
+  await page.getByRole('main').getByRole('link', { name: /^Op deze computer/ }).click();
+  await page.waitForURL(/#\/settings\/ai-meer/, { timeout: 5000 }).catch(() => fail('AI toevoegen: "Op deze computer" opent Lokale modellen en andere diensten niet'));
   await page.getByLabel('Zoek een dienst', { exact: true }).fill('eigen');
-  await page.locator('button', { hasText: 'Eigen endpoint (OpenAI-compatibel)' }).first().click();
+  await page.getByTestId('search-openai-compatible').getByRole('button', { name: 'Koppelen' }).click();
   const dialog = page.getByRole('dialog');
   await dialog.getByPlaceholder(/https:\/\//).fill(fakeUrl);
   const modelInput = dialog.locator('input[list^="models-"]');
@@ -82,7 +85,7 @@ try {
   // (acceptance round 3: "Anthropic koppelen" kept the name "OpenAI (API)" from the dialog before).
   for (const [search, label, key] of [['groq', 'Groq', 'gsk_eerste-sleutel'], ['mistral', 'Mistral', 'tweede-sleutel']]) {
     await page.getByLabel('Zoek een dienst', { exact: true }).fill(search);
-    await page.getByTestId('more-options').locator('button', { hasText: label }).first().click();
+    await page.getByTestId(`search-${search}`).getByRole('button', { name: 'Koppelen' }).click();
     await dialog.locator('input[type=password]').fill(key);
     const vals = await dialog.locator('input').evaluateAll((els) => els.map((e) => e.value));
     if (!vals.includes(label) || !vals.includes(key) || vals.includes('gsk_eerste-sleutel') !== (label === 'Groq')) fail(`koppelvenster ${label}: oude naam of sleutel van het vorige venster (${JSON.stringify(vals.map((v) => (v.includes('sleutel') ? v : v.slice(0, 20))))})`);
@@ -96,6 +99,20 @@ try {
   await page.getByRole('button', { name: 'Bot aanmaken' }).click();
   await page.waitForURL(/#\/t\//, { timeout: 15000 });
   step('bot aangemaakt, chat geopend');
+  const chatHash = await page.evaluate(() => location.hash);
+  // A new bot starts at "Volledige toegang" (it does its work without a question per step). The approval card in the
+  // chat is checked at "Vraagt toestemming": set on the bot page › Wat mag de bot?, then Opslaan.
+  {
+    const created = app.ctx.store.agents(app.ctx.auth.owner().id)[0];
+    if (created.access_mode !== 'full') fail(`nieuwe bot start op "${created.access_mode}" in plaats van Volledige toegang`);
+    await page.goto(`${app.url}/#/agents/${created.id}`);
+    await page.locator('[data-testid="access-choice"] [role="combobox"]').click({ timeout: 15000 });
+    await page.getByRole('option', { name: 'Vraagt toestemming' }).click();
+    await page.getByRole('button', { name: 'Opslaan' }).first().click();
+    await page.getByText('Opgeslagen', { exact: true }).first().waitFor({ timeout: 8000 }).catch(() => fail('botpagina: "Vraagt toestemming" niet opgeslagen'));
+    if (app.ctx.store.agents(app.ctx.auth.owner().id)[0].access_mode !== 'ask') fail('botpagina: Wat mag de bot? staat na opslaan niet op Vraagt toestemming');
+    await page.goto(`${app.url}/${chatHash}`);
+  }
 
   await page.getByLabel('Bericht').fill('Schrijf hallo e2e naar e2e.txt');
   await page.keyboard.press('Enter');
@@ -132,7 +149,7 @@ try {
   await page.goto(`${app.url}/#/`);
   await page.waitForTimeout(500);
   await paletteGo('Marktplaats', '#/m/skills/');
-  await paletteGo('Telefoon', '#/settings/mobile-telefoon');
+  await paletteGo('Telefoon', '#/settings/telefoon');
   await paletteGo('Kluis', '#/m/browser/kluis');
   await paletteGo('Limieten', '#/settings/usage-limits');
   await paletteGo('nieuwe bot', '#/agents/new');
@@ -215,18 +232,21 @@ try {
     if (over > 1) fail(`horizontale overflow ${over}px op ${h} (390 px)`);
   }
   step('telefoonbreedte zonder horizontale overflow');
-  // Phone: the search page finds a setting; the settings list is six plain rows (no group titles, no "Geavanceerd"),
-  // a row opens its page with a way back, and an entry under "Meer" leads back to its row.
+  // Phone: the search page finds a setting; the settings list is one list of plain rows (what you set yourself, then
+  // "Van je bots", then "Meer mogelijkheden"), a row opens its page with a way back, and an entry under "Meer
+  // mogelijkheden" leads back to that row.
   await page.goto(`${app.url}/#/search?q=Telefoon`);
   await page.getByRole('option', { name: /Telefoon.*Instellingen/ }).first().waitFor({ timeout: 5000 }).catch(() => fail('telefoon: zoeken vindt de instelling Telefoon niet'));
   await page.goto(`${app.url}/#/settings`);
   await page.waitForTimeout(400);
-  for (const g of ['Algemeen', 'AI-diensten', 'Bots en teams', 'Apps en apparaten', 'Privacy en back-ups', 'Gebruik']) if (!(await page.getByRole('main').getByRole('link', { name: g, exact: true }).count())) fail(`telefoon: instellingenregel ${g} ontbreekt`);
-  await page.getByRole('main').getByRole('link', { name: 'Privacy en back-ups', exact: true }).click();
+  const settingsRows = ['AI-diensten', 'Telefoon', 'Taal en uiterlijk', 'Regels', 'Back-ups', 'Vergrendeling', 'Bots', 'Teams', 'Geheugen', 'Kanalen', 'Apps', 'Bestanden', 'Meer mogelijkheden'];
+  for (const g of settingsRows) if (!(await page.getByRole('main').getByRole('link', { name: new RegExp(`^${g}\\b`) }).count())) fail(`telefoon: instellingenregel ${g} ontbreekt`);
+  if (!(await page.getByRole('main').getByRole('group', { name: 'Van je bots' }).count())) fail('telefoon: kopje "Van je bots" ontbreekt in de instellingenlijst');
+  await page.getByRole('main').getByRole('link', { name: /^Meer mogelijkheden/ }).click();
   await page.getByRole('link', { name: 'Instellingen' }).first().waitFor({ timeout: 5000 }).catch(() => fail('telefoon: terug naar Instellingen ontbreekt'));
-  await page.getByRole('navigation', { name: 'Meer' }).getByRole('link', { name: /^Waar staat mijn data?/ }).click();
-  await page.getByRole('link', { name: 'Privacy en back-ups' }).first().waitFor({ timeout: 5000 }).catch(() => fail('telefoon: terug naar Privacy en back-ups ontbreekt'));
-  step('telefoon: zoeken en de zes instellingenregels');
+  await page.getByRole('navigation', { name: 'Onderdelen' }).getByRole('link', { name: /^Privacy en gegevens/ }).click();
+  await page.getByRole('link', { name: 'Meer mogelijkheden' }).first().waitFor({ timeout: 5000 }).catch(() => fail('telefoon: terug naar Meer mogelijkheden ontbreekt'));
+  step(`telefoon: zoeken en de ${settingsRows.length} instellingenregels`);
 } catch (e) {
   fail(e.stack || e.message);
 } finally {

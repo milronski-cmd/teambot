@@ -92,7 +92,7 @@ try {
 
     // P14: the watchdog card (computer only).
     await go('#/settings/health-status');
-    await page.getByRole('heading', { name: 'Alles loopt soepel' }).waitFor({ timeout: 15_000 }).catch(() => fail(`${label}: Hoe gaat het met TeamBot? laadt niet`));
+    await page.getByRole('heading', { name: 'Alles loopt soepel' }).waitFor({ timeout: 15_000 }).catch(() => fail(`${label}: Status van TeamBot laadt niet`));
     const card = page.getByRole('heading', { name: 'Wachter buiten de app' });
     if (o.phone) {
       if (await card.count()) fail(`${label}: de wachter (pc) staat op de telefoon`);
@@ -101,7 +101,7 @@ try {
       if (!(await page.getByText('De wachter heeft nog niet gekeken.', { exact: false }).count())) fail(`${label}: geen uitleg dat de wachter nog niet keek`);
       await check('wachter', '#wachter');
     }
-    step(`${label}: Hoe gaat het met TeamBot? ${o.phone ? 'zonder de wachter van de pc' : 'met Wachter buiten de app'}`);
+    step(`${label}: Status van TeamBot ${o.phone ? 'zonder de wachter van de pc' : 'met Wachter buiten de app'}`);
     if (errors.length) fail(`${label}: fouten ${errors.join(' | ')}`);
     return { page, bctx };
   }

@@ -1,8 +1,9 @@
 import { useEffect, useState } from 'react';
+import { Coins } from 'lucide-react';
 import { api } from '../lib/api';
 import { t, uiLocale } from '../lib/i18n';
 import { formatMoney } from '../lib/format';
-import { Badge, Button, Card, Input, Spinner, toast, toastError } from '../components/ui';
+import { Badge, Button, Card, Input, Spinner, toast, toastError, CardHead } from '../components/ui';
 import { MoreInfo } from '../components/MoreInfo';
 import { Segmented } from '../components/SettingControls';
 
@@ -50,7 +51,7 @@ export function TeamUsageCard() {
   return (
     <Card className="space-y-3 p-5">
       <div className="flex flex-wrap items-center gap-2">
-        <h2 className="min-w-0 flex-1 text-[15px] font-bold tracking-tight">Gebruik per persoon</h2>
+        <CardHead className="min-w-0 flex-1" icon={Coins} tone="amber" title="Gebruik per persoon" />
         <Segmented
           size="sm"
           label="Periode"
@@ -99,7 +100,7 @@ export function TeamUsageCard() {
                   <Input
                     className="w-32"
                     inputMode="decimal"
-                    aria-label={`Persoonlijk dagbudget voor ${u.name}`}
+                    aria-label={t('Persoonlijk dagbudget voor {0}', u.name)}
                     placeholder="standaard"
                     value={edit[u.id] ?? (u.budgetOverride === null ? '' : String(u.budgetOverride))}
                     onChange={(e) => setEdit({ ...edit, [u.id]: e.target.value })}

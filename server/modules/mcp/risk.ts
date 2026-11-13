@@ -118,10 +118,3 @@ export function toolHash(t: { description?: string; inputSchema?: any; annotatio
     .digest('hex')
     .slice(0, 32);
 }
-
-export const RISK_LABEL: Record<ToolRisk, string> = {
-  read: 'lezen',
-  write: 'schrijven',
-  exec: 'uitvoeren',
-  danger: 'gevaarlijk',
-};

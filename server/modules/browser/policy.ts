@@ -1,5 +1,6 @@
 import dns from 'node:dns/promises';
 import net from 'node:net';
+import { isPrivateIp } from '../../tools/builtin/web.js';
 
 /**
  * Network policy for the bot browser (SSRF guard + per-bot domain allow/deny lists).
@@ -27,62 +28,8 @@ export interface UrlDecision {
 
 // ---------- IP classification ----------
 
-const v4 = new net.BlockList();
-for (const [a, p] of [
-  ['0.0.0.0', 8], // "this" network
-  ['10.0.0.0', 8],
-  ['100.64.0.0', 10], // CGNAT
-  ['127.0.0.0', 8],
-  ['169.254.0.0', 16], // link-local + cloud metadata
-  ['172.16.0.0', 12],
-  ['192.0.0.0', 24],
-  ['192.0.2.0', 24],
-  ['192.88.99.0', 24],
-  ['192.168.0.0', 16],
-  ['198.18.0.0', 15],
-  ['198.51.100.0', 24],
-  ['203.0.113.0', 24],
-  ['224.0.0.0', 4], // multicast
-  ['240.0.0.0', 4], // reserved + broadcast
-] as const)
-  v4.addSubnet(a, p, 'ipv4');
-const v6 = new net.BlockList();
-for (const [a, p] of [
-  ['::', 128],
-  ['::1', 128],
-  ['fc00::', 7], // unique local
-  ['fe80::', 10], // link-local
-  ['fec0::', 10], // site-local (deprecated)
-  ['ff00::', 8], // multicast
-  ['2001:db8::', 32], // documentation
-  ['100::', 64], // discard
-] as const)
-  v6.addSubnet(a, p, 'ipv6');
-
-/** Extract an embedded IPv4 address from IPv4-mapped / -compatible / NAT64 IPv6 forms. */
-function embeddedV4(ip: string): string | null {
-  const l = ip.toLowerCase();
-  const dotted = l.match(/^(?:::ffff:|::|64:ff9b::)(\d+\.\d+\.\d+\.\d+)$/);
-  if (dotted) return dotted[1];
-  const hex = l.match(/^(?:::ffff:|64:ff9b::)([0-9a-f]{1,4}):([0-9a-f]{1,4})$/);
-  if (hex) {
-    const hi = parseInt(hex[1], 16);
-    const lo = parseInt(hex[2], 16);
-    return `${hi >> 8}.${hi & 255}.${lo >> 8}.${lo & 255}`;
-  }
-  return null;
-}
-
-export function isPrivateAddress(ip: string): boolean {
-  const clean = ip.replace(/^\[|\]$/g, '').split('%')[0];
-  if (net.isIPv4(clean)) return v4.check(clean, 'ipv4');
-  if (net.isIPv6(clean)) {
-    const e = embeddedV4(clean);
-    if (e) return v4.check(e, 'ipv4');
-    return v6.check(clean, 'ipv6');
-  }
-  return true; // not an IP: treat as unsafe
-}
+/** The one SSRF check (tools/builtin/web.ts); this name stays for existing callers. */
+export { isPrivateIp as isPrivateAddress };
 
 // ---------- domain lists ----------
 
@@ -160,7 +107,7 @@ export async function checkUrl(raw: string, policy: UrlPolicy, o: { navigation?:
     }
   }
   if (!addrs.length) return { ok: false, reason: `Kan ${host} niet opzoeken (DNS)` };
-  if (addrs.some(isPrivateAddress)) return { ok: false, reason: 'Dit adres wijst naar een privé-netwerk of deze computer en is geblokkeerd (SSRF-bescherming)' };
+  if (addrs.some(isPrivateIp)) return { ok: false, reason: 'Dit adres wijst naar een privé-netwerk of deze computer en is geblokkeerd (SSRF-bescherming)' };
   return { ok: true, url: u };
 }
 
@@ -169,6 +116,9 @@ export async function checkUrl(raw: string, policy: UrlPolicy, o: { navigation?:
 /** Words that indicate an irreversible / external side effect when clicked or submitted. */
 const DANGER_WORDS =
   /\b(koop|kopen|bestel|bestellen|betaal|betalen|afrekenen|checkout|check out|pay|buy|purchase|order now|place order|verstuur|versturen|verzend|verzenden|send|submit|post|plaats|plaatsen|publiceer|publiceren|publish|tweet|share|delen|delete|verwijder|verwijderen|remove|bevestig|bevestigen|confirm|transfer|overmaken|doneer|donate|subscribe|abonneer|sign|onderteken|merge|deploy|install|installeer)\b/i;
+
+const PAY_SEND_WORDS =
+  /\b(koop|kopen|bestel|bestellen|betaal|betalen|afrekenen|checkout|check out|pay|buy|purchase|order now|place order|verstuur|versturen|verzend|verzenden|send|transfer|overmaken|doneer|donate|subscribe|abonneer)\b/i;
 
 export interface ElementInfo {
   tag: string;
@@ -186,8 +136,10 @@ export interface ElementInfo {
  * Classify a click/Enter on an element: 'write' for ordinary interaction/navigation,
  * 'danger' when it likely sends, buys, publishes or deletes something.
  */
-export function classifyAction(el: ElementInfo): { risk: 'write' | 'danger'; reason?: string } {
+export function classifyAction(el: ElementInfo, o: { full?: boolean } = {}): { risk: 'write' | 'danger'; reason?: string } {
   const name = (el.name || '').slice(0, 200);
+  // "Volledige toegang": only a button that pays or sends goes through browser_submit; the rest is an ordinary click.
+  if (o.full) return PAY_SEND_WORDS.test(name) ? { risk: 'danger', reason: `"${name.slice(0, 60)}" lijkt iets te kopen, te betalen of te versturen` } : { risk: 'write' };
   if (DANGER_WORDS.test(name)) return { risk: 'danger', reason: `"${name.slice(0, 60)}" lijkt iets te versturen, kopen, publiceren of verwijderen` };
   if (el.submits || (el.tag === 'input' && /^(submit|image)$/i.test(el.type || ''))) {
     const method = (el.formMethod || 'get').toLowerCase();

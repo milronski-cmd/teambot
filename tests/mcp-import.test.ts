@@ -332,7 +332,7 @@ test('import routes: paste → recognised, this computer → preview → import;
     );
     const conn = r.results[0].connection;
     assert.equal(conn.transport, 'stdio');
-    assert.equal(conn.allow_actions, false, 'imported apps start read-only');
+    assert.equal(conn.allow_actions, true, 'an app of the owner starts with its actions on (mcp/defaults.ts)');
     // the secret went to the vault, not into the connection row
     const row = t.app.ctx.store.get<any>('mcp_connections', conn.id);
     assert.ok(row.env[0].secret_id && !JSON.stringify(row).includes('fixture-secret-value-123'));

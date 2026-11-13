@@ -164,3 +164,34 @@ test('a delegated subtask whose check meets the limit says plainly that the owne
     await t.close();
   }
 });
+
+test('a look without a verdict is done again by TeamBot itself: at once, then later; a task that still says so from before gets its look now', async () => {
+  const t = await startTestApp();
+  try {
+    const { th } = await setup(t);
+    const tk = await t.api('POST', '/rooms/tasks', { title: 'Producttekst e-bike', doneWhen: 'ebike.md met twee zinnen' });
+    // The checker answers twice with something that is no verdict (live: "Error: Reached max turns (1)").
+    t.script.push({ toolCalls: [{ name: 'task_done', args: { id: tk.id, result: 'Twee zinnen geschreven.', evidence: ['ebike.md'] } }] }, { text: 'Ik kijk even in het bestand.' }, { text: 'Nog even.' }, { text: 'Gemeld.' });
+    await t.say(th.id, 'Meld de producttekst af');
+    const waiting = await task(t, tk.id);
+    assert.equal(waiting.status, 'review');
+    assert.match(waiting.quality.check.reason, /^Nog niet gecontroleerd: de controle gaf geen duidelijk antwoord\. TeamBot controleert het vanzelf opnieuw rond \S+/);
+    assert.ok(row(t, tk.id).recheck_at, 'a time to try again, not a job for the owner');
+    t.script.push({ text: '{"verdict":"klaar","reason":"ebike.md heeft twee zinnen."}' });
+    assert.equal(await t.app.ctx.services.quality.recheckDue(Date.now() + 9 * 3600_000), 1);
+    assert.equal((await task(t, tk.id)).status, 'done');
+
+    // A task from before this repair: it says "geen duidelijk antwoord" and nothing would ever look again.
+    const old = await t.api('POST', '/rooms/tasks', { title: 'Oude taak', doneWhen: 'ebike.md bestaat' });
+    t.script.push({ toolCalls: [{ name: 'task_done', args: { id: old.id, result: 'Bestand staat er.', evidence: ['ebike.md'] } }] }, { text: '{"verdict":"te_controleren","reason":"twijfel"}' }, { text: 'Gemeld.' });
+    await t.say(th.id, 'Meld de oude taak af');
+    t.app.ctx.store.update('quality_tasks', row(t, old.id).id, { check_reason: 'De controle gaf geen duidelijk antwoord; kijk het zelf na.', recheck_input: {} });
+    assert.equal(t.app.ctx.services.quality.svc.retryUnclear(), 1);
+    t.script.push({ text: '{"verdict":"klaar","reason":"ebike.md bestaat."}' });
+    assert.equal(await t.app.ctx.services.quality.recheckDue(Date.now() + 1000), 1);
+    assert.equal((await task(t, old.id)).status, 'done', 'checked with what the task on the board says the bot reported');
+    assert.match(JSON.stringify(t.requests.at(-1)!.messages), /Bestand staat er\./);
+  } finally {
+    await t.close();
+  }
+});
