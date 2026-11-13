@@ -78,7 +78,7 @@
       "slug": "faq.html",
       "nav": "FAQ",
       "title": "Questions and answers",
-      "description": "Answers to common questions about TeamBot: is it free, which AI do you need, is your data safe, does your phone work without Tailscale, and switching from OpenBot.",
+      "description": "Answers to common questions about TeamBot: is it free, which AI do you need, is your data safe, does it work on your phone, and switching from OpenBot.",
       "h1": "Questions and answers",
       "lead": "Short and honest. If your question isn't here, look in the [manual](page:manual)."
     },
@@ -86,9 +86,9 @@
       "slug": "download.html",
       "nav": "Download",
       "title": "Download",
-      "description": "Download TeamBot for Windows: install in three steps, system requirements, pairing your phone, checking the file and updating.",
+      "description": "Download TeamBot for Windows and Mac: install in three steps, pair your iPhone, system requirements and what is new.",
       "h1": "Download TeamBot",
-      "lead": "Free for Windows, no account."
+      "lead": "Free for Windows and Mac, no account."
     },
     "manual": {
       "slug": "manual.html",
@@ -138,19 +138,19 @@
       "alt": "The knowledge base of the specialist Inkoper (buyer) in TeamBot (in Dutch): facts about purchasing, each with source and date."
     },
     "usage": {
-      "alt": "Usage and limits in TeamBot (in Dutch): Claude 5 hours 38% and week 64% with the weekly reserve mark, and the free sources Groq, Kilo, OpenRouter (almost used up) and Local."
+      "alt": "Usage and limits in TeamBot: Claude with 36% of the week and 62% of 5 hours left, and the free sources Groq, Kilo, OpenRouter (almost used up) and Local."
     },
     "channels": {
-      "alt": "The Add channel window in TeamBot (in Dutch) with Telegram, WhatsApp Business, e-mail, Discord, Slack, webhook and WhatsApp through a QR code."
+      "alt": "The Add channel window in TeamBot with Telegram, WhatsApp by QR code, email, Discord, Slack and webhook."
     },
     "skills": {
-      "alt": "The Marketplace in TeamBot (in Dutch): skills from the catalogue, each with licence and maker, and Install for the Webshop team."
+      "alt": "The Marketplace in TeamBot: recommended skills and apps per bot, each with the label Checked and the Add button."
     },
     "routines": {
       "alt": "The routines calendar in TeamBot (in Dutch) for November, with the planned routines per day."
     },
     "colours": {
-      "alt": "Settings, Appearance in TeamBot (in Dutch): the colour Lavender chosen, with a light and a dark preview side by side."
+      "alt": "Settings, General in TeamBot: your name, your language, the theme and the colour Lavender chosen."
     },
     "note": "Screenshots of TeamBot {version} with an invented team, in Dutch; all names, messages and numbers are made up."
   },
@@ -209,8 +209,8 @@
     }
   },
   "home": {
-    "kicker": "Free and open source · for Windows",
-    "title": "Your own AI team, free, on your own PC",
+    "kicker": "Free and open source · Windows and Mac",
+    "title": "Your own AI team, **free**, on your own PC",
     "lead": [
       {
         "if": "mainBot",
@@ -221,7 +221,7 @@
         "text": "Your bots work together in a team and show what they did. With the AI you already have, or with free models."
       }
     ],
-    "ctaDownload": "Download for Windows",
+    "ctaDownload": "Download TeamBot",
     "ctaHow": "See what it can do",
     "trust": [
       "Free, also for business",
@@ -267,73 +267,6 @@
       ],
       "link": "All features"
     },
-    "memory": {
-      "kicker": "Memory",
-      "title": "Your bots remember what you say",
-      "text": "After a conversation TeamBot keeps facts, preferences and agreements by itself. Every night it tidies up duplicates and expired items.",
-      "points": [
-        "Every item has a source and a date.",
-        "Forgetting is real forgetting, and undo is always possible.",
-        {
-          "if": "semanticMemory",
-          "text": "Search by meaning happens on your own PC: ask for a *car* and it also finds *auto*."
-        },
-        {
-          "if": "teams",
-          "text": "Every team has its own memory."
-        }
-      ],
-      "link": "More about memory"
-    },
-    "free": {
-      "kicker": "Free models",
-      "title": "Limit reached? Keep working for free",
-      "text": "When your Claude or ChatGPT limit runs out, ordinary work continues with a free provider, and last on a model on your own PC. You do not need a subscription to start.",
-      "points": [
-        "Every switch is shown in the chat, and under each answer you see which model gave it.",
-        {
-          "if": "usageBar",
-          "text": "A bar at the bottom shows how much is left, with the reset time."
-        },
-        {
-          "if": "pauseImportant",
-          "text": "Important work waits rather than carrying on with a weaker model."
-        }
-      ],
-      "note": "Free models have daily limits, and what is on offer changes often.",
-      "link": "Keep working for free"
-    },
-    "phone": {
-      "kicker": "On your phone",
-      "title": "Your main bot in your pocket",
-      "text": [
-        {
-          "if": "!iphoneApp",
-          "text": "Put TeamBot on the home screen of your iPhone or Android as an app. You talk to your main bot, approve what is waiting for you and get a notice when it has a question."
-        },
-        {
-          "if": "iphoneApp",
-          "text": "With the iPhone app (still in testing) or as an app on the home screen of any phone. You talk to your main bot, approve what is waiting for you and get a notice when it has a question."
-        }
-      ],
-      "points": [
-        {
-          "if": "!phoneAnywhere",
-          "text": "Connecting works at home over your wifi, or anywhere via Tailscale (free for personal use). Your PC has to be on."
-        },
-        {
-          "if": "phoneAnywhere",
-          "text": "Your phone connects to your own PC from anywhere. Your PC has to be on."
-        },
-        "Your phone gets no keys, and you can disconnect it at any time."
-      ],
-      "link": "More about your phone"
-    },
-    "faq": {
-      "kicker": "Questions",
-      "title": "Short and honest",
-      "link": "All questions and answers"
-    },
     "how": {
       "kicker": "How it works",
       "title": "Up and running in three steps",
@@ -352,12 +285,15 @@
         }
       ]
     },
-    "grid": {
-      "kicker": "Features",
-      "title": "Everything your team needs",
-      "lead": "Eleven parts, explained in plain words. Click for the details, a screenshot and how to start.",
-      "link": "All features",
-      "moreText": "Every part with an explanation, a screenshot and how to start."
+    "phone": {
+      "kicker": "On your phone",
+      "title": "Your team in your pocket",
+      "text": [
+        { "if": "iphoneApp", "text": "With the iPhone app you talk to your main bot, see what your bots are doing and approve what is waiting for you. At home and on the go." },
+        { "if": "iphoneApp", "text": "Pairing takes one QR code. The app is still in testing through TestFlight; on Android you use the browser." },
+        { "if": "!iphoneApp", "text": "On your phone you use TeamBot through the browser: you talk to your main bot, see what your bots are doing and approve what is waiting for you." }
+      ],
+      "link": "How to pair your phone"
     },
     "structure": {
       "if": "teams",
@@ -382,189 +318,18 @@
         "caption": "An example: two businesses, each with its own team. Files, memory and budget stay separate per team."
       }
     },
-    "principles": {
-      "kicker": "Calm and predictable",
-      "title": "No silent surprises",
-      "lead": "With AI bots things often go wrong quietly: a limit that runs out unnoticed, another model without you knowing, or a task marked *done* when nothing happened. TeamBot shows what is going on.",
-      "items": [
-        {
-          "if": "usageBar",
-          "icon": "gauge",
-          "title": "Your usage always in view",
-          "text": "A bar at the bottom shows how much is left of your Claude and Codex limits and which free sources are available, with the reset time."
-        },
-        {
-          "if": "freeChain",
-          "icon": "switch",
-          "title": "Keep working when a model runs out",
-          "text": "When a limit or a free model runs out, ordinary work continues with another free provider, or else on your own PC."
-        },
-        {
-          "if": "pauseImportant",
-          "icon": "pause",
-          "title": "Important work would rather wait",
-          "text": "An important task doesn't carry on with a weaker model. It pauses, says why and until when, and then continues by itself."
-        },
-        {
-          "icon": "eye",
-          "title": "You see which model answered",
-          "text": "Every answer shows the model and the cost. When a bot switches, it says so in the chat."
-        },
-        {
-          "if": "proof",
-          "icon": "proof",
-          "title": "Done means done, with proof",
-          "text": "Before a task goes to *done*, a second check reviews the work and attaches the proof. Without proof it says *to check*."
-        },
-        {
-          "if": "simpleLayout",
-          "icon": "sliders",
-          "title": "Simple, unless you want more",
-          "text": "A calm screen with a few fixed places. What you don't need every day is under *Advanced*."
-        }
+    "parade": {
+      "label": "Bots for every job",
+      "roles": [
+        "Seller",
+        "Writer",
+        "Buyer",
+        "Planner",
+        "Bookkeeper",
+        "Support",
+        "Researcher",
+        "Builder"
       ]
-    },
-    "bento": {
-      "kicker": "An ordinary day",
-      "title": "Your team at work",
-      "lead": "You ask, your bots do the work and show what is done.",
-      "chat": {
-        "title": "One conversation, the whole team",
-        "text": "You talk to your main bot. It hands out the work and comes back with the status.",
-        "you": "How is the webshop doing?",
-        "reply": "This is where things stand today:",
-        "lines": [
-          "Product texts are done, with proof",
-          "The price list is waiting for a check",
-          "One invoice is waiting for your approval"
-        ],
-        "ask": "Pay the €240 invoice?",
-        "yes": "Approve",
-        "no": "Not yet"
-      },
-      "board": {
-        "title": "See what is done",
-        "text": "One task board. Done only counts with proof.",
-        "cols": [
-          "Busy",
-          "To check",
-          "Done"
-        ],
-        "cards": [
-          "Prices",
-          "Price list",
-          "Texts"
-        ],
-        "proof": "proof"
-      },
-      "routine": {
-        "title": "Work at set times",
-        "text": "An overview every morning, a check every week. You do not have to think about it.",
-        "days": [
-          "Mon",
-          "Tue",
-          "Wed",
-          "Thu",
-          "Fri"
-        ],
-        "chips": [
-          "08:00 Overview",
-          "09:30 Stock",
-          "17:00 Prices"
-        ]
-      },
-      "free": {
-        "title": "Limit reached? Keep going",
-        "text": "When your subscription runs out, the work continues on a free model.",
-        "steps": [
-          "Your subscription",
-          "Free model",
-          "Model on your PC"
-        ],
-        "states": [
-          "limit reached",
-          "takes over",
-          "standing by"
-        ]
-      },
-      "memory": {
-        "title": "Forgets nothing",
-        "text": "Agreements and preferences are kept, with a source and a date.",
-        "items": [
-          "Returns are free within 30 days",
-          "This customer prefers a call after five"
-        ],
-        "meta": [
-          "from a conversation · today",
-          "from an email · yesterday"
-        ]
-      }
-    },
-    "table": {
-      "kicker": "Compare",
-      "title": "TeamBot next to the rest",
-      "lead": "Side by side, in short. The full comparison gives the source for every point, also where others are ahead.",
-      "caption": "TeamBot compared with five other ways to work with AI bots",
-      "priceLabel": "Price",
-      "price": {
-        "teambot": "€0",
-        "openbot": "Free for personal use, paid for business",
-        "grokbot": "Paid X subscription",
-        "openclaw": "Free",
-        "hermes": "Free",
-        "chatapps": "Free with limits, more with a plan"
-      },
-      "link": "See the full comparison with sources"
-    },
-    "tour": {
-      "kicker": "What it looks like",
-      "title": "A calm app for every day",
-      "rows": [
-        {
-          "if": "teams",
-          "slot": "teams",
-          "title": "Every team its own place",
-          "text": "Pick the team you work in at the top, or *All teams*. Bots, files and memory of other teams stay out of sight."
-        },
-        {
-          "slot": "tasks",
-          "title": "One task board",
-          "text": [
-            {
-              "if": "proof",
-              "text": "Every task says when it is done. What is finished has proof; what still needs checking is on *to check*. What is waiting for you is kept separate."
-            },
-            {
-              "if": "!proof",
-              "text": "Tasks, decisions and a log that your bots share. What is waiting for you is kept separate."
-            }
-          ]
-        },
-        {
-          "slot": "phone",
-          "title": "On your phone too",
-          "text": [
-            {
-              "if": "iphoneApp",
-              "text": "With the iPhone app or in your phone's browser, connected to your own PC. Questions and approvals arrive as notifications."
-            },
-            {
-              "if": "!iphoneApp",
-              "text": "In your phone's browser, connected to your own PC. Add it to your home screen to get notifications for questions and approvals."
-            }
-          ]
-        }
-      ]
-    },
-    "compare": {
-      "kicker": "Compare",
-      "title": "An open alternative to OpenBot",
-      "text": "Next to OpenBot, Grok Bot, OpenClaw, Hermes, the ChatGPT and Claude apps and cloud platforms such as Manus and Lindy. With sources, and also where others are ahead.",
-      "points": ["Open source under Apache-2.0, also for business use", "On your own PC, without an account", "Keeps working for free when a limit runs out"],
-      "link": "See the comparison",
-      "switchTitle": "Coming from OpenBot?",
-      "switchText": "Your bots, routines, skills and memories come over in one go. OpenBot is left untouched.",
-      "switchLink": "How to switch"
     },
     "price": {
       "kicker": "Price",
@@ -574,27 +339,44 @@
       "text": "No account, no subscription and no credits. You only pay for what you choose yourself, directly to that party: your own AI subscription or the use of an API key. With free or local models you pay nothing.",
       "link": "What you might pay yourself"
     },
-    "safe": {
-      "kicker": "Safety",
-      "title": "Yours, on your own PC",
+    "teasers": {
+      "kicker": "And more",
+      "title": "Want to know more?",
       "items": [
         {
-          "icon": "pc",
-          "title": "On your own PC",
-          "text": "Conversations, memory and files are on your computer. You don't need an account with us, and TeamBot sends us nothing."
+          "id": "memory",
+          "title": "Memory",
+          "text": "Your bots remember what you say, with source and date. Forgetting really forgets.",
+          "link": "More about memory"
         },
         {
-          "icon": "send",
-          "title": "Only to the AI you choose",
-          "text": "A bot only sends what it needs for its answer, to the AI service you picked for that bot. With a local model nothing goes to an AI service."
+          "id": "free",
+          "title": "Limit reached? Keep going",
+          "text": "When your subscription runs out, ordinary work continues on a free model or on your own PC.",
+          "link": "Keep working for free"
         },
         {
-          "icon": "shield",
-          "title": "You decide",
-          "text": "Sending, paying and deleting ask first. Keys are encrypted, and one button stops everything."
+          "id": "phone",
+          "title": "On your phone",
+          "text": [
+            { "if": "iphoneApp", "text": "With the iPhone app (still in testing) you talk to your main bot and approve what is waiting, away from home too." },
+            { "if": "!iphoneApp", "text": "In your phone's browser you talk to your main bot and approve what is waiting." }
+          ],
+          "link": "More about your phone"
+        },
+        {
+          "id": "compare",
+          "title": "TeamBot next to the rest",
+          "text": "Next to OpenBot, Grok Bot, OpenClaw and others, with sources. Also where others are ahead.",
+          "link": "See the comparison"
+        },
+        {
+          "id": "faq",
+          "title": "Questions",
+          "text": "Is it really free? Which AI do you need? Is your data safe?",
+          "link": "All questions and answers"
         }
-      ],
-      "link": "Read exactly how it works"
+      ]
     },
     "honest": {
       "title": "Honestly: what it can't do yet",
@@ -607,7 +389,7 @@
         },
         {
           "if": "iphoneApp",
-          "text": "Windows only. The iPhone app is still in testing and not in the App Store; otherwise you use TeamBot on your phone through the browser."
+          "text": "TeamBot is for Windows and, as a test build, for Macs with an Apple chip. The iPhone app is still in testing (TestFlight) and not in the App Store. There is no Android app."
         },
         "Free models have daily limits, and what is on offer changes often."
       ],
@@ -701,17 +483,17 @@
         "title": "Your bots on your phone",
         "what": [
           { "if": "!iphoneApp", "text": "Add TeamBot as an app to the home screen of your iPhone or Android. You talk to your main bot, approve what is waiting for you and get a notification when there is a question. Your phone only talks to your own PC." },
-          { "if": "iphoneApp", "text": "With the iPhone app (still in testing) or as an app on the home screen of any phone. You talk to your main bot, approve what is waiting for you and get a notification when there is a question. Your phone only talks to your own PC." }
+          { "if": "iphoneApp", "text": "With the iPhone app (still in testing through TestFlight) you talk to your main bot, approve what is waiting for you and get a notification when there is a question. On Android you use the browser version." }
         ],
         "why": [
           "Almost everything you can do on your PC works on your phone too: chat, approve, bots, routines and teams.",
           "Your phone gets no keys, and you can always unpair it.",
           { "if": "!phoneAnywhere", "text": "It connects at home over your own wifi, or anywhere through Tailscale (free for personal use). Your PC needs to be on." },
-          { "if": "phoneAnywhere", "text": "Your phone connects to your own PC from anywhere. Your PC needs to be on." }
+          { "if": "phoneAnywhere", "text": "The iPhone app connects to your own PC at home and on the go, without Tailscale or an account. The connection is encrypted from your iPhone to your PC. Your PC needs to be on." }
         ],
         "start": [
           { "if": "!phoneAnywhere", "text": "Install Tailscale on your PC and your phone, go to *Settings › Phone* and scan the QR code. More in [Your phone](page:manual#je-telefoon) (in Dutch)." },
-          { "if": "phoneAnywhere", "text": "Go to *Settings › Phone* and scan the QR code. More in [Your phone](page:manual#je-telefoon) (in Dutch)." }
+          { "if": "phoneAnywhere", "text": "On your PC, go to *Settings › Apps and devices › Phone* and scan the QR code with the app. More in [Your phone](page:manual#je-telefoon) (in Dutch)." }
         ]
       },
       {
@@ -826,7 +608,7 @@
       "lead": "These are the known limitations of version {version}:",
       "items": [
         { "if": "!signed", "text": "The Windows installer isn't signed yet; that's why Windows warns you the first time." },
-        "TeamBot is Windows only. There is no tested package for macOS or Linux.",
+        "TeamBot is for Windows. The Mac version (Apple chip) is a test build that has not been used by people on a real Mac yet. There is no tested package for Linux.",
         "Your bots run on your own PC or server. When it is off, they stop.",
         { "if": "!phoneAnywhere", "text": "Your phone connects at home over wifi or anywhere through Tailscale; from anywhere without Tailscale isn't possible yet." },
         {
@@ -858,17 +640,19 @@
     "short": [
       { "icon": "scale", "title": "How we compared", "text": ["Only what the makers publish themselves, and for the cloud platforms also reviews we read. Every cell has a source."] },
       { "icon": "spark", "title": "What TeamBot chooses", "text": ["Open source under Apache-2.0, everything on your own PC, keeps working for free when a limit runs out, and proof before anything is called *done*."] },
-      { "icon": "info", "title": "Where others are ahead", "text": ["Apps in the stores, Mac and Linux, a phone without Tailscale and working on while your PC is off. Per product it is [below](page:compare#others)."] }
+      { "icon": "info", "title": "Where others are ahead", "text": ["Apps in the stores, Mac and Linux and working on while your PC is off. Per product it is [below](page:compare#others)."] }
     ],
     "tableTitle": "Side by side",
-    "tableLead": "Seven choices, nine topics. On a narrow screen every product has its own card.",
+    "tableLead": "Seven choices, nine topics, in short. The explanation and the sources are below, per product.",
+    "detailsTitle": "Explanation and sources per product",
+    "cellShort": {"price": {"teambot": "Free", "openbot": "Free personal, paid for business", "grokbot": "Paid subscription", "openclaw": "Free", "hermes": "Free", "chatapps": "Free with limits, or a subscription", "cloud": "Credits, from $20 a month"}, "opensource": {"teambot": "Yes", "openbot": "Partly", "grokbot": "No", "openclaw": "Yes", "hermes": "Yes", "chatapps": "No", "cloud": "No"}, "license": {"teambot": "Apache-2.0, business too", "openbot": "Non-commercial", "grokbot": "Closed", "openclaw": "MIT", "hermes": "MIT", "chatapps": "Closed", "cloud": "Closed"}, "runs": {"teambot": "Your own PC or Mac", "openbot": "Own PC or hosted", "grokbot": "Cloud", "openclaw": "Own PC or server", "hermes": "Own PC or server", "chatapps": "Cloud", "cloud": "Cloud"}, "teams": {"teambot": "Main bot with teams", "openbot": "Leader hands out tasks", "grokbot": "Main bot, 2 to 6 bots", "openclaw": "Several agents", "hermes": "Subagents and groups", "chatapps": "Within one task only", "cloud": "Subagents"}, "memory": {"teambot": "Learns by itself, per team", "openbot": "Per agent", "grokbot": "No screen", "openclaw": "Markdown files", "hermes": "Limited", "chatapps": "View and delete", "cloud": "Per project"}, "phone": {"teambot": [{"if": "!iphoneApp", "text": "Through the browser"}, {"if": "iphoneApp", "text": "iPhone app in testing"}], "openbot": "iPhone and Android", "grokbot": "iPhone, Android partly", "openclaw": "iPhone and Android", "hermes": "No official app", "chatapps": "iPhone and Android", "cloud": "Apps or text messages"}, "free": {"teambot": "On by default", "openbot": "Local and a backup model", "grokbot": "No model choice", "openclaw": "Local models", "hermes": "Models labelled Free", "chatapps": "Their own models only", "cloud": "Limited"}, "channels": {"teambot": "5 apps", "openbot": "4 apps", "grokbot": "3 apps", "openclaw": "More than 20 apps", "hermes": "7 apps", "chatapps": "Slack and Teams", "cloud": "3 to 4 apps"}},
     "tableNote": "What we say about others comes from their own documentation or from reviews, as of November 2026. Where we found nothing it says *not found*: that doesn't mean it is missing.",
     "products": {
       "teambot": { "name": "**TeamBot**", "kind": "Open source · own PC" },
       "openbot": {
         "name": "OpenBot",
         "kind": "Source available · own PC or hosted",
-        "ahead": ["Apps in the App Store and Google Play", "Runs on Mac, Windows and Linux", "Your phone connects from anywhere, without Tailscale", "Connect Gmail, Drive and Calendar in one click", "Control your desktop remotely from your phone", "The app comes in 15 languages"]
+        "ahead": ["Apps in the App Store and Google Play", "Runs on Mac, Windows and Linux", "Connect Gmail, Drive and Calendar in one click", "Control your desktop remotely from your phone", "The app comes in 15 languages"]
       },
       "grokbot": {
         "name": "Grok Bot (xAI)",
@@ -944,7 +728,7 @@
         "icon": "pc",
         "label": "Where it runs",
         "cells": {
-          "teambot": "On your own Windows 11 PC or your own server (Docker); when it is off, your bots stop",
+          "teambot": "On your own computer (Windows 11, or a Mac with an Apple chip as a test build) or your own server (Docker); when it is off, your bots stop",
           "openbot": "On your own computer (macOS, Windows, Linux) or server, or on a paid server run by the makers",
           "grokbot": "In the cloud: one xAI cloud computer shared by all your bots; keeps working with your laptop closed",
           "openclaw": "On your own computer or server (macOS, Windows, Linux)",
@@ -990,7 +774,7 @@
             "mark": "yes",
             "text": [
               { "if": "!iphoneApp", "text": "As an app on your home screen through the browser; at home over wifi or anywhere with Tailscale. No app in the stores" },
-              { "if": "iphoneApp", "text": "iPhone app in testing; otherwise through the browser, at home over wifi or anywhere with Tailscale" }
+              { "if": "iphoneApp", "text": "iPhone app in testing (TestFlight), away from home too without Tailscale or an account; Android through the browser. Not in the stores yet" }
             ]
           },
           "openbot": { "mark": "yes", "text": "Apps in the App Store and Google Play; connects from anywhere without Tailscale" },
@@ -1047,7 +831,7 @@
     "fix": "Spotted a mistake? Report it in the repository and we will fix it."
   },
   "switch": {
-    "cta": "Download for Windows",
+    "cta": "Download TeamBot",
     "toSteps": "To the steps",
     "comes": {
       "kicker": "What comes along",
@@ -1078,7 +862,7 @@
         { "title": "Channels and apps", "text": "You connect them again in TeamBot. Read [Telegram and WhatsApp](page:switch#channels) first." },
         { "title": "OpenBot's own skills", "text": "They fall under OpenBot's licence. Look for an alternative in the marketplace." },
         { "title": "Workflows", "text": "TeamBot has no workflow canvas (yet)." },
-        { "title": "Your phone pairing", "text": "Pair your phone again through *Settings › Phone*." }
+        { "title": "Your phone pairing", "text": "Pair your phone again through *Settings › Apps and devices › Phone*." }
       ]
     },
     "steps": {
@@ -1141,7 +925,7 @@
           },
           {
             "q": "What do I need to install it?",
-            "a": "A PC with Windows 11 (64-bit), or Windows 10 with ESU or LTSC support. Mac and Linux aren't supported yet; your own server with Docker is. See [Download](page:download#req)."
+            "a": "A PC with Windows 11 (64-bit), or Windows 10 with ESU or LTSC support. A Mac version is in the works; Linux isn't supported. See [Download](page:download#req)."
           },
           {
             "if": "!signed",
@@ -1186,18 +970,18 @@
         "title": "Phone",
         "items": [
           {
-            "q": "Does it work on my phone without Tailscale?",
+            "q": "Does it work on my phone, away from home too?",
             "a": [
               { "if": "!phoneAnywhere", "text": "At home it does: on the same wifi network as your PC. That connection isn't encrypted and gives no push notifications." },
               { "if": "!phoneAnywhere", "text": "Away from home you need Tailscale for now. It is free for personal use and gives an encrypted connection between your own devices. Connecting from anywhere without Tailscale isn't in this version yet." },
-              { "if": "phoneAnywhere", "text": "Yes. Your phone connects to your own PC from anywhere, also without Tailscale. Your PC does need to be on." }
+              { "if": "phoneAnywhere", "text": "Yes, with the iPhone app. You pair it once with a QR code; after that it connects to your own PC at home and on the go, without Tailscale or an account. Your PC does need to be on. On Android you use the browser version." }
             ]
           },
           {
             "q": "Is there an app in the App Store or Play Store?",
             "a": [
               { "if": "!iphoneApp", "text": "No. You add TeamBot to your home screen from the browser: on iPhone with Safari › Share › *Add to Home Screen*, on Android with Chrome › *Install app*. Then it works like an app, with notifications." },
-              { "if": "iphoneApp", "text": "Not in the stores yet. The iPhone app is in testing through TestFlight; otherwise you add TeamBot to your home screen from the browser, with notifications." }
+              { "if": "iphoneApp", "text": "Not yet. The iPhone app is in testing through TestFlight and not in the App Store yet. There is no Android app; on Android you use TeamBot in the browser." }
             ]
           },
           {
@@ -1237,10 +1021,65 @@
       "title": "Another question?",
       "text": "The manual explains every screen, in short steps (in Dutch).",
       "manual": "To the manual",
-      "download": "Download for Windows"
+      "download": "Download TeamBot"
     }
   },
   "pricing": {
+    "plans": {
+      "kicker": "Pricing",
+      "title": "Free on your own PC. Soon in the cloud too.",
+      "lead": "TeamBot itself stays free. If you want your bots to keep working while your PC is off, a cloud version is coming for that.",
+      "now": "Available now",
+      "soon": "Coming soon",
+      "per": "a month",
+      "items": [
+        {
+          "id": "free",
+          "name": "Free",
+          "amount": "€0",
+          "per": "forever",
+          "soon": false,
+          "text": "Everything on your own PC.",
+          "points": [
+            "All features, no trial period",
+            "As many bots and teams as you like",
+            "Your own AI or free models",
+            "Open source, also for business use"
+          ]
+        },
+        {
+          "id": "cloud",
+          "name": "Cloud",
+          "amount": "€15",
+          "per": "a month",
+          "soon": true,
+          "text": "Your team keeps running, even when your PC is off.",
+          "points": [
+            "Your bots work day and night",
+            "Your phone connects anywhere, with nothing to set up",
+            "Automatic backups",
+            "The same app, with your own data"
+          ]
+        },
+        {
+          "id": "business",
+          "name": "Business",
+          "amount": "€39",
+          "per": "a month",
+          "soon": true,
+          "text": "For a company with several people.",
+          "points": [
+            "Everything in Cloud",
+            "Several people in one team",
+            "Your own server in a region you choose",
+            "Help with setting up"
+          ]
+        }
+      ],
+      "cta": "Download TeamBot",
+      "note": "Cloud and Business do not exist yet. The amounts are target prices and may still change. TeamBot on your own PC stays free.",
+      "link": "All about pricing"
+    },
     "free": {
       "kicker": "TeamBot itself",
       "amount": "€0",
@@ -1252,7 +1091,7 @@
         "No subscription and no credits, so nothing to cancel",
         "Open source (Apache-2.0): use, change and share it, commercially too"
       ],
-      "cta": "Download for Windows"
+      "cta": "Download TeamBot"
     },
     "you": {
       "title": "What you might pay yourself",
@@ -1285,7 +1124,7 @@
       ],
       "extrasTitle": "Only if you want it",
       "extras": [
-        "**Your phone away from home** goes through Tailscale. For personal use that is free.",
+        "**Your phone away from home** costs nothing extra: the iPhone app connects to your own PC without Tailscale or an account.",
         "**Your own server** for TeamBot with friends or a team: whatever your hosting company charges.",
         "**A cloud VM** for a bot (Hetzner or DigitalOcean): TeamBot shows the cost before you create it."
       ]
@@ -1342,7 +1181,7 @@
     "draft": [
       {
         "if": "iphoneApp",
-        "text": "This text has not been legally reviewed and is not a privacy policy or agreement. It describes how TeamBot works technically. The iPhone app shows the same explanation before you use it for the first time."
+        "text": "This text has not been legally reviewed yet and is not a privacy statement or an agreement. It describes how TeamBot works technically."
       },
       {
         "if": "!iphoneApp",
@@ -1394,7 +1233,7 @@
         "**Skills and apps:** the catalogue and the files of a skill or app come from where the maker publishes them, such as GitHub.",
         "**Claude Code, Codex and OpenCode:** if you install or update them from TeamBot, it downloads them from the npm registry and checks them first.",
         "**Chat apps:** messages via Telegram, WhatsApp, Discord, Slack or e-mail go through those services themselves.",
-        "**Your phone:** only talks to your own PC, over your own network or through Tailscale (an encrypted connection between your own devices). What you say goes to your PC, not to the internet.",
+        "**Your phone:** the connection is encrypted from your phone to your own PC. If a direct connection fails, the traffic goes through a relay server that only sees encrypted data. What you say goes to your PC.",
         "**Voice:** stays on your PC, unless you pick a live voice or a provider's voice.",
         "**Updates:** TeamBot checks whether there is a new version and only downloads after your click."
       ]
@@ -1452,26 +1291,26 @@
       { "if": "!signed", "text": "The installer is not signed yet, so Windows shows a blue window; click **More info** there." },
       { "if": "!signed", "text": "A button then appears: choose **Run anyway** and the installation starts." }
     ],
-    "pendingTitle": "Available once the releases are online.",
-    "pending": "The download button doesn't work yet: the repository and the release page aren't public yet. This will be the address:",
-    "winTitle": "TeamBot {version} for Windows",
+    "pendingTitle": "Not available yet.",
+    "pending": "The TeamBot download isn't public yet; the button will work once the first release is online.",
+    "winTitle": "TeamBot {version} for Windows and Mac",
     "winText": "One installer, no account. The welcome screen shows which AI is already on your computer and helps you create your first bot. If you have nothing yet, *Start for free* sets up a free model.",
     "button": "Download for Windows (.exe)",
-    "fileName": "File: `TeamBot-Setup-{version}.exe` (64-bit). [How to check the file is genuine](page:download#checksum).",
+    "fileName": "Windows: `TeamBot-Setup-{version}.exe` (64-bit).",
+    "macButton": "Download for Mac (.dmg)",
+    "macNote": "Mac: `TeamBot-{version}-mac-arm64.dmg`, for Macs with an Apple chip (M1 or newer). This is a test build that is not signed by Apple yet: after the first start, click **Open Anyway** in *System Settings › Privacy & Security*.",
     "stepsTitle": "How to install TeamBot",
     "steps": [
-      { "title": "Download the installer", "text": "One file for Windows. You don't need an account." },
+      { "title": "Download the installer", "text": "One file, for Windows or for Mac. You don't need an account." },
       { "if": "!signed", "id": "smartscreen", "title": "Does Windows say “Windows protected your PC”?", "text": "That is because the installer isn't signed yet. In the blue window, click **More info** and then **Run anyway**." },
       { "title": "Choose your AI", "text": "The welcome screen shows which AI is already on your PC. If you have nothing yet, *Start for free* sets up a free model." }
     ],
     "moreTitle": "More about installing",
     "reqTitle": "System requirements",
     "req": [
-      "Windows 11, 64-bit (x64). Windows 10 only with valid ESU or LTSC support.",
-      "Internet for the AI service you choose; local models work without it.",
-      "For local models: a fast PC.",
-      "For local voice: about 800 MB extra (one-time download).",
-      "Your data goes into `%APPDATA%\\TeamBot`."
+      "Windows 11 (64-bit), or a Mac with an Apple chip (M1 or newer).",
+      "Internet for the AI service you choose; a local model works without it.",
+      "For a local model: a fast PC."
     ],
     "phoneTitle": "On your phone",
     "phoneLead": [
@@ -1481,27 +1320,19 @@
       },
       {
         "if": "iphoneApp",
-        "text": "On an iPhone you can use the iPhone app (still in testing through TestFlight). On any phone it works through the browser, connected to your own PC:"
+        "text": "There is an app for the iPhone. It is still in testing through TestFlight and not in the App Store yet. This is how you pair it with your PC:"
       }
     ],
     "phoneSteps": [
-      "Install **Tailscale** on your PC and your phone and sign in on both with the same account.",
-      "In TeamBot: *Settings › Phone*. You get a secure https address that only your own devices can reach.",
-      "Create a QR code there and scan it with your phone.",
-      "Add the page to your home screen (iPhone: Safari › Share › *Add to Home Screen*). Then notifications and the microphone work."
+      "In TeamBot on your PC, open *Settings › Apps and devices › Phone*.",
+      "Install the TeamBot app on your iPhone. For now that goes through TestFlight; the link is on that screen.",
+      "Open the app and scan the QR code on your PC. Done: your phone is paired."
     ],
     "phoneNote": [
       { "if": "!phoneAnywhere", "text": "At home it also works without Tailscale, over the same wifi network; that connection isn't encrypted and gives no notifications. Your PC needs to be on and TeamBot running (in the system tray is enough)." },
-      { "if": "phoneAnywhere", "text": "Your PC needs to be on and TeamBot running (in the system tray is enough)." }
+      { "if": "phoneAnywhere", "text": "After that the app works at home and on the go, without Tailscale, an account or extra software. The connection is encrypted from your iPhone to your PC. Your PC needs to be on and TeamBot running (in the system tray is enough)." }
     ],
-    "serverTitle": "Your own server (Docker)",
-    "serverText": "For friends or a team, on a VPS or home server with Docker. Then open `http(s)://<server>:4747` and create an owner account.",
-    "serverNote": "Put it behind HTTPS (for example Caddy, Cloudflare Tunnel or Tailscale) before you put it on the internet. More in the [manual](page:manual).",
-    "sumTitle": "Checking the file is genuine",
-    "sumKnown": "The SHA-256 of `TeamBot-Setup-{version}.exe` is:",
-    "sumPending": "Every release has a `SHA256SUMS.txt` with the installer's SHA-256. Once the releases are online, that value will be here too.",
-    "sumHow": "Check the downloaded file in PowerShell, in the folder it is in. The result must match exactly:",
-    "sumMore": "Every release also gets signed build provenance from GitHub and an SBOM (a list of all components). The licences of all components are in the app in `THIRD_PARTY_NOTICES.txt`.",
+    "phoneAndroid": "**Android:** there is no app. You use the browser version of TeamBot; how to pair it is in [Your phone](page:manual#je-telefoon) (in Dutch).",
     "notesTitle": "New in this version",
     "notes": [
       { "if": "teams", "text": "**Teams as their own workspace**, for example per business, with access per bot and keys for all teams or one." },
@@ -1516,10 +1347,7 @@
       { "if": "simpleLayout", "text": "**A calmer layout** with a few fixed places; the rest under *Advanced*." }
     ],
     "notesMore": "All changes are in [the changelog](repo:CHANGELOG.md) and on the release page with every release.",
-    "updTitle": "Updating",
-    "upd": [
-      "TeamBot tells you about a new version itself, only downloads after your click and installs on restart. Before every update TeamBot makes a backup, and your data stays where it is."
-    ]
+    "advancedLink": "For advanced users"
   },
   "manual": {
     "toc": "Contents",
@@ -1527,6 +1355,18 @@
     "source": "This page comes straight from `docs/HANDLEIDING.md` of version {version}.",
     "onlyNlTitle": "Dutch only for now.",
     "onlyNl": "The manual is currently only available in Dutch. The app itself can be switched to your language in its settings.",
+    "advanced": {
+      "title": "For advanced users",
+      "lead": "You don't need this to use TeamBot.",
+      "serverTitle": "Your own server (Docker)",
+      "serverText": "For friends or a team, on a VPS or home server with Docker. Then open `http(s)://<server>:4747` and create an owner account.",
+      "serverNote": "Put it behind HTTPS (for example Caddy, Cloudflare Tunnel or Tailscale) before you put it on the internet. More in [Servermodus](page:manual#servermodus-teambot-voor-vrienden-of-een-team) (in Dutch).",
+      "sumTitle": "Checking the file is genuine",
+      "sumKnown": "The SHA-256 of `TeamBot-Setup-{version}.exe` is:",
+      "sumPending": "Every release has a `SHA256SUMS.txt` with the installer's SHA-256. Once the releases are online, that value will be here too.",
+      "sumHow": "Check the downloaded file in PowerShell, in the folder it is in. The result must match exactly:",
+      "sumMore": "Every release also gets signed build provenance from GitHub and an SBOM (a list of all components). The licences of all components are in the app in `THIRD_PARTY_NOTICES.txt`."
+    },
     "quickLabel": "Jump to",
     "quick": [
       { "id": "eerste-start", "icon": "download", "title": "First start", "text": "Installing and your first bot" },
@@ -1536,8 +1376,8 @@
     ]
   },
   "opensource": {
-    "repoPendingTitle": "Repository address to follow.",
-    "repoPending": "The code isn't in a public place yet. This will be the address:",
+    "repoPendingTitle": "Not public yet.",
+    "repoPending": "The code isn't in a public place yet; the address will be here once the repository is public.",
     "repoButton": "To the repository",
     "license": {
       "kicker": "Licence",

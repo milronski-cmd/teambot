@@ -33,6 +33,7 @@ const REPO_URL = (process.env.TEAMBOT_REPO_URL || 'https://github.com/<org>/team
 const REPO_PLACEHOLDER = REPO_URL.includes('<org>');
 const VERSION = JSON.parse(fs.readFileSync(path.join(repo, 'package.json'), 'utf8')).version;
 const INSTALLER = `TeamBot-Setup-${VERSION}.exe`;
+const MAC_FILE = `TeamBot-${VERSION}-mac-arm64.dmg`;
 /** SHA-256 of this version's installer from the release's SHA256SUMS.txt; null when that file is not given. */
 const SHA256 = (() => {
   const f = process.env.TEAMBOT_SHA256SUMS;
@@ -313,6 +314,8 @@ function imgSize(file) {
   if (file.endsWith('.webp') && b.toString('ascii', 12, 16) === 'VP8X') return [1 + b.readUIntLE(24, 3), 1 + b.readUIntLE(27, 3)];
   throw new Error(`Onbekend afbeeldingsformaat: ${file}`);
 }
+// Images are cached for a week too, and a new screenshot keeps its file name: a fingerprint of the content in the address.
+const imgV = (file) => crypto.createHash('sha256').update(fs.readFileSync(path.join(imgDir, file))).digest('hex').slice(0, 10);
 const missingShots = new Set();
 /** The image file for a slot (webp or png), or null when it isn't there (then the slot is left out). */
 function slotFile(slot) {
@@ -327,7 +330,7 @@ function shot(L, t, slot, { eager = false, caption = '' } = {}) {
   if (!f) return '';
   const [w, h] = imgSize(f);
   const kind = SHOTS[slot].kind === 'phone' ? 'phone' : 'desktop';
-  const img = `<img src="${rootOf(L)}img/${f}" width="${w}" height="${h}" alt="${esc(t(`shots.${slot}.alt`))}"${eager ? ' fetchpriority="high"' : ' loading="lazy"'} decoding="async">`;
+  const img = `<img src="${rootOf(L)}img/${f}?v=${imgV(f)}" width="${w}" height="${h}" alt="${esc(t(`shots.${slot}.alt`))}"${eager ? ' fetchpriority="high"' : ' loading="lazy"'} decoding="async">`;
   return `<figure class="shot shot-${kind}" data-slot="${slot}"><div class="frame">${img}</div>${caption ? `<figcaption>${fmt(caption, L)}</figcaption>` : ''}</figure>`;
 }
 
@@ -416,6 +419,19 @@ function art(L, t, key) {
   return ART[key](L, t(`art.${key}`));
 }
 
+// ------------------------------------------------------------------ plans (home and pricing)
+/** The plans next to each other: free on your own PC now, the hosted versions marked as coming soon (no buy button). */
+function plansGrid(L, t) {
+  const p = t('pricing.plans');
+  const bots = [BRAND, TEAM[1].traits, TEAM[2].traits];
+  return `<ul class="plans">${p.items
+    .map(
+      (it, i) =>
+        `<li class="plan plan-${esc(it.id)}${it.soon ? ' plan-soon' : ' plan-now'}">${face('plan-' + it.id, bots[i % bots.length], it.soon ? 'idle' : 'done', 'plan-face')}<p class="plan-badge">${esc(it.soon ? p.soon : p.now)}</p><h3>${fmt(it.name, L)}</h3><p class="plan-amount"><span class="plan-num">${esc(it.amount)}</span> <span class="plan-per">${esc(it.per)}</span></p><p class="plan-text">${fmt(it.text, L)}</p><ul class="checks">${it.points.map((x) => `<li>${icon('check')}<span>${fmt(x, L)}</span></li>`).join('')}</ul>${it.soon ? '' : `<div class="actions">${primaryDownload(L, p.cta)}</div>`}</li>`,
+    )
+    .join('')}</ul><p class="plans-note">${icon('info')}<span>${fmt(p.note, L)}</span></p>`;
+}
+
 // ------------------------------------------------------------------ home
 R.home = (L, t) => {
   const h = t('home');
@@ -430,26 +446,20 @@ R.home = (L, t) => {
 <div class="actions">${primaryDownload(L, h.ctaDownload, 'btn-lg')}<a class="btn btn-ghost btn-lg" href="#what">${esc(h.ctaHow)}</a></div>
 ${trust}
 </div>
-<div class="wrap hero-media"><div class="hero-faces">${heroFaces}</div><div class="device"><div class="device-bar" aria-hidden="true"><i></i><i></i><i></i></div>${shot(L, t, 'hero', { eager: true })}</div></div></section>`;
+<div class="wrap hero-media"><div class="hero-side hero-side-l" aria-hidden="true">${face('hero-side-l', TEAM[3].traits, 'done')}</div><div class="hero-side hero-side-r" aria-hidden="true">${face('hero-side-r', TEAM[2].traits, 'working')}</div><div class="hero-faces">${heroFaces}</div><div class="device"><div class="device-bar" aria-hidden="true"><i></i><i></i><i></i></div>${shot(L, t, 'hero', { eager: true })}</div></div></section>`;
 
-  const how = `<section class="section" id="how" aria-labelledby="how-h"><div class="wrap">${sectionHead(h.how.kicker, h.how.title, 'how-h', '', L)}
+  const pr0 = h.parade;
+  const paradeBots = [...TEAM.map((b) => b.traits), DECOR[2], DECOR[5]];
+  const paradeRow = (dup) =>
+    `<ul class="parade-row"${dup ? ' aria-hidden="true"' : ''}>${pr0.roles.map((r, i) => `<li>${face(`parade-${dup ? 'b' : 'a'}-${i}`, paradeBots[i % paradeBots.length], ['idle', 'working', 'done'][i % 3])}<span>${esc(r)}</span></li>`).join('')}</ul>`;
+  const parade = `<section class="parade" aria-label="${esc(pr0.label)}"><div class="parade-track">${paradeRow(false)}${paradeRow(true)}</div></section>`;
+
+  const how = `<section class="section section-soft" id="how" aria-labelledby="how-h"><div class="wrap">${sectionHead(h.how.kicker, h.how.title, 'how-h', '', L)}
 <ol class="steps steps-faces">${h.how.steps.map((s, i) => `<li>${face('step-' + i, TEAM[[0, 2, 3][i % 3]].traits, ['idle', 'working', 'done'][i % 3], 'step-face')}<span class="step-n" aria-hidden="true">${i + 1}</span><h3>${fmt(s.title, L)}</h3><p>${fmt(s.text, L)}</p></li>`).join('')}</ol></div></section>`;
 
 
   const w = h.what;
   const what = `<section class="section" id="what" aria-labelledby="what-h"><div class="wrap">${sectionHead(w.kicker, w.title, 'what-h', w.lead, L)}<ul class="fcards">${w.items.map((it) => `<li class="fcard fcard-static">${iconBox(it.icon)}<span class="fcard-t">${fmt(it.title, L)}</span><span class="fcard-d">${fmt(it.text, L)}</span></li>`).join('')}</ul><p class="after-points">${arrowLink(pageHref(L, 'features'), w.link)}</p></div></section>`;
-  const showcase = (id, d, media, soft, flip, href) =>
-    `<section class="section${soft ? ' section-soft' : ''}" id="${id}" aria-labelledby="${id}-h"><div class="wrap split split-even${flip ? ' split-flip' : ''}"><div class="split-text">${sectionHead(d.kicker, d.title, id + '-h', '', L)}${paras([].concat(d.text), L)}${checkList(L, d.points)}${d.note ? `<p class="fine">${fmt(d.note, L)}</p>` : ''}<p>${arrowLink(href, d.link)}</p></div><div class="show-media">${media}</div></div></section>`;
-  // The same look as the first picture: the screen in a window frame, with a few bots sitting on top of it.
-  const peek = (id, n, moods) => `<div class="peek-faces peek-${id}" aria-hidden="true">${moods.map((m, i) => face(`peek-${id}-${i}`, TEAM[(n + i) % TEAM.length].traits, m)).join('')}</div>`;
-  const windowed = (slot) => `<div class="device">${`<div class="device-bar" aria-hidden="true"><i></i><i></i><i></i></div>`}${shot(L, t, slot)}</div>`;
-  const memory = showcase('memory', h.memory, `<div class="peek">${peek('memory', 1, ['working', 'done'])}${windowed('memory')}</div>`, true, false, pageHref(L, 'features', L, 'memory'));
-  const free = showcase('free', h.free, `<div class="peek">${peek('free', 3, ['done', 'idle', 'working'])}${windowed('usage')}</div>`, false, true, pageHref(L, 'features', L, 'free'));
-  const phone = showcase('phone', h.phone, `<div class="peek peek-duo">${peek('phone', 0, ['done', 'working'])}<div class="duo">${shot(L, t, 'phone')}${shot(L, t, 'phoneList')}</div></div>`, true, false, pageHref(L, 'features', L, 'phone'));
-  const fq = h.faq;
-  const faqItems = t('faq.groups')[0].items.slice(0, 4);
-  const faqTeaser = `<section class="section" aria-labelledby="faqt-h"><div class="wrap">${sectionHead(fq.kicker, fq.title, 'faqt-h', '', L)}<div class="faq-teaser">${faqItems.map((x) => `<div class="card"><h3>${fmt(x.q, L)}</h3><p>${fmt(pick([].concat(x.a)[0]), L)}</p></div>`).join('')}</div><p class="after-points">${arrowLink(pageHref(L, 'faq'), fq.link)}</p></div></section>`;
-
   let structure = '';
   if (h.structure) {
     const s = h.structure;
@@ -469,58 +479,11 @@ ${trust}
 </div></section>`;
   }
 
-  const p = h.principles;
-  const principles = `<section class="section section-soft" aria-labelledby="calm-h"><div class="wrap">${sectionHead(p.kicker, p.title, 'calm-h', p.lead, L)}${pointList(L, p.items, 'points-cards')}</div></section>`;
-
-  const rows = h.tour.rows
-    .map((r) => {
-      const img = shot(L, t, r.slot);
-      if (!img) return '';
-      return `<div class="tour-row${SHOTS[r.slot].kind === 'phone' ? ' tour-phone' : ''}"><div class="tour-text"><h3>${fmt(r.title, L)}</h3><p>${fmt(pick(r.text), L)}</p></div>${img}</div>`;
-    })
-    .join('');
-  const tour = rows ? `<section class="section" aria-labelledby="tour-h"><div class="wrap">${sectionHead(h.tour.kicker, h.tour.title, 'tour-h', '', L)}<div class="tour">${rows}</div><p class="note">${fmt(t('shots.note'), L)}</p></div></section>` : '';
-
-  // "Your team at work": drawn tiles in the site's own style (no screenshots). The drawings are decoration
-  // (aria-hidden); the heading and the sentence under each one say the same in words.
-  const b = h.bento;
-  const bf = (i, mood = 'idle') => face('bento-' + TEAM[i % TEAM.length].key + '-' + mood, TEAM[i % TEAM.length].traits, mood, 'b-face');
-  const tile = (cls, d, artHtml) => `<li class="b-tile ${cls}"><div class="b-art" aria-hidden="true">${artHtml}</div><h3>${fmt(d.title, L)}</h3><p>${fmt(d.text, L)}</p></li>`;
-  const chatArt = `<div class="b-chat"><p class="b-you">${esc(b.chat.you)}</p>
-<div class="b-bot">${face('bento-main', BRAND, 'done', 'b-face b-face-lg')}<div class="b-bubble"><p>${esc(b.chat.reply)}</p><ul>${b.chat.lines.map((x, i) => `<li>${bf(i + 1, i === 0 ? 'done' : 'working')}<span>${esc(x)}</span></li>`).join('')}</ul></div></div>
-<div class="b-ask">${icon('wallet')}<span>${esc(b.chat.ask)}</span><span class="b-btn b-btn-yes">${esc(b.chat.yes)}</span><span class="b-btn">${esc(b.chat.no)}</span></div></div>`;
-  const boardArt = `<div class="b-board">${b.board.cols
-    .map((col, i) => `<div class="b-col"><span class="b-col-h">${esc(col)}</span><div class="b-card${i === 2 ? ' b-card-done' : ''}">${bf(i + 1, i === 2 ? 'done' : 'working')}<span>${esc(b.board.cards[i])}</span>${i === 2 ? `<span class="b-proof">${icon('check')}${esc(b.board.proof)}</span>` : ''}</div></div>`)
-    .join('')}</div>`;
-  const chip = (n, cls) => {
-    const [time, ...rest] = b.routine.chips[n].split(' ');
-    return `<span class="b-chip${cls}"><b>${esc(time)}</b>${esc(rest.join(' '))}</span>`;
-  };
-  const routineArt = `<div class="b-week">${b.routine.days
-    .map((d, i) => `<div class="b-day"><span class="b-day-h">${esc(d)}</span>${chip(0, '')}${i % 2 === 0 ? chip(1, ' b-chip-2') : ''}${i === 4 ? chip(2, ' b-chip-3') : ''}</div>`)
-    .join('')}</div>`;
-  const freeArt = `<ol class="b-chain">${b.free.steps.map((s, i) => `<li class="b-step b-step-${i}"><span class="b-dot"></span><span class="b-step-t">${esc(s)}</span><span class="b-step-s">${esc(b.free.states[i])}</span><span class="b-meter"><i></i></span></li>`).join('')}</ol>`;
-  const memoryArt = `<div class="b-mem">${b.memory.items.map((x, i) => `<div class="b-note">${bf(i + 3, 'idle')}<div><span class="b-note-t">${esc(x)}</span><span class="b-note-m">${esc(b.memory.meta[i])}</span></div></div>`).join('')}</div>`;
-  const gallery = `<section class="section section-soft" id="look" aria-labelledby="look-h"><div class="wrap">${sectionHead(b.kicker, b.title, 'look-h', b.lead, L)}<ul class="bento">${tile('b-wide', b.chat, chatArt)}${tile('b-board-t', b.board, boardArt)}${tile('', b.routine, routineArt)}${tile('', b.free, freeArt)}${tile('', b.memory, memoryArt)}</ul></div></section>`;
-
-  // The comparison in short: the marks come from the full comparison (same facts, same sources there).
-  const c = h.compare;
-  const tb = h.table;
-  const cmp = t('compare');
-  const MINI = PRODUCTS.filter((p) => tb.price[p]);
-  const markRows = cmp.rows.filter((row) => MINI.every((p) => isObj(row.cells[p]) && row.cells[p].mark));
-  const markCell = (m) => `<span class="mark mark-${m}">${icon(m === 'yes' ? 'check' : m === 'no' ? 'x' : 'minus')}<span class="sr">${esc(cmp.marks[m])}</span></span>`;
-  const us = (p) => (p === 'teambot' ? ' class="us"' : '');
-  const miniHead = `<thead><tr><th scope="col">${esc(cmp.aspect)}</th>${MINI.map((p) => `<th scope="col"${us(p)}>${p === 'teambot' ? face('mini-us', BRAND, 'done', 'mini-face') : ''}<span class="th-name">${fmt(cmp.products[p].name, L)}</span></th>`).join('')}</tr></thead>`;
-  const miniRows =
-    `<tr><th scope="row">${icon('wallet')}<span>${esc(tb.priceLabel)}</span></th>${MINI.map((p) => `<td${us(p)}><span class="mini-price">${fmt(tb.price[p], L)}</span></td>`).join('')}</tr>` +
-    markRows.map((row) => `<tr><th scope="row">${icon(row.icon)}<span>${fmt(row.label, L)}</span></th>${MINI.map((p) => `<td${us(p)}>${markCell(row.cells[p].mark)}</td>`).join('')}</tr>`).join('');
-  const miniLegend = `<ul class="legend" aria-label="${esc(cmp.legendLabel)}">${['yes', 'part', 'no'].map((m) => `<li><span class="mark mark-${m}">${icon(m === 'yes' ? 'check' : m === 'no' ? 'x' : 'minus')}</span><span>${esc(cmp.marks[m])}</span></li>`).join('')}</ul>`;
-  const compare = `<section class="section section-soft" id="compare" aria-labelledby="cmp-teaser-h"><div class="wrap">${sectionHead(tb.kicker, tb.title, 'cmp-teaser-h', tb.lead, L)}
-<div class="table-scroll mini-table" role="region" aria-labelledby="mini-cap" tabindex="0"><table class="compare compare-mini"><caption id="mini-cap" class="sr">${esc(tb.caption)}</caption>${miniHead}<tbody>${miniRows}</tbody></table></div>
-${miniLegend}<p class="after-points">${arrowLink(pageHref(L, 'compare'), tb.link)}</p>
-<div class="split split-even cmp-after"><div class="split-text"><h3>${fmt(c.title, L)}</h3>${checkList(L, c.points)}</div>
-<aside class="card switch-card" aria-labelledby="sw-teaser-h">${face('home-switch', BRAND, 'done', 'switch-face')}<h3 id="sw-teaser-h">${fmt(c.switchTitle, L)}</h3><p>${fmt(c.switchText, L)}</p>${arrowLink(pageHref(L, 'switch'), c.switchLink)}</aside></div>
+  // The phone, with the two phone screenshots next to each other.
+  const ph = h.phone;
+  const phone = `<section class="section section-soft" id="phone" aria-labelledby="home-phone-h"><div class="wrap split split-even home-phone">
+<div class="split-text">${sectionHead(ph.kicker, ph.title, 'home-phone-h', '', L)}${ph.text.filter((x) => !isObj(x) || pick([x]) !== '').map((x) => `<p>${fmt(isObj(x) ? x.text : x, L)}</p>`).join('')}<p class="after-points">${arrowLink(pageHref(L, 'download', L, 'phone'), ph.link)}</p></div>
+<div class="duo">${shot(L, t, 'phone')}${shot(L, t, 'phoneList')}</div>
 </div></section>`;
 
   const pr = h.price;
@@ -529,22 +492,32 @@ ${miniLegend}<p class="after-points">${arrowLink(pageHref(L, 'compare'), tb.link
 <div><p class="kicker">${esc(pr.kicker)}</p><h2 id="price-h">${fmt(pr.title, L)}</h2><p>${fmt(pr.text, L)}</p>${arrowLink(pageHref(L, 'pricing'), pr.link)}</div>
 </div></div></section>`;
 
-  const sf = h.safe;
-  const safe = `<section class="section section-soft" aria-labelledby="safe-h"><div class="wrap">${sectionHead(sf.kicker, sf.title, 'safe-h', '', L)}${pointList(L, sf.items, 'points-3 points-cards')}
-<p class="after-points">${arrowLink(pageHref(L, 'privacy'), sf.link)}</p></div></section>`;
+  // Memory, free models, phone, comparison and questions: one card each, with a bot, that links to its own page.
+  const ts = h.teasers;
+  const teaserHref = { memory: pageHref(L, 'features', L, 'memory'), free: pageHref(L, 'features', L, 'free'), phone: pageHref(L, 'features', L, 'phone'), compare: pageHref(L, 'compare'), faq: pageHref(L, 'faq') };
+  const teasers = `<section class="section section-soft" id="more" aria-labelledby="more-h"><div class="wrap">${sectionHead(ts.kicker, ts.title, 'more-h', '', L)}<ul class="teasers">${ts.items
+    .map((x, i) => {
+      if (!teaserHref[x.id]) throw new Error(`home.teasers: onbekend id "${x.id}"`);
+      return `<li class="card teaser">${face('teaser-' + x.id, TEAM[(i + 1) % TEAM.length].traits, ['done', 'working', 'idle'][i % 3], 'teaser-face')}<h3>${fmt(x.title, L)}</h3><p>${fmt(pick(x.text), L)}</p>${arrowLink(teaserHref[x.id], x.link)}</li>`;
+    })
+    .join('')}</ul></div></section>`;
 
   const hn = h.honest;
-  const honest = `<section class="section" aria-labelledby="honest-h"><div class="wrap"><div class="honest card">${iconBox('info')}<div><h2 id="honest-h">${fmt(hn.title, L)}</h2>${list(hn.items, L, 'dots')}${arrowLink(pageHref(L, 'features', L, 'limits'), hn.link)}</div></div></div></section>`;
+  // While there is no public release, that is the first thing "not yet" has to say.
+  const hnItems = REPO_PLACEHOLDER ? [t('download.pending'), ...hn.items] : hn.items;
+  const honest = `<section class="section" aria-labelledby="honest-h"><div class="wrap"><div class="honest card">${iconBox('info')}<div><h2 id="honest-h">${fmt(hn.title, L)}</h2>${list(hnItems, L, 'dots')}${arrowLink(pageHref(L, 'features', L, 'limits'), hn.link)}</div></div></div></section>`;
 
   const calm = ['idle', 'working', 'done', 'idle', 'done', 'working'];
   const team = TEAM.map((b, i) => face('cta-' + b.key, b.traits, calm[i])).join('');
   const cta = `<section class="section cta" aria-labelledby="cta-h"><div class="wrap"><div class="cta-box"><div class="cta-faces">${team}</div><h2 id="cta-h">${fmt(h.cta.title, L)}</h2><p class="lead">${fmt(h.cta.text, L)}</p><div class="actions actions-center">${primaryDownload(L, h.ctaDownload, 'btn-lg')}<a class="btn btn-ghost btn-lg" href="${pageHref(L, 'faq')}">${esc(h.cta.faq)}</a></div></div></div></section>`;
 
-  return hero + what + gallery + how + structure + memory + free + phone + compare + price + safe + faqTeaser + honest + cta;
+  return hero + parade + what + how + structure + phone + price + teasers + honest + cta;
 };
 
+const HEAD_BOTS = { features: 1, compare: 2, pricing: 3, privacy: 4, faq: 5, manual: 1, download: 0, switch: 3, opensource: 2 };
 function pageHead(L, t, id, extra = '', cls = '') {
-  return `<div class="page-head${cls ? ' ' + cls : ''}"><div class="wrap"><h1>${noBreak(fmt(t(`pages.${id}.h1`), L))}</h1><p class="lead">${fmt(t(`pages.${id}.lead`), L)}</p>${extra}</div></div>`;
+  const hb = TEAM[(HEAD_BOTS[id] ?? 0) % TEAM.length];
+  return `<div class="page-head${cls ? ' ' + cls : ''}"><div class="wrap">${face('head-' + id, hb.traits, 'done', 'head-face')}<h1>${noBreak(fmt(t(`pages.${id}.h1`), L))}</h1><p class="lead">${fmt(t(`pages.${id}.lead`), L)}</p>${extra}</div></div>`;
 }
 const onPage = (L, t, items) =>
   `<nav class="on-page" aria-label="${esc(t('onPage'))}"><ul>${items.map(([id, label]) => `<li><a href="#${esc(id)}">${fmt(label, L)}</a></li>`).join('')}</ul></nav>`;
@@ -574,7 +547,7 @@ R.features = (L, t) => {
   const m = f.more;
   const more = `<section class="section section-soft" id="more" aria-labelledby="more-h"><div class="wrap">${sectionHead('', m.title, 'more-h', m.lead, L)}${pointList(L, m.items, 'points-cards')}</div></section>`;
   const lim = f.limits;
-  const limits = `<section class="section" id="limits" aria-labelledby="limits-h"><div class="wrap"><div class="honest card">${iconBox('info')}<div><h2 id="limits-h">${fmt(lim.title, L)}</h2><p>${fmt(lim.lead, L)}</p>${list(lim.items, L, 'dots')}</div></div></div></section>`;
+  const limits = `<section class="section" id="limits" aria-labelledby="limits-h"><div class="wrap"><div class="honest card">${iconBox('info')}<div><h2 id="limits-h">${fmt(lim.title, L)}</h2><p>${fmt(lim.lead, L)}</p>${list(REPO_PLACEHOLDER ? [t('download.pending'), ...lim.items] : lim.items, L, 'dots')}</div></div></div></section>`;
   return `${pageHead(L, t, 'features', jump, 'page-head-wide')}${sections}${more}${limits}<div class="wrap shots-note"><p class="note">${fmt(t('shots.note'), L)}</p></div>`;
 };
 
@@ -594,7 +567,9 @@ R.pricing = (L, t) => {
   const guard = `<section class="section section-soft" id="guard" aria-labelledby="guard-h"><div class="wrap">${sectionHead('', g.title, 'guard-h', '', L)}${pointList(L, g.items, 'points-cards')}</div></section>`;
   const q = p.faq;
   const faq = `<section class="section" id="faq" aria-labelledby="faq-h"><div class="wrap">${sectionHead('', q.title, 'faq-h', '', L)}<div class="faq">${q.items.map((x) => `<div class="card"><h3>${fmt(x.q, L)}</h3><p>${fmt(x.a, L)}</p></div>`).join('')}</div><p class="after-points">${arrowLink(pageHref(L, 'faq'), q.more)}</p></div></section>`;
-  return `${pageHead(L, t, 'pricing')}<div class="section section-tight"><div class="wrap">${free}</div></div>${you}${guard}${faq}`;
+  const pl = p.plans;
+  const plans = `<section class="section section-tight" id="plans" aria-labelledby="plans-h"><div class="wrap">${sectionHead(pl.kicker, pl.title, 'plans-h', pl.lead, L)}${plansGrid(L, t)}</div></section>`;
+  return `${pageHead(L, t, 'pricing')}${plans}${you}${guard}${faq}`;
 };
 
 // ------------------------------------------------------------------ privacy
@@ -632,31 +607,29 @@ ${sec('report', p.report.title, `<p>${fmt(p.report.text, L)}</p>`)}
 // ------------------------------------------------------------------ download
 R.download = (L, t) => {
   const d = t('download');
-  const rel = REPO_URL + '/releases/latest';
+  // The newest release's files by name: one click starts the download.
+  const file = (name) => `${REPO_URL}/releases/latest/download/${name}`;
   const btn = REPO_PLACEHOLDER
     ? `<span class="btn btn-primary btn-lg" role="link" aria-disabled="true">${icon('download')}<span>${esc(d.button)}</span></span>`
-    : `<a class="btn btn-primary btn-lg" href="${esc(rel)}" rel="noopener">${icon('download')}<span>${esc(d.button)}</span></a>`;
-  const pending = REPO_PLACEHOLDER ? `<p class="notice"><strong>${esc(d.pendingTitle)}</strong> ${fmt(d.pending, L)}<br><span class="placeholder">${esc(rel)}</span></p>` : '';
+    : `<a class="btn btn-primary btn-lg" href="${esc(file(INSTALLER))}" rel="noopener">${icon('download')}<span>${esc(d.button)}</span></a><a class="btn btn-ghost btn-lg" href="${esc(file(MAC_FILE))}" rel="noopener">${icon('download')}<span>${esc(d.macButton)}</span></a>`;
+  const pending = REPO_PLACEHOLDER ? `<p class="notice"><strong>${esc(d.pendingTitle)}</strong> ${fmt(d.pending, L)}</p>` : '';
   const steps = (arr) => `<ol class="numbered">${arr.map((x) => `<li>${fmt(x, L)}</li>`).join('')}</ol>`;
   const card = (id, ic, title, body, cls = '') => `<section class="card card-icon${cls ? ' ' + cls : ''}" id="${id}" aria-labelledby="${id}-h"><h2 id="${id}-h">${iconBox(ic)}<span>${fmt(title, L)}</span></h2>${body}</section>`;
   const install = `<section class="section" id="install" aria-labelledby="install-h"><div class="wrap">${sectionHead('', d.stepsTitle, 'install-h', '', L)}<ol class="steps steps-cards">${d.steps
     .map((s, i) => `<li${s.id ? ` id="${esc(s.id)}"` : ''}><span class="step-n" aria-hidden="true">${i + 1}</span><h3>${fmt(s.title, L)}</h3><p>${fmt(pick(s.text), L)}</p></li>`)
     .join('')}</ol></div></section>`;
   const phoneImg = shot(L, t, 'phoneList');
-  const phone = `<section class="section section-soft" id="phone" aria-labelledby="phone-h"><div class="wrap split split-phone"><div class="split-text">${sectionHead('', d.phoneTitle, 'phone-h', d.phoneLead, L)}${steps(d.phoneSteps)}<p class="muted">${fmt(pick(d.phoneNote), L)}</p></div>${phoneImg}</div></section>`;
+  const phone = `<section class="section section-soft" id="phone" aria-labelledby="phone-h"><div class="wrap split split-phone"><div class="split-text">${sectionHead('', d.phoneTitle, 'phone-h', d.phoneLead, L)}${steps(d.phoneSteps)}<p>${fmt(pick(d.phoneNote), L)}</p><p class="muted">${fmt(d.phoneAndroid, L)}</p></div>${phoneImg}</div></section>`;
   const notes = d.notes.length ? card('notes', 'spark', d.notesTitle, `${list(d.notes, L, 'dots dots-2')}<p class="muted">${fmt(d.notesMore, L)}</p>`, 'card-wide') : '';
-  const smart = d.smart.length ? `<aside class="smart" aria-labelledby="smart-h">${iconBox('shield')}<div><h2 id="smart-h">${fmt(d.smartTitle, L)}</h2><ol>${d.smart.map((x) => `<li>${fmt(x, L)}</li>`).join('')}</ol></div></aside>` : '';
+  const smart = d.smart.length ? `<aside class="smart" aria-labelledby="smart-h">${iconBox('shield')}<div><h2 id="smart-h">${fmt(d.smartTitle, L)}</h2><ol>${d.smart.map((x) => `<li>${fmt(isObj(x) ? x.text : x, L)}</li>`).join('')}</ol></div></aside>` : '';
   return `${pageHead(L, t, 'download')}
 <div class="section section-tight"><div class="wrap">${pending}
-<div class="dl-card">${face('download', BRAND, 'done', 'dl-face')}<div><h2>${fmt(d.winTitle, L)}</h2><p>${fmt(d.winText, L)}</p><div class="actions">${btn}</div><p class="fine">${fmt(d.fileName, L)}</p></div></div>${smart}</div></div>
+<div class="dl-card">${face('download', BRAND, 'done', 'dl-face')}<div><h2>${fmt(d.winTitle, L)}</h2><p>${fmt(d.winText, L)}</p><div class="actions">${btn}</div><p class="fine">${fmt(d.fileName, L)}</p><p class="fine">${fmt(d.macNote, L)}</p></div></div>${smart}</div></div>
 ${install}${phone}
 <section class="section" aria-labelledby="more-dl-h"><div class="wrap"><h2 id="more-dl-h" class="sr">${esc(d.moreTitle)}</h2><div class="cards-2 cards-start">
-${card('req', 'pc', d.reqTitle, list(d.req, L, 'dots'))}
-${card('server', 'server', d.serverTitle, `<p>${fmt(d.serverText, L)}</p><pre><code>docker compose up -d</code></pre><p class="muted">${fmt(d.serverNote, L)}</p>`)}
-${card('checksum', 'shield', d.sumTitle, `<p>${fmt(SHA256 ? d.sumKnown : d.sumPending, L)}</p>${SHA256 ? `<pre><code>${SHA256}</code></pre>` : ''}<p>${fmt(d.sumHow, L)}</p><pre><code>Get-FileHash .\\${INSTALLER} -Algorithm SHA256</code></pre><p class="muted">${fmt(d.sumMore, L)}</p>`)}
-${card('update', 'refresh', d.updTitle, paras(d.upd, L))}
+${card('req', 'pc', d.reqTitle, list(d.req, L, 'dots'), 'card-wide')}
 ${notes}
-</div></div></section>`;
+</div><p class="after-points">${arrowLink(pageHref(L, 'manual', L, 'voor-gevorderden'), d.advancedLink)}</p></div></section>`;
 };
 
 // ------------------------------------------------------------------ manual
@@ -699,13 +672,18 @@ R.manual = (L, t) => {
     .replace(/<\/table>/g, '</table></div>');
   html = html.replace(/<th>/g, '<th scope="col">');
   const m = t('manual');
+  const av = m.advanced;
+  toc.push(['voor-gevorderden', esc(av.title)]);
+  const advanced = `<section class="advanced" lang="${L}" aria-labelledby="voor-gevorderden"><h2 id="voor-gevorderden">${fmt(av.title, L)}</h2><p>${fmt(av.lead, L)}</p>
+<h3 id="server">${fmt(av.serverTitle, L)}</h3><p>${fmt(av.serverText, L)}</p><pre><code>docker compose up -d</code></pre><p>${fmt(av.serverNote, L)}</p>
+<h3 id="checksum">${fmt(av.sumTitle, L)}</h3><p>${fmt(SHA256 ? av.sumKnown : av.sumPending, L)}</p>${SHA256 ? `<pre><code>${SHA256}</code></pre>` : ''}<p>${fmt(av.sumHow, L)}</p><pre><code>Get-FileHash .\${INSTALLER} -Algorithm SHA256</code></pre><p>${fmt(av.sumMore, L)}</p></section>`;
   const note = L === 'nl' ? '' : `<p class="notice" lang="${L}"><strong>${esc(m.onlyNlTitle)}</strong> ${fmt(m.onlyNl, L)}</p>`;
   const quick = `<nav class="quick" aria-label="${esc(m.quickLabel)}"><ul>${m.quick
     .map((q) => `<li><a href="#${esc(q.id)}">${iconBox(q.icon)}<span><strong>${fmt(q.title, L)}</strong><span>${fmt(q.text, L)}</span></span></a></li>`)
     .join('')}</ul></nav>`;
   return `${pageHead(L, t, 'manual', note + quick, 'page-head-wide')}
-<div class="wrap doc"><nav class="toc" aria-labelledby="toc-h"><h2 id="toc-h">${esc(m.toc)}</h2><ol lang="nl">${toc.map(([id, h]) => `<li><a href="#${id}">${h.replace(/^\s*(\d+)\.\s*/, '<span class="toc-n">$1</span>')}</a></li>`).join('')}</ol></nav>
-<article class="prose manual" lang="nl">${html}<p class="muted"><em>${fmt(m.source, L)}</em></p></article></div>`;
+<div class="wrap doc"><nav class="toc" aria-labelledby="toc-h"><h2 id="toc-h">${esc(m.toc)}</h2><ol lang="nl">${toc.map(([id, h]) => `<li${id === 'voor-gevorderden' && L !== 'nl' ? ` lang="${L}"` : ''}><a href="#${id}">${h.replace(/^\s*(\d+)\.\s*/, '<span class="toc-n">$1</span>')}</a></li>`).join('')}</ol></nav>
+<article class="prose manual" lang="nl">${html}${advanced}<p class="muted"><em>${fmt(m.source, L)}</em></p></article></div>`;
 };
 
 // ------------------------------------------------------------------ compare
@@ -735,8 +713,16 @@ R.compare = (L, t) => {
   const c = t('compare');
   const name = (p) => fmt(c.products[p].name, L);
   const head = `<thead><tr><th scope="col">${esc(c.aspect)}</th>${PRODUCTS.map((p) => `<th scope="col"${p === 'teambot' ? ' class="us"' : ''}><span class="th-name">${name(p)}</span><span class="th-kind">${fmt(c.products[p].kind, L)}</span></th>`).join('')}</tr></thead>`;
+  // The table says it in a few words (cellShort); the full sentence and its sources are in the product cards below.
+  const shortCell = (row, p) => {
+    const s = c.cellShort?.[row.id]?.[p];
+    if (s == null) throw new Error(`vergelijking ${L}: cellShort.${row.id}.${p} ontbreekt`);
+    const mark = compareCell(L, c, row.id, p).mark;
+    const markHtml = mark ? `<span class="mark mark-${mark}">${icon(mark === 'yes' ? 'check' : mark === 'no' ? 'x' : 'minus')}<span class="sr">${esc(c.marks[mark])}: </span></span>` : '';
+    return `<span class="cell">${markHtml}<span class="cell-t">${fmt(pick(s), L)}</span></span>`;
+  };
   const rows = c.rows
-    .map((row) => `<tr><th scope="row">${icon(row.icon)}<span>${fmt(row.label, L)}</span></th>${PRODUCTS.map((p) => `<td${p === 'teambot' ? ' class="us"' : ''}>${compareCell(L, c, row.id, p).html}</td>`).join('')}</tr>`)
+    .map((row) => `<tr><th scope="row">${icon(row.icon)}<span>${fmt(row.label, L)}</span></th>${PRODUCTS.map((p) => `<td${p === 'teambot' ? ' class="us"' : ''}>${shortCell(row, p)}</td>`).join('')}</tr>`)
     .join('');
   const table = `<div class="table-scroll cmp-table" role="region" aria-labelledby="cmp-cap" tabindex="0"><table class="compare"><caption id="cmp-cap" class="sr">${esc(c.caption)}</caption>${head}<tbody>${rows}</tbody></table></div>`;
   // The same facts per product, for narrow screens (the table is hidden there).
@@ -757,7 +743,7 @@ R.compare = (L, t) => {
     .join('');
   return `${pageHead(L, t, 'compare', `<p class="stand">${icon('clock')}<span>${fmt(c.checked, L)}</span></p>`, 'page-head-wide')}
 <div class="section section-tight"><div class="wrap">${short}</div></div>
-<section class="section section-soft cmp-section" id="table" aria-labelledby="table-h"><div class="wrap cmp-wrap">${sectionHead('', c.tableTitle, 'table-h', c.tableLead, L)}${legend}${table}${pcards}<p class="note">${fmt(c.tableNote, L)}</p></div></section>
+<section class="section section-soft cmp-section" id="table" aria-labelledby="table-h"><div class="wrap cmp-wrap">${sectionHead('', c.tableTitle, 'table-h', c.tableLead, L)}${legend}${table}<h3 class="cmp-details">${esc(c.detailsTitle)}</h3>${pcards}<p class="note">${fmt(c.tableNote, L)}</p></div></section>
 ${others}${ours}
 <section class="section section-soft" id="sources" aria-labelledby="read-h"><div class="wrap">${sectionHead('', c.readTitle, 'read-h', c.readLead, L)}<div class="cards-3 cards-start">${read}</div><p class="note">${fmt(c.fix, L)}</p></div></section>`;
 };
@@ -803,7 +789,7 @@ R.faq = (L, t) => {
 R.opensource = (L, t) => {
   const o = t('opensource');
   const repoLine = REPO_PLACEHOLDER
-    ? `<p class="notice"><strong>${esc(o.repoPendingTitle)}</strong> ${fmt(o.repoPending, L)}<br><span class="placeholder">${esc(REPO_URL)}</span></p>`
+    ? `<p class="notice"><strong>${esc(o.repoPendingTitle)}</strong> ${fmt(o.repoPending, L)}</p>`
     : `<div class="actions"><a class="btn btn-ghost" href="${esc(REPO_URL)}" rel="noopener">${icon('code')}<span>${esc(o.repoButton)}</span></a></div>`;
   const lic = o.license;
   const license = `<section class="section section-tight" id="license" aria-labelledby="license-h"><div class="wrap"><div class="lic card">${face('os-lic', BRAND, 'done', 'lic-face')}<div><p class="kicker">${esc(lic.kicker)}</p><h2 id="license-h">${fmt(lic.title, L)}</h2>${paras(lic.text, L)}${checkList(L, lic.points, 'check', 'why why-cols')}</div></div></div></section>`;

@@ -16,8 +16,8 @@
     "trash": { "on": true, "plan": "G", "wat": "Prullenbak voor bestanden die bots wissen of overschrijven" },
     "catalog": { "on": true, "plan": "H", "wat": "Eigen skills-catalogus op vastgezette versies; een update is een zichtbaar verschil" },
     "customerSafe": { "on": true, "plan": "K", "wat": "Bots die met klanten praten zeggen dat ze AI zijn en zetten geld en beloftes eerst door naar de eigenaar" },
-    "phoneAnywhere": { "on": false, "plan": "Na 0.4", "wat": "Je telefoon verbindt van overal met je pc, zonder Tailscale of account. Staat uit: nu werkt het thuis via wifi of overal via Tailscale, en dat zegt de site ook." },
-    "iphoneApp": { "on": false, "plan": "I", "wat": "iPhone-app via TestFlight. Staat uit zolang alleen interne testers hem kunnen krijgen; dan wijst de site naar de browser." },
+    "phoneAnywhere": { "on": true, "plan": "Na 0.4", "wat": "De iPhone-app verbindt thuis en onderweg met je pc, zonder Tailscale of account (versleuteld van telefoon tot pc). Uit: de site zegt dan weer thuis via wifi of overal via Tailscale." },
+    "iphoneApp": { "on": true, "plan": "I", "wat": "iPhone-app via TestFlight (nog niet in de App Store), koppelen met de QR-code onder Instellingen › Apps en apparaten › Telefoon. Uit: de site wijst dan naar de browser." },
     "signed": { "on": false, "plan": "-", "wat": "De Windows-installer is ondertekend (docs/IOS_WINDOWS_RELEASE.md, Ondertekenen). Zolang dit uit staat, legt de downloadpagina uit wat je in het SmartScreen-venster aanklikt; zet het aan zodra de gepubliceerde installer ondertekend is." }
   }
 }

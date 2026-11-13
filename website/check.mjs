@@ -3,7 +3,8 @@
 //     stylesheet, font, image, icon, CSS url()) from another server, no duplicate ids; per page a title, a meta
 //     description, the Open Graph tags, exactly one <h1>, images with alt/width/height, valid JSON-LD, no inline
 //     style (the CSP in _headers forbids it) and the inline script's hash in that CSP; no "unlimited"/"onbeperkt"
-//     and no "beter dan"/"better than" in the copy; _headers, 404.html, robots.txt and .nojekyll exist;
+//     and no "beter dan"/"better than" in the copy; no "[object Object]", "undefined", "NaN" or placeholder
+//     address as text; _headers, 404.html, robots.txt and .nojekyll exist;
 //  2. in Edge/Chrome (playwright-core): axe-core (WCAG 2.x A/AA, the same rules as `npm run a11y`) on every page at
 //     320, 360, 390, 768, 1280 and 1360 px in light and dark, no horizontal scrolling, no page errors, no request to
 //     another host;
@@ -117,6 +118,24 @@ for (const rel of pages) {
   if (inline && headers && !headers.includes(`'sha256-${crypto.createHash('sha256').update(inline).digest('base64')}'`)) problem(rel, 'de hash van het inline script staat niet in de CSP van _headers');
   // Honest copy: no "unlimited" and no "better than" claims (there is no published measurement). The manual is
   // generated from docs/HANDLEIDING.md and is checked where it is written.
+  // A value that was never filled in must not reach a reader: "[object Object]" (an object printed as text),
+  // "undefined"/"NaN" (a missing text) or the placeholder address of the repository. Checked on the visible text and
+  // on the texts in attributes (alt, title, aria-label, content).
+  {
+    const visible = html.replace(/<script[\s\S]*?<\/script>/g, ' ').replace(/<style[\s\S]*?<\/style>/g, ' ').replace(/<[^>]+>/g, ' ');
+    const attrs = [...html.matchAll(/\s(?:alt|title|aria-label|content|placeholder)="([^"]*)"/g)].map((m) => m[1]).join(' ');
+    for (const [w, name] of [
+      [/\[object [A-Za-z]+\]/, '[object Object]'],
+      [/\bundefined\b/, 'undefined'],
+      [/\bNaN\b/, 'NaN'],
+      [/(&lt;|<)org(&gt;|>)/, 'het placeholder-adres <org>'],
+    ]) {
+      for (const text of [visible, attrs]) {
+        const hit = w.exec(text);
+        if (hit) problem(rel, `niet-ingevulde waarde in de tekst: ${name} (…${text.slice(Math.max(0, hit.index - 40), hit.index + 30).replace(/\s+/g, ' ').trim()}…)`);
+      }
+    }
+  }
   if (!/^(handleiding|en\/manual)\.html$/.test(rel)) {
     const text = html.replace(/<script[\s\S]*?<\/script>/g, ' ').replace(/<[^>]+>/g, ' ');
     for (const w of [/\bunlimited\b/i, /\bonbeperkt/i, /\bbeter dan\b/i, /\bbetter than\b/i]) if (w.test(text)) problem(rel, `verboden belofte in de tekst: ${w.source}`);
