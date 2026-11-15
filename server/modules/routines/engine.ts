@@ -644,14 +644,24 @@ export class RoutineEngine {
     return n === null ? null : iso(n);
   }
 
+  /** One of this owner's bots by its id, or by its name when exactly one bot has that name. */
+  private botOf(userId: string, idOrName: string): Agent | null {
+    const byId = idOrName ? this.ctx.store.agent(idOrName) : null;
+    if (byId) return byId.user_id === userId ? byId : null;
+    const name = idOrName.trim().toLowerCase();
+    if (!name) return null;
+    const same = this.ctx.store.all<{ id: string }>('SELECT id FROM agents WHERE user_id = ? AND lower(name) = ?', userId, name);
+    return same.length === 1 ? this.ctx.store.agent(same[0].id) : null;
+  }
+
   /** Validate and merge input. Throws HttpishError(400) with a Dutch message. */
   validate(userId: string, body: any, existing: Routine | null, allowPastOnce = false): Omit<Routine, 'id' | 'created_at' | 'updated_at' | 'thread_id' | 'next_run_at' | 'last_run_at' | 'last_status' | 'last_summary' | 'fail_count' | 'paused_reason'> {
     const bad = (m: string) => new HttpishError(400, m);
     const name = body?.name !== undefined ? String(body.name).trim().slice(0, 80) : existing?.name || '';
     if (!name) throw bad('Geef de routine een naam');
-    const agentId = body?.agent_id !== undefined ? String(body.agent_id) : existing?.agent_id || '';
-    const agent = this.ctx.store.agent(agentId);
-    if (!agent || agent.user_id !== userId) throw bad('Kies een bot');
+    const agentId = body?.agent_id !== undefined ? String(body.agent_id) : body?.agentId !== undefined ? String(body.agentId) : existing?.agent_id || '';
+    const agent = this.botOf(userId, agentId);
+    if (!agent) throw bad(agentId ? `Er is geen bot “${agentId.slice(0, 60)}”. Geef in agent_id het id of de naam van een van je bots.` : 'Kies een bot: geef in agent_id het id of de naam van de bot die de routine uitvoert.');
     const prompt = body?.prompt !== undefined ? String(body.prompt).slice(0, 20_000) : existing?.prompt || '';
     if (!prompt.trim()) throw bad('Beschrijf wat de bot moet doen');
     const timezone = body?.timezone ? String(body.timezone) : existing?.timezone || this.userTz(userId);
@@ -774,10 +784,10 @@ export class RoutineEngine {
     }
   }
 
-  /** "Daarna starten": another routine of this user (never itself). */
   /**
    * "Daarna starten": the next routine must exist and the chain may never come back to this routine (A → B → A),
-   * checked when the chain is set up. The run-time guard in startNext stays as a safety net for old data.
+   * checked when the chain is set up. The run-time guard in startNext stays as a safety net for old data. The routine
+   * itself is allowed: it then repeats while there is work (startNext).
    */
   validateThen(userId: string, t: any, selfId: string | null, selfName = '', agent?: Agent | null): ChainNext | null {
     if (!t || typeof t !== 'object' || !t.routineId) return null;
@@ -786,7 +796,9 @@ export class RoutineEngine {
     // Package B4: a chain stays inside the team (a routine never starts work in another team).
     const wall = agent ? this.wallFor(agent, this.teamOf(next), `Routine “${next.name}”`) : null;
     if (wall) throw new HttpishError(400, wall);
-    if (selfId && next.id === selfId) throw new HttpishError(400, 'Een routine kan niet zichzelf als volgende routine starten.');
+    // Itself: again as soon as a run is done with a result (owner, 15 nov: no brake), until a run has nothing left to
+    // do or fails (startNext); the owner's maximum under Standaarden voor routines still counts.
+    if (selfId && next.id === selfId) return { routineId: next.id, on: 'done', passResult: t.passResult !== false };
     const loop = selfId ? this.chainLoop(selfId, selfName, next) : null;
     if (loop) throw new HttpishError(400, `Dit maakt een kring: ${loop.join(' → ')}. Een keten mag niet terugkomen bij een routine die er al in zit; kies een andere volgende routine.`);
     return { routineId: next.id, on: t.on === 'always' ? 'always' : 'done', passResult: t.passResult !== false };
@@ -1674,7 +1686,11 @@ ${redact(err).slice(0, 1500)}`, files: [], senderName: agent?.name, agentId: r.a
     if (!n || (n.on === 'done' && status !== 'done')) return;
     const rr = this.getRun(rrId);
     if (!rr) return;
-    const chain: string[] = [...(Array.isArray(rr.meta?.chain) ? rr.meta.chain : []), r.id];
+    const chain: string[] = [...(Array.isArray(rr.meta?.chain) ? rr.meta.chain : []), r.id].slice(-500);
+    // The routine itself again: only after a run that did something; nothing left to do or an error ends the repeat
+    // until its next planned time.
+    const again = n.routineId === r.id;
+    if (again && status !== 'done') return;
     const next = this.routine(n.routineId);
     const stop = (error: string) => this.patchMeta(rrId, { next: { routineId: n.routineId, error } });
     if (!next || next.user_id !== r.user_id) return stop('De volgende routine bestaat niet meer');
@@ -1682,7 +1698,7 @@ ${redact(err).slice(0, 1500)}`, files: [], senderName: agent?.name, agentId: r.a
     const wall = bot ? this.wallFor(bot, this.teamOf(next), `Routine “${next.name}”`) : null;
     if (wall) return stop(wall);
     if (!['active', 'completed'].includes(next.status)) return stop(`“${next.name}” staat niet aan`);
-    if (chain.includes(next.id)) return stop(chain.length === 1 ? 'Keten gestopt om een lus te voorkomen (1 routine)' : `Keten gestopt om een lus te voorkomen (${chain.length} routines)`);
+    if (!again && chain.includes(next.id)) return stop(chain.length === 1 ? 'Keten gestopt om een lus te voorkomen (1 routine)' : `Keten gestopt om een lus te voorkomen (${chain.length} routines)`);
     const max = this.globalSettings(r.user_id).maxChain;
     if (max > 0 && chain.length >= max)
       return stop(chain.length === 1 ? `Keten gestopt na 1 routine: het maximum (${PLACE.routineDefaults}).` : `Keten gestopt na ${chain.length} routines: het maximum (${PLACE.routineDefaults}).`);

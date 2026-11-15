@@ -1,7 +1,7 @@
 {
   "name": "teambot",
   "productName": "TeamBot",
-  "version": "4.4.2",
+  "version": "4.4.3",
   "description": "Open-source AI-agentteam: eigen bots, eigen modellen, lokaal of in de cloud.",
   "license": "Apache-2.0",
   "author": "TeamBot contributors",
@@ -241,8 +241,10 @@
     ],
     "publish": [
       {
-        "provider": "generic",
-        "url": "https://updates.example.invalid/teambot/"
+        "provider": "github",
+        "owner": "milronski-cmd",
+        "repo": "teambot",
+        "releaseType": "release"
       }
     ],
     "asar": true,
@@ -330,6 +332,6 @@
         }
       ]
     },
-    "buildVersion": "4.4.2.2"
+    "buildVersion": "4.4.3"
   }
 }

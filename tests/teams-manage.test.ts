@@ -334,3 +334,19 @@ test('the phone lock: the owner phone may do everything but pair a device and ma
   // A bot is held back before its call: teams/manage.ts refuses the vault, sessions and reading keys back.
   assert.match(refusal('POST', '/computers/vault/items', { name: 'x' }, { keys: true }) || '', /kluis/);
 });
+
+test('a routine made by a bot: without agent_id it is that bot own, a bot name works as agent_id, manual means by hand or by a trigger', async () => {
+  const e = await setup();
+  try {
+    const out = await e.run(e.other.id, MANAGE_DO, { method: 'POST', path: '/routines', body: { name: 'Weekoverzicht', prompt: 'Maak het weekoverzicht.', schedule: { kind: 'weekly', days: [5], times: ['09:00'] } } }, true);
+    assert.ok(!out.isError, out.text);
+    const mine = e.ctx.store.one<any>("SELECT agent_id FROM routines WHERE name = 'Weekoverzicht'");
+    assert.equal(mine?.agent_id, e.other.id);
+    const named = await e.t.api('POST', '/routines', { name: 'Storing melden', agent_id: 'rik', prompt: 'Meld de storing.', schedule: { kind: 'manual' } });
+    assert.equal(named.agent_id, e.other.id);
+    assert.equal(named.schedule.kind, 'none');
+    await assert.rejects(e.t.api('POST', '/routines', { name: 'X', agent_id: 'Niemand', prompt: 'x', schedule: { kind: 'none' } }), /geen bot “Niemand”/);
+  } finally {
+    await e.t.close();
+  }
+});

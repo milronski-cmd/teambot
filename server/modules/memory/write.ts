@@ -16,10 +16,10 @@ import { nlCount } from '../../core/i18n.js';
 import type { MemoryService } from './service.js';
 import type { Reader, Scope } from './types.js';
 import { ALL_TEAMS } from './types.js';
-import { clean } from './text.js';
+import { clean, excerpt } from './text.js';
 import { findIn, lineKey } from './same.js';
 import { createDossier, findDossier } from './dossiers.js';
-import { DossierFull, NEARLY_FULL, WriteRefused, addToBody, archiveLines, coreDossiers, limitOf, linesRefusal, notesDossier, ownerDossier, replaceInBody, teamDossier, tidyBody, writeBody, writeRefusal, type CoreKind, type WriteActor } from './living.js';
+import { DossierFull, NEARLY_FULL, WriteRefused, addToBody, archiveLines, coreDossiers, limitOf, linesRefusal, makeRoom, notesDossier, ownerDossier, replaceInBody, teamDossier, tidyBody, writeBody, writeRefusal, type CoreKind, type WriteActor } from './living.js';
 
 export interface NoteIn {
   /** The dossier the text goes into (its row). */
@@ -30,8 +30,11 @@ export interface NoteIn {
   /** The subject of the line when the writer knows it ("woonplaats"): a line about that subject is replaced. */
   key?: string | null;
   actor: WriteActor;
-  /** A full dossier: refuse with the numbers (a bot makes it shorter itself), or keep the line in the dossier's archive. */
-  full?: 'refuse' | 'archive';
+  /**
+   * A full dossier: refuse with the numbers (the writer makes it shorter itself), keep the new lines in the dossier's
+   * archive, or make room: the oldest lines go to the archive (makeRoom) and the new ones come in.
+   */
+  full?: 'refuse' | 'archive' | 'room';
 }
 
 export interface NoteOut {
@@ -42,6 +45,25 @@ export interface NoteOut {
   /** Lines that left the text for the archive (replaced lines; the new lines themselves when the dossier was full). */
   archived: number;
   message: string;
+  /** Older lines that made way for this in a full dossier (full: 'room'). */
+  removed?: string[];
+}
+
+/**
+ * Room in full dossier `d` for `text`, now in `body` (makeRoom). Never in the owner's own dossier, and never his orders
+ * in a bot's notes (pipeline.ts ORDERS): what he said stays until he changes it.
+ */
+function roomFor(d: any, body: string, text: string): { body: string; removed: string[] } | null {
+  if (d.core === 'owner') return null;
+  const fresh = new Set(tidyBody(text).split('\n').map(lineKey).filter(Boolean));
+  return makeRoom(body, limitOf(d), { keep: (l) => fresh.has(lineKey(l)), keepPart: (h) => /^opdrachten van de eigenaar$/i.test(h) });
+}
+
+/** What a bot is told after older lines made way: which ones, so it can put back what still holds. */
+function roomText(removed: string[]): string {
+  const shown = removed.slice(0, 3).map((l) => `“${excerpt(l.replace(/^[-*]\s+/, ''), 90)}”`);
+  const more = removed.length > 3 ? ` (+${removed.length - 3})` : '';
+  return `Het dossier was vol; deze oudere regels gingen naar het archief van het dossier (vindbaar met memory_search): ${shown.join(', ')}${more}. Geldt daar nog iets van, zet het dan kort terug.`;
 }
 
 /** The core dossier a kind of memory belongs in: about the owner, for the team, a lesson, a bot's own. */
@@ -75,6 +97,16 @@ export function writeNote(svc: MemoryService, n: NoteIn): NoteOut {
   } catch (e: any) {
     if (e instanceof WriteRefused) return { ...base, action: 'refused', reason: e.reason, message: e.message };
     if (!(e instanceof DossierFull)) throw e;
+    const room = n.full === 'room' ? roomFor(d, next.body, n.text) : null;
+    if (room)
+      try {
+        const w = writeBody(svc, d.id, room.body, n.actor);
+        const size = String(w.dossier.body || '').length;
+        return { action: next.added ? 'added' : 'replaced', dossier: w.dossier, changeId: w.changeId, archived: w.archived, removed: room.removed, message: `In ${where} gezet (${size}/${limitOf(w.dossier)} tekens). ${roomText(room.removed)}` };
+      } catch (e2: any) {
+        if (e2 instanceof WriteRefused) return { ...base, action: 'refused', reason: e2.reason, message: e2.message };
+        if (!(e2 instanceof DossierFull)) throw e2;
+      }
     if (n.full !== 'archive') return { ...base, action: 'refused', reason: 'full', message: e.message };
     // Nobody is here to make the dossier shorter: the lines are kept in its archive (searchable), and the bots see
     // in their next turn that the dossier is full.
@@ -198,8 +230,11 @@ export function dossierWrite(svc: MemoryService, agent: Agent, reader: Reader, a
     if (refusal) return bad(refusal);
     let w: { dossier: any; archived: number; changeId: string | null };
     let action: DossierWriteResult['action'];
+    // Older lines that made way in a full dossier (a bot's add or replace; a rewrite is the bot's own whole text).
+    let removed: string[] = [];
     if (mode === 'add') {
-      const out = writeNote(svc, { dossier: d, text: content, section: a.section ? String(a.section) : null, actor, full: o.full });
+      const out = writeNote(svc, { dossier: d, text: content, section: a.section ? String(a.section) : null, actor, full: o.full ?? 'room' });
+      removed = out.removed || [];
       if (out.action === 'same') return { text: `Dat stond al in dossier “${d.title}” [d:${d.ref}]; er is niets gewijzigd.`, action: 'same' };
       if (out.action === 'refused') {
         const cur = out.reason === 'full' && !d.core && d.body ? `\nDe tekst nu:\n${d.body}` : '';
@@ -210,14 +245,18 @@ export function dossierWrite(svc: MemoryService, agent: Agent, reader: Reader, a
       action = out.action;
     } else {
       const old = String(d.body || '');
-      w = writeBody(svc, d.id, mode === 'rewrite' ? content : replaceInBody(old, String(a.old_text || ''), content), actor);
+      let body = tidyBody(mode === 'rewrite' ? content : replaceInBody(old, String(a.old_text || ''), content));
+      const room = mode === 'replace' && body.length > limitOf(d) && (o.full ?? 'room') === 'room' ? roomFor(d, body, content) : null;
+      if (room) [body, removed] = [room.body, room.removed];
+      w = writeBody(svc, d.id, body, actor);
       action = mode === 'rewrite' ? 'rewritten' : 'replaced';
     }
     const size = String(w.dossier.body || '').length;
     const limit = limitOf(w.dossier);
     const bits = [`Dossier “${w.dossier.title}” [d:${w.dossier.ref}] ${made ? 'aangemaakt' : 'bijgewerkt'} (${size}/${limit} tekens). Alle bots van je team lezen dit vanaf nu.`];
     if (w.dossier.core === 'notes') bits[0] = `Je werknotities zijn bijgewerkt [d:${w.dossier.ref}] (${size}/${limit} tekens).`;
-    if (w.archived) bits.push(`Wat eruit ging (${nlCount(w.archived, 'regel', 'regels')}) staat in het archief van het dossier.`);
+    if (removed.length) bits.push(roomText(removed));
+    else if (w.archived) bits.push(`Wat eruit ging (${nlCount(w.archived, 'regel', 'regels')}) staat in het archief van het dossier.`);
     if (size >= limit * NEARLY_FULL) bits.push('Het dossier is bijna vol: herschrijf het bij je volgende wijziging korter (mode rewrite).');
     if (made && !w.dossier.core) bits.push('Zet ook één regel over dit dossier in “Overzicht”.');
     return { text: bits.join(' '), data: { dossier: `d:${w.dossier.ref}`, size, limit }, action, changeId: w.changeId };

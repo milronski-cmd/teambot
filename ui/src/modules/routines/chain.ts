@@ -25,7 +25,8 @@ export function chainLoop(all: ChainNode[], selfId: string | undefined, selfName
   const byId = new Map(all.map((r) => [r.id, r]));
   const next = byId.get(nextId);
   if (!next) return null;
-  if (nextId === selfId) return [selfName, selfName];
+  // Itself is no loop: it repeats while each run does something (server/modules/routines/engine.ts startNext).
+  if (nextId === selfId) return null;
   const path = [selfName || 'deze routine', next.name];
   const seen = new Set([next.id]);
   let cur: ChainNode | undefined = next;

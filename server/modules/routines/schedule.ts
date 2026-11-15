@@ -237,7 +237,8 @@ export class ScheduleError extends Error {}
 
 /** Validate user/agent input into a canonical Schedule. Throws ScheduleError (Dutch message). */
 export function normalizeSchedule(input: any, tz: string, nowMs: number, opts: { allowPast?: boolean } = {}): Schedule {
-  const kind = String(input?.kind || 'none');
+  // "manual", "trigger" …: started by hand or by a trigger only, which is what `none` is.
+  const kind = String(input?.kind || 'none').toLowerCase().replace(/^(manual|handmatig|trigger|webhook|on[-_ ]?demand|never|nooit)$/, 'none');
   if (!validTimezone(tz)) throw new ScheduleError(`Onbekende tijdzone: ${tz}`);
   switch (kind) {
     case 'none':

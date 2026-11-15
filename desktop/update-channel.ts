@@ -140,6 +140,17 @@ export function installerUrl(c: Channel, version: string, name: string, o: { git
 }
 
 /** package.json build.publish for a channel (what electron-builder writes into app-update.yml). */
+/**
+ * Every place that installer may be, in order: on GitHub the release `v<version>` (the tag electron-builder makes) and
+ * `teambot-<version>` (a release made by hand, so that pushing its tag starts no build); in a folder the one place.
+ */
+export function installerUrls(c: Channel, version: string, name: string, o: { githubHost?: string } = {}): URL[] {
+  const first = installerUrl(c, version, name, o);
+  if (c.provider === 'generic') return [first];
+  const v = encodeURIComponent(version);
+  return [first, new URL(first.href.replace(`/releases/download/v${v}/`, `/releases/download/teambot-${v}/`))];
+}
+
 export function publishEntry(c: Channel): Record<string, unknown> {
   return c.provider === 'generic' ? { provider: 'generic', url: c.url } : { provider: 'github', owner: c.owner, repo: c.repo, releaseType: 'release' };
 }

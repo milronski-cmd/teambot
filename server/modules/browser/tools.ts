@@ -70,12 +70,33 @@ async function settle(s: BrowserSession) {
   await new Promise((r) => setTimeout(r, 250));
 }
 
+/** The page moved on while it was being read (a redirect after it loaded): read it again once it is there. */
+const MOVED = /Execution context was destroyed|Cannot find context with specified id|frame was detached|navigation/i;
+
+/**
+ * `script` run in the active page. A page that sends itself on right after loading (a cookie wall, a login step, a
+ * script redirect) is read where it ends up, at most three tries; the address is checked against the policy each time.
+ */
+async function readPage(svc: ComputerService, t: ToolContext, s: BrowserSession, script: string): Promise<any> {
+  for (let i = 0; ; i++) {
+    const bad = navigationViolation(s.active.url(), svc.policyOf(svc.config(t.agent)));
+    if (bad) throw new Error(`Deze pagina mag niet gelezen worden: ${bad}`);
+    try {
+      return await s.active.evaluate(script);
+    } catch (e: any) {
+      if (i >= 2 || !MOVED.test(String(e?.message || e))) throw e;
+      await s.active.waitForLoadState('domcontentloaded', { timeout: 5000 }).catch(() => {});
+      await new Promise((r) => setTimeout(r, 400));
+    }
+  }
+}
+
 async function outline(svc: ComputerService, t: ToolContext, s: BrowserSession, maxChars: number): Promise<string> {
   const page = s.active;
   const bad = navigationViolation(page.url(), svc.policyOf(svc.config(t.agent)));
   if (bad) throw new Error(`Deze pagina mag niet gelezen worden: ${bad}`);
   if (page.url() === 'about:blank') return 'Lege pagina (about:blank). Open een website met browser_navigate.';
-  const r: any = await page.evaluate(`(${SNAPSHOT_JS})(${JSON.stringify({ maxChars })})`);
+  const r: any = await readPage(svc, t, s, `(${SNAPSHOT_JS})(${JSON.stringify({ maxChars })})`);
   const scroll = r.scrollHeight > r.viewportHeight ? `\nScrollpositie: ${r.scrollY} van ${Math.max(0, r.scrollHeight - r.viewportHeight)} px` : '';
   const body = r.lines.join('\n') + (r.truncated ? '\n… (afgekapt: gebruik browser_scroll of een hogere max_chars)' : '');
   return `Titel: ${r.title || '(geen)'}\nURL: ${r.url}\nTabbladen: ${s.pages().length}${scroll}\n\n${wrap(r.url, body || '(geen leesbare inhoud)')}`;
@@ -328,9 +349,7 @@ export function browserTools(svc: ComputerService): ToolDef[] {
           async (s) => {
             const max = Math.min(50_000, Math.max(1000, Number(a.max_chars) || 15_000));
             if (a.mode === 'text') {
-              const bad = navigationViolation(s.active.url(), svc.policyOf(svc.config(t.agent)));
-              if (bad) throw new Error(`Deze pagina mag niet gelezen worden: ${bad}`);
-              const r: any = await s.active.evaluate(`(${TEXT_JS})(${max})`);
+              const r: any = await readPage(svc, t, s, `(${TEXT_JS})(${max})`);
               return `Titel: ${r.title}\nURL: ${r.url}\n\n${wrap(r.url, r.text + (r.total > max ? '\n… (afgekapt)' : ''))}`;
             }
             return await outline(svc, t, s, max);

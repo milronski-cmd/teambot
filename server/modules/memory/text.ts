@@ -128,7 +128,9 @@ const SECRET_RES: [RegExp, string][] = [
   [/\beyJ[A-Za-z0-9_-]{20,}\.[A-Za-z0-9_-]{20,}\.[A-Za-z0-9_-]{10,}/, 'token'],
   [/\b(?:AKIA|ASIA)[0-9A-Z]{16}\b/, 'AWS-sleutel'],
   [/-----BEGIN [A-Z ]*PRIVATE KEY-----/, 'privésleutel'],
-  [/\b(?:wachtwoord|password|passwd|pwd|wachtwoordzin|passphrase|pincode|pin-code|pin|api[\s_-]?key|apikey|api[\s_-]?sleutel|secret|token|toegangscode|inlogcode|2fa|otp|herstelcode|recovery code)\b\s*(?:is|=|:|was|luidt)\s*\S{3,}/i, 'wachtwoord of code'],
+  // "het token is X" or "wachtwoord: X" with X a value, not the next word of a sentence ("Token: staat in de kluis",
+  // "het token is nog niet gezet" are notes about a key, without the key).
+  [/\b(?:wachtwoord|password|passwd|pwd|wachtwoordzin|passphrase|pincode|pin-code|pin|api[\s_-]?key|apikey|api[\s_-]?sleutel|secret|token|toegangscode|inlogcode|2fa|otp|herstelcode|recovery code)\b\s*(?:is|=|:|was|luidt)\s*(?!(?:nog|niet|er|al|staat|staan|stond|zit|zat|de|het|een|ook|wel|geen|gezet|ingesteld|opgeslagen|bewaard|verlopen|nodig|vereist|aanwezig|bekend|onbekend|leeg|ok|oke|klaar|gemaakt|aangemaakt|weg|daar|hier|bij|via|voor|van|op|uit|te|nu|in|apart|veilig|zelf|alleen|ja|nee|gelukt|mislukt|vernieuwd|ververst|nieuw|oud|geldig|ongeldig|not|set|missing|required|stored|saved|the|a|an|still|now|done|available|needed|present|empty|none|null|true|false|valid|invalid|expired|in)\b)\S{3,}/i, 'wachtwoord of code'],
   [/\b(?:mijn|my)\s+(?:wachtwoord|password|pincode|pin)\b/i, 'wachtwoord of code'],
   [/\b(?:Bearer)\s+[A-Za-z0-9._\-]{20,}/, 'token'],
 ];
@@ -191,8 +193,10 @@ export function maxSensitivity(a: Sensitivity | undefined | null, b: Sensitivity
 
 // ---------------------------------------------------------------- instruction-likeness (poisoning guard)
 
+// Commands as such are normal in a team's notes ("bouw met `node build.mjs`", "run <script>.py", curl, PowerShell):
+// only a command aimed at the reader ("voer dit script uit") or a download piped into a shell counts.
 const INJECTION_RE =
-  /(\b(negeer|ignore|disregard|override|omzeil)\b.{0,40}\b(instructie\w*|regels|instructions|rules|prompt|beperkingen)\b|\bsystem ?prompt\b|\bje bent nu\b|\byou are now\b|\b(stuur|forward|send|mail|e-?mail|doorsturen|transfer|maak .{0,20}over|betaal|pay|upload|exfiltrat\w*)\b.{0,60}\b(naar|to)\b.{0,40}(@|https?:\/\/|\biban\b|\brekening)|\b(voer|run|execute)\b.{0,30}\b(uit|command|commando|script|code)\b|\bcurl\s|\bwget\s|\bpowershell\b|\brm -rf\b|\b(wachtwoord|password|credentials?|api[- ]?key)s?\b.{0,40}\b(geven|delen|sturen|share|send|reveal)\b)/i;
+  /(\b(negeer|ignore|disregard|override|omzeil)\b.{0,40}\b(instructie\w*|regels|instructions|rules|prompt|beperkingen)\b|\bsystem ?prompt\b|\bje bent nu\b|\byou are now\b|\b(stuur|forward|send|mail|e-?mail|doorsturen|transfer|maak .{0,20}over|betaal|pay|upload|exfiltrat\w*)\b.{0,60}\b(naar|to)\b.{0,40}(@|https?:\/\/|\biban\b|\brekening)|\b(voer|run|execute)\b.{0,12}\b(dit|deze|dat|die|this|these|the following|onderstaande|het volgende)\b.{0,20}\b(uit|command|commando|script|code)\b|\b(curl|wget|iwr|irm|invoke-webrequest|invoke-restmethod)\b[^\n|]{0,200}\|\s*(sh|bash|zsh|iex|invoke-expression|powershell|pwsh)\b|\bpowershell(\.exe)?\s+-(e|enc|encodedcommand)\b|\brm -rf\s+[/~]|\b(wachtwoord|password|credentials?|api[- ]?key)s?\b.{0,40}\b(geven|delen|sturen|share|send|reveal)\b)/i;
 const DIRECTIVE_RE = /^\s*(voortaan|vanaf nu|in het vervolg|altijd|nooit|from now on|always|never|you must|je moet|jij moet|zorg dat|antwoord (altijd|voortaan|in het)|reply (always|in))\b/i;
 
 /** Content that reads like an instruction to an agent (rather than a fact). */

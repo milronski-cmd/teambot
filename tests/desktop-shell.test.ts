@@ -199,9 +199,8 @@ test('update channel not set: off and quiet, nothing that looks like a problem',
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'tb-off-'));
   try {
     const notes: string[] = [];
-    // The app-update.yml of this release: the placeholder from package.json build.publish.
-    const pkg = JSON.parse(fs.readFileSync(path.join(import.meta.dirname, '..', 'package.json'), 'utf8'));
-    const yml = `provider: ${pkg.build.publish[0].provider}\nurl: ${pkg.build.publish[0].url}\nupdaterCacheDirName: teambot-updater\n`;
+    // The app-update.yml of a release built without a channel: the placeholder on `.invalid`.
+    const yml = 'provider: generic\nurl: https://updates.example.invalid/teambot/\nupdaterCacheDirName: teambot-updater\n';
     const flow = new UpdateFlow({ updater: new FakeNsisUpdater(), version: '0.4.2', packaged: true, configDir: dir, dataDir: dir, env: {}, notify: (t) => notes.push(t), defaultFeed: defaultFeedUrl(yml) });
     flow.start();
     assert.equal(flow.state.phase, 'off');

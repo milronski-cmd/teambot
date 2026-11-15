@@ -493,8 +493,8 @@ export function teamTools(s: RoomService, board: Board): ToolDef[] {
     }
     const line = taskLine(board, upd);
     const data = { taskId: upd.id, check: verdict.state };
-    if (verdict.state === 'passed') return { text: `Gecontroleerd en klaar: “${upd.title}”. ${verdict.reason}\n${line}`, data };
-    if (verdict.state === 'skipped') return { text: `Klaar: “${upd.title}” (de controle staat uit voor deze taak).\n${line}`, data };
+    if (verdict.state === 'passed') return { text: `Gecontroleerd en klaar: “${upd.title}”. ${verdict.reason}\n${line}${ideaAsk(t)}`, data };
+    if (verdict.state === 'skipped') return { text: `Klaar: “${upd.title}” (de controle staat uit voor deze taak).\n${line}${ideaAsk(t)}`, data };
     if (verdict.state === 'cant') return { text: `Gemeld als "kon niet": ${verdict.reason}\n${owner} ziet het onder Wacht op jou.\n${line}`, data };
     // The check itself waits for a usage limit: nothing for the bot to fix.
     if (verdict.retryAt) return { text: `Staat op "te controleren". ${verdict.reason}\nJe hoeft hiervoor niets te doen: is de controle goed, dan zet TeamBot de taak zelf op klaar. Zeg niet dat de taak al klaar is.\n${line}`, data };
@@ -503,6 +503,16 @@ export function teamTools(s: RoomService, board: Board): ToolDef[] {
       data,
     };
   }
+}
+
+/**
+ * After finished work, one line: did the bot see a chance on the way (owner, 15 nov: the bots come up with few ideas)?
+ * Only when it may report one (kans_melden on the kansenbord). In the answer, not in every turn's instructions.
+ */
+function ideaAsk(t: ToolContext): string {
+  const k = t.ctx.tools.get('kans_melden');
+  if (!k || !t.ctx.tools.groupEnabled(t.agent, k.group) || t.ctx.broker.decide(t.agent, k) === 'deny') return '';
+  return '\nZag je bij dit werk een kans die geld oplevert of het werk duidelijk beter maakt? Meld die met kans_melden; de eigenaar beslist.';
 }
 
 /** Tools that only exist inside a room (shared files, hire proposals). */

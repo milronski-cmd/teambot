@@ -230,6 +230,51 @@ test('update in place: replace, duplicates are not added, the limit makes the bo
   }
 });
 
+test('a full dossier makes room: the oldest lines go to the archive and the new one comes in; old_text is found without the exact quotes, spaces or capitals', async () => {
+  const { t, ada } = await twoBots();
+  try {
+    const d = () => t.app.ctx.store.decode<any>('memory_dossiers', t.app.ctx.store.one<any>("SELECT * FROM memory_dossiers WHERE core = 'overview'"));
+    await tool(t, ada.id, 'dossier_write', { dossier: 'Overzicht', content: '- Begin.' }); // the core dossiers exist from here
+    // Nearly full: two parts, the first lines of the bigger part are the oldest.
+    const rows = (p: string, n: number) => Array.from({ length: n }, (_, i) => `- ${p} ${i}: een regel over een eigen onderwerp met genoeg woorden, kenmerk ${p}${i * 13}.`).join('\n');
+    const build = (n: number) => `Waar het team aan werkt.\n\n## Projecten\n${rows('Project', n)}\n\n## Klanten\n${rows('Klant', 20)}`;
+    let n = 20;
+    while (build(n + 1).length < BODY_LIMITS.overview - 60) n++;
+    t.app.ctx.store.update('memory_dossiers', d().id, { body: build(n) });
+    const out = await tool(t, ada.id, 'dossier_write', { dossier: 'Overzicht', section: 'Projecten', content: `- Nieuw project Zonnedak: de offerte ligt bij de klant sinds vandaag, met een uitgebreide toelichting over de planning en de prijs.\n${rows('Extra', 2)}` });
+    assert.match(out, /bijgewerkt/);
+    assert.match(out, /Het dossier was vol; deze oudere regels gingen naar het archief/);
+    assert.match(out, /Project 0: een regel/);
+    const body = d().body;
+    assert.match(body, /Zonnedak/);
+    assert.match(body, /^Waar het team aan werkt\./, 'the first line stays');
+    assert.doesNotMatch(body, /Project 0:/, 'the oldest line of the biggest part went');
+    assert.match(body, /Klant 0:/, 'the smaller part kept its lines');
+    assert.ok(body.length <= BODY_LIMITS.overview);
+    const arch = t.app.ctx.store.all<any>("SELECT body FROM memory_records WHERE dossier_id = ? AND kind = 'event'", d().id);
+    assert.ok(arch.some((x) => /Project 0:/.test(x.body)), 'what went is in the archive');
+
+    // old_text with other quotes, a line break for a space and other capitals: still the one place.
+    t.app.ctx.store.update('memory_dossiers', d().id, { body: 'Over het team.\n- De klant zei: “we beginnen in maart” en dat staat vast.\n- **Budget**: twintig mille.' });
+    assert.match(await tool(t, ada.id, 'dossier_write', { dossier: 'Overzicht', mode: 'replace', old_text: 'de klant zei: "we beginnen\nin maart" en dat staat vast.', content: '- De klant begint in april.' }), /bijgewerkt/);
+    assert.equal(d().body, 'Over het team.\n- De klant begint in april.\n- **Budget**: twintig mille.');
+    assert.match(await tool(t, ada.id, 'dossier_write', { dossier: 'Overzicht', mode: 'replace', old_text: 'Budget: twintig mille.', content: 'Budget: dertig mille.' }), /bijgewerkt/);
+    assert.match(d().body, /- Budget: dertig mille\./);
+    // Not there at all: the line that looks most like it, to quote.
+    assert.match(await tool(t, ada.id, 'dossier_write', { dossier: 'Overzicht', mode: 'replace', old_text: 'De klant begint pas in mei', content: 'x' }), /het meest op lijkt: “- De klant begint in april\.”/);
+
+    // The owner's own dossier never loses what he said to make room.
+    const own = t.app.ctx.store.decode<any>('memory_dossiers', t.app.ctx.store.one<any>("SELECT * FROM memory_dossiers WHERE core = 'owner'"));
+    const mine = `Over de eigenaar.\n${Array.from({ length: 60 }, (_, i) => `- Voorkeur ${i}: zo wil de eigenaar het hebben, met genoeg woorden om te vullen.`).join('\n')}`.slice(0, BODY_LIMITS.owner - 20);
+    t.app.ctx.store.update('memory_dossiers', own.id, { body: mine });
+    const said = await tool(t, ada.id, 'dossier_write', { dossier: 'Eigenaar', content: `- Over de vakantie in de zomer: ${'de zaak gaat dan drie weken dicht en de klanten krijgen vooraf bericht; '.repeat(5)}` });
+    assert.doesNotMatch(said, /oudere regels/);
+    assert.match(said, /Niet opgeslagen/);
+  } finally {
+    await t.close();
+  }
+});
+
 /** Fake CLI engines that record what TeamBot hands them. */
 function cliKinds(t: TestApp) {
   const calls: { kind: string; req: AgentRunRequest }[] = [];

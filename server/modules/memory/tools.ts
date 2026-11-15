@@ -532,7 +532,7 @@ export function memoryTools(svc: MemoryService, scope?: { agent: Agent; thread: 
       group: 'memory',
       risk: 'write',
       description:
-        'Werk een dossier bij: het gedeelde geheugen van je team, een korte lopende tekst per onderwerp. mode add (standaard): zet content erbij, onder section als je een kopje noemt. mode replace: vervang old_text door content (lege content haalt het weg). mode rewrite: de hele tekst opnieuw, korter en samenhangend. Kerndossiers: "Eigenaar", "Overzicht", "Lessen", "Werknotities" (alleen van jou). Een andere naam is het dossier van één onderwerp (project, klant, persoon, zaak) en wordt aangemaakt als het er nog niet is. Past het niet in het maximum, maak het dossier dan eerst korter. Nooit wachtwoorden of sleutels.',
+        'Werk een dossier bij: het gedeelde geheugen van je team, een korte lopende tekst per onderwerp. mode add (standaard): zet content erbij, onder section als je een kopje noemt. mode replace: vervang old_text door content (lege content haalt het weg). mode rewrite: de hele tekst opnieuw, korter en samenhangend. Kerndossiers: "Eigenaar", "Overzicht", "Lessen", "Werknotities" (alleen van jou). Een andere naam is het dossier van één onderwerp (project, klant, persoon, zaak) en wordt aangemaakt als het er nog niet is. Is het vol, dan maken de oudste regels plaats (ze gaan naar het archief). Nooit wachtwoorden of sleutels.',
       parameters: {
         type: 'object',
         properties: {

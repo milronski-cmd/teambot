@@ -483,7 +483,10 @@ function widening(ctx: Ctx, method: string, path: string, body: any, parts: bool
 }
 
 /** Read the arguments of one call and decide its risk. Never throws. `o.parts`: see `widening`. */
-export function planCall(ctx: Ctx, userId: string, a: any, o: { parts?: boolean; keys?: boolean } = {}): CallPlan {
+/** Routes that make something which runs as one bot (`agent_id`). */
+const FOR_A_BOT = new Set(['POST /routines']);
+
+export function planCall(ctx: Ctx, userId: string, a: any, o: { parts?: boolean; keys?: boolean; self?: string } = {}): CallPlan {
   const method = inputLine(a?.method, 10).toUpperCase() || 'GET';
   if (!(METHODS as readonly string[]).includes(method)) return { error: `Onbekende methode “${method}”. Kies uit: ${METHODS.join(', ')}.` };
   let raw = inputLine(a?.path, 600);
@@ -510,7 +513,7 @@ export function planCall(ctx: Ctx, userId: string, a: any, o: { parts?: boolean;
     }
   }
   if (method !== 'GET' && given !== undefined && given !== null && given !== '' && !isObj(given) && !Array.isArray(given)) return { error: 'De body moet een object zijn met de velden, bijvoorbeeld { "name": "Nieuwe naam" }.' };
-  const body = method === 'GET' ? undefined : isObj(given) || Array.isArray(given) ? given : {};
+  let body = method === 'GET' ? undefined : isObj(given) || Array.isArray(given) ? given : {};
   const never = refusal(method, path, body, { keys: o.keys });
   if (never) return { refuse: never };
   const route = matchRoute(ctx, method, path);
@@ -518,6 +521,8 @@ export function planCall(ctx: Ctx, userId: string, a: any, o: { parts?: boolean;
     const other = routesOf(ctx).filter((r) => r.re.test(path)).map((r) => r.method);
     return { error: other.length ? `Dit pad kent ${method} niet; wel: ${[...new Set(other)].join(', ')}.` : `TeamBot kent geen actie ${method} ${path}. Zoek de juiste op met ${MANAGE_FIND}.` };
   }
+  // Something that runs as a bot, made by a bot that names none: it is that bot's own (a routine of the bot that asks).
+  if (o.self && FOR_A_BOT.has(`${method} ${route.path}`) && isObj(body) && !(body as any).agent_id && !(body as any).agentId) body = { ...body, agent_id: o.self };
   const widen = widening(ctx, method, path, body, o.parts === true);
   const money = method !== 'GET' && (MONEY_PATH.test(path) || deep(body, (k) => MONEY_FIELD.test(k)));
   const outward = method === 'DELETE' || SENDS.test(path) || DESTROYS.test(path);
@@ -687,7 +692,7 @@ export function manageTools(ctx: Ctx, svc: TeamsService): ToolDef[] {
     notOwnersTalk(ctx, agent, thread) ? `Geweigerd door TeamBot: ${agent.name} bedient TeamBot alleen in een gesprek met zijn eigenaar zelf. In dit gesprek kan dat niet, ook niet om iets op te zoeken.` : null;
   const plan = (a: any, agent: Agent): CallPlan => {
     try {
-      return planCall(ctx, agent.user_id, a, { parts: !isMain(agent), keys: fullAccess(agent) });
+      return planCall(ctx, agent.user_id, a, { parts: !isMain(agent), keys: fullAccess(agent), self: agent.id });
     } catch (e: any) {
       return { error: `Deze actie kan TeamBot niet lezen: ${e?.message || e}` };
     }

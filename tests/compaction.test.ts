@@ -109,3 +109,15 @@ test('manual summarise works on a short conversation that fits the budget', asyn
     await t.close();
   }
 });
+
+test('a CLI session with a window of a million tokens is compacted from 400,000 tokens, not only at 75% (15 nov)', async () => {
+  const { cliCompactionDue, CLI_CONTEXT_CAP } = await import('../server/agent/compaction.js');
+  const at = (used: number, window: number) => {
+    const ctx: any = { store: { one: () => ({ created_at: new Date(Date.now() - 60_000).toISOString() }), messages: () => [] }, services: { usage: { getContext: () => ({ used, window, providerId: 'p', at: Date.now() }) } } };
+    return cliCompactionDue(ctx, { id: 'a', settings: {} } as any, { id: 't', kind: 'chat', meta: {} } as any, { id: 'p' } as any).due;
+  };
+  assert.equal(at(CLI_CONTEXT_CAP - 1, 1_000_000), false);
+  assert.equal(at(CLI_CONTEXT_CAP, 1_000_000), true);
+  assert.equal(at(160_000, 200_000), true, '75% of a small window still counts');
+  assert.equal(at(100_000, 200_000), false);
+});

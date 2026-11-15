@@ -123,6 +123,12 @@ readline.createInterface({ input: process.stdin }).on('line', async (line) => {
     send({ id, result: { tools } });
   } else if (m.method === 'tools/call') {
     const p = m.params || {};
+    // A TeamBot tool can wait long for the owner (an approval card, the desktop he took over): a progress note every
+    // minute keeps the CLI from giving up after 30 minutes without one (it aborted such waits 16 times, 15 nov).
+    const token = p._meta && p._meta.progressToken;
+    let beat = 0;
+    const keep = token !== undefined && token !== null ? setInterval(() => send({ method: 'notifications/progress', params: { progressToken: token, progress: ++beat, message: 'TeamBot wacht nog' } }), 60000) : null;
+    try {
     if (p.name === 'permission_prompt' && PERMISSION) {
       const r = await ask('permission', p.arguments || {});
       const decision = r && r.result ? r.result : { behavior: 'deny', message: 'TeamBot-goedkeuring niet bereikbaar' + (r && r.error ? ': ' + r.error : '') };
@@ -132,6 +138,9 @@ readline.createInterface({ input: process.stdin }).on('line', async (line) => {
       if (r && r.result) send({ id, result: r.result });
       else send({ id, result: { content: [{ type: 'text', text: 'TeamBot-tool niet uitgevoerd' + (r && r.error ? ': ' + r.error : '') }], isError: true } });
     } else send({ id, error: { code: -32602, message: 'Onbekende tool' } });
+    } finally {
+      if (keep) clearInterval(keep);
+    }
   } else if (m.method === 'notifications/cancelled') {
     const s = open.get(m.params && m.params.requestId);
     if (s) s.destroy();

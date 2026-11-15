@@ -36,7 +36,7 @@ import {
   verifyKept,
   type KeptInstaller,
 } from '../server/modules/backups/updates.js';
-import { channelInput, channelText, feedError, feedOptions, installerUrl, parseChannel, type Channel } from './update-channel.js';
+import { channelInput, channelText, feedError, feedOptions, installerUrls, parseChannel, type Channel } from './update-channel.js';
 import { IDLE_POLL_MS, checkDue, installDecision, sameReasons, type AutoMode, type IdleFacts, type WaitReason } from './update-idle.js';
 
 export type UpdateState =
@@ -484,10 +484,15 @@ export class UpdateFlow {
     if (!ch) return null;
     const newName = d.fileName && d.fileName.includes(d.version) ? path.basename(d.fileName) : installerName(d.version);
     const name = newName.replace(d.version, cur);
-    // Next to latest.yml in the folder, or an asset of the GitHub release v<version>.
-    const url = installerUrl(ch, cur, name, { githubHost: this.deps.githubHost });
+    // Next to latest.yml in the folder, or an asset of the GitHub release v<version> (or teambot-<version>).
+    const urls = installerUrls(ch, cur, name, { githubHost: this.deps.githubHost });
     const f = this.deps.fetch || fetch;
-    const r = await f(url, { redirect: 'follow', signal: AbortSignal.timeout(30 * 60_000) });
+    let r!: Response;
+    for (const [i, url] of urls.entries()) {
+      r = await f(url, { redirect: 'follow', signal: AbortSignal.timeout(30 * 60_000) });
+      if (r.status !== 404 || i === urls.length - 1) break;
+      await r.body?.cancel().catch(() => {});
+    }
     if (r.url && feedError(r.url)) throw new Error('doorgestuurd naar een adres zonder https');
     if (r.status === 404) throw new Error(`${name} staat niet op het updatekanaal`);
     if (!r.ok || !r.body) throw new Error(`het updatekanaal antwoordde ${r.status}`);

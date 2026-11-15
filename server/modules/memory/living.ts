@@ -405,14 +405,127 @@ export function addToBody(body: string, text: string, section?: string | null, k
   return { body: tidyBody(lines.join('\n')), added, replaced };
 }
 
-/** The text with exactly one occurrence of `oldText` replaced (empty `text` takes it out). Throws when it is not there once. */
+/**
+ * A text compared loosely, with where each of its characters came from: curly quotes, dashes and non-breaking spaces
+ * as their plain forms, every run of white space as one space, markup (`*`, `` ` ``) left out. A bot that quotes a
+ * dossier from memory gets those wrong more often than the words.
+ */
+function loose(s: string, lower: boolean): { text: string; at: number[] } {
+  let text = '';
+  const at: number[] = [];
+  let space = false;
+  for (let i = 0; i < s.length; i++) {
+    const c = s[i];
+    if (c === '*' || c === '`') continue;
+    if (/\s/.test(c)) {
+      space = true;
+      continue;
+    }
+    if (space && text) {
+      text += ' ';
+      at.push(i);
+    }
+    space = false;
+    const plain = /[“”„«»]/.test(c) ? '"' : /[‘’‚]/.test(c) ? "'" : /[‐-―−]/.test(c) ? '-' : c === '…' ? '...' : c;
+    for (const p of lower ? plain.toLowerCase() : plain) {
+      text += p;
+      at.push(i);
+    }
+  }
+  return { text, at };
+}
+
+/** Where `needle` stands in `body` when compared loosely (loose): the ranges in `body`, first case-sensitive, then not. */
+function looseRanges(body: string, needle: string): [number, number][] {
+  for (const lower of [false, true]) {
+    const b = loose(body, lower);
+    const n = loose(needle, lower).text.trim();
+    if (!n) return [];
+    const out: [number, number][] = [];
+    for (let i = b.text.indexOf(n); i >= 0; i = b.text.indexOf(n, i + 1)) out.push([b.at[i], b.at[i + n.length - 1] + 1]);
+    if (out.length) return out;
+  }
+  return [];
+}
+
+/** The line of `body` that shares the most words with `needle` (at least half of them), for a helpful refusal. */
+function nearestLine(body: string, needle: string): string {
+  const want = new Set(tokens(needle));
+  if (!want.size) return '';
+  let best = '';
+  let score = 0;
+  for (const l of body.split('\n')) {
+    const got = new Set(tokens(l));
+    let n = 0;
+    for (const w of want) if (got.has(w)) n++;
+    if (n / want.size > score) {
+      score = n / want.size;
+      best = l.trim();
+    }
+  }
+  return score >= 0.5 ? best : '';
+}
+
+/**
+ * The text with exactly one occurrence of `oldText` replaced (empty `text` takes it out). Letter for letter first; when
+ * that is not there, the same words with other quotes, dashes, spaces, line breaks, markup or capitals count too.
+ * Throws when it is not there once.
+ */
 export function replaceInBody(body: string, oldText: string, text: string): string {
   const needle = String(oldText || '').replace(/\r\n?/g, '\n').trim();
   if (!needle) throw new Error('Geef in old_text de tekst die je vervangt, letterlijk zoals hij in het dossier staat.');
   const n = body.split(needle).length - 1;
-  if (!n) throw new Error('old_text staat niet letterlijk in het dossier. Lees het dossier en neem de tekst precies over.');
   if (n > 1) throw new Error(`old_text staat ${n} keer in het dossier. Neem een langer stuk, zodat het maar op één plek past.`);
-  return tidyBody(body.replace(needle, () => tidyBody(text)));
+  if (n === 1) return tidyBody(body.replace(needle, () => tidyBody(text)));
+  const hits = looseRanges(body, needle);
+  if (hits.length > 1) throw new Error(`old_text staat ${hits.length} keer in het dossier. Neem een langer stuk, zodat het maar op één plek past.`);
+  if (!hits.length) {
+    const near = nearestLine(body, needle);
+    throw new Error(`old_text staat niet in het dossier.${near ? ` De regel die er het meest op lijkt: “${excerpt(near, 300)}”. Neem die over als old_text.` : ' Lees het dossier met dossier_get en neem de tekst over.'}`);
+  }
+  let [start, end] = hits[0];
+  // Markup right around the quoted words (**Budget**) goes with them.
+  while (start > 0 && /[*`]/.test(body[start - 1])) start--;
+  while (end < body.length && /[*`]/.test(body[end])) end++;
+  const put = tidyBody(text);
+  // A "- " before the quoted text at the start of its line: not twice when the new text brings its own, and gone with
+  // the text when that is taken out.
+  const lineStart = body.lastIndexOf('\n', start - 1) + 1;
+  if (/^\s*[-*]\s+$/.test(body.slice(lineStart, start)) && (!put || /^[-*]\s/.test(put))) start = lineStart;
+  return tidyBody(body.slice(0, start) + put + body.slice(end));
+}
+
+/**
+ * Room in a full dossier for something new (owner, 15 nov: what is old makes way): the oldest lines go, the first
+ * lines under the heading with the most text (new lines are added at the end of their part), until the text fits in
+ * `limit`. Never a heading, the first line (what the dossier is about), a line of what is being written (`keep`), or a
+ * line in a part that must stay (`keepPart`, by its heading). The lines that go are the ones writeBody puts in the
+ * dossier's archive. Null when it cannot be made to fit that way.
+ */
+export function makeRoom(body: string, limit: number, o: { keep?: (line: string) => boolean; keepPart?: (heading: string) => boolean } = {}): { body: string; removed: string[] } | null {
+  const lines = body.split('\n');
+  const parts: { heading: string; free: number[]; size: number }[] = [{ heading: '', free: [], size: 0 }];
+  lines.forEach((l, i) => {
+    if (/^#{1,6}\s/.test(l.trim())) return void parts.push({ heading: l.replace(/^#+\s*/, '').trim(), free: [], size: 0 });
+    if (!l.trim() || i === 0 || o.keep?.(l)) return;
+    const p = parts[parts.length - 1];
+    p.free.push(i);
+    p.size += l.length + 1;
+  });
+  const open = parts.filter((p) => p.free.length && !o.keepPart?.(p.heading));
+  const gone = new Set<number>();
+  const removed: string[] = [];
+  let size = body.length;
+  while (size > limit) {
+    const part = open.filter((p) => p.free.length).sort((a, b) => b.size - a.size)[0];
+    if (!part) return null;
+    const i = part.free.shift()!;
+    part.size -= lines[i].length + 1;
+    gone.add(i);
+    removed.push(lines[i].trim());
+    size -= lines[i].length + 1;
+  }
+  return { body: tidyBody(lines.filter((_, i) => !gone.has(i)).join('\n')), removed };
 }
 
 // ---------------------------------------------------------------------------- what a bot reads

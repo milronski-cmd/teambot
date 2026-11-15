@@ -262,7 +262,10 @@ test('deliver the result to a chat app (recorded on the receipt), and routine ch
     const ra = await mk(env, a.id, { name: 'A · cijfers', options: { deliver: { bindingId: 'cb_1', to: 'owner', errors: true }, then: { routineId: b.id, on: 'done', passResult: true } } });
     // B → A would close a loop: refused when it is set up, with the loop named (A-73).
     await assert.rejects(env.t.api('PATCH', `/routines/${b.id}`, { options: { then: { routineId: ra.id, on: 'always' } } }), /Dit maakt een kring: B · rapport → A · cijfers → B · rapport/);
-    await assert.rejects(env.t.api('PATCH', `/routines/${ra.id}`, { options: { then: { routineId: ra.id } } }), /zichzelf/);
+    // Itself is allowed (owner, 15 nov): it repeats while each run does something.
+    const self = await env.t.api('PATCH', `/routines/${b.id}`, { options: { then: { routineId: b.id, on: 'always' } } });
+    assert.deepEqual([self.options.then.routineId, self.options.then.on], [b.id, 'done']);
+    await env.t.api('PATCH', `/routines/${b.id}`, { options: { then: null } });
     // Longer loops too (C → A when A → B → C), also when a bot sets it up through its routine tools (same validation).
     const c = await mk(env, a.id, { name: 'C · archief' });
     await env.t.api('PATCH', `/routines/${b.id}`, { options: { then: { routineId: c.id, on: 'always' } } });

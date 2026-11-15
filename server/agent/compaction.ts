@@ -19,7 +19,7 @@ import { plainError } from './fallback.js';
  *    the summary itself (with the same engine, one answer without tools) and the bot's next turn starts a new session
  *    that gets the summary plus the newest messages (cli-agents/context.ts earlierTranscript).
  * Automatic compaction for a CLI bot happens at the start of its next turn (never alongside a running session), when
- * the engine reported the context at 75% or more of its window after the previous turn.
+ * the engine reported the context at 75% or more of its window (or CLI_CONTEXT_CAP tokens) after the previous turn.
  *
  * The original messages always stay in the database, searchable and exportable; compaction is incremental (previous
  * summary + newly dropped part). Only message text and tool *names* go into a TeamBot summary (never tool output), so
@@ -32,6 +32,11 @@ const SUMMARY_SYSTEM =
 
 /** Share of the context window at which compaction starts by itself. */
 export const AUTO_AT = 0.75;
+/**
+ * A CLI session is compacted from this many tokens too, whatever its window: with a window of a million tokens, 75%
+ * let sessions grow past 800,000 tokens, and every turn reads all of that again (slow, and it eats the usage limits).
+ */
+export const CLI_CONTEXT_CAP = 400_000;
 
 function tokens(m: Message): number {
   let chars = (m.content || '').length;
@@ -81,7 +86,7 @@ function engineOf(ctx: Ctx, agent: Agent): Engine | { error: string } {
 
 /**
  * Is a CLI bot's session in this chat due for automatic compaction? The context the engine reported after its last
- * turn is at 75% or more of its window (and nothing was compacted since). Engines that report no window (some ACP
+ * turn is at 75% or more of its window, or at CLI_CONTEXT_CAP tokens (and nothing was compacted since). Engines that report no window (some ACP
  * agents): TeamBot's estimate of what the session has seen since it started, against the bot's history budget.
  */
 export function cliCompactionDue(ctx: Ctx, agent: Agent, thread: Thread, cfg: ProviderConfig): { due: boolean; percent?: number } {
@@ -93,7 +98,7 @@ export function cliCompactionDue(ctx: Ctx, agent: Agent, thread: Thread, cfg: Pr
   if (c && c.providerId === cfg.id && c.window && c.used > 0) {
     if (c.at <= since) return { due: false };
     const percent = Math.round((c.used / c.window) * 100);
-    return { due: c.used / c.window >= AUTO_AT, percent };
+    return { due: c.used / c.window >= AUTO_AT || c.used >= CLI_CONTEXT_CAP, percent };
   }
   const budget = Number(agent.settings?.historyTokens) || 80_000;
   const upTo = Number(thread.meta?.summaryUpTo) || 0;

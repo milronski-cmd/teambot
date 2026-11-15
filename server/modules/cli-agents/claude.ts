@@ -665,8 +665,11 @@ export async function runClaude(s: RunScope, d: ClaudeRunDeps): Promise<AgentRun
         args,
         cwd,
         // Claude Code stops its own Bash/PowerShell step after 2 minutes, and never lets it run longer than 10: a build
-        // or a test run died there. Ten minutes by default, and the bot may ask up to a day for one command.
-        env: { MCP_TOOL_TIMEOUT: String(24 * 3600 * 1000), BASH_DEFAULT_TIMEOUT_MS: String(10 * 60_000), BASH_MAX_TIMEOUT_MS: String(24 * 3600 * 1000), NO_COLOR: '1', ...(s.opts.ownerMemory ? {} : { CLAUDE_CODE_DISABLE_AUTO_MEMORY: '1' }), ...(noConnectors ? { ENABLE_CLAUDEAI_MCP_SERVERS: 'false' } : {}) },
+        // or a test run died there. Ten minutes by default, and the bot may ask up to a day for one command. A TeamBot
+        // tool that waits for the owner (a form, a yes or no) stays silent for as long as he takes: Claude Code stopped
+        // it after 30 minutes without a sign of life (CLAUDE_CODE_MCP_TOOL_IDLE_TIMEOUT); the bridge also sends one
+        // every minute (bridge.ts).
+        env: { MCP_TOOL_TIMEOUT: String(24 * 3600 * 1000), CLAUDE_CODE_MCP_TOOL_IDLE_TIMEOUT: String(24 * 3600 * 1000), BASH_DEFAULT_TIMEOUT_MS: String(10 * 60_000), BASH_MAX_TIMEOUT_MS: String(24 * 3600 * 1000), NO_COLOR: '1', ...(s.opts.ownerMemory ? {} : { CLAUDE_CODE_DISABLE_AUTO_MEMORY: '1' }), ...(noConnectors ? { ENABLE_CLAUDEAI_MCP_SERVERS: 'false' } : {}) },
         signal: s.signal,
         timeoutMs: s.opts.timeoutMin * 60_000,
         idleMs: s.opts.idleMin * 60_000,

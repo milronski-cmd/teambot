@@ -469,6 +469,7 @@ function RunFields({ d, set, setOpt, routineId, meta }: { d: Draft; set(p: Parti
       <Field label="Daarna starten" hint="Is deze routine klaar, dan start de routine die je hier kiest.">
         <Select value={o.then?.routineId || ''} aria-label="Daarna starten" onChange={(e) => setOpt({ then: e.target.value ? { routineId: e.target.value, on: o.then?.on || 'done', passResult: o.then?.passResult ?? true } : null })}>
           <option value="">Niets</option>
+          {routineId && <option value={routineId}>Deze routine opnieuw, zolang er werk is</option>}
           {routines.map((r) => {
             const loop = loopOf(r.id);
             return (

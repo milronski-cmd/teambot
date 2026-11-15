@@ -1,5 +1,47 @@
 # Changelog
 
+## [4.4.3] — 2026-11-15
+
+Bijwerken zonder opnieuw te installeren, een dashboard, de telefoon mag bijna alles, en het geheugen loopt niet meer vol.
+
+### Bijwerken
+- **Nieuwe versies komen vanzelf.** TeamBot haalt updates uit de GitHub-releases van het project en installeert ze
+  als er niets loopt en je even niet bezig bent; of meteen met "Nu bijwerken" onder Instellingen › Back-ups.
+
+### Nieuw
+- **Dashboard.** De cijfers die je bots voor je bijhouden op één scherm: mail, klantvragen, WhatsApp, omzet, leads.
+  Vraag een bot om iets op het dashboard bij te houden.
+- **De telefoon mag alles behalve koppelen.** Apparaten koppelen en inlogsessies beheren blijft op de computer.
+- **Volledige toegang mag sleutels invullen.** Een bot met volledige toegang zet zelf een API-sleutel of token; de
+  kluis, inlogsessies en sleutels teruglezen blijven dicht.
+- **Kansen** staan als vaste link naast Taken en Automatisch. Na afgerond werk vraagt TeamBot een bot of hij een kans
+  zag.
+
+### Gesprekken
+- Lange antwoorden van collega-bots zijn ingeklapt in het gesprek met de hoofdbot ("Lees alles").
+- Een balk "Werkt nu aan" laat zien dat de bot in een ander gesprek bezig is, met een link erheen.
+- De stopknop staat er alleen als je niets aan het typen bent.
+- Meldingen onder het belletje staan helemaal in beeld en zijn in één keer te wissen.
+- Het menu van een bot in de lijst opent boven de andere bots, zodat vastpinnen werkt.
+
+### Geheugen
+- **Een vol dossier maakt plaats.** De oudste regels gaan naar het archief van het dossier (vindbaar met zoeken) en het
+  nieuwe komt erin; de bot hoort welke regels weggingen. Wat jij zelf zei, gaat nooit vanzelf weg.
+- Een bot die een stuk tekst vervangt, hoeft het niet meer letter voor letter over te nemen: andere aanhalingstekens,
+  spaties of hoofdletters mogen. Klopt het niet, dan krijgt hij de regel die er het meest op lijkt.
+- Technische notities met opdrachten (bouwen, `curl`, PowerShell) en zinnen als "het token staat in de kluis" worden
+  niet meer geweigerd; echte wachtwoorden en ingeplante instructies nog steeds.
+
+### Bots en tools
+- Een TeamBot-tool die op jou wacht (een formulier, een ja of nee) wordt niet meer na 30 minuten afgebroken.
+- Lange gesprekken van een bot worden vanaf 400.000 tokens samengevat, ook bij een groot contextvenster.
+- Een routine van een bot is vanzelf van die bot; een botnaam als agent_id werkt, en "manual" betekent alleen met de
+  hand of via een trigger.
+- **Een routine mag zichzelf opnieuw starten** ("Daarna starten" › "Deze routine opnieuw, zolang er werk is"): hij
+  draait door zolang elke run iets doet, en stopt bij niets meer te doen of een fout.
+- Een webpagina die meteen doorverwijst, leest de browser waar hij uitkomt.
+- Skills uit de marktplaats: tot 1000 bestanden, en een hele repository in één keer.
+
 ## [4.4.0] — 2026-11-14
 
 Een nieuw uiterlijk: rustiger en strakker, in de stijl van Grok Bot en OpenBot. De bot-poppetjes en het logo blijven.

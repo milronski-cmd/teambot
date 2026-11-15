@@ -5,7 +5,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { startTestApp } from './helpers.js';
-import { builtInChannel, channelInput, channelText, feedOptions, installerUrl, parseChannel, publishEntry } from '../desktop/update-channel.js';
+import { builtInChannel, channelInput, channelText, feedOptions, installerUrl, installerUrls, parseChannel, publishEntry } from '../desktop/update-channel.js';
 import { CHECK_EVERY_MS, USER_IDLE_SECONDS, checkDue, installDecision, reasonText, sameReasons } from '../desktop/update-idle.js';
 import { CHAT_RECENT_MS, updateBlockers } from '../server/modules/backups/app-update.js';
 
@@ -43,6 +43,8 @@ test('update channel: what electron-updater gets, and where the installer of a v
   assert.equal(installerUrl(folder, '0.4.3', 'TeamBot-Setup-0.4.3.exe').href, 'https://downloads.voorbeeld.nl/teambot/TeamBot-Setup-0.4.3.exe');
   assert.equal(installerUrl(gh, '0.4.3', 'TeamBot-Setup-0.4.3.exe').href, 'https://github.com/teambot-app/teambot/releases/download/v0.4.3/TeamBot-Setup-0.4.3.exe', 'the asset of release v<version>');
   assert.equal(installerUrl(gh, '0.4.3', 'TeamBot-Setup-0.4.3.exe', { githubHost: '127.0.0.1:4767' }).origin, 'http://127.0.0.1:4767');
+  assert.deepEqual(installerUrls(gh, '0.4.3', 'TeamBot-Setup-0.4.3.exe').map((u) => u.pathname), ['/teambot-app/teambot/releases/download/v0.4.3/TeamBot-Setup-0.4.3.exe', '/teambot-app/teambot/releases/download/teambot-0.4.3/TeamBot-Setup-0.4.3.exe'], 'a release made by hand (teambot-<version>) too');
+  assert.equal(installerUrls(folder, '0.4.3', 'TeamBot-Setup-0.4.3.exe').length, 1);
   assert.deepEqual(publishEntry(folder), { provider: 'generic', url: folder.url });
   assert.deepEqual(publishEntry(gh), { provider: 'github', owner: 'teambot-app', repo: 'teambot', releaseType: 'release' }, 'package.json build.publish for GitHub Releases');
 });
