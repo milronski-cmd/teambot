@@ -10109,7 +10109,7 @@
  "Onbekend providertype": "Tipo di provider sconosciuto",
  "Onbekend providertype: {0}": "Tipo di provider sconosciuto: {0}",
  "Onbekend schematype \"{0}\".": "Tipo di programma sconosciuto \"{0}\".",
- "Onbekend schematype: {0}": "Tipo di schema sconosciuto: {0}",
+ "Onbekend schematype: {0}. Kies kind: none (alleen handmatig of via een trigger), once (at), interval (everyMinutes), weekly (days, times), monthly of cron.": "Tipo di pianificazione sconosciuto: {0}. Scegli kind: none (solo a mano o tramite un trigger), once (at), interval (everyMinutes), weekly (days, times), monthly o cron.",
  "Onbekend script. Scripts van {0}: {1}.": "Script sconosciuto. Script di {0}: {1}.",
  "Onbekend sessieformaat": "Formato della sessione sconosciuto",
  "Onbekend sjabloonformaat": "Formato del template sconosciuto",

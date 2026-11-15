@@ -294,7 +294,7 @@ export function normalizeSchedule(input: any, tz: string, nowMs: number, opts: {
       return { kind: 'cron', expr };
     }
     default:
-      throw new ScheduleError(`Onbekend schematype: ${kind}`);
+      throw new ScheduleError(`Onbekend schematype: ${kind}. Kies kind: none (alleen handmatig of via een trigger), once (at), interval (everyMinutes), weekly (days, times), monthly of cron.`);
   }
 }
 

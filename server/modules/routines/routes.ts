@@ -340,7 +340,10 @@ export function routineRoutes(ctx: Ctx, engine: RoutineEngine) {
     ah(async (req) => {
       const { t, r } = ownTrigger(req, req.params.id as string);
       if (t.kind === 'webhook') {
-        const out = await wrapAsync(() => engine.testWebhook(t, str(req.body?.payload, 200_000)));
+        // A payload given as JSON (a bot through teambot_do) is sent as JSON text; it became "[object Object]" (15 nov).
+        const given = req.body?.payload;
+        const payload = given && typeof given === 'object' ? JSON.stringify(given).slice(0, 200_000) : str(given, 200_000);
+        const out = await wrapAsync(() => engine.testWebhook(t, payload));
         return { status: out.status, result: out.body };
       }
       const out = await engine.poll(t, r);
