@@ -1,6 +1,6 @@
 import type React from 'react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { CheckCircle2, Copy, ExternalLink, Gift, KeyRound, LogIn, Sparkles } from 'lucide-react';
+import { CheckCircle2, Copy, ExternalLink, Gift, KeyRound, LogIn, Sparkles, type LucideIcon } from 'lucide-react';
 import { api } from '../../lib/api';
 import { useApp } from '../../lib/store';
 import { navigate } from '../../lib/router';
@@ -21,6 +21,30 @@ import { useIsPhoneSession } from '../../shell/computerOnly';
  * werkplek and browser; the three questions are optional there ("Aanpassen"). See welcome/FirstBot.tsx.
  */
 export const firstBotFor = (providerId: string) => `/start?ai=${encodeURIComponent(providerId)}`;
+
+// ---------------------------------------------------------------- the head of a way to start
+
+/** The tiles of the three ways to start, each its own colour (TeamBot orange, violet, green), in both themes. */
+const START_TILE = {
+  orange: 'bg-[#ffe8d6] text-[#b4500a] dark:bg-[#3b2616] dark:text-[#ffa25c]',
+  violet: 'bg-[#ece8ff] text-[#5a43d4] dark:bg-[#272043] dark:text-[#b6a8ff]',
+  green: 'bg-[#dff4e8] text-[#13703f] dark:bg-[#14291d] dark:text-[#62d99b]',
+};
+
+/** The head of a way to start: a big coloured picture, the title and one short line under it. */
+function StartHead({ icon: Icon, tile, title, children }: { icon: LucideIcon; tile: keyof typeof START_TILE; title: React.ReactNode; children?: React.ReactNode }) {
+  return (
+    <div className="flex items-start gap-3.5">
+      <span className={cx('flex size-12 shrink-0 items-center justify-center rounded-[15px]', START_TILE[tile])} aria-hidden>
+        <Icon className="size-6 stroke-[1.75]" />
+      </span>
+      <div className="min-w-0 pt-0.5">
+        <h2 className="text-[16px] font-bold leading-snug tracking-tight">{title}</h2>
+        {children && <p className="mt-0.5 text-[13px] leading-snug text-muted">{children}</p>}
+      </div>
+    </div>
+  );
+}
 
 // ---------------------------------------------------------------- "Ik heb Claude of ChatGPT"
 
@@ -206,13 +230,10 @@ function SubscriptionRow({ it, primary, mode, onChanged }: { it: SubscriptionIte
 
 export function SubscriptionCard({ view, err, primaryId, onChanged }: { view: SubscriptionsView | null; err: boolean; primaryId: string | null; onChanged(fresh?: string): Promise<SubscriptionsView | null> }) {
   return (
-    <Card className="p-4" data-testid="start-subscription">
-      <h2 className="flex items-center gap-2 text-[15px] font-bold tracking-tight">
-        <Sparkles className="h-4 w-4 text-muted" aria-hidden /> Ik heb Claude of ChatGPT
-      </h2>
-      <p className="mt-0.5 text-[13px] leading-snug text-muted">
+    <Card className="p-5" data-testid="start-subscription">
+      <StartHead icon={Sparkles} tile="orange" title="Ik heb Claude of ChatGPT">
         Je abonnement werkt ook hier, zonder extra kosten. <MoreInfo>Je logt in bij de maker zelf; TeamBot ziet je wachtwoord nooit.</MoreInfo>
-      </p>
+      </StartHead>
       {!view && !err ? (
         <p className="mt-3 flex items-center gap-2 text-sm text-muted">
           <Spinner /> Even kijken wat er op deze pc staat…
@@ -220,7 +241,7 @@ export function SubscriptionCard({ view, err, primaryId, onChanged }: { view: Su
       ) : !view?.canUse ? (
         <p className="mt-3 text-sm text-muted">Een abonnement gebruiken kan alleen de eigenaar van deze TeamBot. Gebruik een API-sleutel.</p>
       ) : (
-        <ul className="mt-1 divide-y divide-line">
+        <ul className="mt-2 divide-y divide-line">
           {view.items.map((it) => (
             <SubscriptionRow key={it.id} it={it} primary={primaryId === `sub:${it.id}`} mode={view.mode} onChanged={onChanged} />
           ))}
@@ -347,13 +368,11 @@ export function KeyPaste({ kinds, onConnected, autoFocus }: { kinds: ProviderKin
 export function KeyCard({ kinds, connected, primaryId }: { kinds: ProviderKindView[] | null; connected: ProviderView[]; primaryId: string | null }) {
   const page = location.hash;
   return (
-    <Card className="p-4" data-testid="start-key">
-      <h2 className="flex items-center gap-2 text-[15px] font-bold tracking-tight">
-        <KeyRound className="h-4 w-4 text-muted" aria-hidden /> Ik heb een API-sleutel
-      </h2>
-      <p className="mb-2.5 mt-0.5 text-[13px] leading-snug text-muted">
+    <Card className="p-5" data-testid="start-key">
+      <StartHead icon={KeyRound} tile="violet" title="Ik heb een API-sleutel">
         Plak je sleutel; TeamBot herkent de dienst en bewaart hem versleuteld. <MoreInfo>TeamBot test de sleutel eerst gratis: het vraagt alleen de modellenlijst op, nooit een betaald antwoord.</MoreInfo>
-      </p>
+      </StartHead>
+      <div className="h-3.5" />
       {connected.length > 0 && (
         <ul className="mb-2.5 divide-y divide-line rounded-xl border border-line px-3">
           {connected.map((p) => (
@@ -440,11 +459,10 @@ export function FreeCard({ options, primaryId, freeStartPrimary, localMissing, o
   const go = useAsync();
   const hasOpencode = options.some((o) => o.kind === 'opencode');
   return (
-    <Card className="p-4" data-testid="start-free">
-      <h2 className="flex items-center gap-2 text-[15px] font-bold tracking-tight">
-        <Gift className="h-4 w-4 text-muted" aria-hidden /> Gratis beginnen
-      </h2>
-      <p className="mt-0.5 text-[13px] leading-snug text-muted">Zonder account of sleutel.</p>
+    <Card className="p-5" data-testid="start-free">
+      <StartHead icon={Gift} tile="green" title="Gratis beginnen">
+        Zonder account of sleutel.
+      </StartHead>
       <ul className="mt-2 divide-y divide-line">
         {options.map((o) => (
           <li key={o.key} className="flex items-center gap-3 py-2.5">

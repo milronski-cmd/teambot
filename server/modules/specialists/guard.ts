@@ -186,8 +186,10 @@ export function grounded(fact: string, quote: string, source: string): { ok: boo
 // ---------------------------------------------------------------------------- knowledge gaps
 
 const GAP_RES: RegExp[] = [
-  /\b(dat|dit|het) weet ik (helaas |eigenlijk |nu |op dit moment )?niet\b/,
-  /\bik weet (het|dat|dit) (helaas |eigenlijk |nu )?niet\b/,
+  // Only as a statement of its own ("Dat weet ik niet." / "…niet, maar"): "zonder dat weet ik niet wat ik moet doen" and
+  // "ik weet dat niet alle sites …" are not a gap (a specialist's advice became a learning goal that way).
+  /\b(dat|dit|het) weet ik (helaas |eigenlijk |nu |op dit moment )?niet(?=\s*([.,!;:)]|$|(zeker|precies)\b))/,
+  /\bik weet (het|dat|dit) (helaas |eigenlijk |nu )?niet(?=\s*([.,!;:)]|$|(zeker|precies)\b))/,
   /\bweet ik (het )?niet zeker\b|\bik weet (het )?niet zeker\b/,
   /\b(daar|hierover|daarover) heb ik (helaas )?(geen|nog geen|onvoldoende) (informatie|gegevens|kennis|bronnen?)\b/,
   /\bik heb (helaas )?(geen|nog geen) (informatie|gegevens|kennis|bron(nen)?) (over|van|voor|bij|waarin)\b/,

@@ -12,9 +12,9 @@ const ALLOW = new Set(['MPL-2.0', 'MIT', 'MIT-0', 'Apache-2.0', 'BSD-2-Clause', 
 // pdfjs-dist (Apache-2.0): the pdf viewer and its worker are bundled into dist/ui. highlight.js (BSD-3-Clause): code colours.
 // papaparse (MIT): CSV for "Kopieer tabel" under a table in a chat answer.
 // katex (MIT) with its fonts (OFL-1.1, see FONT_NOTICES): formulas in chat answers. @radix-ui/react-dialog (MIT): dialogs.
-const BUNDLED_ASSETS = ['@fontsource-variable/figtree', 'pdfjs-dist', 'highlight.js', 'papaparse', 'katex', '@radix-ui/react-dialog'];
+const BUNDLED_ASSETS = ['@fontsource-variable/inter', 'pdfjs-dist', 'highlight.js', 'papaparse', 'katex', '@radix-ui/react-dialog'];
 // Packages whose code has one license and whose bundled fonts another (the package.json names only the first): the SPDX
-// expression for both, and the font notice. The OFL 1.1 text follows it (taken from the OFL package Figtree ships).
+// expression for both, and the font notice. The OFL 1.1 text follows it (taken from the OFL package Inter ships).
 const FONT_NOTICES = {
   katex: {
     license: 'MIT AND OFL-1.1',

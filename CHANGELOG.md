@@ -1,5 +1,28 @@
 # Changelog
 
+## [4.4.0] — 2026-11-14
+
+Een nieuw uiterlijk: rustiger en strakker, in de stijl van Grok Bot en OpenBot. De bot-poppetjes en het logo blijven.
+
+### Uiterlijk
+- **Nieuwe indeling.** De zijbalk is een vast vlak: bovenin zoeken en "+", daaronder je bots, klein met naam, tijd
+  en één regel; de hoofdbot staat bovenaan. Onderin staan Wacht op jou, Taken, Marktplaats en Instellingen, en het
+  verbruik van je abonnementen. De zijbalk kun je inklappen tot alleen de gezichten.
+- **Chat.** Jij en de bot praten in ballonnen; de tijd en het voorlezen verschijnen als je een bericht aanwijst. De
+  kop toont alleen het gezicht en de naam, en wat de bot doet als hij bezig is.
+- **Paneel naast de chat.** Op een breed scherm staat rechts het paneel van de bot: zijn computer, zijn routines en
+  de bestanden van het gesprek.
+- **Island.** Wie werkt, wat op je wacht en wie net klaar is, staat in een zwarte pil bovenaan je scherm, boven alle
+  programma's. Meldingen in de app verschijnen in dezelfde pil.
+- **Kleuren en letter.** Neutraal grijs in licht en donker, ronder, minder lijnen, en de letter Inter.
+
+### Bot-instellingen
+- **Slaan vanzelf op.** Er is geen knop Opslaan meer: een moment na een wijziging staat het opgeslagen. Weggaan
+  bewaart eerst. Een map of bron die je nog aan het typen bent, wacht tot je op Toevoegen drukt of weggaat.
+
+### Overig
+- Versie 4.4.0. Skills en pakketten werken tot versie 5 (de grens was 3.0.0).
+
 ## [2.2.0] — 2026-11-13
 
 Het team wacht niet meer op jou, en een bot werkt door terwijl een vraag bij je openstaat.

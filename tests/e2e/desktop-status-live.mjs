@@ -86,16 +86,16 @@ try {
 
   // 1. Status window via the same IPC as Settings › Limieten.
   const set = await main.evaluate(() => window.teambotDesktop.statusWindow.set('always'));
-  check('statusvenster aanzetten via IPC', set?.mode === 'always');
+  check('eiland aanzetten via IPC', set?.mode === 'always');
   const island = await until(async () => app.windows().find((w) => w.url().includes('#/m/usage/eiland')));
-  check('zwevend statusvenster geopend', !!island);
+  check('eiland geopend', !!island);
   const props = await app.evaluate(({ BrowserWindow }) => {
     const w = BrowserWindow.getAllWindows().find((x) => x.webContents.getURL().includes('#/m/usage/eiland'));
     return w ? { onTop: w.isAlwaysOnTop(), visible: w.isVisible(), taskbar: false, bounds: w.getBounds() } : null;
   });
-  check('statusvenster staat altijd bovenop en is zichtbaar', props?.onTop && props?.visible, JSON.stringify(props?.bounds));
+  check('eiland staat altijd bovenop en is zichtbaar', props?.onTop && props?.visible, JSON.stringify(props?.bounds));
   await island.waitForSelector('text=Alles rustig', { timeout: 10_000 });
-  check('statusvenster toont "Alles rustig" zonder werk', true);
+  check('eiland toont "Alles rustig" zonder werk', true);
 
   // 2. A bot asks permission while TeamBot is in the background → notification with buttons.
   await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().find((w) => !w.webContents.getURL().includes('eiland'))?.hide());
@@ -107,7 +107,7 @@ try {
   check('Windows-melding bij een goedkeuring', !!note, note ? `"${note.title}"` : 'geen melding');
   check('melding heeft knoppen Goedkeuren / Weigeren / Bekijken', JSON.stringify(note?.actions) === JSON.stringify(['Goedkeuren', 'Weigeren', 'Bekijken']), JSON.stringify(note?.actions));
   const listed = await until(() => island.locator('text=Wacht op jou').count());
-  check('statusvenster toont wat op je wacht', !!listed);
+  check('eiland toont wat op je wacht', !!listed);
 
   // 3. "Weigeren" on the notification is the owner's decision and reaches the bot.
   await app.evaluate(() => {

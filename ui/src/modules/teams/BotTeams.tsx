@@ -1,5 +1,4 @@
 import { useEffect, useMemo, useState } from 'react';
-import { CircleAlert } from 'lucide-react';
 import { api, on } from '../../lib/api';
 import { useEditorSection } from '../../lib/editorSave';
 import { t } from '../../lib/i18n';
@@ -95,11 +94,10 @@ export function BotTeamsSection({ agent, onChange }: { agent: Agent; onChange(pa
 
   if (err && !view) return <p className="text-sm text-danger">{err}</p>;
   if (!view) return <Spinner />;
-  const homeTeam = teams.find((x) => x.id === home);
   const name = agent.name || 'de bot';
   return (
     <div className="space-y-4" data-testid="bot-teams">
-      <Field label="Thuisteam" hint="Hier werkt de bot, met de map en sleutels van dit team.">
+      <Field label="Thuisteam" hint="Hier werkt de bot, met de map en sleutels van dit team. Kies je een ander team, dan verhuist de bot meteen; was hij teamleider van zijn huidige team, dan niet meer.">
         <Select value={home} onChange={(e) => setHomeDraft(e.target.value)}>
           {teams.map((x) => (
             <option key={x.id} value={x.id}>
@@ -108,12 +106,6 @@ export function BotTeamsSection({ agent, onChange }: { agent: Agent; onChange(pa
           ))}
         </Select>
       </Field>
-      {moved && homeTeam && (
-        <p className="flex items-start gap-1.5 text-xs leading-relaxed text-warn" role="status">
-          <CircleAlert className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden />
-          <span>{t('Bij opslaan verhuist {0} naar {1}. Was hij teamleider van zijn huidige team, dan niet meer.', name, homeTeam.name)}</span>
-        </p>
-      )}
       <fieldset className="space-y-2">
         <legend className="text-[13px] font-semibold">Toegang tot andere teams</legend>
         <ul className="divide-y divide-line rounded-xl border border-line">

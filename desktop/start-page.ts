@@ -18,7 +18,7 @@ export interface StartPage {
 }
 
 /** The colours of the interface's canvas (ui/src/styles.css), so the window does not flash when the interface loads. */
-export const CANVAS = { light: { bg: '#f4f3f6', fg: '#17161c', muted: '#5d5c69', track: '#e6e5ea' }, dark: { bg: '#0d0d10', fg: '#ededf2', muted: '#9b9ba8', track: '#26262c' } } as const;
+export const CANVAS = { light: { bg: '#f5f5f6', fg: '#141416', muted: '#5f5f67', track: '#e7e7ea' }, dark: { bg: '#131313', fg: '#f2f2f2', muted: '#a3a3a3', track: '#2c2c2c' } } as const;
 
 const esc = (s: string) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 const RTL = new Set(['ar', 'he', 'fa', 'ur']);

@@ -333,9 +333,10 @@ try {
   await go(d, `#/t/${chatMila.id}`);
   if (!(await d.getByRole('button', { name: 'Zijpaneel sluiten' }).count())) await d.getByRole('button', { name: 'Zijpaneel' }).click();
   await d.waitForTimeout(300);
-  // One purpose, so no tabs: the files of this conversation.
+  // A bot's panel, as in Grok Bot: no tabs, its computer, its routines and the files of this conversation.
   const inspSimple = await d.getByRole('tab').allInnerTexts();
-  check('zijpaneel (eenvoudig): alleen de bestanden van dit gesprek, geen Activiteit, Team, CLI of Details', (await d.getByRole('heading', { name: 'Bestanden van dit gesprek' }).count()) === 1 && !['Activiteit', 'Team', 'CLI', 'Details'].some((t) => inspSimple.includes(t)), inspSimple.join(', '));
+  const panelParts = await d.locator('aside section h3').allInnerTexts();
+  check('zijpaneel (eenvoudig): de computer, routines en bestanden van de bot, geen Activiteit, Team, CLI of Details', ['Computer', 'Routines', 'Bestanden'].every((x) => panelParts.includes(x)) && !['Activiteit', 'Team', 'CLI', 'Details'].some((t) => inspSimple.includes(t)), `${panelParts.join(', ')} | ${inspSimple.join(', ')}`);
   await go(d, '#/settings');
   check('Instellingen (eenvoudig): geen Netwerk en proxy', !(await settingsNav.getByRole('link', { name: 'Netwerk en proxy' }).count()));
   await settingsNav.getByLabel('Zoek een instelling').fill('proxy');
@@ -394,7 +395,11 @@ try {
   await go(d, `#/t/${chatMila.id}`, 300);
   const switcher = side.getByTestId('team-switcher').getByRole('button').first();
   const appeared = await until(async () => (await switcher.count()) === 1);
-  check('tweede team: de teamkiezer verschijnt vanzelf, bovenaan de zijbalk', appeared && (await d.evaluate(() => !!document.querySelector('nav[aria-label="Hoofdmenu"]')?.firstElementChild?.querySelector('[data-testid="team-switcher"]'))));
+  check('tweede team: de teamkiezer verschijnt vanzelf, bovenaan de zijbalk', appeared && (await d.evaluate(() => {
+      // The top of the list of bots (the panel next to the rail).
+      const top = document.querySelector('nav[aria-label="Hoofdmenu"] [role="region"]')?.firstElementChild;
+      return !!top && (top.matches('[data-testid="team-switcher"]') || !!top.querySelector('[data-testid="team-switcher"]'));
+    })));
   check('teamkiezer: begint op Alle teams (niets verborgen)', (await switcher.innerText()).includes('Alle teams') && (await d.getByRole('list', { name: 'Bots en groepen' }).innerText()).includes('Noor'));
   // Keyboard: Enter opens with the focus on the current choice, Escape closes and gives the focus back.
   await switcher.focus();
@@ -446,15 +451,13 @@ try {
   // TeamBot's own dropdown (components/Listbox.tsx): open it and click the option (options carry data-value).
   const pick = async (box, value) => (await box.click(), await d.locator(`[role="listbox"] [role="option"][data-value="${value}"]`).click());
   await pick(d.getByRole('combobox', { name: 'Toegang van Noor tot Mijn team' }), 'direct');
-  check('bot-editor: een gewijzigde toegang is "Niet opgeslagen: Teams"', (await d.getByRole('status').filter({ hasText: 'Niet opgeslagen' }).innerText().catch(() => '')).includes('Teams'));
   await shot(d, 'bot-teams');
-  await d.getByRole('button', { name: 'Opslaan', exact: true }).first().click();
-  check('bot-editor: Noor stuurt Mijn team nu aan (opgeslagen)', await until(async () => (await botTeams(noor.id)).teams.find((x) => x.teamId === mine.id)?.reach === 'direct'));
+  // The bot page saves by itself a moment after a change (no button Opslaan).
+  check('bot-editor: Noor stuurt Mijn team nu aan (vanzelf opgeslagen)', await until(async () => (await botTeams(noor.id)).teams.find((x) => x.teamId === mine.id)?.reach === 'direct'));
   await go(d, `#/agents/${sam.id}`, 900);
   await openTeams();
+  check('bot-editor: bij Thuisteam staat wat een ander team kiezen doet', (await d.getByTestId('bot-teams').innerText()).includes('dan verhuist de bot meteen'));
   await pick(d.getByTestId('bot-teams').getByLabel('Thuisteam'), shop.id);
-  check('bot-editor: verhuizen zegt wat er bij opslaan gebeurt', (await d.getByTestId('bot-teams').innerText()).includes('Bij opslaan verhuist Sam naar Webshop'));
-  await d.getByRole('button', { name: 'Opslaan', exact: true }).first().click();
   check('bot-editor: Sam is verhuisd naar Webshop', await until(async () => (await botTeams(sam.id)).homeTeamId === shop.id));
   // A new bot with Alle teams chosen says under the questions which team it lands in, and lets you pick another
   // right there (praktijktest 0.4.4: it said nothing; choosing was only under Meer opties).
@@ -489,7 +492,7 @@ try {
   await mp.getByRole('menuitemradio', { name: /Mijn team/ }).click();
   await mp.waitForTimeout(400);
   const tiles = await mainSide.getByRole('group', { name: 'Vastgezette bots' }).getByRole('link').allInnerTexts();
-  check('hoofdbot: eerste tegel, ook met een ander team gekozen', !!tiles[0]?.includes('Noor') && tiles[0].includes('Hoofdbot') && tiles.some((x) => x.includes('Mila')), tiles.join(' | ').replace(/\n/g, ' '));
+  check('hoofdbot: eerste tegel, ook met een ander team gekozen', !!tiles[0]?.includes('Noor') && tiles.some((x) => x.includes('Mila')), tiles.join(' | ').replace(/\n/g, ' '));
   await shot(mp, 'hoofdbot');
   await mainCtx.close();
 

@@ -280,7 +280,7 @@ try {
   if (sorted.join(',') !== after2.join(',')) fail(`volgorde: niet bewaard (${sorted.join(',')} vs ${after2.join(',')})`);
   if (app.ctx.store.settings(owner.id).ui?.botOrder !== 'manual') fail('volgorde: lijst niet op "Eigen volgorde" gezet');
   // The main bot always stands on top, in "Vastgezet" (above every team); the list under it follows the own order.
-  const pinnedNames = (await page.getByRole('group', { name: 'Vastgezette bots' }).locator('li').allInnerTexts().catch(() => [])).map((t) => t.trim().split('\n')[0]);
+  const pinnedNames = (await page.getByRole('group', { name: 'Vastgezette bots' }).getByRole('link').allInnerTexts().catch(() => [])).map((t) => t.trim().split('\n')[0]);
   const sidebarNames = (await page.getByRole('list', { name: 'Bots en groepen' }).locator('li').allInnerTexts()).map((t) => t.trim().split('\n')[0]);
   const inList = after2.filter((n) => sidebarNames.some((s) => s.startsWith(n)));
   const shownOrder = sidebarNames.map((s) => after2.find((n) => s.startsWith(n))).filter(Boolean);

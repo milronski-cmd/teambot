@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Activity, ArrowUp, Check, ExternalLink, Eye, Globe, Hand, RotateCcw, Square, X } from 'lucide-react';
+import { Activity, AlertCircle, ArrowUp, Check, ExternalLink, Eye, EyeOff, Globe, Hand, RotateCcw, Square, X } from 'lucide-react';
 import { useShallow } from 'zustand/react/shallow';
 import { api, authUrl, on } from '../../lib/api';
 import { previewText, stripRefs } from '../../lib/preview';
@@ -10,7 +10,7 @@ import { t } from '../../lib/i18n';
 import type { Thread } from '../../lib/types';
 import { BotAvatar, LiveBotAvatar } from '../../components/BotFace';
 import { Badge, Button, EmptyState, Input, Page, PageHeader, cx, timeAgo, toast, toastError } from '../../components/ui';
-import { StopAllButton } from '../../shell/Sidebar';
+import { Mark, StopAllButton } from '../../shell/Sidebar';
 import { isUnread, markSeen, onSeen } from '../../shell/unread';
 import { openDock } from '../browser/BrowserDock';
 import { PLACE } from '../../../../shared/places.js';
@@ -19,7 +19,7 @@ import { tText } from '../../lib/format';
 /** What the desktop shell adds for the floating status window (preload.ts). */
 interface DesktopStatusBridge {
   show?(hash?: string): Promise<unknown>;
-  statusWindow?: { get(): Promise<{ mode: StatusMode }>; set(mode: StatusMode): Promise<{ mode: StatusMode }>; hide(): Promise<unknown> };
+  statusWindow?: { get(): Promise<{ mode: StatusMode }>; set(mode: StatusMode): Promise<{ mode: StatusMode }>; hide(): Promise<unknown>; /** The island: catch the mouse (true) or let clicks through to what is underneath (false). */ interactive?(on: boolean): Promise<unknown> };
 }
 export type StatusMode = 'off' | 'auto' | 'always';
 export const desktopBridge = (): DesktopStatusBridge | null => (window as any).teambotDesktop || null;
@@ -469,32 +469,137 @@ export function StatusPage() {
   );
 }
 
-/** #/m/usage/eiland — the floating, always-on-top status window of the desktop app (no app chrome). */
+/** How long "klaar" or "liep vast" stays in the island after a bot's run ends. */
+const DONE_MS = 6000;
+const ISLAND_EASE = 'duration-[340ms] ease-[cubic-bezier(0.23,1,0.32,1)]';
+
+/**
+ * #/m/usage/eiland — the island of the desktop app: a black pill at the top of the screen, above every program, that
+ * says in one line what matters now (a question for you, who works and on what, who just finished). A click opens it
+ * into the whole list (StatusView: answer, approve, stop); clicking elsewhere closes it. Outside the pill the window
+ * lets every click through to what is underneath (the shell's setIgnoreMouseEvents; the pill switches it off while
+ * the mouse is on it).
+ */
 export function FloatingStatus() {
-  const runs = useApp((s) => s.runs.length);
-  const approvals = useApp((s) => s.approvals.length);
+  const runs = useApp(useShallow((s) => s.runs.filter((r) => ['queued', 'running', 'waiting'].includes(r.status))));
+  const approvals = useApp((s) => s.approvals);
+  const live = useLiveSteps();
+  const { runs: doing, at: doingAt } = useDoing();
+  const [open, setOpen] = useState(false);
+  // Each time the shell shows the window again, the island drops in again.
+  const [shown, setShown] = useState(0);
+  const [ended, setEnded] = useState<{ agentId: string; failed: boolean } | null>(null);
+  const bridge = desktopBridge();
   useEffect(() => {
-    document.title = 'TeamBot — nu bezig';
+    document.title = 'TeamBot';
+    document.documentElement.classList.add('tb-island-page');
+    const vis = () => document.visibilityState === 'visible' && setShown((x) => x + 1);
+    const close = () => setOpen(false);
+    const esc = (e: KeyboardEvent) => e.key === 'Escape' && setOpen(false);
+    document.addEventListener('visibilitychange', vis);
+    window.addEventListener('blur', close);
+    window.addEventListener('keydown', esc);
+    const off = on('run.updated', (r: any) => {
+      if (r?.agent_id && (r.status === 'done' || r.status === 'error')) setEnded({ agentId: r.agent_id, failed: r.status === 'error' });
+    });
+    return () => {
+      // Opened in the app itself (a link, the page list), leaving it must give the app its own background back.
+      document.documentElement.classList.remove('tb-island-page');
+      document.removeEventListener('visibilitychange', vis);
+      window.removeEventListener('blur', close);
+      window.removeEventListener('keydown', esc);
+      off();
+    };
   }, []);
+  useEffect(() => {
+    if (!ended) return;
+    const t = setTimeout(() => setEnded(null), DONE_MS);
+    return () => clearTimeout(t);
+  }, [ended]);
+  const interactive = (v: boolean) => bridge?.statusWindow?.interactive?.(v).catch(() => {});
+
+  // The one line, most important first.
+  const name = (id: string | null | undefined) => agentById(id || '')?.name || 'Bot';
+  let state: 'wait' | 'work' | 'done' | 'fail' | 'idle' = 'idle';
+  let faces: { bot: { id: string; name: string; avatar?: string | null }; mood: 'waiting' | 'working' | 'done' | 'error' | 'idle' }[] = [];
+  let line = t('Alles rustig');
+  const face = (id: string, mood: (typeof faces)[number]['mood']) => ({ bot: agentById(id) || { id, name: 'Bot' }, mood });
+  if (approvals.length) {
+    state = 'wait';
+    const a = approvals[0];
+    faces = [...new Set(approvals.map((x) => x.agent_id || ''))].slice(0, 3).map((id) => face(id, 'waiting'));
+    line = approvals.length > 1 ? t('{0, plural, one {# vraag wacht op je} other {# vragen wachten op je}}', approvals.length) : a.kind === 'question' ? t('{0} heeft een vraag', name(a.agent_id)) : t('{0} vraagt toestemming', name(a.agent_id));
+  } else if (runs.length) {
+    state = 'work';
+    faces = [...new Set(runs.map((r) => r.agent_id))].slice(0, 3).map((id) => face(id, 'working'));
+    if (runs.length === 1) {
+      const r = runs[0];
+      const step = live[r.thread_id];
+      const what = r.status === 'queued' ? t('in de wachtrij') : step && step.at > doingAt ? step.text : doing.find((x) => x.id === r.id)?.doing || t('aan het werk');
+      line = `${name(r.agent_id)} · ${what}`;
+    } else line = t('{0, plural, one {# bot aan het werk} other {# bots aan het werk}}', runs.length);
+  } else if (ended) {
+    state = ended.failed ? 'fail' : 'done';
+    faces = [face(ended.agentId, ended.failed ? 'error' : 'done')];
+    line = ended.failed ? t('{0} liep vast', name(ended.agentId)) : t('{0} is klaar', name(ended.agentId));
+  }
+
   return (
-    <div className="flex h-full flex-col bg-canvas">
-      <header className="flex h-10 shrink-0 items-center gap-2 border-b border-line bg-surface ps-3 pe-1" style={{ WebkitAppRegion: 'drag' } as React.CSSProperties}>
-        <span className={cx('h-2 w-2 shrink-0 rounded-full', approvals ? 'bg-warn-strong' : runs ? 'bg-ok tb-pulse' : 'bg-line-strong')} aria-hidden />
-        <h1 className="min-w-0 flex-1 truncate text-[13px] font-bold tracking-tight">
-          {approvals === 1 ? '1 wacht op jou' : approvals ? `${approvals} wachten op jou` : runs === 1 ? '1 bot aan het werk' : runs ? `${runs} bots aan het werk` : 'TeamBot'}
-        </h1>
-        <div className="flex items-center" style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}>
-          <Button size="icon" variant="ghost" aria-label="TeamBot openen" title="TeamBot openen" onClick={() => desktopBridge()?.show?.('#/m/usage/status')}>
-            <ExternalLink className="h-3.5 w-3.5" />
-          </Button>
-          <Button size="icon" variant="ghost" aria-label="Statusvenster verbergen" title={t('Verbergen (aanzetten via het systeemvak of {0})', t(PLACE.limits))} onClick={() => desktopBridge()?.statusWindow?.hide()}>
-            <X className="h-4 w-4" />
-          </Button>
+    <div className="flex h-full items-start justify-center">
+      <div
+        key={shown}
+        data-testid="island"
+        data-state={state}
+        onMouseEnter={() => interactive(true)}
+        onMouseLeave={() => interactive(false)}
+        className={cx('tb-island dark flex max-h-full flex-col overflow-hidden rounded-t-none transition-[width,border-radius]', ISLAND_EASE, open ? 'w-[420px] rounded-b-[28px]' : cx('rounded-b-[20px]', state === 'idle' ? 'w-[190px]' : 'w-[300px]'))}
+      >
+        <button type="button" onClick={() => setOpen(!open)} aria-expanded={open} aria-label={open ? t('Eiland sluiten') : t('Eiland openen: {0}', line)} className="flex h-[38px] w-full shrink-0 items-center gap-2.5 px-3.5 text-start">
+          {faces.length ? (
+            <span className="flex shrink-0 items-center">
+              {faces.map((f, i) => (
+                <span key={f.bot.id} className={cx('rounded-full', i > 0 && '-ms-2 ring-2 ring-[#0b0b0d]')}>
+                  <BotAvatar bot={f.bot} mood={f.mood} size={22} />
+                </span>
+              ))}
+            </span>
+          ) : (
+            <Mark size={20} />
+          )}
+          <span key={line} className={cx('tb-in min-w-0 flex-1 truncate text-[13px] font-semibold', state === 'wait' ? 'text-[#ffc24a]' : state === 'fail' ? 'text-[#ff8a8a]' : 'text-white')}>
+            {line}
+          </span>
+          {state === 'wait' ? (
+            <span className="flex h-[18px] min-w-[18px] shrink-0 items-center justify-center rounded-full bg-[#ffc24a] px-1 text-[11px] font-bold tabular-nums text-[#1a1405]">{approvals.length}</span>
+          ) : state === 'work' ? (
+            <span className="tb-dots shrink-0 text-white/70" aria-hidden>
+              <i />
+              <i />
+              <i />
+            </span>
+          ) : state === 'done' ? (
+            <Check className="h-4 w-4 shrink-0 text-[#4fd18b]" aria-hidden />
+          ) : state === 'fail' ? (
+            <AlertCircle className="h-4 w-4 shrink-0 text-[#ff8a8a]" aria-hidden />
+          ) : null}
+        </button>
+        {/* Open: the whole list grows out of the pill. */}
+        <div className={cx('grid transition-[grid-template-rows]', ISLAND_EASE, open ? 'grid-rows-[1fr]' : 'grid-rows-[0fr]')}>
+          <div className="min-h-0 overflow-hidden">
+            <div className="scroll-thin max-h-[500px] overflow-y-auto border-t border-white/10 text-fg">
+              <StatusView floating />
+              <div className="flex items-center justify-end gap-1.5 px-2.5 pb-2.5">
+                <Button size="sm" variant="ghost" icon={<EyeOff className="h-3.5 w-3.5" />} title={t('Komt terug zodra er iets nieuws is (uitzetten: systeemvak of {0})', t(PLACE.limits))} onClick={() => bridge?.statusWindow?.hide()}>
+                  Verbergen
+                </Button>
+                <Button size="sm" icon={<ExternalLink className="h-3.5 w-3.5" />} onClick={() => (setOpen(false), bridge?.show?.('#/m/usage/status'))}>
+                  TeamBot openen
+                </Button>
+              </div>
+            </div>
+          </div>
         </div>
-      </header>
-      <main className="scroll-thin min-h-0 flex-1 overflow-y-auto">
-        <StatusView floating />
-      </main>
+      </div>
     </div>
   );
 }

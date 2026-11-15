@@ -265,7 +265,7 @@ test('what a bot must know about a part comes with the part: not in every step, 
     assert.equal(out[2].parts.toolResult!.isError, false, out[2].content);
     // One tool of a part used and the rest of the part is known: the fields of the other team database tools come
     // with the first use, so the bot needs no search step per tool.
-    assert.match(out[2].content, /Bij dit onderdeel horen ook \(gebruik ze met tools_call\):\n\n### team_query\n[\s\S]*velden: \{[\s\S]*### team_execute\n/);
+    assert.match(out[2].content, /Bij dit onderdeel horen ook \(alleen met tools_call, niet rechtstreeks\):\n\n### team_query\n[\s\S]*velden: \{[\s\S]*### team_execute\n/);
     assert.doesNotMatch(out[2].content, /### team_tables\n/, 'not the tool it just used');
 
     // Used without looking it up first (a name from its instructions or an earlier run): the guide comes with the result.

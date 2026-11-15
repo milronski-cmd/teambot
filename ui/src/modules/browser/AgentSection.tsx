@@ -93,7 +93,7 @@ function Inner({ agent, onChange }: { agent: Agent; onChange(patch: Partial<Agen
     const allApps = !!stored.host_options?.allApps;
     return stableJson(payloadOf(draft, texts, hostOn, allApps)) !== stableJson(payloadOf(stored, textsOf(stored), hostOn, allApps));
   };
-  // The editor's main "Opslaan" also saves this section; leaving with changes here warns first.
+  // The editor saves this section by itself with the rest of the bot; leaving with changes here saves first.
   const editor = useEditorSection('browser:computer', { label: 'Computer & bestanden', dirty: isDirty, save: () => persist() });
 
   useEffect(() => {
@@ -396,15 +396,7 @@ function Inner({ agent, onChange }: { agent: Agent; onChange(patch: Partial<Agen
         </div>
       )}
 
-      {cloudPending ? (
-        <p className="text-xs text-muted">Opslaan is hier niet nodig: na het aanmaken van de VM zet TeamBot de bot er zelf op.</p>
-      ) : (
-        isDirty() && (
-          <p className="rounded-lg bg-warn-soft px-3 py-2 text-xs font-medium text-warn" role="status">
-            Nog niet opgeslagen. Klik op Opslaan om deze computerinstellingen te bewaren.
-          </p>
-        )
-      )}
+      {cloudPending && <p className="text-xs text-muted">Opslaan is hier niet nodig: na het aanmaken van de VM zet TeamBot de bot er zelf op.</p>}
 
       <Modal
         open={optIn}

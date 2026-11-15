@@ -165,7 +165,8 @@ export function skillRoutes(d: Deps) {
     ah(async (req) => {
       const u = user(req);
       const b = req.body || {};
-      const kind = String(b.kind || '');
+      // Without a kind it follows from what is given: a bot through teambot_do sends just {path} or {url}.
+      const kind = String(b.kind || (b.text ? 'paste' : b.files ? 'files' : b.url ? 'url' : b.path ? 'path' : ''));
       if (kind === 'paste') {
         let text = str(b.text, 500_000);
         if (!text.trim()) throw bad('Plak de inhoud van een SKILL.md of schrijf instructies.');
@@ -200,7 +201,7 @@ export function skillRoutes(d: Deps) {
         requireRole(req, 'owner');
         return importer.view(u.id, importer.stageDiscover(u.id), pl(req));
       }
-      throw bad('Onbekende importsoort');
+      throw bad(`Onbekende importsoort "${kind}". Geef kind: paste (met text), files, url, path (een map op deze computer) of discover.`);
     }),
   );
 

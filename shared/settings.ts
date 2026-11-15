@@ -284,7 +284,7 @@ export const SETTINGS = settings({
     choices: [70, 80, 90, 95].map((n) => ({ value: n, label: `${n}%` })),
   },
   'usage.statusWindow': {
-    title: 'Zwevend statusvenster',
+    title: 'Eiland bovenaan het scherm',
     on: 'usage/',
     call: null,
     choices: [

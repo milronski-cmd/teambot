@@ -51,7 +51,7 @@ struct Pairing: Codable, Equatable, Sendable {
     }
 
     /// Addresses to try, best first: the one that worked last, https ones, the paired one, then the rest. Never the
-    /// TeamBot connection's loopback proxy: the app tries that one itself, last (AppModel.probe).
+    /// TeamBot connection's loopback proxy: the app dials that one itself, at the same time (AppModel.probe).
     var candidates: [URL] {
         var out: [URL] = []
         var seen = Set<String>()

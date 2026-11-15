@@ -253,8 +253,8 @@ Bij *Instellingen › Uitgevers en beleid* (desktop en server) kiest de eigenaar
 ## Het voorbeeld `examples/hello-skill`
 
 Een kleine skill, ondertekend met een **wegwerpsleutel die na het ondertekenen is weggegooid** (uitgever
-`example.invalid`, "Voorbeelduitgever (alleen voorbeeld, niet vertrouwen)", vingerafdruk `13c5 04de a333 9388 16f9 80cc
-aeed 06d9`). TeamBot toont het als "Ondertekend, onbekende uitgever". Voeg deze sleutel nooit toe aan je vertrouwenslijst:
+`example.invalid`, "Voorbeelduitgever (alleen voorbeeld, niet vertrouwen)", vingerafdruk `5a8b ac03 2874 4646 7f55 2df4
+a54e 85e1`). TeamBot toont het als "Ondertekend, onbekende uitgever". Voeg deze sleutel nooit toe aan je vertrouwenslijst:
 er bestaat geen privésleutel meer, dus er komt ook nooit een geldige update. Wil je het voorbeeld zelf ondertekenen:
 
 ```bash

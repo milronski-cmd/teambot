@@ -31,22 +31,41 @@ struct RootView: View {
     }
 }
 
+/// While the app looks for the pc (at launch and right after pairing). At home the pc answers within a fraction of a
+/// second and the web app is there before anything is said; "Verbinden met je pc…" appears only when no address has
+/// answered after a short grace period, and a problem screen only when nothing answers at all (AppModel.launch).
 struct CheckingView: View {
     @EnvironmentObject private var model: AppModel
+    /// The grace period is over and the pc has not answered yet.
+    @State private var slow = false
+
+    /// About 2 seconds: longer than a check at home takes, short enough that waiting never feels unexplained.
+    static let grace: UInt64 = 2_000_000_000
 
     var body: some View {
         VStack(spacing: Theme.gap) {
             BotFace()
-            ProgressView()
-            Text("Verbinden met je pc…").foregroundStyle(Theme.muted)
+            // Kept in the layout while hidden, so the bot does not jump when the words appear.
+            VStack(spacing: Theme.gap) {
+                ProgressView()
+                Text("Verbinden met je pc…").foregroundStyle(Theme.muted)
+            }
+            .opacity(slow ? 1 : 0)
+            .accessibilityHidden(!slow)
         }
         .padding(Theme.gapLarge)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .tbCanvas()
         .accessibilityElement(children: .combine)
-        // Paired and agreed before: straight to the conversations, the check runs behind them. Otherwise the web app
-        // waits until the link is checked and consent is known.
-        .task { await model.launch() }
+        .task {
+            await model.launch()
+            do {
+                try await Task.sleep(nanoseconds: Self.grace)
+                withAnimation { slow = true }
+            } catch {
+                // The pc answered (this screen is gone).
+            }
+        }
     }
 }
 

@@ -109,7 +109,7 @@ export function ModelSwitcher({ agent: given, busy }: { agent: Agent; busy: bool
         aria-label={`${text.ai ? `${text.ai} · ` : ''}${auto ? translate(model) : model} — ${translate('Model wijzigen')}`}
         onClick={() => setOpen(!open)}
       >
-        <span className="flex h-7 min-w-0 items-center gap-0.5 rounded-full border border-line ps-2 pe-1 text-[12px] font-medium text-muted transition-colors group-hover:bg-surface-2 group-hover:text-fg group-aria-expanded:bg-surface-2 group-aria-expanded:text-fg @[620px]:gap-1 @[620px]:ps-2.5 @[620px]:pe-1.5 @[620px]:text-[12.5px]">
+        <span className="flex h-7 min-w-0 items-center gap-0.5 rounded-full ps-2 pe-1 text-[12px] font-medium text-muted transition-colors group-hover:bg-surface-2 group-hover:text-fg group-aria-expanded:bg-surface-2 group-aria-expanded:text-fg @[620px]:gap-1 @[620px]:ps-2.5 @[620px]:pe-1.5 @[620px]:text-[12.5px]">
           <span className="min-w-0 truncate">
             {text.ai && (
               <span className="hidden @[620px]:inline" translate="no">

@@ -95,7 +95,7 @@ const errors = [];
 const ids = {};
 
 // ------------------------------------------------------------------------------------------------ helpers
-/** Go to a page; leaving the bot editor with changes asks first ("Wijzigingen opslaan?"): then "Niet opslaan". */
+/** Go to a page. The bot editor saves before it is left; only when that fails it asks: then "Niet opslaan". */
 async function goTo(page, hash, wait = 900) {
   await go(page, hash, wait);
   const ask = page.getByRole('dialog', { name: 'Wijzigingen opslaan?' }).or(page.getByRole('alertdialog', { name: 'Wijzigingen opslaan?' }));
@@ -323,8 +323,7 @@ try {
     const ed = await botPageText(page);
     check('2.1', 'bot-editor: gezicht, naam, rol, instructies, taal, antwoordstijl, engine, model, toegang', ['Gezicht', 'Naam', 'Rol', 'Instructies', 'Taal van de antwoorden', 'Antwoordstijl', 'AI en model', 'Model', 'Wat mag de bot?'].every((x) => ed.includes(x)));
     await page.getByLabel('Rol', { exact: true }).fill('Winkelhulp');
-    await page.getByRole('button', { name: 'Opslaan', exact: true }).first().click();
-    check('2.1', 'bewerken en opslaan werkt (nieuwe rol bewaard)', await until(() => tb.bot('Ada').role === 'Winkelhulp', 5000));
+    check('2.1', 'bewerken werkt en slaat vanzelf op (nieuwe rol bewaard)', await until(() => tb.bot('Ada').role === 'Winkelhulp', 5000));
     // The face: the face editor with parts and moods; the style Glad/Vilt in Algemeen.
     await page.getByRole('button', { name: 'Gezicht', exact: true }).click();
     await page.waitForTimeout(400);
@@ -343,8 +342,7 @@ try {
       await page.waitForTimeout(200);
     }
     check('2.4', 'reserve-editor: vijf plekken (na vier gekozen reserves staat de vijfde klaar)', (await page.getByLabel('Als deze AI op is, ga verder op', { exact: true }).count()) === 1 && (await page.getByLabel('En daarna op', { exact: true }).count()) === 4);
-    await page.getByRole('button', { name: 'Opslaan', exact: true }).first().click();
-    await page.waitForTimeout(800);
+    await until(() => (tb.bot('Reservetest').settings?.fallbacks || []).length === 4, 5000);
     const fb = tb.bot('Reservetest').settings?.fallbacks || [];
     check('2.4', 'vier reserves gekozen in de editor, alle vier op volgorde bewaard (was: afgekapt op drie)', fb.length === 4 && fb[0].provider_id === mockId(), `${fb.length} reserves`);
     // A limit on Claude Code: the next engine takes over, said in the chat, the reserve in the header.
@@ -364,8 +362,6 @@ try {
     await page.getByLabel('Map toevoegen', { exact: true }).fill(extra);
     await pick(page, page.getByLabel('Rechten voor de nieuwe map'), 'ro');
     await page.locator('#inhoud').getByRole('button', { name: 'Map toevoegen', exact: true }).click();
-    await page.waitForTimeout(400);
-    await page.getByRole('button', { name: 'Opslaan', exact: true }).first().click();
     const folders = await until(() => tb.bot('Ada').settings?.folders?.find((f) => f.path === extra), 5000);
     check('2.5', 'werkmap per bot plus een extra map (alleen lezen) uit de bot-editor', folders?.mode === 'ro', JSON.stringify(tb.bot('Ada').settings?.folders));
     await tb.api('PATCH', `/agents/${ids.ada}`, { access_mode: 'auto', tool_groups: [...new Set([...(tb.bot('Ada').tool_groups || []), 'files', 'shell', 'team', 'routines', 'skills', 'memory', 'web'])] });
@@ -633,7 +629,6 @@ try {
     check('5.1', 'vijf niveaus: Alleen chat, Alleen lezen, Vraagt toestemming, Automatisch, Volledige toegang', ['Alleen chat', 'Alleen lezen', 'Vraagt toestemming', 'Automatisch', 'Volledige toegang'].every((x) => lv.includes(x)), radios.join(','));
     await pick(page, access, 'full');
     await confirmDialog(page, 'Doorgaan');
-    await page.getByRole('button', { name: 'Opslaan', exact: true }).first().click();
     check('5.1', 'Volledige toegang kiezen (met uitleg vooraf), alleen door de eigenaar', await until(() => tb.bot('Ada').access_mode === 'full', 5000));
     // In full access a delete in the own folder runs without a card; it lands in the trash.
     const ws = tb.bot('Ada').workspace;
@@ -1028,7 +1023,7 @@ try {
   await part('15', 'meldingen: niveaus per bot, geluid, zwevend statusvenster, telefoon', async () => {
     ai.clear(); // nothing scripted for one part leaks into the next
     await shows(page, '15.1', 'meldingen per bot (alles, alleen belangrijk, niets) en geluid', '#/settings/notifications-meldingen', ['Geluid bij een melding', 'Alles', 'Alleen belangrijk', 'Niets']);
-    check('15.2', 'zwevend statusvenster (desktop-app; bewijs: tests/e2e/status-check.mjs in echte Electron)', fs.existsSync(path.join(root, 'desktop', 'status.ts')) && /Zwevend statusvenster/.test(fs.readFileSync(path.join(root, 'desktop', 'main.ts'), 'utf8')));
+    check('15.2', 'zwevend statusvenster (desktop-app; bewijs: tests/e2e/status-check.mjs in echte Electron)', fs.existsSync(path.join(root, 'desktop', 'status.ts')) && /Eiland bovenaan het scherm/.test(fs.readFileSync(path.join(root, 'desktop', 'main.ts'), 'utf8')));
     check('15.3', 'telefoon: pushmeldingen, zie 13.3', true);
   });
 

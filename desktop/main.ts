@@ -481,13 +481,25 @@ function trayWithDot(): Electron.NativeImage | null {
 /** Started at login: only the tray, no window. */
 const LOGIN_ARGS = ['--hidden'];
 
+/** Installed by the installer (its uninstaller sits next to TeamBot.exe), not an unpacked build folder. */
+function installedOnWindows(): boolean {
+  try {
+    return fs.readdirSync(path.dirname(process.execPath)).some((f) => /^Uninstall .+\.exe$/i.test(f));
+  } catch {
+    return false;
+  }
+}
+
 /**
  * "Het werkt gewoon": the installed TeamBot starts with the computer from its first run on (once; shell-state
  * `loginItemAt`), so bots, routines and the phone are back after a restart or a crash of the pc. Switching it off in
- * the tray menu stays off. Not for a development run (that would register electron.exe).
+ * the tray menu stays off. Not for a development run (that would register electron.exe), and on Windows not for an
+ * unpacked build that was never installed (release\win-unpacked, which the e2e tests start): the Run entry is shared by
+ * name, so such a run would point the installed TeamBot's start at login to the build folder.
  */
 function startAtLoginByDefault() {
   if (!app.isPackaged || process.platform === 'linux') return;
+  if (process.platform === 'win32' && !installedOnWindows()) return;
   const dir = app.getPath('userData');
   if (readShellState(dir).loginItemAt) return;
   try {
@@ -524,7 +536,7 @@ function buildTray() {
         { label: badge?.state.waiting ? L('Wacht op jou ({0})', badge.state.waiting) : L('Wacht op jou'), click: () => show('#/inbox') },
         { label: L('Gebruik en limieten'), click: () => show('#/settings/usage-limits') },
         {
-          label: L('Zwevend statusvenster'),
+          label: L('Eiland bovenaan het scherm'),
           type: 'checkbox',
           checked: (status?.mode() || 'off') !== 'off',
           click: (item) => status?.setMode(item.checked ? 'auto' : 'off'),
@@ -719,6 +731,11 @@ ipcMain.handle('teambot:status:set', (e, mode: string) => {
 ipcMain.handle('teambot:status:hide', (e) => {
   fromApp(e);
   status?.hide();
+  return true;
+});
+ipcMain.handle('teambot:status:interactive', (e, on: unknown) => {
+  fromApp(e);
+  status?.interactive(on === true);
   return true;
 });
 /** The main window's count of what waits for the owner (unread chats + approvals); fire-and-forget, debounced there. */
@@ -961,7 +978,7 @@ function startIndicators() {
   // remote desktop from the phone: the bar with "Stop" while anyone watches; without it the server refuses sessions
   remoteIndicator = new RemoteIndicator(() => handle?.ctx.services.remoteDesktop || null, ownerLang, () => refreshTray(), L);
   remoteIndicator.start();
-  // Windows notifications with buttons + the optional floating status window.
+  // Windows notifications with buttons + the island at the top of the screen.
   status = new DesktopStatus({
     handle: () => handle,
     baseUrl: () => baseUrl,

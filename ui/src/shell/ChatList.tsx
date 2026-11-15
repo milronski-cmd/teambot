@@ -158,7 +158,6 @@ function BotRow({ agent, thread, active, size, onNavigate }: { agent: Agent; thr
   useSyncExternalStore(onDictionary, dictionaryLoaded);
   const mood = useAgentMood(agent);
   const limitUntil = useLimitUntil(agent.id);
-  const main = useMainBotId() === agent.id;
   const { approvals, firstApproval, live } = useApp(
     useShallow((s) => {
       const mine = s.approvals.filter((a) => a.agent_id === agent.id);
@@ -213,55 +212,57 @@ function BotRow({ agent, thread, active, size, onNavigate }: { agent: Agent; thr
       text
     );
   const href = thread ? `#/t/${thread.id}` : `#/a/${agent.id}`;
-  const signal = <Signal state={dotState(mood)} approvals={approvals} unread={unread} problem={mood === 'error' || mood === 'limit'} />;
+  // The sidebar shows unread as a bolder name only (no dot); the phone list keeps its dot.
+  const signal = <Signal state={dotState(mood)} approvals={approvals} unread={unread && size !== 'desk'} problem={mood === 'error' || mood === 'limit'} />;
   const whose = agent.shared_from ? <Words className="shrink-0 truncate text-xs text-muted" text="van {0}" values={[agent.shared_from.name]} /> : agent.settings?.shared === true ? <span className="shrink-0 truncate text-xs text-muted">{t('gedeeld met het team')}</span> : null;
-  if (size === 'desk') {
-    // The sidebar: one line per bot (40 px): a face, the name, and at the end one signal. What the bot last said
-    // or does now is one hover away (the row's tooltip); the row's own menu shows on hover or keyboard focus.
-    const own = !agent.shared_from;
-    return (
-      // The main bot is the one you talk to most: a larger row (58 px) with a larger face, its role under the name.
-      <div className={cx('group/row relative flex items-center transition-colors', main ? 'h-[58px] rounded-2xl' : 'h-10 rounded-xl', rowBg(active))}>
-        {/* The tooltip says what the bot last said or does now, someone's words in it as written: the row is marked as a
-            whole and TeamBot's few words in it are given in the reader's language here (deskTip, t). */}
-        <a href={href} onClick={onNavigate} aria-current={active ? 'page' : undefined} title={deskTip(mood, text, { approvals, firstApproval, live, last, agent })} translate="no" className={cx('flex h-full min-w-0 flex-1 items-center rounded-[inherit] px-2', main ? 'gap-3' : 'gap-2.5')}>
-          <LiveBotAvatar bot={agent} size={main ? 42 : 30} />
-          {main ? (
-            <span className="flex min-w-0 flex-col leading-tight">
-              <span className="truncate text-[15px] font-semibold text-fg">{agent.name}</span>
-              <span className="truncate text-xs text-muted">{t('Hoofdbot')}</span>
-            </span>
-          ) : (
-            <span className={cx('min-w-0 truncate text-sm', active || unread ? 'font-semibold text-fg' : 'font-medium')}>{agent.name}</span>
-          )}
-          {whose}
-          <span className={cx('ms-auto flex shrink-0 items-center', own && 'group-hover/row:invisible group-focus-within/row:invisible')}>{signal}</span>
-        </a>
-        {own && <RowMenu agent={agent} />}
-      </div>
-    );
-  }
-  return (
-    <a href={href} onClick={onNavigate} aria-current={active ? 'page' : undefined} className={cx('group flex items-center gap-3 rounded-xl px-2 py-2.5', rowBg(active))}>
-      <LiveBotAvatar bot={agent} size={52} />
+  const desk = size === 'desk';
+  // The sidebar's own rows have a menu on hover or keyboard focus; the time and the signal make room for it.
+  const menu = desk && !agent.shared_from;
+  const room = menu ? 'group-hover/row:invisible group-focus-within/row:invisible' : '';
+  // One row on the phone and in the sidebar: the face, the name with the time, and under it what the bot last said or
+  // does now, with one signal at the end. The sidebar row is a little smaller.
+  const row = (
+    <a
+      href={href}
+      onClick={onNavigate}
+      aria-current={active ? 'page' : undefined}
+      title={desk ? deskTip(mood, text, { approvals, firstApproval, live, last, agent }) : undefined}
+      className={cx('flex min-w-0 flex-1 items-center rounded-[inherit]', desk ? 'gap-2.5 px-2 py-1.5' : cx('gap-3 px-2 py-2.5', rowBg(active)))}
+    >
+      <LiveBotAvatar bot={agent} size={desk ? 40 : 52} />
       <span className="min-w-0 flex-1">
         <span className="flex items-baseline justify-between gap-2">
           <span className="flex min-w-0 items-baseline gap-1.5">
-            <span className={cx('truncate text-[15.5px]', unread ? 'font-bold' : 'font-semibold')}>{agent.name}</span>
+            <span className={cx('truncate text-fg', desk ? 'max-w-[150px] shrink-0 text-[13.5px]' : 'text-[15.5px]', unread ? 'font-semibold' : 'font-medium')} translate="no">
+              {agent.name}
+            </span>
             {whose}
+            {/* The bot's role as a small label next to its name (as OpenBot's "Team lead"). */}
+            {desk && !whose && agent.role && (
+              <span className="min-w-0 max-w-[104px] truncate rounded-md bg-surface-3 px-1.5 text-[11px] font-medium leading-[18px] text-muted" translate="no">
+                {agent.role}
+              </span>
+            )}
           </span>
-          {thread?.last && <span className="shrink-0 text-xs tabular-nums text-muted">{listTime(thread.updated_at)}</span>}
+          {thread?.last && <span className={cx('shrink-0 tabular-nums text-muted', desk ? 'text-[11px]' : 'text-xs', room)}>{listTime(thread.updated_at)}</span>}
         </span>
         <span className="flex items-center gap-2">
           {/* Chat content is never translated; a TeamBot event as last line ("De gratis limiet van OpenCode is bereikt …") is
               interface text and is (acceptance round 5, C-15: it stood in Dutch in the English chat list). */}
-          <span className={cx('block min-w-0 flex-1 truncate text-[14px]', tone, unread && mood === 'idle' && 'font-medium')} title={mood === 'limit' ? text : undefined}>
+          <span className={cx('block min-w-0 flex-1 truncate', desk ? 'text-[12.5px]' : 'text-[14px]', tone, unread && mood === 'idle' && 'font-medium')} title={!desk && mood === 'limit' ? text : undefined}>
             {preview}
           </span>
-          {signal}
+          <span className={cx('flex shrink-0 items-center', room)}>{signal}</span>
         </span>
       </span>
     </a>
+  );
+  if (!desk) return row;
+  return (
+    <div className={cx('group/row relative flex items-center rounded-[10px] transition-colors', rowBg(active))}>
+      {row}
+      {menu && <RowMenu agent={agent} />}
+    </div>
   );
 }
 
@@ -292,7 +293,7 @@ function Signal({ state, approvals, unread, problem }: { state: DotState; approv
           <span className="sr-only">{t('vraagt aandacht')}</span>
         </span>
       ) : unread ? (
-        <span className={cx(dot, 'bg-fg')}>
+        <span className="block h-1.5 w-1.5 rounded-full bg-muted">
           <span className="sr-only">{t('ongelezen')}</span>
         </span>
       ) : null}
@@ -378,24 +379,18 @@ function RoomRow({ room, active, size, onNavigate }: { room: RoomSummary; active
   else if (room.status === 'paused') text = 'Gepauzeerd';
   const faces = room.bots.map((b) => ({ id: b.agentId, name: b.name, avatar: b.avatar }));
   const signal = <Signal state={approvals ? 'waiting' : working ? 'working' : 'idle'} approvals={approvals} unread={false} />;
-  if (size === 'desk')
-    return (
-      <a href={`#/t/${room.thread_id}`} onClick={onNavigate} aria-current={active ? 'page' : undefined} title={text} className={cx('flex h-10 items-center gap-2.5 rounded-control px-2 transition-colors', rowBg(active))}>
-        <StackedFaces bots={faces} size={30} />
-        <span className={cx('min-w-0 truncate text-sm', active ? 'font-semibold text-fg' : 'font-medium')} translate="no">{room.name}</span>
-        <span className="ms-auto flex shrink-0 items-center">{signal}</span>
-      </a>
-    );
+  const desk = size === 'desk';
+  // The same row as a bot's: the faces, the name with the time, and the last line under it.
   return (
-    <a href={`#/t/${room.thread_id}`} onClick={onNavigate} aria-current={active ? 'page' : undefined} className={cx('flex items-center gap-3 rounded-xl px-2 py-2.5', rowBg(active))}>
+    <a href={`#/t/${room.thread_id}`} onClick={onNavigate} aria-current={active ? 'page' : undefined} title={desk ? text : undefined} className={cx('flex items-center rounded-xl transition-colors', desk ? 'gap-2.5 p-2' : 'gap-3 px-2 py-2.5', rowBg(active))}>
       <StackedFaces bots={faces} size={face} />
       <span className="min-w-0 flex-1">
         <span className="flex items-baseline justify-between gap-2">
-          <span className="truncate text-[15.5px] font-semibold" translate="no">{room.name}</span>
-          {room.last && <span className="shrink-0 text-xs tabular-nums text-muted">{listTime(room.last.created_at)}</span>}
+          <span className={cx('truncate font-semibold text-fg', desk ? 'text-[14px]' : 'text-[15.5px]')} translate="no">{room.name}</span>
+          {room.last && <span className={cx('shrink-0 tabular-nums text-muted', desk ? 'text-[11.5px]' : 'text-xs')}>{listTime(room.last.created_at)}</span>}
         </span>
         <span className="flex items-center gap-2">
-          <span className={cx('block min-w-0 flex-1 truncate text-[14px]', tone)} translate={room.last && tone === 'text-muted' ? 'no' : undefined}>
+          <span className={cx('block min-w-0 flex-1 truncate', desk ? 'text-[13px]' : 'text-[14px]', tone)} translate={room.last && tone === 'text-muted' ? 'no' : undefined}>
             {text}
           </span>
           {signal}
@@ -405,31 +400,42 @@ function RoomRow({ room, active, size, onNavigate }: { room: RoomSummary; active
   );
 }
 
-function PinTile({ agent, thread, active, onNavigate, size }: { agent: Agent; thread?: Thread; active: boolean; onNavigate?(): void; size: 'desk' | 'phone' }) {
+/** A bot as a tile: its face with one signal, the name and its status under it. `rail`: the face alone (folded sidebar). */
+function PinTile({ agent, thread, active, onNavigate, size }: { agent: Agent; thread?: Thread; active: boolean; onNavigate?(): void; size: 'desk' | 'phone' | 'rail' }) {
   const mood = useAgentMood(agent);
   const main = useMainBotId() === agent.id;
   const limitUntil = useLimitUntil(agent.id);
   // A pinned bot is only shown here (not again in the list below), so the tile carries the same badges as a row.
   const approvals = useApp((s) => s.approvals.filter((a) => a.agent_id === agent.id).length);
   const unread = !!thread && isUnread(thread);
+  const edge = size === 'phone' ? 'phone' : 'desk';
   return (
     <a
       href={thread ? `#/t/${thread.id}` : `#/a/${agent.id}`}
       onClick={onNavigate}
       aria-current={active ? 'page' : undefined}
       title={mood === 'idle' ? agent.name : mood === 'limit' ? `${agent.name}: ${limitLine(limitUntil)}` : `${agent.name}: ${MOOD_LABELS[mood]}`}
-      className={cx('flex min-w-0 flex-1 flex-col items-center gap-1 rounded-2xl px-1 pb-1.5 pt-2.5 text-center', rowBg(active))}
+      data-status={dotState(mood)}
+      aria-label={size === 'rail' ? agent.name : undefined}
+      className={cx(
+        'flex flex-col items-center gap-1 rounded-2xl text-center transition-colors',
+        size === 'rail' ? 'size-14 justify-center' : 'px-1 pb-1.5 pt-2.5',
+        size === 'phone' ? 'min-w-0 flex-1' : size === 'desk' && 'w-[84px] flex-none',
+        rowBg(active),
+      )}
     >
       <span className="relative">
-        <LiveBotAvatar bot={agent} size={size === 'phone' ? 54 : 50} />
+        <LiveBotAvatar bot={agent} size={size === 'phone' ? 54 : size === 'rail' ? 42 : 52} />
         {/* One signal on the face: the count that waits for you, else unread, else the status dot. */}
-        {approvals > 0 ? <CountBadge n={approvals} tone="warn" size={size} label={approvals === 1 ? '1 wacht op jou' : `${approvals} wachten op jou`} /> : unread ? <CountBadge n={1} tone="neutral" size={size} label="ongelezen" /> : mood !== 'idle' ? <StatusDot state={dotState(mood)} size={size} /> : null}
+        {approvals > 0 ? <CountBadge n={approvals} tone="warn" size={edge} label={approvals === 1 ? '1 wacht op jou' : `${approvals} wachten op jou`} /> : unread ? <CountBadge n={1} tone="neutral" size={edge} label="ongelezen" /> : mood !== 'idle' ? <StatusDot state={dotState(mood)} size={edge} /> : null}
       </span>
+      {size !== 'rail' && (
       <span className="flex w-full min-w-0 flex-col items-center">
         <span className="w-full truncate text-[12.5px] font-semibold">{agent.name}</span>
         {/* The status in words under the face (colour or face alone never carries it); a fixed line so nothing jumps. */}
-        <span className={cx('h-4 w-full truncate text-[11px] font-medium leading-4', mood === 'idle' ? 'text-muted' : moodTone(mood))}>{mood === 'idle' ? (main ? 'Hoofdbot' : '') : MOOD_LABELS[mood]}</span>
+        <span className={cx('h-4 w-full truncate text-[11px] font-medium leading-4', mood === 'idle' ? 'text-muted' : moodTone(mood))}>{mood !== 'idle' ? MOOD_LABELS[mood] : agent.settings?.shared === true ? t('gedeeld met het team') : main ? 'Hoofdbot' : ''}</span>
       </span>
+      )}
     </a>
   );
 }
@@ -472,7 +478,7 @@ function TeamSection({ id, name, color, children }: { id: string; name: string; 
   const section = useSection('team:' + (id || 'none'));
   return (
     <li>
-      <button type="button" aria-expanded={!section.closed} onClick={section.toggle} className="flex h-7 w-full items-center gap-1.5 rounded-md px-1 text-start text-xs font-semibold text-muted transition-colors hover:text-fg">
+      <button type="button" aria-expanded={!section.closed} onClick={section.toggle} className="flex h-7 w-full items-center gap-1.5 rounded-md px-1 text-start text-[11px] font-semibold uppercase tracking-wider text-muted transition-colors hover:text-fg">
         <ChevronDown className={cx('h-3.5 w-3.5 shrink-0 transition-transform duration-150', section.closed && '-rotate-90 rtl:rotate-90')} aria-hidden />
         {color && <TeamDot color={color} size={8} />}
         <span className="min-w-0 truncate" translate={id ? 'no' : undefined}>
@@ -494,9 +500,9 @@ function OrderMenu({ mode, onMode, onReorder, onNewFolder, size, section }: { mo
     <div className="flex items-center justify-between ps-2" ref={ref}>
       {/* Sidebar: the quiet label of the section folds it; phone: the label says which order the list is in. */}
       {section ? (
-        <SectionToggle label="Bots" closed={section.closed} onToggle={section.toggle} />
+        <span />
       ) : (
-        <span className="text-xs font-semibold text-muted" data-i18n="label">
+        <span className="text-[11px] font-semibold uppercase tracking-wider text-muted" data-i18n="label">
           {mode === 'manual' ? 'Eigen volgorde' : 'Recent'}
         </span>
       )}
@@ -669,28 +675,10 @@ function useSplit(q: string, mode: BotOrderMode) {
 export function PinnedBots({ route, onNavigate, q = '', size = 'desk', className }: { route: string[]; onNavigate?(): void; q?: string; size?: 'desk' | 'phone'; className?: string }) {
   const { tiles, tileThread } = useSplit(q, useOrderMode());
   const threads = useApp((s) => s.threads);
-  const section = useSection('pinned');
   if (!tiles.length) return null;
-  // The sidebar: the pinned bots are simply the first section of the list, in the same rows as every other bot.
-  if (size === 'desk')
-    return (
-      <div className={className} role="group" aria-label="Vastgezette bots">
-        <div className="ps-2">
-          <SectionToggle label="Vastgezet" closed={section.closed} onToggle={section.toggle} />
-        </div>
-        {!section.closed && (
-          <ul className="space-y-0.5">
-            {tiles.map((a) => (
-              <li key={a.id}>
-                <BotRow agent={a} thread={tileThread(a.id)} active={isActiveBot(route, a.id, threads)} size="desk" onNavigate={onNavigate} />
-              </li>
-            ))}
-          </ul>
-        )}
-      </div>
-    );
+  // Phone: the tiles share the width; sidebar: tiles of one size, centred (one, two or three in a row).
   return (
-    <div className={cx('flex gap-1.5 px-1', className)} role="group" aria-label="Vastgezette bots">
+    <div className={cx('flex gap-1.5', size === 'phone' ? 'px-1' : 'flex-wrap justify-center', className)} role="group" aria-label="Vastgezette bots">
       {tiles.map((a) => (
         <PinTile key={a.id} agent={a} thread={tileThread(a.id)} active={isActiveBot(route, a.id, threads)} onNavigate={onNavigate} size={size} />
       ))}
@@ -698,7 +686,24 @@ export function PinnedBots({ route, onNavigate, q = '', size = 'desk', className
   );
 }
 
-/** `pinned="apart"`: the pinned bots are shown elsewhere (PinnedBots) and left out here. */
+/**
+ * The desktop sidebar's pinned bots (the main bot first) as ordinary rows above the scrolling list, so they are always
+ * in view; the main bot is simply the first row, as in Grok Bot.
+ */
+export function PinnedRows({ route, onNavigate, q = '', className }: { route: string[]; onNavigate?(): void; q?: string; className?: string }) {
+  const { tiles, tileThread } = useSplit(q, useOrderMode());
+  const threads = useApp((s) => s.threads);
+  if (!tiles.length) return null;
+  return (
+    <div className={cx('space-y-0.5', className)} role="group" aria-label="Vastgezette bots">
+      {tiles.map((a) => (
+        <BotRow key={a.id} agent={a} thread={tileThread(a.id)} active={isActiveBot(route, a.id, threads)} size="desk" onNavigate={onNavigate} />
+      ))}
+    </div>
+  );
+}
+
+/** `pinned="apart"`: the pinned bots are shown elsewhere (PinnedRows) and left out here. */
 export function ChatList({ route, onNavigate, q = '', size = 'desk', pinned = 'inline' }: { route: string[]; onNavigate?(): void; q?: string; size?: 'desk' | 'phone'; pinned?: 'inline' | 'apart' }) {
   const mode = useOrderMode();
   const section = useSection('bots');

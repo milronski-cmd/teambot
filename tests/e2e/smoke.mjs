@@ -101,16 +101,16 @@ try {
   step('bot aangemaakt, chat geopend');
   const chatHash = await page.evaluate(() => location.hash);
   // A new bot starts at "Volledige toegang" (it does its work without a question per step). The approval card in the
-  // chat is checked at "Vraagt toestemming": set on the bot page › Wat mag de bot?, then Opslaan.
+  // chat is checked at "Vraagt toestemming": set on the bot page › Wat mag de bot? (the page saves by itself).
   {
     const created = app.ctx.store.agents(app.ctx.auth.owner().id)[0];
     if (created.access_mode !== 'full') fail(`nieuwe bot start op "${created.access_mode}" in plaats van Volledige toegang`);
     await page.goto(`${app.url}/#/agents/${created.id}`);
     await page.locator('[data-testid="access-choice"] [role="combobox"]').click({ timeout: 15000 });
     await page.getByRole('option', { name: 'Vraagt toestemming' }).click();
-    await page.getByRole('button', { name: 'Opslaan' }).first().click();
-    await page.getByText('Opgeslagen', { exact: true }).first().waitFor({ timeout: 8000 }).catch(() => fail('botpagina: "Vraagt toestemming" niet opgeslagen'));
-    if (app.ctx.store.agents(app.ctx.auth.owner().id)[0].access_mode !== 'ask') fail('botpagina: Wat mag de bot? staat na opslaan niet op Vraagt toestemming');
+    for (let i = 0; i < 50 && app.ctx.store.agents(app.ctx.auth.owner().id)[0].access_mode !== 'ask'; i++) await page.waitForTimeout(200);
+    if (app.ctx.store.agents(app.ctx.auth.owner().id)[0].access_mode !== 'ask') fail('botpagina: Wat mag de bot? wordt niet vanzelf opgeslagen als Vraagt toestemming');
+    await page.getByTestId('save-state').filter({ hasText: 'Opgeslagen' }).waitFor({ timeout: 8000 }).catch(() => fail('botpagina: de kop zegt niet "Opgeslagen"'));
     await page.goto(`${app.url}/${chatHash}`);
   }
 
@@ -121,13 +121,13 @@ try {
   // Scoped to the conversation: the chat list in the sidebar shows the same text as the bot's last-message preview.
   await page.locator('[id^="m-"]').getByText('Klaar: e2e.txt staat in je werkmap.').waitFor({ timeout: 20000 });
   step('gestreamd eindantwoord zichtbaar');
-  // Every message shows its time without hovering (a phone has no hover).
-  const timeShown = await page
-    .locator('[id^="m-"]')
-    .filter({ hasText: 'Klaar: e2e.txt' })
-    .last()
+  // The time of a message shows when you point at it (as in Grok Bot; a phone, without hover, always shows it).
+  const answer = page.locator('[id^="m-"]').filter({ hasText: 'Klaar: e2e.txt' }).last();
+  await answer.hover();
+  await page.waitForTimeout(250);
+  const timeShown = await answer
     .evaluate((el) => [...el.querySelectorAll('span, div')].some((x) => /^\d{1,2}:\d{2}$/.test(x.textContent.trim()) && Number(getComputedStyle(x).opacity) > 0 && Number(getComputedStyle(x.parentElement).opacity) > 0));
-  if (!timeShown) fail('antwoord van de bot toont de tijd alleen bij hover');
+  if (!timeShown) fail('antwoord van de bot toont de tijd niet, ook niet bij aanwijzen');
 
   const agent = app.ctx.store.agents(app.ctx.auth.owner().id)[0];
   const file = path.join(agent.workspace, 'e2e.txt');

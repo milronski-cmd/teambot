@@ -108,3 +108,86 @@ enum LinkDiagnosis {
         return .problem(.pcAsleep(orClosed: !sure))
     }
 }
+
+/// Which answers of the probe decide (AppModel.probe), as they come in. Every address is asked at the same time, the
+/// TeamBot connection too (not only after the others gave up). The first one that proves itself decides, except that
+/// the address that worked last gets a short head start: it is the web app's origin, with its own storage (open
+/// pages, messages not delivered yet), so two addresses that both work (wifi and Tailscale, two network cards of the
+/// pc, or wifi and the TeamBot connection) do not take turns from one launch to the next. Pure, so it is unit tested.
+struct ProbeRace {
+    /// How long the address that worked last may take before another proven address wins (nanoseconds). At home an
+    /// answer takes a few hundredths of a second.
+    static let headStart: UInt64 = 800_000_000
+    /// The TeamBot connection's place among the probes: after every address of Pairing.candidates.
+    static let link = Int.max
+
+    private struct Answer {
+        let index: Int
+        let attempt: LinkDiagnosis.Attempt
+    }
+
+    /// The probe of the address that worked last; nil when it is not among them.
+    let last: Int?
+    private(set) var headStartOver: Bool
+    private var running: Int
+    private var got: [Answer] = []
+
+    /// `probes`: how many probes run (the head-start timer not counted).
+    init(probes: Int, last: Int?) {
+        self.running = probes
+        self.last = last
+        self.headStartOver = last == nil
+    }
+
+    /// Where the address that worked last is among the probes: the first of Pairing.candidates (that list starts with
+    /// it), or the TeamBot connection when that was the one.
+    static func last(of p: Pairing, candidates: Int, link: Bool) -> Int? {
+        if HostAddress.kind(of: p.baseURL) == .teambotLink { return link ? Self.link : nil }
+        return candidates > 0 ? 0 : nil
+    }
+
+    /// One probe answered. True: this decides, the other probes can stop.
+    mutating func add(_ index: Int, _ attempt: LinkDiagnosis.Attempt) -> Bool {
+        got.append(Answer(index: index, attempt: attempt))
+        running -= 1
+        if index == last {
+            if Self.proven(attempt) { return true }
+            // It answered, but not as our TeamBot: there is nothing to wait for any more.
+            headStartOver = true
+        }
+        return (headStartOver && hasProven) || running <= 0
+    }
+
+    /// The head start ran out. True: a proven answer is there and decides.
+    mutating func endHeadStart() -> Bool {
+        headStartOver = true
+        return hasProven || running <= 0
+    }
+
+    var hasProven: Bool {
+        got.contains { Self.proven($0.attempt) }
+    }
+
+    /// The answers so far in the order LinkDiagnosis.diagnose expects: the address that worked last first, then
+    /// Pairing.candidates in their order, the TeamBot connection last.
+    var attempts: [LinkDiagnosis.Attempt] {
+        got.sorted { rank($0.index) < rank($1.index) }.map { $0.attempt }
+    }
+
+    /// The TeamBot connection gave an answer of TeamBot (proven or not): it works, keep it when it is in use.
+    var linkAnswered: Bool {
+        got.contains { a in
+            if a.index == Self.link, case .hello = a.attempt.outcome { return true }
+            return false
+        }
+    }
+
+    private func rank(_ index: Int) -> Int {
+        index == last ? Int.min : index
+    }
+
+    static func proven(_ a: LinkDiagnosis.Attempt) -> Bool {
+        if case .hello(let h) = a.outcome, h.verified { return true }
+        return false
+    }
+}

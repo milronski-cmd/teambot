@@ -15,11 +15,13 @@
  * <html data-accent="…">; without that attribute (Standaard) these values apply unchanged. shell/accent.ts mirrors the
  * neutral values below for its previews and tests/accent.test.ts keeps both in step.
  *
- * The visual system: calm and businesslike, one accent colour, depth from borders and surface steps. Icons are
- * drawn in the text colours, never in a colour of their own.
- *  - Radius: small parts 6 (rounded-md), controls 8 (rounded-lg / rounded-control), cards 12 (rounded-xl /
- *    rounded-card), groups 14 (rounded-2xl / rounded-group), chat bubbles 22 (rounded-bubble), dialogs 16 (rounded-3xl /
- *    rounded-dialog), pills rounded-full. Never a bare `rounded` (4 px) on a box people see.
+ * The visual system (14 Nov 2026, in the manner of Grok Bot and OpenBot): neutral greys without a warm tint, one
+ * accent colour, depth from surface steps rather than borders: the sidebar sits on the canvas, the chat on the
+ * surface, and both sides of a conversation talk in bubbles (bubble / bubble-me). Icons are drawn in the text colours,
+ * never in a colour of their own.
+ *  - Radius: small parts 6 (rounded-md), controls 10 (rounded-control), cards 16 (rounded-card), groups 18
+ *    (rounded-group), chat bubbles 20 (rounded-bubble), dialogs 20 (rounded-dialog), pills rounded-full. Never a bare
+ *    `rounded` (4 px) on a box people see.
  *  - Icons (lucide): 16 px in buttons and lines (size-icon), 20 px for places and big actions (size-icon-lg).
  *  - Spacing: a 4 px rhythm (Tailwind's 1 = 4 px: gap-1, gap-2, gap-3, p-4 …); half steps only inside small controls.
  *  - Shadows only on things that float over the page: menus, popovers, toasts (shadow-pop; the old shadow-lg/xl/2xl
@@ -31,29 +33,36 @@
   --radius-xl: 0.75rem;
   --radius-2xl: 0.875rem;
   --radius-3xl: 1rem;
-  --radius-control: 0.5rem;
-  --radius-card: 0.75rem;
-  --radius-group: 0.875rem;
-  --radius-bubble: 1.375rem;
-  --radius-dialog: 1rem;
+  --radius-control: 0.625rem;
+  --radius-card: 1rem;
+  --radius-group: 1.125rem;
+  --radius-bubble: 1.25rem;
+  --radius-dialog: 1.25rem;
   --spacing-icon: 1rem;
   --spacing-icon-lg: 1.25rem;
   --shadow-pop: 0 12px 32px -6px rgb(0 0 0 / 0.18), 0 2px 6px -1px rgb(0 0 0 / 0.08);
   --shadow-lg: 0 12px 32px -6px rgb(0 0 0 / 0.18), 0 2px 6px -1px rgb(0 0 0 / 0.08);
   --shadow-xl: 0 12px 32px -6px rgb(0 0 0 / 0.18), 0 2px 6px -1px rgb(0 0 0 / 0.08);
   --shadow-2xl: 0 12px 32px -6px rgb(0 0 0 / 0.18), 0 2px 6px -1px rgb(0 0 0 / 0.08);
-  --color-canvas: #faf9f7;
+  --color-canvas: #f5f5f6;
   --color-surface: #ffffff;
-  --color-surface-2: #f5f3ef;
-  --color-surface-3: #ebe8e2;
-  --color-fg: #1c1b19;
-  --color-muted: #5c5852;
-  --color-line: #e6e2dc;
-  --color-line-strong: #d2ccc3;
-  --color-accent: #1c1b19;
-  --color-accent-soft: #ebe8e2;
+  --color-surface-2: #f1f1f3;
+  --color-surface-3: #e7e7ea;
+  --color-fg: #141416;
+  --color-muted: #5f5f67;
+  --color-line: #e5e5e8;
+  --color-line-strong: #d0d0d6;
+  /* Chat bubbles: the bot's and your own. */
+  --color-bubble: #f1f1f3;
+  --color-bubble-me: #ff9440;
+  --color-bubble-me-fg: #1f1406;
+  /* TeamBot's own orange (the logo): the active place in the rail. */
+  --color-brand: #c75a0b;
+  --color-brand-soft: #ffe8d6;
+  --color-accent: #141416;
+  --color-accent-soft: #e7e7ea;
   /* The call-to-action button: the accent itself (a chosen accent colour replaces both). */
-  --color-btn: #1c1b19;
+  --color-btn: #141416;
   --color-btn-fg: #ffffff;
   --color-accent-fg: #ffffff;
   --color-ok: #136b3c;
@@ -66,25 +75,30 @@
   --color-danger: #b12e2e;
   --color-danger-soft: #faeaea;
   --color-danger-fg: #ffffff;
-  --font-sans: "Figtree Variable", "Figtree", "Segoe UI Variable", "Segoe UI", system-ui, -apple-system, sans-serif;
+  --font-sans: "Inter Variable", "Inter", "Segoe UI Variable", "Segoe UI", system-ui, -apple-system, sans-serif;
   --font-mono: "Cascadia Code", "JetBrains Mono", Consolas, ui-monospace, monospace;
   --breakpoint-desk: 760px;
 }
 
 .dark {
-  --color-canvas: #0f0f11;
-  --color-surface: #19191d;
-  --color-surface-2: #1f1f23;
-  --color-surface-3: #28282e;
-  --color-fg: #eeedf0;
-  --color-muted: #a8a5ae;
-  --color-line: #2a2a30;
-  --color-line-strong: #3c3c43;
-  --color-accent: #d6d6de;
-  --color-accent-soft: #28282e;
-  --color-btn: #d6d6de;
-  --color-btn-fg: #111114;
-  --color-accent-fg: #111114;
+  --color-canvas: #131313;
+  --color-surface: #1a1a1a;
+  --color-surface-2: #222222;
+  --color-surface-3: #2c2c2c;
+  --color-fg: #f2f2f2;
+  --color-muted: #a3a3a3;
+  --color-line: #272727;
+  --color-line-strong: #3a3a3a;
+  --color-bubble: #262626;
+  --color-bubble-me: #ff9440;
+  --color-bubble-me-fg: #1f1406;
+  --color-brand: #ff9a4d;
+  --color-brand-soft: #3b2616;
+  --color-accent: #e8e8e8;
+  --color-accent-soft: #2c2c2c;
+  --color-btn: #ececec;
+  --color-btn-fg: #141414;
+  --color-accent-fg: #141414;
   --color-ok: #4fd18b;
   --color-ok-soft: #14241b;
   --color-ok-fg: #06210f;
@@ -136,7 +150,7 @@ body {
   -webkit-tap-highlight-color: transparent;
   text-rendering: optimizeLegibility;
 }
-/* Arabic script (and other scripts Figtree has no glyphs for) falls back to the system font; give it a little more room. */
+/* Arabic script (and other scripts Inter has no glyphs for) falls back to the system font; give it a little more room. */
 :root:lang(ar) body {
   line-height: 1.6;
 }
@@ -350,6 +364,139 @@ body {
   background: color-mix(in srgb, var(--color-danger) 6%, var(--color-surface));
 }
 
+/*
+ * The island (dynamic island): a black pill in light and dark alike, for messages in the app (components/ui.tsx
+ * Toaster) and for the island at the top of the screen (modules/usage/StatusPage.tsx). It drops in out of the top and
+ * grows from small (340 ms), and shrinks back up when it goes (220 ms).
+ */
+.tb-island {
+  background: #0b0b0d;
+  color: #f4f4f6;
+  box-shadow: 0 10px 30px -8px rgb(0 0 0 / 0.45), 0 0 0 1px rgb(255 255 255 / 0.07) inset;
+  transform-origin: top center;
+  animation: tb-island-in 340ms cubic-bezier(0.23, 1, 0.32, 1);
+}
+.tb-island-out {
+  animation: tb-island-out 220ms cubic-bezier(0.4, 0, 1, 1) forwards;
+  pointer-events: none;
+}
+@keyframes tb-island-in {
+  from {
+    transform: translateY(-10px) scale(0.6, 0.55);
+    filter: blur(3px);
+  }
+}
+@keyframes tb-island-out {
+  to {
+    opacity: 0;
+    transform: translateY(-8px) scale(0.7, 0.6);
+    filter: blur(2px);
+  }
+}
+/* The island's page (a window of its own at the top of the screen): nothing around the island itself. */
+:root.tb-island-page,
+:root.tb-island-page body,
+:root.tb-island-page #root {
+  background: transparent;
+}
+/* The bot panel's computer while it stands still: a calm wallpaper, light and dark (the computer view of Grok Bot). */
+.tb-wallpaper {
+  background:
+    radial-gradient(120% 90% at 0% 0%, rgb(255 255 255 / 0.85), rgb(255 255 255 / 0) 60%),
+    linear-gradient(155deg, #ececef 0%, #dcdce0 55%, #cfcfd5 100%);
+}
+.dark .tb-wallpaper {
+  background:
+    radial-gradient(120% 90% at 0% 0%, rgb(255 255 255 / 0.09), rgb(255 255 255 / 0) 60%),
+    linear-gradient(155deg, #2b2b2d 0%, #1c1c1d 60%, #151515 100%);
+}
+/*
+ * The welcome screen's stage (pages/Home.tsx): TeamBot's team on a warm orange glow with a violet and a teal one in the
+ * corners, and a fine dot grid that fades out towards the edges.
+ */
+.tb-hero {
+  position: relative;
+  isolation: isolate;
+  background:
+    radial-gradient(55% 45% at 50% 34%, rgb(255 150 70 / 0.34), rgb(255 150 70 / 0) 72%),
+    radial-gradient(45% 40% at 8% 92%, rgb(140 110 255 / 0.2), rgb(140 110 255 / 0) 72%),
+    radial-gradient(45% 40% at 94% 96%, rgb(40 200 180 / 0.18), rgb(40 200 180 / 0) 72%),
+    #fbf6f1;
+}
+.dark .tb-hero {
+  background:
+    radial-gradient(55% 45% at 50% 34%, rgb(255 140 60 / 0.26), rgb(255 140 60 / 0) 72%),
+    radial-gradient(45% 40% at 8% 92%, rgb(130 100 255 / 0.17), rgb(130 100 255 / 0) 72%),
+    radial-gradient(45% 40% at 94% 96%, rgb(30 190 170 / 0.13), rgb(30 190 170 / 0) 72%),
+    #171513;
+}
+.tb-hero::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  background-image: radial-gradient(rgb(0 0 0 / 0.08) 1px, transparent 1.3px);
+  background-size: 22px 22px;
+  mask-image: radial-gradient(75% 65% at 50% 40%, #000 25%, transparent 85%);
+}
+.dark .tb-hero::before {
+  background-image: radial-gradient(rgb(255 255 255 / 0.075) 1px, transparent 1.3px);
+}
+/* The characters on the stage float gently, each at its own moment (still without motion). */
+.tb-float {
+  animation: tb-float 6s ease-in-out infinite;
+}
+@keyframes tb-float {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-8px);
+  }
+}
+/* The time and details under a message show while you point at it (a phone, without hover, always shows them). */
+@media (hover: hover) {
+  .tb-hover-meta {
+    opacity: 0;
+    transition: opacity 120ms ease-out;
+  }
+  .group:hover .tb-hover-meta,
+  .group:focus-within .tb-hover-meta {
+    opacity: 1;
+  }
+}
+/* Three small dots that go up and down while a bot thinks or works (the island, the sidebar). */
+.tb-dots {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+}
+.tb-dots i {
+  width: 4px;
+  height: 4px;
+  border-radius: 999px;
+  background: currentColor;
+  animation: tb-dot 900ms ease-in-out infinite;
+}
+.tb-dots i:nth-child(2) {
+  animation-delay: 120ms;
+}
+.tb-dots i:nth-child(3) {
+  animation-delay: 240ms;
+}
+@keyframes tb-dot {
+  0%,
+  100% {
+    opacity: 0.4;
+    transform: translateY(0);
+  }
+  50% {
+    opacity: 1;
+    transform: translateY(-2px);
+  }
+}
+
 /* Soft "working" pulse for status dots. */
 .tb-pulse {
   animation: tb-pulse 1.6s ease-in-out infinite;
@@ -524,6 +671,12 @@ body {
   border-inline-start: 3px solid var(--color-line-strong);
   padding-inline-start: 0.8em;
   color: var(--color-muted);
+}
+/* In your own (dark-on-light / light-on-dark) bubble a quote keeps the bubble's text colour, so it stays readable. */
+.bg-bubble-me .md blockquote,
+.bg-bubble-me blockquote {
+  color: inherit;
+  border-color: currentColor;
 }
 .md hr {
   border-color: var(--color-line);

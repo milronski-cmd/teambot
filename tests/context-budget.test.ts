@@ -460,7 +460,7 @@ test('the tool list: the core plus tools_find (every other tool by name) and too
   const run = make({ told });
   const [open, click] = [tools[4], tools[5]];
   const first = await run.after(open, { q: 'x' }, { text: 'Geopend.' }, false);
-  assert.equal(first.text, 'Geopend.\n\nBij dit onderdeel horen ook (gebruik ze met tools_call):\n\n### browser_click\nbrowser_click doet iets.\nvelden: {"type":"object","properties":{"q":{"type":"string"}},"required":["q"]}\n\n### browser_type\nbrowser_type doet iets.\nvelden: {"type":"object","properties":{"q":{"type":"string"}},"required":["q"]}\n\n## Je browser\n- Lees eerst de pagina.');
+  assert.equal(first.text, 'Geopend.\n\nBij dit onderdeel horen ook (alleen met tools_call, niet rechtstreeks):\n\n### browser_click\nbrowser_click doet iets.\nvelden: {"type":"object","properties":{"q":{"type":"string"}},"required":["q"]}\n\n### browser_type\nbrowser_type doet iets.\nvelden: {"type":"object","properties":{"q":{"type":"string"}},"required":["q"]}\n\n## Je browser\n- Lees eerst de pagina.');
   assert.deepEqual([...told].sort(), ['browser', 'guide:browser']);
   assert.deepEqual(await run.after(click, { q: 'x' }, { text: 'ok' }, false), { text: 'ok' }, 'once');
   assert.deepEqual(await make({ told }).after(click, { q: 'x' }, { text: 'ok' }, false), { text: 'ok' }, 'also with a fresh list for the same run or session');

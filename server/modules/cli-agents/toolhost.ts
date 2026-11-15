@@ -263,9 +263,10 @@ export function teambotTools(s: RunScope, d: ToolHostDeps): ToolHost {
           args: args && typeof args === 'object' && !Array.isArray(args) ? args : {},
           callId,
           signal: sig,
-          onState: (st) => {
-            // In words ("Wacht op toestemming: iets over je onthouden" / "… voor GitHub"), never the tool id.
-            if (st === 'waiting') s.activity('permission', tool?.app ? `Wacht op toestemming voor ${tool.app}` : `Wacht op toestemming: ${approvalWhat({ tool: name, risk: tool?.risk || 'write', input: args })}`, summary);
+          onState: (st, risk) => {
+            // In words ("Wacht op toestemming: iets over je onthouden" / "… voor GitHub"), never the tool id. With the
+            // call's own risk, as on the card: teambot_do is a "read" tool, but a PUT about money is not "iets bekijken".
+            if (st === 'waiting') s.activity('permission', tool?.app ? `Wacht op toestemming voor ${tool.app}` : `Wacht op toestemming: ${approvalWhat({ tool: name, risk: risk || tool?.risk || 'write', input: args })}`, summary);
           },
           progress: (text) => s.emit({ type: 'status', text: `${teambotLabel(name, true, s.apps)}: ${text}`.slice(0, 160) }),
         });

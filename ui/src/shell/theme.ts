@@ -24,7 +24,8 @@ export function isPhoneLike(): boolean {
 }
 
 /** What this device uses when nobody chose a theme here. */
-export const defaultThemePref = (): ThemePref => (isPhoneLike() ? 'dark' : 'system');
+// Dark by default (as OpenBot and Grok Bot), on the phone and the computer; light and the system's choice are a setting.
+export const defaultThemePref = (): ThemePref => 'dark';
 
 export function getThemePref(): ThemePref {
   try {

@@ -551,7 +551,7 @@ export function skillTools(lib: SkillLibrary, deps: SkillToolDeps = {}): ToolDef
       name: 'skill_install',
       group: 'skills',
       risk: 'write',
-      description: 'Voeg een skill toe voor je team: een id uit skill_find, of het https-adres van een skill op GitHub (map met SKILL.md, of zip). Meteen bruikbaar voor het hele team, scripts inbegrepen: een script draait zoals elke opdracht op je eigen niveau.',
+      description: 'Voeg skills toe voor je team: een id uit skill_find, of een https-adres op GitHub: een map met SKILL.md, een zip, of een hele repo of map met meerdere skills (die komen er in één keer allemaal in, niet per skill apart). Meteen bruikbaar voor het hele team, scripts inbegrepen: een script draait zoals elke opdracht op je eigen niveau.',
       parameters: { type: 'object', properties: { source: { type: 'string', description: 'Id of https-adres' } }, required: ['source'] },
       summarize: (a) => words('Skill toevoegen: {0}', a.source),
       async run(a, t) {

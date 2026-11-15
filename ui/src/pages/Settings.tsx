@@ -10,7 +10,7 @@ import { MoreOptions } from '../components/MoreOptions';
 import { navigate, query } from '../lib/router';
 import { MoreInfo } from '../components/MoreInfo';
 import { uiModules } from '../modules';
-import { askConfirm, Badge, Button, Card, CardHead, Field, IconTile, Input, Page, Spinner, cx, timeAgo, toastError, copyText } from '../components/ui';
+import { askConfirm, BackShown, Badge, Button, Card, CardHead, Field, HintTip, IconTile, Input, Page, Spinner, cx, timeAgo, toastError, copyText } from '../components/ui';
 import { setAdvanced, useAdvanced } from '../shell/advanced';
 import { ProvidersSettings } from './Providers';
 import { TeamUsageCard } from './TeamUsage';
@@ -1009,8 +1009,8 @@ function SettingsNav({ rows, tabs, current, big }: { rows: SettingsNavRow[]; tab
 /** The settings list as a column next to the page (wide screens). */
 function SettingsColumn({ rows, tabs, current }: { rows: SettingsNavRow[]; tabs: SettingsTab[]; current: string | null }) {
   return (
-    // Flat, like the sidebar next to it: the page's background and one thin line.
-    <aside className="h-full w-[232px] shrink-0 border-e border-line">
+    // Flat, part of the page: no line of its own (only the app's sidebar has one).
+    <aside className="h-full w-[232px] shrink-0">
       <div className="scroll-thin h-full overflow-y-auto px-2.5 pb-6 pt-5">
         <div className="mb-3 flex items-center gap-2 px-1.5">
           <LeaveSettings compact />
@@ -1098,16 +1098,18 @@ export function SettingsFrame({ current, children }: { current: string; children
             <BackLink {...back} />
           </div>
         )}
-        {more ? (
-          <div className="scroll-thin min-h-0 flex-1 overflow-y-auto [&>.scroll-thin]:h-auto [&>.scroll-thin]:overflow-visible [&>.scroll-thin]:pb-0">
-            {children}
-            <div className="mx-auto max-w-5xl px-4 pb-10 pt-2 sm:px-6">
-              <EntryList sections={more} label="Meer" />
+        <BackShown.Provider value={!!back}>
+          {more ? (
+            <div className="scroll-thin min-h-0 flex-1 overflow-y-auto [&>.scroll-thin]:h-auto [&>.scroll-thin]:overflow-visible [&>.scroll-thin]:pb-0">
+              {children}
+              <div className="mx-auto max-w-5xl px-4 pb-10 pt-2 sm:px-6">
+                <EntryList sections={more} label="Meer" />
+              </div>
             </div>
-          </div>
-        ) : (
-          <div className="min-h-0 flex-1">{children}</div>
-        )}
+          ) : (
+            <div className="min-h-0 flex-1">{children}</div>
+          )}
+        </BackShown.Provider>
       </div>
     </div>
   );
@@ -1167,10 +1169,10 @@ export function SettingsPage({ tab }: { tab?: string }) {
             <BackLink {...back} />
           </div>
         )}
-        {/* Every settings page opens the same way: the title and at most one line under it. */}
-        <div className="min-w-0">
+        {/* Every settings page opens the same way: the title, its one line as the (i) next to it (less text). */}
+        <div className="flex min-w-0 flex-wrap items-center">
           <h1 className="text-xl font-bold leading-tight tracking-tight sm:text-[22px]">{title}</h1>
-          {hint && <p className="mt-1 text-[13px] leading-snug text-muted">{hint}</p>}
+          {hint && <HintTip text={hint} />}
         </div>
         <div className="mt-5 space-y-4">
           {current === 'general' && <General />}

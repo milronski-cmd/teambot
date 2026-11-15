@@ -233,7 +233,13 @@ export async function go(page, hash, wait = 700) {
 export const hashOf = (page) => page.evaluate(() => location.hash);
 export const overflow = (page) => page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
 /** The visible text of the main area (#inhoud), whitespace collapsed. */
-export const mainText = async (page) => ((await page.locator('#inhoud').innerText().catch(() => '')) || '').replace(/\s+/g, ' ');
+/** The page's text, with the short explanations behind the (i) next to titles (HintTip: on hover, and read aloud). */
+export const mainText = async (page) => {
+  const main = page.locator('#inhoud');
+  const text = (await main.innerText().catch(() => '')) || '';
+  const tips = await main.locator('[role="img"].tb-tip[aria-label]').evaluateAll((els) => els.map((e) => e.getAttribute('aria-label') || '')).catch(() => []);
+  return [text, ...tips].join(' ').replace(/\s+/g, ' ');
+};
 
 export const SHOTS = process.env.TEAMBOT_E2E_SHOTS || '';
 if (SHOTS) fs.mkdirSync(SHOTS, { recursive: true });

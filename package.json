@@ -1,7 +1,7 @@
 {
   "name": "teambot",
   "productName": "TeamBot",
-  "version": "2.2.0",
+  "version": "4.4.2",
   "description": "Open-source AI-agentteam: eigen bots, eigen modellen, lokaal of in de cloud.",
   "license": "Apache-2.0",
   "author": "TeamBot contributors",
@@ -24,6 +24,7 @@
     "desktop": "npm run build && electron .",
     "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p ui/tsconfig.json --noEmit",
     "test": "node --import tsx --test \"tests/**/*.test.ts\"",
+    "test:changed": "node scripts/test-changed.mjs",
     "dist:win": "npm run build && node scripts/notices.mjs && node scripts/electron-builder-retry.mjs --win nsis --publish never",
     "dist:mac": "npm run build && node scripts/notices.mjs && electron-builder --mac --publish never",
     "mac-launch:check": "node tests/e2e/mac-launch.mjs",
@@ -34,7 +35,7 @@
     "models:snapshot": "node --import tsx scripts/models-dev-snapshot.mjs",
     "secrets:check": "node scripts/secret-scan.mjs",
     "dup:check": "node scripts/dup-check.mjs",
-    "e2e": "node --import tsx tests/e2e/smoke.mjs && node --import tsx tests/e2e/extensions-ui.mjs && node --import tsx tests/e2e/c2-chat.mjs && node --import tsx tests/e2e/c2-proposals-restart.mjs && node --import tsx tests/e2e/c2-routines-memory.mjs && node --import tsx tests/e2e/c2-security-phone.mjs && node --import tsx tests/e2e/files-chat.mjs && node --import tsx tests/e2e/language-switch.mjs && node --import tsx tests/e2e/c4-core.mjs && node --import tsx tests/e2e/c4-groups.mjs && node --import tsx tests/e2e/c4-models-cli-review.mjs && node --import tsx tests/e2e/shared-bot.mjs && node --import tsx tests/e2e/history-pages.mjs && node --import tsx tests/e2e/newcomer.mjs && node --import tsx tests/e2e/layout.mjs && node --import tsx tests/e2e/phone-owner.mjs && node --import tsx tests/e2e/accent.mjs && node --import tsx tests/e2e/web-notes.mjs && node --import tsx tests/e2e/skill-pin-updates.mjs && node --import tsx tests/e2e/market-clear.mjs && node --import tsx tests/e2e/chat-folders.mjs && node --import tsx tests/e2e/hermes-import.mjs && node --import tsx tests/e2e/iroh-pairing.mjs && node --import tsx tests/e2e/own-rules.mjs && node --import tsx tests/e2e/backups-offsite.mjs && node --import tsx tests/e2e/openbot-cutover.mjs && node --import tsx tests/e2e/app-update.mjs && node --import tsx tests/e2e/dialogs-math.mjs",
+    "e2e": "node scripts/e2e-run.mjs",
     "backups:check": "node --import tsx tests/e2e/backups-offsite.mjs",
     "newcomer:check": "node --import tsx tests/e2e/newcomer.mjs",
     "accept:04": "node tests/e2e/accept-04-run.mjs",
@@ -99,22 +100,22 @@
     "@anthropic-ai/sdk": "^1.6.0",
     "@cfworker/json-schema": "4.1.6",
     "@huggingface/tokenizers": "0.2.0",
+    "@hyzyla/pdfium": "3.0.0",
     "@modelcontextprotocol/client": "2.4.0",
     "@modelcontextprotocol/node": "2.1.2",
     "@modelcontextprotocol/server": "2.4.0",
-    "@number0/iroh": "1.2.0",
-    "@hyzyla/pdfium": "3.0.0",
     "@mozilla/readability": "0.6.0",
+    "@number0/iroh": "1.2.0",
     "@vscode/ripgrep": "1.18.0",
     "adm-zip": "^0.5.16",
     "croner": "^11.0.0",
     "discord.js": "^14.28.1",
     "electron-updater": "^6.8.11",
     "express": "^5.3.0",
+    "fetch-socks": "1.3.3",
     "imapflow": "2.11.0",
     "jsonrepair": "3.15.0",
     "linkedom": "0.18.15",
-    "fetch-socks": "1.3.3",
     "mailparser": "^3.14.2",
     "mammoth": "1.13.0",
     "node-webpmux": "file:packages/node-webpmux-stub",
@@ -140,7 +141,7 @@
   "devDependencies": {
     "@electric-sql/pglite": "^0.5.15",
     "@electron/fuses": "2.1.3",
-    "@fontsource-variable/figtree": "^5.3.0",
+    "@fontsource-variable/inter": "^5.3.0",
     "@modelcontextprotocol/server-legacy": "2.4.0",
     "@radix-ui/react-dialog": "1.3.1",
     "@tailwindcss/vite": "^4.3.4",
@@ -328,6 +329,7 @@
           "path": "/Applications"
         }
       ]
-    }
+    },
+    "buildVersion": "4.4.2.2"
   }
 }

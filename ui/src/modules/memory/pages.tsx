@@ -142,7 +142,8 @@ export function MemoryShell({ tab, children, actions, noTeamFilter }: { tab: str
                   }}
                 />
               </div>
-              <Button type="submit" size="lg" disabled={!q.trim()}>
+              {/* On a phone the keyboard's search key does this; the field keeps the room for its text. */}
+              <Button type="submit" size="lg" disabled={!q.trim()} className="max-sm:hidden">
                 Zoeken
               </Button>
             </form>

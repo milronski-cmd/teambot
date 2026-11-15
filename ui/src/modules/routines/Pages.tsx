@@ -4,7 +4,7 @@ import { api, on } from '../../lib/api';
 import { t } from '../../lib/i18n';
 import { navigate, query } from '../../lib/router';
 import { useApp } from '../../lib/store';
-import { Badge, Button, Card, EmptyState, Field, Input, Modal, Page, PageHeader, Tabs, Toggle, toast, useAsync } from '../../components/ui';
+import { Badge, Button, Card, EmptyState, Field, Input, Modal, Page, PageHeader, Tabs, Toggle, cx, toast, useAsync } from '../../components/ui';
 import { Fold, Menu, Skeleton, SkeletonRows } from '../../components/overview';
 import { Segmented } from '../../components/SettingControls';
 import { StartModal, WorkflowRow } from '../workflows/Pages';
@@ -672,6 +672,34 @@ export function RoutineDetailPage({ params }: { params: string[] }) {
 // ---------------------------------------------------------------------------
 // Bot editor section
 // ---------------------------------------------------------------------------
+
+/** The bot panel's routines: name, when it runs next (or that it is paused), and the way to a new one. */
+export function BotRoutines({ agentId }: { threadId: string; agentId: string }) {
+  const { list } = useRoutineList(agentId);
+  if (!list) return <Skeleton className="h-10" />;
+  return (
+    <div className="space-y-2.5">
+      {list.length === 0 && <p className="text-[13px] text-muted">Nog geen routines. Vraag het de bot, bijvoorbeeld “doe dit elke ochtend”.</p>}
+      {list.slice(0, 6).map((r) => {
+        const st = routineStatus(r);
+        return (
+          <a key={r.id} href={`#/m/routines/r/${r.id}`} className="flex gap-2.5 rounded-control px-1 py-0.5 hover:bg-surface-2">
+            <AlarmClock className={cx('mt-0.5 size-icon shrink-0', st.tone === 'ok' ? 'text-ok' : 'text-muted')} aria-hidden />
+            <span className="min-w-0">
+              <span className="block truncate text-[13.5px] font-semibold">{r.name}</span>
+              <span className="block truncate text-[12.5px] text-muted">{r.next_run_at ? t('volgende: {0}', fmtDate(r.next_run_at, r.timezone)) : st.label}</span>
+            </span>
+          </a>
+        );
+      })}
+      {list.length > 6 && (
+        <a href={`#/m/routines/?agent=${agentId}`} className="block px-1 text-[12.5px] text-muted hover:text-fg hover:underline">
+          Alle routines van deze bot
+        </a>
+      )}
+    </div>
+  );
+}
 
 export function AgentRoutinesSection({ agent, onChange }: { agent: { id?: string; tool_groups?: string[] } & Record<string, any>; onChange(p: any): void }) {
   const groups: string[] = agent.tool_groups || [];

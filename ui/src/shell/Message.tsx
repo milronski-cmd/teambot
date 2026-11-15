@@ -304,7 +304,7 @@ export function ToolCard({ call, result, message }: { call: ToolCall; result?: M
       <button
         className={cx(
           'inline-flex max-w-full items-center gap-2 rounded-control px-2.5 py-1.5 text-start text-[13px] transition-colors',
-          open ? 'bg-surface-3 text-fg' : 'bg-surface-2 text-muted hover:bg-surface-3 hover:text-fg',
+          open ? 'bg-surface-2 text-fg' : 'text-muted hover:bg-surface-2 hover:text-fg',
           status === 'waiting' && 'text-warn',
         )}
         onClick={() => setOpen(!open)}
@@ -402,7 +402,7 @@ function Collapsible({ icon, title, live, children, testId }: { icon: React.Reac
   return (
     // max-w-full: the long single-line details (truncate) must not widen the card past the chat column.
     <div className="max-w-full text-[13px]" data-testid={testId}>
-      <button className={cx('inline-flex max-w-full items-center gap-1.5 rounded-control px-2.5 py-1.5 text-start transition-colors', open ? 'bg-surface-3 text-fg' : 'bg-surface-2 text-muted hover:text-fg')} onClick={() => setOpen(!open)} aria-expanded={open}>
+      <button className={cx('inline-flex max-w-full items-center gap-1.5 rounded-control px-2.5 py-1.5 text-start transition-colors', open ? 'bg-surface-2 text-fg' : 'text-muted hover:bg-surface-2 hover:text-fg')} onClick={() => setOpen(!open)} aria-expanded={open}>
         <span className="flex shrink-0 items-center">{icon}</span>
         <span className="shrink-0 font-medium">{title}</span>
         {live && (
@@ -715,20 +715,20 @@ export const MessageItem = memo(function MessageItem({ m, results, compact, show
       <div id={`m-${m.id}`} className={cx('group relative flex px-4 sm:px-6', compact ? 'pt-1' : 'pt-4', external ? 'justify-start' : 'justify-end')}>
         {actions}
         <div className={cx('min-w-0 max-w-[85%] sm:max-w-[72%]', external && 'flex gap-2.5')}>
-          {external && !compact && <Avatar name={m.author_name} size={30} />}
-          {external && compact && <div className="w-[30px] shrink-0" />}
+          {external && !compact && <Avatar name={m.author_name} size={26} />}
+          {external && compact && <div className="w-[26px] shrink-0" />}
           <div className="min-w-0">
             {external && !compact && <div className="mb-1 text-xs font-semibold text-muted">{m.author_name}</div>}
             {m.reply_to && <ReplyQuote id={m.reply_to} threadId={m.thread_id} />}
             <div
               translate="no"
-              className={cx('rounded-bubble px-3.5 py-2.5 text-[14.5px] leading-relaxed', external ? 'rounded-ss-md border border-line bg-surface' : 'rounded-ee-md bg-surface-3', m.pinned && 'ring-2 ring-warn')}
+              className={cx('rounded-bubble px-4 py-2.5 text-[14px] leading-relaxed', external ? 'bg-bubble' : 'bg-bubble-me text-bubble-me-fg', m.pinned && 'ring-2 ring-warn')}
             >
               {body}
             </div>
             {m.parts.attachments?.length ? <Attachments list={m.parts.attachments} voice={!!m.parts.voice} notices={!external} threadId={m.thread_id} /> : null}
             {!editing && <LinkPreviews text={m.content} />}
-            <div className={cx('mt-1 flex items-center gap-1.5 px-1 text-[11px] text-muted', external ? '' : 'justify-end')}>
+            <div className={cx('tb-hover-meta mt-1 flex items-center gap-1.5 px-1 text-[11px] text-muted', external ? '' : 'justify-end')}>
               {m.parts.voice && <Badge>spraak</Badge>}
               {m.parts.steer?.runId && <Badge>meegenomen in de lopende beurt</Badge>}
               {m.parts.steer?.interrupted && <Badge>onderbrak de beurt</Badge>}
@@ -767,7 +767,8 @@ export const MessageItem = memo(function MessageItem({ m, results, compact, show
   return (
     <div id={`m-${m.id}`} className={cx('group relative flex gap-2.5 px-4 sm:px-6', compact ? 'pt-1.5' : 'pt-5')}>
       {actions}
-      {compact ? <div className="w-[30px] shrink-0" /> : <BotAvatar bot={agent || { id: m.author_id, name: m.author_name }} size={30} mood={streaming ? 'working' : 'idle'} className="mt-0.5" />}
+      {/* One bot: its face is in the header, not next to every answer (as in Grok Bot); a group shows who speaks. */}
+      {!showName ? null : compact ? <div className="w-[26px] shrink-0" /> : <BotAvatar bot={agent || { id: m.author_id, name: m.author_name }} size={26} mood={streaming ? 'working' : 'idle'} className="mt-0.5" />}
       <div className="flex min-w-0 max-w-full flex-1 flex-col items-start gap-2 sm:max-w-[85%]">
         {(showName && !compact) && (
           <div className="-mb-1 flex items-baseline gap-2 px-1">
@@ -809,7 +810,7 @@ export const MessageItem = memo(function MessageItem({ m, results, compact, show
         ) : null}
         {plan && <PlanCard steps={plan} live={streaming} />}
         {(body || thinking) && (
-          <div className={cx('w-full max-w-full py-1 text-[14.5px] leading-relaxed', m.pinned && 'rounded-bubble px-4 py-2.5 ring-2 ring-warn')}>
+          <div className={cx('max-w-full rounded-bubble bg-bubble px-4 py-2.5 text-[14px] leading-relaxed', m.pinned && 'ring-2 ring-warn')}>
             {body}
             {thinking && <LiveLine m={m} sig={liveSig} label={liveLabel} detail={liveDetail} dots chip={steps.length > 0} />}
           </div>
@@ -854,7 +855,7 @@ export const MessageItem = memo(function MessageItem({ m, results, compact, show
         {!streaming && !editing && <LinkPreviews text={m.content} />}
         {!streaming && !!m.content && (
           // The time is always there (also on a phone, which has no hover); engine, model and cost on hover/focus.
-          <div className="-mt-1 px-1 text-[11px] text-muted">
+          <div className="tb-hover-meta -mt-1 px-1 text-[11px] text-muted">
             <span>{fmtTime(m.created_at)}</span>
             <span className="opacity-0 transition group-hover:opacity-100 group-focus-within:opacity-100">
               {[engineName || m.parts.provider, !m.parts.model || m.parts.model === 'default' ? 'standaardmodel' : prettyModel(m.parts.model), costText]

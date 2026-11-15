@@ -677,7 +677,8 @@ export function DossierText({ saved, limit, canEdit, onSave, title, className }:
       <p className="text-xs text-muted">Dit lezen je bots. Ze houden het zelf bij; jij kunt het hier aanpassen.</p>
       {canEdit ? (
         <>
-          <Textarea rows={title ? 8 : 14} value={body} onChange={(e) => setBody(e.target.value)} aria-label="Tekst van het dossier" placeholder="Nog leeg. Je bots vullen dit zodra ze iets weten dat hier hoort." />
+          {/* As tall as the text (an empty dossier is three lines, not a screenful), up to 8 or 14 lines. */}
+          <Textarea rows={Math.min(title ? 8 : 14, Math.max(3, body.split('\n').length + 1))} value={body} onChange={(e) => setBody(e.target.value)} aria-label="Tekst van het dossier" placeholder="Nog leeg. Je bots vullen dit zodra ze iets weten dat hier hoort." />
           <div className="flex items-center gap-3">
             <Button size="sm" disabled={body === saved || body.trim().length > limit} onClick={() => onSave(body)}>
               Opslaan

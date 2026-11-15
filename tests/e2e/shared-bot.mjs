@@ -102,7 +102,7 @@ try {
   await share.getByText('Gedeeld met het team').click();
   await shot(op, 'f2-shared-1-editor');
   await axe(op, 'bot-editor met delen');
-  await op.getByRole('button', { name: /^Opslaan/ }).first().click();
+  // The bot page saves by itself a moment after the change.
   for (let i = 0; i < 50 && app.ctx.store.agent(bot.id).settings?.shared !== true; i++) await op.waitForTimeout(100);
   if (app.ctx.store.agent(bot.id).settings?.shared !== true) fail('delen: de schakelaar in de bot-editor deelde de bot niet');
   else step('eigenaar: "Gedeeld met het team" aangezet in de bot-editor');

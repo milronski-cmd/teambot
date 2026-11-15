@@ -1,10 +1,10 @@
-// Electron side of tests/e2e/status-check.mjs (B-69, B-67). Runs the real floating status window (desktop/status.ts)
+// Electron side of tests/e2e/status-check.mjs (B-69, B-67). Runs the real island at the top of the screen (desktop/status.ts)
 // with Electron, TeamBot's server and the built UI, in a TEMPORARY data folder (TEAMBOT_DATA), with fake engines.
 // Nothing reaches the owner's desktop: no main window and no tray icon; the status window is fully transparent,
 // click-through and never focused (it is captured with webContents.capturePage(), not from the screen), and Windows
 // notifications are recorded instead of shown. Buttons in the window are pressed in the page itself, never with the
 // mouse or keyboard.
-import { app, BrowserWindow, ipcMain, Notification } from 'electron';
+import { app, BrowserWindow, ipcMain, Notification, screen } from 'electron';
 import fs from 'node:fs';
 import path from 'node:path';
 import { createApp } from '../../server/app.js';
@@ -32,6 +32,13 @@ BrowserWindow.prototype.showInactive = function (this: BrowserWindow) {
   this.setIgnoreMouseEvents(true);
   this.setFocusable(false);
   return showInactive.call(this);
+};
+// Whether the island lets clicks through (setIgnoreMouseEvents): the last call is kept.
+let ignoring: { on: boolean; forward: boolean } | null = null;
+const setIgnore = BrowserWindow.prototype.setIgnoreMouseEvents;
+BrowserWindow.prototype.setIgnoreMouseEvents = function (this: BrowserWindow, on: boolean, opts?: { forward?: boolean }) {
+  ignoring = { on, forward: !!opts?.forward };
+  return setIgnore.call(this, on, opts);
 };
 // Windows notifications (B-67): recorded with their buttons, never a real toast.
 const toasts: Notification[] = [];
@@ -71,6 +78,7 @@ app.whenReady().then(async () => {
   ipcMain.handle('teambot:status:get', () => ({ mode: status.mode() }));
   ipcMain.handle('teambot:status:set', (_e, m: string) => ({ mode: status.setMode(m) }));
   ipcMain.handle('teambot:status:hide', () => (status.hide(), true));
+  ipcMain.handle('teambot:status:interactive', (_e, on: unknown) => (status.interactive(on === true), true));
   const win = () => (status as any).win as BrowserWindow | null;
   const visible = () => !!win() && !win()!.isDestroyed() && win()!.isVisible();
   const page = async () => (visible() ? String(await win()!.webContents.executeJavaScript('document.body.innerText')) : '');
@@ -179,8 +187,21 @@ app.whenReady().then(async () => {
     check('toont de bot met wat hij doet ("Leest notities.md")', first, (await page()).slice(0, 300));
     const faces = await win()!.webContents.executeJavaScript(`document.querySelectorAll('section[aria-label="Aan het werk"] li svg').length`);
     check('met het gezicht van de bot', faces > 0, `svg's: ${faces}`);
-    check('telt mee in de kop ("1 bot aan het werk")', /1 bot aan het werk/.test(await page()), (await page()).slice(0, 120));
+    const pill = () => win()!.webContents.executeJavaScript(`document.querySelector('[data-testid="island"] button[aria-expanded]')?.innerText || ''`) as Promise<string>;
+    check('het eiland zegt in één regel wie werkt en waaraan', await until(async () => /Schrijver/.test(await pill()) && /Leest notities\.md/.test(await pill())), await pill());
+    const b = win()!.getBounds();
+    const wa = screen.getPrimaryDisplay().workArea;
+    check('het eiland staat bovenaan in het midden van het scherm', b.y === wa.y && Math.abs(b.x + b.width / 2 - (wa.x + wa.width / 2)) <= 1, JSON.stringify({ b, wa }));
+    check('naast de pil gaan klikken door naar wat eronder ligt', ignoring?.on === true && ignoring.forward === true, JSON.stringify(ignoring));
+    await win()!.webContents.executeJavaScript(`window.teambotDesktop.statusWindow.interactive(true)`);
+    check('op de pil vangt het eiland de muis', ignoring?.on === false, JSON.stringify(ignoring));
+    await win()!.webContents.executeJavaScript(`window.teambotDesktop.statusWindow.interactive(false)`);
+    check('van de pil af: klikken gaan weer door', ignoring?.on === true && ignoring.forward === true, JSON.stringify(ignoring));
     await shot('f2-status-1-werkt');
+    await win()!.webContents.executeJavaScript(`document.querySelector('[data-testid="island"] button[aria-expanded]').click()`);
+    check('een klik op de pil opent het eiland', await until(async () => (await win()!.webContents.executeJavaScript(`document.querySelector('[data-testid="island"] button[aria-expanded]').getAttribute('aria-expanded')`)) === 'true'));
+    await shot('f2-status-1b-open');
+    await win()!.webContents.executeJavaScript(`document.querySelector('[data-testid="island"] button[aria-expanded]').click()`);
     (cliStep as (() => void) | null)?.();
     check('werkt live bij ("Schrijft verslag.md")', await until(async () => /Schrijft verslag\.md/.test(await page()), 10_000), (await page()).slice(0, 300));
     await shot('f2-status-2-live');
@@ -190,7 +211,7 @@ app.whenReady().then(async () => {
     const before = toasts.length;
     await say(thP, 'Maak de planning.');
     check('wacht op jou: in het venster met naam en wat de bot wil', await until(async () => /Wacht op jou/i.test(await page()) && /Planner/.test(await page()) && /planning\.md/.test(await page())), (await page()).slice(0, 300));
-    check('wacht op jou: telt in de kop ("1 wacht op jou")', /1 wacht op jou/.test(await page()));
+    check('wacht op jou: het eiland zegt het ("Planner vraagt toestemming")', await until(async () => /Planner vraagt toestemming/.test(await pill())), await pill());
     await shot('f2-status-3-wacht');
     const toast = toasts.slice(before).find((n: any) => /Planner/.test(n.title));
     const acts = ((toast as any)?.actions || []).map((a: any) => a.text);
@@ -233,7 +254,7 @@ app.whenReady().then(async () => {
     status.setMode('always');
     check('altijd: blijft zichtbaar, ook zonder werk', await until(() => visible(), 8000));
     await until(async () => /Alles rustig|Nieuw voor jou/i.test(await page()), 6000);
-    await win()!.webContents.executeJavaScript(`document.querySelector('[aria-label="Statusvenster verbergen"]').click()`);
+    await click('Verbergen');
     check('de sluitknop van het venster verbergt het', await until(() => !visible(), 5000));
     status.setMode('off');
     await sleep(800);

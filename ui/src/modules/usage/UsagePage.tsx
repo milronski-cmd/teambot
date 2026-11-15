@@ -86,7 +86,7 @@ function AlertRows() {
         />
       </SettingRow>
       {d?.statusWindow && mode && (
-        <SettingRow setting="usage.statusWindow" info="Een klein venster dat boven alles blijft: welke bots werken en wat op jou wacht.">
+        <SettingRow setting="usage.statusWindow" info="Een zwarte pil bovenaan je scherm, ook boven andere programma's: wie er werkt, wat op jou wacht en wie net klaar is. Klik erop voor alles.">
           <Segmented
             value={mode}
             onChange={(v: StatusMode) => void save(d.statusWindow!.set(v).then((r) => setMode(r.mode)))}

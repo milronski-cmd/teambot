@@ -8,11 +8,13 @@ contextBridge.exposeInMainWorld('teambotDesktop', {
   nativeNotifications: true,
   /** Bring the main window to the front, optionally at a route (#/t/…). */
   show: (hash?: string) => ipcRenderer.invoke('teambot:show', hash),
-  /** Floating status window: off / auto (while something runs or waits) / always. */
+  /** The island at the top of the screen: off / auto (while something runs or waits) / always. */
   statusWindow: {
     get: () => ipcRenderer.invoke('teambot:status:get'),
     set: (mode: 'off' | 'auto' | 'always') => ipcRenderer.invoke('teambot:status:set', mode),
     hide: () => ipcRenderer.invoke('teambot:status:hide'),
+    /** The mouse is on the island (true) or left it (false: clicks go through to what is underneath). */
+    interactive: (on: boolean) => ipcRenderer.invoke('teambot:status:interactive', on === true),
   },
   info: () => ipcRenderer.invoke('teambot:info'),
   /** Start TeamBot again (a staged backup restore is put in place at the next start). */

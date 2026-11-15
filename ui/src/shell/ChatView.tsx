@@ -183,7 +183,7 @@ function Intro({ agent, onSend }: { agent: Agent; onSend(text: string): Promise<
       <div className="mt-8 flex w-full max-w-[640px] flex-col items-start gap-3">
         <div className="flex gap-2.5">
           <BotAvatar bot={agent} size={30} className="mt-0.5" />
-          <div className="rounded-bubble rounded-ss-md border border-line bg-surface px-4 py-2.5 text-[14.5px] leading-relaxed">
+          <div className="rounded-bubble bg-bubble px-4 py-2.5 text-[14px] leading-relaxed">
             {welcome ? `Hoi! Ik ben ${agent.name}, je eerste bot. Leuk je te ontmoeten.` : agent.description ? <Words text="Hoi, ik ben {0}. {1}" values={[agent.name, agent.description]} /> : `Hoi, ik ben ${agent.name}. Waarmee kan ik je helpen?`}
           </div>
         </div>
@@ -234,6 +234,11 @@ export { openChatMenuFor };
 export function ChatView({ threadId }: { threadId: string }) {
   const page = location.hash;
   const thread = useApp((s) => s.threads.find((t) => t.id === threadId));
+  // How many own conversations this bot has: its title only tells something when there is more than one.
+  const ownChats = useApp((s) => {
+    const a = s.threads.find((t) => t.id === threadId)?.agent_id;
+    return a ? s.threads.filter((x) => x.agent_id === a && x.kind === 'chat' && !x.room_id && !x.archived).length : 0;
+  });
   const messages = useApp((s) => s.messages[threadId]);
   const approvals = useApp(useShallow((s) => s.approvals.filter((a) => a.thread_id === threadId)));
   // A question card is open: what you type is the answer (server/agent/queue.ts answerOpenQuestion).
@@ -372,6 +377,16 @@ export function ChatView({ threadId }: { threadId: string }) {
       /* closed */
     }
     const list = useApp.getState().messages[threadId] || [];
+    // A wide screen shows a bot's panel (its computer, routines and files) next to the chat, as Grok Bot does, unless
+    // the owner closed it.
+    let closed = false;
+    try {
+      closed = localStorage.getItem(INSPECTOR_KEY) === '0';
+    } catch {
+      /* open */
+    }
+    const botChat = useApp.getState().threads.find((x) => x.id === threadId)?.kind !== 'room';
+    if (desktop && botChat && !closed && window.matchMedia('(min-width: 1600px)').matches) return setInspector(true);
     setInspector(wanted && desktop && list.some((m) => !!m.parts?.attachments?.length || !!m.parts?.activity?.some((a) => a.kind === 'files') || !!m.parts?.toolCalls?.some((c) => /^(fs_|file_|write|edit)/.test(c.name))));
   }, [loading, threadId, desktop]);
 
@@ -453,7 +468,7 @@ export function ChatView({ threadId }: { threadId: string }) {
         : null;
   const sub = sharedBy
     ? `gedeeld door ${sharedBy} · alleen jij ziet dit gesprek`
-    : thread.kind !== 'chat' && thread.kind !== 'room' ? threadSubtitle(kindTitle[thread.kind], thread.title) : thread.kind === 'chat' && thread.title ? thread.title : '';
+    : thread.kind !== 'chat' && thread.kind !== 'room' ? threadSubtitle(kindTitle[thread.kind], thread.title) : thread.kind === 'chat' && thread.title && ownChats > 1 ? thread.title : '';
 
   const send = async (content: string, opts: { attachments: string[]; voice?: boolean; replyTo?: string | null }) => {
     atBottom.current = true;
@@ -582,11 +597,11 @@ export function ChatView({ threadId }: { threadId: string }) {
   const multiAuthor = thread.kind === 'room' || list.some((m) => m.author_type === 'agent' && m.author_id && m.author_id !== thread.agent_id);
 
   return (
-    <div className="flex h-full min-w-0">
+    <div className="flex h-full min-w-0 bg-surface">
       <div className="flex min-w-0 flex-1 flex-col" style={pagesDocked ? { minWidth: CHAT_MIN } : undefined}>
-        <header className="safe-top shrink-0 border-b border-line bg-canvas">
+        <header className="safe-top shrink-0 border-b border-line bg-surface">
           {/* With the model control in it, the phone's header stands a little closer together, so the name and the model both fit. */}
-          <div className={cx('@container flex h-[60px] items-center px-2 desk:px-4', modelSwitch ? 'gap-1 desk:gap-2' : 'gap-2')}>
+          <div className={cx('@container flex h-[60px] items-center px-2 desk:h-[54px] desk:px-4', modelSwitch ? 'gap-1 desk:gap-2' : 'gap-2')}>
             {!desktop && (
               <a href="#/" className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-fg transition-colors hover:bg-surface-2 active:bg-surface-3" aria-label="Terug naar chats">
                 <ArrowLeft className="h-5 w-5" />
@@ -595,7 +610,7 @@ export function ChatView({ threadId }: { threadId: string }) {
             {room ? (
               <StackedFaces bots={room.bots.map((b) => ({ id: b.agentId, name: b.name, avatar: b.avatar }))} size={36} />
             ) : agent ? (
-              <LiveBotAvatar bot={agent} size={36} />
+              <LiveBotAvatar bot={agent} size={desktop ? 28 : 36} />
             ) : (
               <div className="flex h-9 w-9 items-center justify-center rounded-full bg-surface-3 text-xs font-bold">{kindTitle[thread.kind][0]}</div>
             )}
@@ -609,7 +624,7 @@ export function ChatView({ threadId }: { threadId: string }) {
                 </h1>
               )}
               {/* Touch: the name above reaches over this line (44 px to tap without moving the text), so it lets taps through. */}
-              <div className="flex min-w-0 items-center gap-1.5 px-1 text-[12.5px] coarse:pointer-events-none">
+              <div className={cx('flex min-w-0 items-center gap-1.5 px-1 text-[12.5px] coarse:pointer-events-none', desktop && thread.kind !== 'room' && mood === 'idle' && !sharedBy && 'hidden')}>
                 {(mood !== 'idle' || (thread.kind === 'room' && busy)) && <span className={cx('h-1.5 w-1.5 shrink-0 rounded-full bg-current', statusTone, mood === 'working' && 'tb-pulse')} aria-hidden />}
                 <span className={cx('truncate', statusTone)} title={mood === 'limit' ? status : undefined} translate={ownStatus ? 'no' : undefined}>
                   {status}
@@ -800,7 +815,7 @@ export function ChatView({ threadId }: { threadId: string }) {
       {inspector && (
         <>
           <div className="fixed inset-0 z-30 bg-black/40 min-[1100px]:hidden" onClick={() => showPanel(false)} />
-          <aside className={cx('fixed inset-y-0 end-0 z-40 w-[min(380px,92vw)] border-s border-line bg-surface shadow-pop', 'min-[1100px]:static min-[1100px]:z-auto min-[1100px]:w-[360px] min-[1100px]:shadow-none')}>
+          <aside className={cx('fixed inset-y-0 end-0 z-40 w-[min(380px,92vw)] border-s border-line bg-canvas shadow-pop', 'min-[1100px]:static min-[1100px]:z-auto min-[1100px]:w-[340px] min-[1100px]:shadow-none')}>
             <Inspector key={inspectorTab || 'default'} thread={thread} initialTab={inspectorTab} onClose={() => showPanel(false)} />
           </aside>
         </>

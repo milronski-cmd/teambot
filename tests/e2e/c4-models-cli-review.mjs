@@ -384,7 +384,7 @@ try {
   await page.getByRole('button', { name: 'Meer acties', exact: true }).click();
   await page.getByRole('button', { name: /Gesprek samenvatten/ }).click();
   await page.getByText('Niet samengevat: het gesprek is nog te kort om samen te vatten').waitFor({ timeout: 20000 });
-  const compactToasts = (await page.locator('[aria-live="polite"] > div').allInnerTexts()).filter((x) => /samengevat|samen te vatten/i.test(x));
+  const compactToasts = (await page.locator('[aria-live="polite"] > *').allInnerTexts()).filter((x) => /samengevat|samen te vatten/i.test(x));
   if (compactToasts.length !== 1) fail('A-30: niet één melding bij samenvatten: ' + JSON.stringify(compactToasts));
   step('A-30: samenvatten met OpenCode geeft één duidelijke uitkomst');
 

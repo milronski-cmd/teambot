@@ -83,7 +83,8 @@ function SpecialistCard({ agentId, agentName }: { agentId: string; agentName: st
     if (a && editor) editor.synced({ tool_groups: a.tool_groups });
     reload();
   }
-  const editor = useEditorSection('specialists:specialist', { label: 'Specialisme', dirty: () => dirty() || !!target.trim(), save: () => persist() });
+  // A typed source that was not added yet waits for Toevoegen, leaving the editor or Opslaan (not added halfway).
+  const editor = useEditorSection('specialists:specialist', { label: 'Specialisme', dirty: () => dirty() || !!target.trim(), typed: () => !!target.trim(), save: () => persist() });
 
   if (error && !data) return <p className="text-sm text-danger">{error}</p>;
   if (!data || !d) return <Spinner />;

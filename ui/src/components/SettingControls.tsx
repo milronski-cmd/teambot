@@ -2,7 +2,7 @@ import React, { createContext, useContext, useEffect, useId, useRef, useState } 
 import { Check, RotateCcw } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { isRtl } from '../lib/i18n';
-import { Button, Card, IconTile, Toggle, cx, toast, toastError, type Tone } from './ui';
+import { Button, Card, HintTip, IconTile, Toggle, cx, toast, toastError, type Tone } from './ui';
 import { Listbox } from './Listbox';
 import { MoreInfo } from './MoreInfo';
 import { settingText, type SettingId } from '../../../shared/settings.js';
@@ -187,13 +187,16 @@ export function SettingRow({ setting, hint: own, info, children, stack, classNam
     <RowContext.Provider value={{ labelId, hintId }}>
       <div className={cx('flex flex-wrap items-center justify-between gap-x-4 gap-y-2 py-3', stack && 'flex-col items-stretch', className)} data-testid={testId}>
         <div className={cx('min-w-0', !stack && 'flex-1 basis-56')}>
-          <div id={labelId} data-i18n="label" className="text-sm font-medium">
-            {label}
+          <div className="text-sm font-medium">
+            <span id={labelId} data-i18n="label">
+              {label}
+            </span>
+            {hint && <HintTip text={hint} />}
           </div>
           {hint && (
-            <div id={hintId} className="text-xs leading-relaxed text-muted">
+            <span id={hintId} className="sr-only">
               {hint}
-            </div>
+            </span>
           )}
           {info && <MoreInfo className="block">{info}</MoreInfo>}
         </div>
@@ -210,10 +213,12 @@ export function SwitchRow({ setting, hint: own, info, checked, onChange, disable
     <div className="flex items-center justify-between gap-4 py-3" data-testid={testId}>
       <div className="min-w-0 flex-1">
         {/* The switch carries the same label for screen readers; this copy is for the eye and the mouse. */}
-        <div aria-hidden onClick={() => !disabled && onChange(!checked)} className={cx('text-sm font-medium', disabled ? 'text-muted' : 'cursor-pointer')}>
-          {label}
+        <div className="text-sm font-medium">
+          <span aria-hidden onClick={() => !disabled && onChange(!checked)} className={cx(disabled ? 'text-muted' : 'cursor-pointer')}>
+            {label}
+          </span>
+          {hint && <HintTip text={hint} />}
         </div>
-        {hint && <div className="text-xs leading-relaxed text-muted">{hint}</div>}
         {info && <MoreInfo className="block">{info}</MoreInfo>}
       </div>
       <Toggle checked={checked} onChange={onChange} disabled={disabled} label={<span className="sr-only">{label}</span>} />

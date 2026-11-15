@@ -56,7 +56,7 @@ try {
       return { accent: cs.getPropertyValue('--color-accent').trim(), soft: cs.getPropertyValue('--color-accent-soft').trim(), ring: cs.getPropertyValue('--color-ring').trim(), attr: document.documentElement.dataset.accent || null, dark: document.documentElement.classList.contains('dark') };
     });
   const std = await tokens();
-  ok('standaard: geen data-accent, de tokens van styles.css', std.attr === null && std.accent === '#1c1b19' && std.ring === '', JSON.stringify(std));
+  ok('standaard: geen data-accent, de tokens van styles.css', std.attr === null && std.accent === '#141416' && std.ring === '', JSON.stringify(std));
   ok('standaard staat aangevinkt', (await group.getByRole('radio', { name: 'Standaard' }).getAttribute('aria-checked')) === 'true');
   ok('ongeveer 10 kleuren om uit te kiezen, met Lavendel', (await group.getByRole('radio').count()) >= 11 && (await group.getByRole('radio', { name: 'Lavendel' }).count()) === 1);
 
@@ -155,7 +155,7 @@ try {
   await group.getByRole('radio', { name: 'Standaard' }).click();
   await page.waitForFunction(() => !document.documentElement.dataset.accent);
   const end = await tokens();
-  ok('terug naar Standaard: precies de oude look', end.attr === null && end.accent === '#1c1b19' && end.ring === '');
+  ok('terug naar Standaard: precies de oude look', end.attr === null && end.accent === '#141416' && end.ring === '');
   ok('geen fouten op de pagina', !errors.length, errors.slice(0, 3).join(' | '));
 } catch (e) {
   failed++;

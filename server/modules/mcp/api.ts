@@ -442,13 +442,15 @@ export function registerRoutes(ctx: Ctx, mgr: McpManager, registry?: Registry) {
     const name = str(raw?.name, 220);
     if (regBlocked(name)) throw new HttpError(403, 'Deze app is door de beheerder geblokkeerd.');
     const version = str(raw?.version, 64) || 'latest';
-    const optKey = str(raw?.option, 40);
     let it: RegistryItem;
     try {
       it = await reg.get(name, version);
     } catch (e) {
       webFail(e);
     }
+    // No option given (a bot through teambot_do sends just the name): the first way this computer supports, as the
+    // screen offers it first.
+    const optKey = str(raw?.option, 40) || it.options.find((o) => o.supported)?.key || '';
     const opt = it.options.find((o) => o.key === optKey);
     const license = opt ? await reg.packageLicense(opt).catch(() => null) : null;
     const auth = ['none', 'headers', 'oauth'].includes(raw?.auth) ? raw.auth : undefined;

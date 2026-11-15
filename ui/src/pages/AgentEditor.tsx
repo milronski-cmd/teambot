@@ -1,6 +1,6 @@
 import type React from 'react';
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Archive, ChevronDown, CircleAlert, Copy, MessageSquare, Sparkles, Trash2, Settings2, ShieldCheck, ScrollText } from 'lucide-react';
+import { Archive, Check, ChevronDown, CircleAlert, Copy, Loader2, MessageSquare, Sparkles, Trash2, Settings2, ShieldCheck, ScrollText } from 'lucide-react';
 import { EditorSaveContext, changedFields, dirtySectionKeys, flushSections, prepareSections, unsavedLabels, type EditorSaveApi, type EditorSection } from '../lib/editorSave';
 import { formatList, tText } from '../lib/format';
 import { api } from '../lib/api';
@@ -138,12 +138,14 @@ const SECTION_HINT: Record<string, string> = {
   'specialists:specialist': 'De vakkennis van deze bot',
   'quality:quality': 'Wanneer het werk van deze bot als af geldt',
 };
+/** How long after the last change the page saves by itself (typing a text saves once the typing pauses). */
+const AUTOSAVE_MS = 800;
 /** Module sections that are merged into another section (folders live with the workspace). */
 const SECTION_ALIAS = (k: string) => (k.startsWith('folders:') ? 'core:workspace' : k);
 
 /**
  * One row of Meer mogelijkheden: a title, one line, and its content when opened. Its content mounts on first open and then stays mounted (hidden when closed), so a
- * section with its own unsaved state keeps it when you close it, and the main "Opslaan" still saves it.
+ * section with its own unsaved state keeps it when you close it, and saving by itself still saves it.
  */
 function Section({ id, title, summary, open, onToggle, dirty, children }: { id: string; title: string; summary?: React.ReactNode; open: boolean; onToggle(): void; dirty?: boolean; children: React.ReactNode }) {
   const [mounted, setMounted] = useState(open);
@@ -302,10 +304,16 @@ function BotPage({ id }: { id: string }) {
     }),
     [],
   );
-  // Leaving with unsaved changes asks first (hash navigation and closing the window).
+  // The page saves by itself (saveNow, a moment after the last change). Leaving before that saves first; only when that
+  // fails does it ask (hash navigation), and closing the window meanwhile asks too.
   const bypass = useRef(false);
   const unsavedRef = useRef<string[]>([]);
   const [leave, setLeave] = useState<string | null>(null);
+  const saveNowRef = useRef<((all: boolean) => Promise<boolean>) | null>(null);
+  const autoUnsavedRef = useRef<string[]>([]);
+  const inflight = useRef<Promise<boolean> | null>(null);
+  // The server refused the last save: then the bar with "Niet opgeslagen" and the button stay until it works.
+  const [saveFailed, setSaveFailed] = useState(false);
   const openSecs = useOpenSections();
   // Teams (home team, access to other teams) only with two or more teams.
   const multiTeam = useMultiTeam();
@@ -316,7 +324,7 @@ function BotPage({ id }: { id: string }) {
       if (bypass.current || !unsavedRef.current.length) return true;
       const to = location.hash;
       history.replaceState(null, '', e.oldURL);
-      setLeave(to);
+      void (saveNowRef.current?.(true) || Promise.resolve(false)).then((ok) => (ok ? go(to) : setLeave(to)));
       return false;
     });
     const onUnload = (e: BeforeUnloadEvent) => {
@@ -430,8 +438,22 @@ function BotPage({ id }: { id: string }) {
   // The two rows about a turn and the program name themselves; what is only put aside for another AI is no change.
   const rowsChanged = changedRows(saved?.settings, d?.settings);
   const ownLabels = [rowsChanged.turn ? 'Duur van een beurt' : '', rowsChanged.program ? 'Programma' : ''].filter(Boolean);
-  const unsaved = d ? unsavedLabels(changedFields(saved, d).filter((f) => !['settings.cli', 'settings.maxTurns', 'settings.kept'].includes(f)), [...ownLabels, ...regList.filter((s) => s.dirty()).map((s) => s.label)]) : [];
+  const fields = d ? changedFields(saved, d).filter((f) => !['settings.cli', 'settings.maxTurns', 'settings.kept'].includes(f)) : [];
+  const unsaved = d ? unsavedLabels(fields, [...ownLabels, ...regList.filter((s) => s.dirty()).map((s) => s.label)]) : [];
+  // What the page saves by itself: everything except an add-box with a half-typed entry (EditorSection.typed).
+  const autoUnsaved = d ? unsavedLabels(fields, [...ownLabels, ...regList.filter((s) => s.dirty() && !s.typed?.()).map((s) => s.label)]) : [];
   unsavedRef.current = unsaved;
+  autoUnsavedRef.current = autoUnsaved;
+  // Saves by itself, like OpenBot and Grok Bot: a moment after the last change, without a button. What cannot be saved
+  // (no name, or the server refused it) stays on the page with "Niet opgeslagen" and a button.
+  const named = !!d?.name?.trim();
+  const pending = d && autoUnsaved.length && named ? `${JSON.stringify(d)}\u0000${autoUnsaved.join('|')}` : '';
+  useEffect(() => {
+    if (!pending) return;
+    const timer = setTimeout(() => void saveNowRef.current?.(false), AUTOSAVE_MS);
+    return () => clearTimeout(timer);
+  }, [pending]);
+  const showUnsaved = unsaved.length > 0 && (saveFailed || !named);
 
   if (!d) {
     // A member who opens the editor link of a shared bot (acceptance round 5, A-61: "Bot niet gevonden"): say why,
@@ -464,32 +486,54 @@ function BotPage({ id }: { id: string }) {
     );
   }
 
-  /** Saves the bot and every module section with unsaved changes. Resolves true when everything is stored. */
-  const submit = () =>
+  /**
+   * Saves the bot and every module section with unsaved changes (`all`: also a half-typed entry in an add-box).
+   * Resolves true when everything is stored. A change made while the save runs stays in the page (and is saved
+   * next); otherwise the page takes what the server has.
+   */
+  const submit = (all = true) =>
     save.run(async () => {
       if (!d.name?.trim()) throw new Error('Geef de bot een naam');
-      const secs = [...regs.current.values()];
+      const sent = d;
+      const adopt = (a: Agent) => (setSaved({ ...a }), setD((cur) => (cur === sent ? { ...a } : cur)));
+      const secs = [...regs.current.values()].filter((s) => all || !s.typed?.());
       const payload: Draft = await prepareSections(secs, { ...d });
       if (!payload.workspace?.trim()) delete payload.workspace;
-      let a = await api.patch<Agent>(`/agents/${id}`, payload);
-      loadAgent(a);
+      let a = await api.patch<Agent>(`/agents/${id}`, payload).catch((e) => {
+        setSaveFailed(true);
+        throw e;
+      });
+      adopt(a);
       // Sections with their own settings (e.g. Computer) are stored after the bot, so their server-side changes
       // (such as tool groups for the chosen computer mode) are not overwritten by the bot's own save.
       const r = await flushSections(secs);
       if (r.saved.length) a = await api.get<Agent>(`/agents/${id}`).catch(() => a);
-      loadAgent(a);
+      adopt(a);
       useApp.setState((s) => ({ agents: s.agents.map((x) => (x.id === a.id ? a : x)) }));
+      setSaveFailed(r.failed.length > 0);
       if (r.failed.length) {
         toast(t('Bot opgeslagen, maar {0} niet: {1}', formatList(r.failed.map((f) => translate(f.label))), r.failed[0].error), 'danger');
         return false;
       }
-      toast('Opgeslagen', 'ok');
       return true;
     });
+  /** Saves what is not saved yet, after a save that still runs. True when nothing is left unsaved. */
+  saveNowRef.current = async (all) => {
+    while (inflight.current) await inflight.current;
+    if (!(all ? unsavedRef : autoUnsavedRef).current.length) return true;
+    if (!named) return false;
+    const p = submit(all).then((ok) => !!ok);
+    inflight.current = p;
+    try {
+      return await p;
+    } finally {
+      inflight.current = null;
+    }
+  };
 
   /**
    * "Laat AI de instructies schrijven": rules from the bot's role and short description. Only the instructions change
-   * (not saved until "Opslaan"). `local`: write them with this local model instead.
+   * (and are saved like any other change). `local`: write them with this local model instead.
    */
   const generate = (local?: ProviderView) =>
     gen.run(async () => {
@@ -502,7 +546,7 @@ function BotPage({ id }: { id: string }) {
         throw e;
       });
       if (r.draft.instructions) set({ instructions: r.draft.instructions });
-      toast('Instructies klaar: lees ze na en sla op', 'ok');
+      toast('Instructies klaar: lees ze na', 'ok');
     });
 
   const providerOptions = providers.filter((p) => p.enabled);
@@ -824,7 +868,7 @@ function BotPage({ id }: { id: string }) {
     if (!v) set({ tool_groups: [...new Set([...(d.tool_groups || []), ...autoGroups])] });
   };
   const row = (key: string, title: string, summary: React.ReactNode, body: React.ReactNode) => (
-    <Section key={key} id={key} title={title} summary={summary} open={openSecs.open.includes(key)} onToggle={() => openSecs.toggle(key)} dirty={dirtyKeys.has(key)}>
+    <Section key={key} id={key} title={title} summary={summary} open={openSecs.open.includes(key)} onToggle={() => openSecs.toggle(key)} dirty={showUnsaved && dirtyKeys.has(key)}>
       {body}
     </Section>
   );
@@ -837,7 +881,7 @@ function BotPage({ id }: { id: string }) {
   ]);
   const sectionList = (x: Place) =>
     sectionsAt(x).map((y) => (
-      <Section key={y.key} id={y.key} title={y.title} summary={y.summary} open={openSecs.open.includes(y.key)} onToggle={() => openSecs.toggle(y.key)} dirty={dirtyKeys.has(y.key)}>
+      <Section key={y.key} id={y.key} title={y.title} summary={y.summary} open={openSecs.open.includes(y.key)} onToggle={() => openSecs.toggle(y.key)} dirty={showUnsaved && dirtyKeys.has(y.key)}>
         {y.body}
       </Section>
     ));
@@ -859,9 +903,16 @@ function BotPage({ id }: { id: string }) {
             <Button icon={<MessageSquare className="h-4 w-4" />} onClick={() => navigate(`/a/${id}`)}>
               Chatten
             </Button>
-            <Button variant="primary" loading={save.busy} onClick={submit}>
-              Opslaan
-            </Button>
+            {showUnsaved ? (
+              <Button variant="primary" loading={save.busy} onClick={() => submit()}>
+                Opslaan
+              </Button>
+            ) : (
+              <span className="inline-flex items-center gap-1.5 px-1 text-[13px] text-muted" data-testid="save-state">
+                {save.busy || autoUnsaved.length ? <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden /> : <Check className="h-3.5 w-3.5 text-ok" aria-hidden />}
+                {save.busy || autoUnsaved.length ? 'Opslaan…' : 'Opgeslagen'}
+              </span>
+            )}
           </>
         }
       />
@@ -1131,14 +1182,14 @@ function BotPage({ id }: { id: string }) {
         </div>
       </div>
 
-      {unsaved.length > 0 && (
+      {showUnsaved && (
         <div className="sticky bottom-0 z-20 px-4 pb-3 sm:px-6" role="status">
           <div className="mx-auto flex max-w-3xl flex-wrap items-center gap-x-3 gap-y-2 rounded-card border border-line-strong bg-surface px-4 py-2.5 shadow-2xl">
             <CircleAlert className="h-4 w-4 shrink-0 text-warn" aria-hidden />
             <span className="min-w-0 flex-1 text-sm">
               <span className="font-semibold">Niet opgeslagen:</span> {formatList(unsaved.map((l) => translate(l)))}
             </span>
-            <Button variant="primary" size="sm" loading={save.busy} onClick={submit}>
+            <Button variant="primary" size="sm" loading={save.busy} onClick={() => submit()}>
               Opslaan
             </Button>
           </div>

@@ -1,10 +1,10 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { useShallow } from 'zustand/react/shallow';
 import { ChevronRight, Lock, Plus, Search } from 'lucide-react';
 import { api } from '../lib/api';
 import { useApp } from '../lib/store';
 import { navigate } from '../lib/router';
-import { useIsDesktop } from '../lib/media';
+import { useIsDesktop, useMedia } from '../lib/media';
 import { moodText, moodTone, useAgentMood } from '../lib/mood';
 import type { Agent, ProviderView } from '../lib/types';
 import { BotFace, LiveBotAvatar } from '../components/BotFace';
@@ -24,13 +24,38 @@ import { useMainBot } from '../modules/teams/api';
 import { TeamSwitcher } from '../shell/TeamSwitcher';
 import { NewMenu } from '../shell/NewMenu';
 
-/** A small cluster of characters for the welcome screen. */
-function Faces() {
+/** One character on the stage: it floats gently (each at its own moment) above its own soft shadow. */
+function Floating({ children, delay, className }: { children: ReactNode; delay: number; className?: string }) {
   return (
-    <div className="flex items-end justify-center gap-1" aria-hidden>
-      <BotFace seed="welkom-1" traits={{ shape: 'egg', color: 'teal', eyes: 'look', mouth: 'smile', extra: 'none', cheeks: true }} size={64} className="-me-2 translate-y-1" />
-      <BotFace seed="welkom-2" traits={{ shape: 'squircle', color: 'cobalt', eyes: 'bean', mouth: 'smile', extra: 'antenna', cheeks: true }} size={92} />
-      <BotFace seed="welkom-3" traits={{ shape: 'ghost', color: 'pink', eyes: 'happy', mouth: 'cat', extra: 'none', cheeks: true }} size={64} className="-ms-2 translate-y-1" />
+    <div className={cx('flex flex-col items-center', className)}>
+      <div className="tb-float" style={{ animationDelay: `${delay}s` }}>
+        {children}
+      </div>
+      <span className="mt-1 h-2.5 w-[58%] rounded-[50%] bg-black/15 blur-[5px] dark:bg-black/55" />
+    </div>
+  );
+}
+
+/** TeamBot's team on the welcome stage: the logo in the middle, the biggest, with four colleagues around it. */
+function Team({ scale }: { scale: number }) {
+  const s = (n: number) => Math.round(n * scale);
+  return (
+    <div className="flex items-end justify-center" aria-hidden>
+      <Floating delay={-1.2} className="-me-5 mb-3">
+        <BotFace seed="welkom-4" traits={{ shape: 'drop', color: 'mint', eyes: 'bean', mouth: 'smile', extra: 'none', cheeks: true }} size={s(86)} />
+      </Floating>
+      <Floating delay={-3.4} className="-me-3 mb-1">
+        <BotFace seed="welkom-1" traits={{ shape: 'egg', color: 'teal', eyes: 'look', mouth: 'smile', extra: 'none', cheeks: true }} size={s(118)} />
+      </Floating>
+      <Floating delay={0} className="relative z-10">
+        <Mark size={s(176)} />
+      </Floating>
+      <Floating delay={-2.3} className="-ms-3 mb-1">
+        <BotFace seed="welkom-3" traits={{ shape: 'ghost', color: 'pink', eyes: 'happy', mouth: 'cat', extra: 'none', cheeks: true }} size={s(118)} />
+      </Floating>
+      <Floating delay={-4.6} className="-ms-5 mb-3">
+        <BotFace seed="welkom-5" traits={{ shape: 'bun', color: 'sun', eyes: 'look', mouth: 'smile', extra: 'sprout', cheeks: true }} size={s(86)} />
+      </Floating>
     </div>
   );
 }
@@ -44,6 +69,10 @@ function Faces() {
  * Koppelen). No ports, no Tailscale, no jargon here.
  */
 function Welcome() {
+  // The team fills the stage: full size on a wide screen, smaller next to the choices on a narrow one and on the phone.
+  const wide = useMedia('(min-width: 1280px)');
+  const desk = useIsDesktop();
+  const scale = wide ? 1 : desk ? 0.8 : 0.62;
   const providers = useApp((s) => s.providers);
   const settings = useApp((s) => s.settings);
   const { kinds, reload: reloadKinds } = useProviderKinds(true);
@@ -92,20 +121,26 @@ function Welcome() {
   };
 
   return (
-    <Page>
-      <div className="mx-auto flex min-h-full max-w-[460px] flex-col justify-center px-5 py-10">
-        <div className="-mt-4 mb-4 flex justify-end">
-          <LanguageCorner />
-        </div>
-        <Faces />
-        <h1 className="mt-6 text-center text-[28px] font-extrabold leading-tight tracking-tight">Welkom bij TeamBot</h1>
-        <p className="mx-auto mt-2 max-w-sm text-center text-[15px] leading-relaxed text-muted">Je eigen team van AI-bots, op deze computer. Kies hoe je begint.</p>
+    // Two halves on the computer: the stage with the team and the welcome on the left, the ways to start on the right
+    // (on the phone the stage on top). More picture, less text.
+    <Page className="lg:overflow-hidden lg:pb-0">
+      <div className="flex min-h-full flex-col lg:h-full lg:flex-row">
+        <section className="tb-hero m-3 flex shrink-0 flex-col items-center justify-center overflow-hidden rounded-[24px] px-6 pb-10 pt-12 lg:m-0 lg:w-[50%] lg:rounded-none lg:pb-16">
+          <Team scale={scale} />
+          <h1 className="mt-9 text-center text-[32px] font-extrabold leading-[1.08] tracking-[-0.025em] lg:text-[46px]">Welkom bij TeamBot</h1>
+          <p className="mt-3 max-w-[23rem] text-center text-[15px] leading-relaxed text-muted lg:text-base">Je eigen team van AI-bots, op deze computer. Kies hoe je begint.</p>
+        </section>
 
-        <div className="-mb-3 mt-7 empty:hidden">
+        <div className="scroll-thin flex min-w-0 flex-1 flex-col px-5 pb-8 lg:overflow-y-auto lg:px-10 lg:pb-6 lg:pt-4">
+          <div className="flex justify-end">
+            <LanguageCorner />
+          </div>
+          <div className="mx-auto my-auto w-full max-w-[460px] py-4">
+        <div className="-mb-3 empty:hidden">
           <OpenBotBanner offer={openbot} primary={primaryId === 'openbot'} />
         </div>
 
-        <div className="mt-7 space-y-3">
+        <div className="mt-6 space-y-3 first:mt-0">
           <SubscriptionCard view={subs.view} err={subs.err} primaryId={primaryId} onChanged={subs.load} />
           <KeyCard kinds={kinds} connected={keyed} primaryId={primaryId} />
           <FreeCard options={free} primaryId={primaryId} freeStartPrimary={primaryId === 'free-start'} localMissing={noLocal} onLocalFound={reloadKinds}>
@@ -131,7 +166,7 @@ function Welcome() {
           </a>
         </div>
         <p className="mx-auto mt-8 max-w-sm text-center text-xs leading-relaxed text-muted">
-          <Lock className="me-1 inline h-3.5 w-3.5 align-[-2px]" aria-hidden />
+          <Lock className="me-1 inline h-3.5 w-3.5 align-[-2px]" aria-hidden />
           Je gesprekken blijven op deze computer.{' '}
           <a className="underline hover:text-fg" href="#/settings/data">
             Privacy en gegevens
@@ -139,6 +174,8 @@ function Welcome() {
           {/* As the first bot starts (Volledige toegang): it does the work itself, and asks for money and messages to others. */}
           <MoreInfo>Bots doen het werk zelf en vragen het je bij geld en belangrijke berichten naar anderen.</MoreInfo>
         </p>
+          </div>
+        </div>
       </div>
     </Page>
   );

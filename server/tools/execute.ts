@@ -47,7 +47,8 @@ export interface ExecuteToolInput {
   callId: string;
   signal: AbortSignal;
   /** 'waiting' while a human decides, 'running' again afterwards. */
-  onState?(state: 'waiting' | 'running'): void;
+  /** `risk`: this call's own risk (callRisk), which the approval card shows too; it can differ from the tool's. */
+  onState?(state: 'waiting' | 'running', risk?: string): void;
   progress?(text: string): void;
 }
 
@@ -117,7 +118,7 @@ export async function executeTool(i: ExecuteToolInput): Promise<ExecuteToolResul
         // The terminal part runs its `command` on this computer: the gate reads it like a command of a CLI engine.
         ...(tool.group === 'shell' && typeof args?.command === 'string' ? { command: args.command, cwd: typeof args.cwd === 'string' && args.cwd ? args.cwd : undefined } : {}),
       },
-      { onWait: (waiting) => i.onState?.(waiting ? 'waiting' : 'running') },
+      { onWait: (waiting) => i.onState?.(waiting ? 'waiting' : 'running', risk) },
     );
     asked = g.asked;
     decidedBy = g.by;

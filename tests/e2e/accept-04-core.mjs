@@ -194,8 +194,11 @@ try {
       if (!(await page.getByRole('button', { name: 'Zijpaneel sluiten' }).count())) await page.getByRole('button', { name: 'Zijpaneel' }).click().catch(() => {});
       await page.waitForTimeout(300);
       const tabs = (await page.getByRole('tab').allInnerTexts()).map((t) => t.trim());
-      // Simple: one purpose, no tabs; the panel is then called "Bestanden van dit gesprek".
-      return tabs.length ? tabs : (await page.getByRole('heading', { name: 'Bestanden van dit gesprek' }).count()) ? ['Bestanden'] : [];
+      // Simple: one purpose, no tabs. A group's panel is then called "Bestanden van dit gesprek"; a bot's chat opens on
+      // the bot's overview (its computer, routines and files), named after the bot.
+      if (tabs.length) return tabs;
+      if (await page.getByRole('heading', { name: 'Bestanden van dit gesprek' }).count()) return ['Bestanden'];
+      return (await page.locator('#inhoud aside').getByRole('heading', { name: 'Ada', exact: true }).count()) ? ['Overzicht'] : [];
     };
     check('A-07', 'Geavanceerd tonen staat standaard uit', !tb.app.ctx.store.settings(tb.owner.id).ui?.advanced);
     const simple = await tabsOf('#/m/teamdata/');
@@ -214,7 +217,7 @@ try {
     const reach = await fromBoard();
     check('A-02', 'Teamwerk: vanuit Taken (zijbalk) is het Logboek in één klik te bereiken (2 klikken totaal)', reach.some((x) => /^Logboek/.test(x)), `op #/tasks: ${reach.join(', ') || 'geen tabbladen of links naar Teamwerk'}`);
     const inspSimple = await inspector();
-    check('A-07', 'zijpaneel (eenvoudig): geen Activiteit en Details', inspSimple.includes('Bestanden') && !inspSimple.includes('Activiteit') && !inspSimple.includes('Details'), inspSimple.join(', '));
+    check('A-07', 'zijpaneel (eenvoudig): geen Activiteit en Details', (inspSimple.includes('Bestanden') || inspSimple.includes('Overzicht')) && !inspSimple.includes('Activiteit') && !inspSimple.includes('Details'), inspSimple.join(', '));
     // Since 12 Nov there is no hidden second layer in Instellingen: every optional function is one row under "Meer
     // mogelijkheden" for everyone (lib/palette.ts ADVANCED_ONLY is empty), Netwerk en proxy too.
     const proxyRow = async () => (await go(page, '#/settings/meer'), page.locator('#inhoud').getByRole('navigation', { name: 'Onderdelen' }).locator('a[href="#/settings/network-proxy"]').count());

@@ -271,12 +271,14 @@ export function AgentFoldersSection({ agent, onChange }: { agent: Agent; onChang
       if (folders.some((f) => f.path.toLowerCase() === r.path!.toLowerCase())) throw new Error('Deze map staat er al bij');
       set([...folders, { path: r.path!, mode, label: r.label }]);
       setPath('');
-      toast('Map toegevoegd; vergeet niet op te slaan', 'ok');
+      toast('Map toegevoegd', 'ok');
     });
-  // A typed folder that was not added yet is added by the editor's main "Opslaan" (instead of being dropped silently).
+  // A typed folder that was not added yet is added when you leave the editor or press Opslaan (instead of being
+  // dropped silently); the editor does not add it by itself halfway through the typing.
   useEditorSection('folders:typed', {
     label: 'Mappen',
     dirty: () => !!path.trim(),
+    typed: () => !!path.trim(),
     prepare: async () => {
       const r = await foldersApi.check(path.trim());
       if (!r.ok) throw new Error(`Map “${path.trim()}”: ${r.error || 'deze map kan niet'}`);

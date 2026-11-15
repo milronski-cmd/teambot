@@ -451,7 +451,7 @@ function fill(template: string, values: Record<string, string>, where: 'url' | '
  */
 export function entryFor(item: RegistryItem, key: string, rawInputs: Record<string, any> = {}, o: { auth?: 'none' | 'headers' | 'oauth'; license?: string | null } = {}): { entry: CatalogEntry; option: InstallOption; inputs: Record<string, string> } {
   const opt = item.options.find((x) => x.key === key);
-  if (!opt) throw new HttpError(400, 'Onbekende installatievorm.');
+  if (!opt) throw new HttpError(400, `Onbekende installatievorm. Kies option uit: ${item.options.map((x) => x.key).join(', ') || 'geen'}.`);
   if (!opt.supported) throw new HttpError(422, opt.reason || 'Deze installatievorm wordt niet ondersteund.');
   if (item.status === 'deleted') throw new HttpError(410, 'Deze server is uit het register verwijderd.');
   const inputs: Record<string, string> = {};

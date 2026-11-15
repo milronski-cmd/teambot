@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import * as DialogPrimitive from '@radix-ui/react-dialog';
 import { create } from 'zustand';
-import { ArrowLeft, ExternalLink, X, Loader2 } from 'lucide-react';
+import { AlertCircle, ArrowLeft, CheckCircle2, ExternalLink, X, Loader2 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { translate, uiLocale } from '../lib/i18n';
 import { useIsDesktop } from '../lib/media';
@@ -169,8 +169,28 @@ export const TONE_TILE: Record<Tone, string> = { orange: TILE, violet: TILE, tea
 export function IconTile({ icon: Icon, tone = 'neutral', size = 'md', className }: { icon: LucideIcon; tone?: Tone; size?: 'sm' | 'md' | 'lg' | 'xl'; className?: string }) {
   // xl: the tile next to a page title (the same 40 px tile as the settings pages).
   return (
-    <span className={cx('flex shrink-0 items-center justify-center', size === 'xl' ? 'size-10 rounded-xl' : 'rounded-lg', size === 'sm' ? 'size-5 text-muted' : size === 'lg' ? 'size-9' : size === 'xl' ? '' : 'size-8', size !== 'sm' && TONE_TILE[tone], className)} aria-hidden>
-      <Icon className={size === 'sm' ? 'h-4 w-4' : size === 'lg' ? 'h-5 w-5' : size === 'xl' ? 'h-[22px] w-[22px]' : 'h-[18px] w-[18px]'} />
+    <span className={cx('flex shrink-0 items-center justify-center', size === 'xl' ? 'size-12 rounded-2xl' : size === 'sm' ? 'rounded-lg' : 'rounded-xl', size === 'sm' ? 'size-5 text-muted' : size === 'lg' ? 'size-11' : size === 'xl' ? '' : 'size-10', size !== 'sm' && TONE_TILE[tone], className)} aria-hidden>
+      <Icon className={size === 'sm' ? 'h-4 w-4' : size === 'lg' ? 'h-[22px] w-[22px]' : size === 'xl' ? 'h-[26px] w-[26px]' : 'h-5 w-5'} />
+    </span>
+  );
+}
+
+/**
+ * A short explanation as a small (i) next to a title: the words show when you point at it or tab to it, so the screen
+ * itself stays clean (more picture, less text). Screen readers read it as the (i)'s name. Words that are not plain text
+ * (a link, a value in bold) stay visible as one small line.
+ */
+export function HintTip({ text }: { text: React.ReactNode }) {
+  if (typeof text !== 'string') return <span className="mt-0.5 block basis-full text-xs font-normal leading-relaxed tracking-normal text-muted">{text}</span>;
+  const words = translate(text);
+  return (
+    <span
+      role="img"
+      tabIndex={0}
+      aria-label={words}
+      className="tb-tip ms-1.5 inline-flex size-[18px] -translate-y-px items-center justify-center rounded-full border border-line-strong align-middle text-[10.5px] font-semibold not-italic tracking-normal text-muted transition-colors hover:border-fg/40 hover:text-fg"
+    >
+      <span aria-hidden>i</span>
     </span>
   );
 }
@@ -184,11 +204,12 @@ export function CardHead({ icon, tone, title, hint, action, className, id, as: H
   return (
     <div className={cx('flex flex-wrap items-center gap-x-3 gap-y-1', className)}>
       <IconTile icon={icon} tone={tone} />
-      <div className="min-w-[min(100%,9rem)] flex-1">
+      {/* The (i) sits next to the title, not in it: the heading's name stays the title alone. */}
+      <div className="flex min-w-[min(100%,9rem)] flex-1 flex-wrap items-center">
         <H id={id} className="text-[15px] font-bold leading-snug tracking-tight [overflow-wrap:anywhere]">
           {title}
         </H>
-        {hint && <p className="text-xs leading-relaxed text-muted">{hint}</p>}
+        {hint && <HintTip text={hint} />}
       </div>
       {action}
     </div>
@@ -394,31 +415,36 @@ export function Avatar({ name, avatar, size = 32 }: { name: string; avatar?: str
 const WIDTH = { xl: 'max-w-xl', '2xl': 'max-w-2xl', '3xl': 'max-w-3xl', '4xl': 'max-w-4xl', '5xl': 'max-w-5xl', '6xl': 'max-w-6xl', full: '' } as const;
 export type PageWidth = keyof typeof WIDTH;
 
+/** True inside a frame that already shows the way back above the page (Instellingen' SettingsFrame): no second one. */
+export const BackShown = React.createContext(false);
+
 /** Page title area: big title, calm subtitle, actions on the right. `width` matches the page body below it. */
 export function PageHeader({ title, subtitle, actions, back: given, width = '4xl', icon, tone }: { title: React.ReactNode; subtitle?: React.ReactNode; actions?: React.ReactNode; back?: { href: string; label: string }; width?: PageWidth; /** The page's icon tile, as on the settings pages. */ icon?: LucideIcon; tone?: Tone }) {
   // On the phone every page has a way back: a page that names none (Taken, Marktplaats, Automatisch … are reached from
   // the "Meer" tab there, and have no sidebar next to them) goes back to Meer. The tabs themselves need none.
   const desktop = useIsDesktop();
   const tabRoot = /^#?\/?(inbox|more|start)?\/?(\?.*)?$/.test(typeof location === 'undefined' ? '' : location.hash);
-  const back = given || (!desktop && !tabRoot ? { href: '#/more', label: translate('Meer') } : undefined);
+  const framed = React.useContext(BackShown);
+  const back = given || (!desktop && !tabRoot && !framed ? { href: '#/more', label: translate('Meer') } : undefined);
   return (
     <div className={cx('mx-auto px-4 pb-2 pt-5 sm:px-6 sm:pt-8', WIDTH[width])}>
-      <div className="flex flex-wrap items-end justify-between gap-x-4 gap-y-3">
+      {back && (
+        // The same round arrow as the way back in Instellingen (pages/Settings.tsx BackLink): one look for "back". Above
+        // the row, so the title and its buttons stand on one line.
+        <a href={back.href} className="group mb-2 inline-flex min-h-9 items-center gap-2 text-[13px] font-medium text-muted transition-colors hover:text-fg coarse:min-h-11">
+          <span className="grid h-7 w-7 place-items-center rounded-full border border-line bg-surface transition-colors group-hover:border-fg/30">
+            <ArrowLeft className="h-4 w-4 rtl-flip" aria-hidden />
+          </span>
+          {back.label}
+        </a>
+      )}
+      <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-3">
         <div className="min-w-0">
-          {back && (
-            // The same round arrow as the way back in Instellingen (pages/Settings.tsx BackLink): one look for "back".
-            <a href={back.href} className="group mb-2 inline-flex min-h-9 items-center gap-2 text-[13px] font-medium text-muted transition-colors hover:text-fg coarse:min-h-11">
-              <span className="grid h-7 w-7 place-items-center rounded-full border border-line bg-surface transition-colors group-hover:border-fg/30">
-                <ArrowLeft className="h-4 w-4 rtl-flip" aria-hidden />
-              </span>
-              {back.label}
-            </a>
-          )}
           <div className="flex items-center gap-3">
             {icon && <IconTile icon={icon} tone={tone} size="xl" />}
-            <div className="min-w-0">
+            <div className="flex min-w-0 flex-wrap items-center">
               <h1 className="text-xl font-bold leading-tight tracking-tight sm:text-[22px]">{title}</h1>
-              {subtitle && <p className="mt-1 max-w-2xl text-[13px] leading-snug text-muted">{subtitle}</p>}
+              {subtitle && <HintTip text={subtitle} />}
             </div>
           </div>
         </div>
@@ -438,13 +464,24 @@ interface Toast {
   id: number;
   text: string;
   tone: 'ok' | 'danger' | 'neutral';
+  /** Still running (toastProgress): a small spinner until it is done. */
+  busy?: boolean;
+  /** On its way out (the island shrinks back for 220 ms before it is gone). */
+  leaving?: boolean;
 }
 const useToasts = create<{ list: Toast[] }>(() => ({ list: [] }));
 let toastId = 0;
+const TOAST_MS = 4500;
+function dropToast(id: number) {
+  useToasts.setState((s) => ({ list: s.list.map((t) => (t.id === id ? { ...t, leaving: true } : t)) }));
+  setTimeout(() => useToasts.setState((s) => ({ list: s.list.filter((t) => t.id !== id) })), 220);
+}
 export function toast(text: string, tone: Toast['tone'] = 'neutral') {
   const id = ++toastId;
+  // The island holds one message: a new one takes the place of the one before (one that is still running stays).
+  for (const t of useToasts.getState().list) if (!t.busy && !t.leaving) dropToast(t.id);
   useToasts.setState((s) => ({ list: [...s.list, { id, text, tone }] }));
-  setTimeout(() => useToasts.setState((s) => ({ list: s.list.filter((t) => t.id !== id) })), 4500);
+  setTimeout(() => dropToast(id), TOAST_MS);
 }
 export function toastError(e: any) {
   // "This stays on the computer" (a paired phone, 403 mobile_denied) is a calm reason, not a red error.
@@ -461,11 +498,11 @@ export async function copyText(text: string, ok = 'Gekopieerd', fail = 'Kopiëre
  */
 export function toastProgress(text: string): { done(text: string, tone?: Toast['tone']): void } {
   const id = ++toastId;
-  useToasts.setState((s) => ({ list: [...s.list, { id, text, tone: 'neutral' }] }));
+  useToasts.setState((s) => ({ list: [...s.list, { id, text, tone: 'neutral', busy: true }] }));
   return {
     done(t, tone = 'neutral') {
-      useToasts.setState((s) => ({ list: s.list.some((x) => x.id === id) ? s.list.map((x) => (x.id === id ? { ...x, text: t, tone } : x)) : [...s.list, { id, text: t, tone }] }));
-      setTimeout(() => useToasts.setState((s) => ({ list: s.list.filter((x) => x.id !== id) })), 4500);
+      useToasts.setState((s) => ({ list: s.list.some((x) => x.id === id) ? s.list.map((x) => (x.id === id ? { ...x, text: t, tone, busy: false } : x)) : [...s.list, { id, text: t, tone }] }));
+      setTimeout(() => dropToast(id), TOAST_MS);
     },
   };
 }
@@ -549,18 +586,22 @@ export function Toaster() {
   return (
     <>
     <ConfirmHost />
-    <div className="pointer-events-none fixed bottom-[calc(env(safe-area-inset-bottom)+5rem)] left-1/2 z-[60] flex w-[min(92vw,440px)] -translate-x-1/2 flex-col items-center gap-2 desk:bottom-6" aria-live="polite">
+    {/* The island: a message drops out of the top of the page as a black pill (the same in light and dark), over the
+        middle of the page next to the sidebar. Clicks go through it to the page underneath. */}
+    <div className="pointer-events-none fixed left-1/2 top-[calc(env(safe-area-inset-top)+0.5rem)] z-[60] grid w-[min(92vw,480px)] -translate-x-1/2 justify-items-center desk:left-[calc(50%+var(--tb-side,300px)/2)] desk:top-2.5" aria-live="polite">
       {list.map((t) => (
         <div
           key={t.id}
-          // Light: a dark pill; dark: a raised surface with a border instead of a white slab.
-          className={cx(
-            'pointer-events-auto flex items-center gap-2 rounded-card px-4 py-2.5 text-sm font-medium shadow-pop',
-            t.tone === 'danger' ? 'bg-danger text-danger-fg' : 'bg-fg text-canvas dark:border dark:border-line-strong dark:bg-surface-3 dark:text-fg',
-          )}
+          className={cx('tb-island flex min-h-9 max-w-full items-center gap-2.5 rounded-[20px] px-4 py-2 text-[13.5px] font-medium leading-snug [grid-area:1/1]', t.leaving && 'tb-island-out')}
         >
-          {t.tone === 'ok' && <span className="h-2 w-2 shrink-0 rounded-full bg-ok" aria-hidden />}
-          {t.text}
+          {t.busy ? (
+            <Loader2 className="h-4 w-4 shrink-0 animate-spin text-white/70" aria-hidden />
+          ) : t.tone === 'ok' ? (
+            <CheckCircle2 className="h-4 w-4 shrink-0 text-[#4fd18b]" aria-hidden />
+          ) : t.tone === 'danger' ? (
+            <AlertCircle className="h-4 w-4 shrink-0 text-[#ff6b6b]" aria-hidden />
+          ) : null}
+          <span className="line-clamp-2 min-w-0">{t.text}</span>
         </div>
       ))}
     </div>

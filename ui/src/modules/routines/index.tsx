@@ -3,7 +3,7 @@ import type { UIModule } from '../types';
 import type { Message, ToolCall } from '../../lib/types';
 import { t } from '../../lib/i18n';
 import { formatDateTime } from '../../lib/format';
-import { AgentRoutinesSection, GlobalLimits, RoutineDetailPage, RoutinesPage } from './Pages';
+import { AgentRoutinesSection, BotRoutines, GlobalLimits, RoutineDetailPage, RoutinesPage } from './Pages';
 import { UptimeNote } from './Head';
 import { useMeta } from './lib';
 import { CalendarPage } from './Calendar';
@@ -73,6 +73,7 @@ function SettingsTab() {
 }
 
 const mod: UIModule = {
+  botPanel: [{ id: 'routines', title: 'Routines', order: 20, component: BotRoutines }],
   id: 'routines',
   label: 'Routines & triggers',
   pages: [

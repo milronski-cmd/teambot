@@ -14,7 +14,7 @@ import { NewRoomModal } from '../modules/rooms/NewRoom';
  * Teams or from the team switcher, which only shows from the second team on: with one team the "+" never offered one.
  * A new team becomes the team you look at, so the next bot lands in it (as the switcher's "Nieuw team" does).
  */
-export function NewMenu({ size = 'desk', onNavigate }: { size?: 'desk' | 'phone'; onNavigate?(): void }) {
+export function NewMenu({ size = 'desk', onNavigate, align = 'end' }: { size?: 'desk' | 'phone'; onNavigate?(): void; /** 'start': the menu opens to the right (the folded sidebar). */ align?: 'start' | 'end' }) {
   const { teams } = useTeamView();
   const [open, setOpen] = useState(false);
   const [creating, setCreating] = useState(false);
@@ -61,7 +61,7 @@ export function NewMenu({ size = 'desk', onNavigate }: { size?: 'desk' | 'phone'
       >
         <Plus className="size-icon-lg" aria-hidden />
       </button>
-      <Pop open={open} origin="top right" ref={menu} id={menuId} role="menu" aria-label="Nieuw" onKeyDown={onMenuKey} className="absolute end-0 top-full z-40 mt-1 w-56 p-1.5">
+      <Pop open={open} origin={align === 'start' ? 'top left' : 'top right'} ref={menu} id={menuId} role="menu" aria-label="Nieuw" onKeyDown={onMenuKey} className={cx('absolute top-full z-40 mt-1 w-56 p-1.5', align === 'start' ? 'start-0' : 'end-0')}>
           <a
             role="menuitem"
             tabIndex={-1}

@@ -60,7 +60,7 @@ function SpeakButton({ message: m }: { message: Message }) {
   };
   return (
     // Close under the time of the message, its icon in line with the text (the button's own padding is pulled back).
-    <div className="-ms-1 -mt-2.5 coarse:-mt-4">
+    <div className={cx('-ms-1 -mt-2.5 coarse:-mt-4', playing === 'idle' && 'tb-hover-meta')}>
       <Button
         variant="ghost"
         size="sm"

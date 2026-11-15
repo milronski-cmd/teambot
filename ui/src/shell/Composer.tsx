@@ -198,7 +198,7 @@ export function Composer({ threadId, agentId, busy, disabled, replyTo, onCancelR
         </div>
       )}
       {disabled && <div className="mb-2 rounded-xl bg-warn-soft px-3 py-2 text-xs font-medium text-warn">{disabled}</div>}
-      <div className="relative rounded-bubble border border-line bg-surface px-2 py-1.5 transition-colors focus-within:border-muted">
+      <div data-composer className="relative rounded-[26px] border border-transparent bg-surface-2 px-2 py-1.5 transition-colors focus-within:border-line-strong">
         {slash.menu}
         {files.length > 0 && (
           <div className="flex flex-wrap gap-2 px-1.5 pb-1 pt-1.5">
@@ -264,7 +264,7 @@ export function Composer({ threadId, agentId, busy, disabled, replyTo, onCancelR
             placeholder={placeholder || 'Typ een bericht…'}
             aria-label="Bericht"
             title="Enter = versturen · Shift+Enter = nieuwe regel · / of $ = skills en opdrachten"
-            className="max-h-60 min-h-9 min-w-0 flex-1 resize-none bg-transparent px-1 py-2 text-[15px] leading-snug outline-none placeholder:text-muted coarse:min-h-11 coarse:py-2.5"
+            className="max-h-60 min-h-9 min-w-0 flex-1 resize-none bg-transparent px-1 py-2 text-[16px] leading-snug desk:text-[15px] outline-none placeholder:text-muted coarse:min-h-11 coarse:py-2.5"
           />
           {accessory}
           {actions.map((A, i) => (

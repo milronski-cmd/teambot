@@ -1,6 +1,6 @@
 // End-to-end check of the extension screens that the acceptance test found lacking (release gate, runs with npm run e2e):
-//   1. bot editor: one "Opslaan" also stores the Computer section (Eigen server/SSH), a typed folder that was not
-//      added yet, a sticky "Niet opgeslagen" bar, and leaving with unsaved changes asks first (no silent loss);
+//   1. bot editor: saves by itself, also the Computer section (Eigen server/SSH); a folder typed in the add-box waits
+//      until you leave, and leaving right after a change saves it first (no question, no silent loss);
 //   2. one bot picker with "Alle bots" for skills (Mijn skills › Bots) and apps (connector detail);
 //   3. OAuth login of a connector in one click (fake OAuth server: discovery, registration, PKCE, callback);
 //   4. Mijn skills › "Controleer op updates", and the warning before installing a skill that only points to another.
@@ -163,52 +163,49 @@ try {
   if (await page.getByText('Per tool instellen').count()) fail('botpagina: beleid per tool is zichtbaar zonder Tools te openen');
   await page.screenshot({ path: path.join(shots, 'editor-eenvoudig.png'), fullPage: false });
   if (await page.getByText('Niet opgeslagen:').count()) fail('editor: "Niet opgeslagen" zonder dat er iets is gewijzigd');
+  // The page saves by itself (like OpenBot and Grok Bot): no button Opslaan, a moment after a change it is stored.
+  if (await page.getByRole('button', { name: 'Opslaan', exact: true }).count()) fail('editor: er staat nog een knop Opslaan');
   await sectionBtn('Computer & bestanden').click();
   await page.getByRole('radiogroup', { name: 'Computermodus' }).waitFor({ timeout: 15000 });
   await page.getByRole('radio', { name: /Eigen server \(SSH\)/ }).click();
   await page.getByLabel('Adres van de server').fill('vps.example.nl');
   await page.getByLabel('Gebruikersnaam').fill('teambot');
-  await page.getByRole('status').filter({ hasText: 'Niet opgeslagen: Computer & bestanden' }).waitFor({ timeout: 5000 }).catch(() => fail('editor: plakbalk noemt de computerinstellingen niet'));
   if (await page.getByRole('button', { name: 'Computer opslaan' }).count()) fail('editor: er is nog een aparte knop "Computer opslaan"');
-  // A typed folder that was never "added" is added by Opslaan as well.
+  await sectionBtn('Computer & bestanden').click();
+  // A folder typed in the add-box is not added halfway through the typing, also not when other changes are saved.
   await sectionBtn('Werkmap en mappen').click();
   await page.getByLabel('Map toevoegen').fill(extraFolder);
   await tab('Overzicht');
   await page.getByLabel('Naam', { exact: true }).fill('Assistent Pro');
-  await tab('Kunnen');
-  // Closing a section with unsaved changes keeps them and marks the closed header.
-  await sectionBtn('Computer & bestanden').click();
-  await page.waitForTimeout(300);
-  if (!(await page.locator('[data-section="browser:computer"]').getByText('Niet opgeslagen').count())) fail('editor: dichtgeklapte sectie met wijzigingen heeft geen "Niet opgeslagen"');
-  const bar = await page.getByRole('status').filter({ hasText: 'Niet opgeslagen:' }).first().innerText();
-  if (!/Naam/.test(bar) || !/Computer & bestanden/.test(bar) || !/Mappen/.test(bar)) fail(`editor: plakbalk mist iets: ${bar}`);
-  else step(`plakbalk: ${bar.replace(/\s+/g, ' ').trim()}`);
-  await page.screenshot({ path: path.join(shots, 'editor-niet-opgeslagen.png') });
+  const stored = async (what, ok) => {
+    for (let i = 0; i < 60; i++) {
+      if (await ok()) return;
+      await page.waitForTimeout(250);
+    }
+    fail(`editor: ${what} niet vanzelf opgeslagen`);
+  };
+  await stored('computer (SSH)', async () => {
+    const c = (await api('GET', `/computers/${bot.id}`)).config;
+    return c.mode === 'remote' && c.remote.host === 'vps.example.nl' && c.remote.username === 'teambot';
+  });
+  await stored('naam', async () => app.ctx.store.agent(bot.id).name === 'Assistent Pro');
+  await page.getByTestId('save-state').filter({ hasText: 'Opgeslagen' }).waitFor({ timeout: 10000 }).catch(() => fail('editor: de kop zegt niet "Opgeslagen"'));
+  if (await page.getByText('Niet opgeslagen').count()) fail('editor: "Niet opgeslagen" terwijl alles vanzelf is opgeslagen');
+  const hasFolder = () => (app.ctx.store.agent(bot.id).settings?.folders || []).some((f) => path.resolve(f.path).toLowerCase() === path.resolve(extraFolder).toLowerCase());
+  if (hasFolder()) fail('editor: een getypte map is al toegevoegd terwijl je nog typt');
+  step('vanzelf opgeslagen, zonder knop: naam en computer (SSH); de getypte map wacht');
+  await page.screenshot({ path: path.join(shots, 'editor-vanzelf-opgeslagen.png') });
 
-  // Leaving asks first; Annuleren keeps everything.
+  // Leaving adds the typed folder first, without a question. (The address shows the next page for a moment while
+  // the editor still saves: wait until the editor is gone.)
   await page.getByRole('link', { name: /Terug naar Assistent/ }).click();
-  const leave = page.getByRole('dialog', { name: 'Wijzigingen opslaan?' });
-  await leave.waitFor({ timeout: 5000 }).catch(() => fail('editor: weggaan met wijzigingen vraagt niets'));
-  await page.screenshot({ path: path.join(shots, 'editor-weggaan.png') });
-  await leave.getByRole('button', { name: 'Annuleren' }).click();
-  if (!page.url().includes(`/agents/${bot.id}`)) fail(`editor: na Annuleren niet meer in de editor (${page.url()})`);
-  await sectionBtn('Computer & bestanden').click();
-  if ((await page.getByLabel('Adres van de server').inputValue()) !== 'vps.example.nl') fail('editor: ingevulde waarde weg na Annuleren of dichtklappen');
-  await sectionBtn('Computer & bestanden').click();
-  step('weggaan met wijzigingen vraagt eerst; Annuleren houdt alles');
-
-  // One Opslaan stores the bot, the computer section and the typed folder.
-  await page.getByRole('button', { name: 'Opslaan', exact: true }).first().click();
-  await page.getByText('Opgeslagen', { exact: true }).first().waitFor({ timeout: 10000 }).catch(() => fail('editor: geen melding "Opgeslagen"'));
-  await page.waitForTimeout(800);
-  const cfg = await api('GET', `/computers/${bot.id}`);
-  const saved = app.ctx.store.agent(bot.id);
-  if (cfg.config.mode !== 'remote' || cfg.config.remote.host !== 'vps.example.nl' || cfg.config.remote.username !== 'teambot') fail(`editor: computer niet opgeslagen (${JSON.stringify({ mode: cfg.config.mode, remote: cfg.config.remote })})`);
-  if (saved.name !== 'Assistent Pro') fail('editor: naam niet opgeslagen');
-  if (!(saved.settings?.folders || []).some((f) => path.resolve(f.path).toLowerCase() === path.resolve(extraFolder).toLowerCase())) fail(`editor: getypte map niet toegevoegd (${JSON.stringify(saved.settings?.folders)})`);
-  if (await page.getByText('Niet opgeslagen:').count()) fail('editor: plakbalk blijft staan na opslaan');
-  step('één Opslaan bewaart naam, computer (SSH) en de getypte map');
-  await page.reload();
+  await page.getByTestId('save-state').waitFor({ state: 'detached', timeout: 10000 }).catch(() => {});
+  // #/a/<bot> stands for the bot's chat and becomes #/t/<chat>.
+  await page.waitForURL(/#\/(a|t)\//, { timeout: 10000 }).catch(() => fail('editor: weggaan met een getypte map gaat niet weg'));
+  if (await page.getByRole('dialog', { name: 'Wijzigingen opslaan?' }).count()) fail('editor: weggaan vraagt nog om op te slaan');
+  if (!hasFolder()) fail(`editor: getypte map niet toegevoegd bij weggaan (${JSON.stringify(app.ctx.store.agent(bot.id).settings?.folders)})`);
+  else step('weggaan voegt de getypte map toe, zonder vraag');
+  await page.goto(`${app.url}/#/agents/${bot.id}`);
   await page.getByLabel('Naam', { exact: true }).waitFor({ timeout: 15000 });
   await tab('Kunnen');
   // Which sections you opened is remembered (per browser): "Werkmap en mappen" open, "Computer" closed.
@@ -218,13 +215,14 @@ try {
   await page.getByRole('radiogroup', { name: 'Computermodus' }).waitFor({ timeout: 15000 });
   await page.waitForTimeout(800);
   if ((await page.getByRole('radio', { name: /Eigen server \(SSH\)/ }).getAttribute('aria-checked')) !== 'true') fail('editor: na herladen staat de modus niet meer op Eigen server');
-  // "Niet opslaan" really leaves without saving.
+  // Leaving right after a change saves it first: no question, nothing lost.
   await page.getByLabel('Gebruikersnaam').fill('iemand-anders');
   await page.getByRole('link', { name: /Terug naar/ }).click();
-  await page.getByRole('dialog', { name: 'Wijzigingen opslaan?' }).getByRole('button', { name: 'Niet opslaan' }).click();
-  await page.waitForURL(/#\/a\//, { timeout: 10000 }).catch(() => fail('editor: "Niet opslaan" gaat niet weg'));
-  if ((await api('GET', `/computers/${bot.id}`)).config.remote.username !== 'teambot') fail('editor: "Niet opslaan" heeft toch opgeslagen');
-  step('herladen houdt de keuze; "Niet opslaan" gaat weg zonder op te slaan');
+  await page.getByTestId('save-state').waitFor({ state: 'detached', timeout: 10000 }).catch(() => {});
+  // #/a/<bot> stands for the bot's chat and becomes #/t/<chat>.
+  await page.waitForURL(/#\/(a|t)\//, { timeout: 10000 }).catch(() => fail('editor: weggaan vlak na een wijziging gaat niet weg'));
+  if ((await api('GET', `/computers/${bot.id}`)).config.remote.username !== 'iemand-anders') fail('editor: een wijziging vlak voor weggaan is niet opgeslagen');
+  step('herladen houdt de keuze; weggaan vlak na een wijziging slaat die eerst op');
 
   // ---------------------------------------------------------------- 2. one bot picker with "Alle bots"
   const pv = await api('POST', '/skills/import/preview', { kind: 'paste', text: '---\nname: offerte\ndescription: Maakt een offerte.\n---\n\n# Offerte\n\nLees de aanvraag, reken de uren uit en schrijf een nette offerte met prijs, planning en voorwaarden. Vraag na wat onduidelijk is.\n' });
@@ -426,16 +424,18 @@ try {
     const over = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
     if (over > 1) fail(`horizontale overflow ${over}px op ${h} (390 px)`);
   }
-  // The sticky bar on a phone.
+  // On a phone too the page saves by itself; without a name it cannot, and the bar says so.
   await page.goto(`${app.url}/#/agents/${bots[1].id}`);
-  await page.getByLabel('Naam', { exact: true }).fill('Onderzoeker 2');
-  await page.getByRole('status').filter({ hasText: 'Niet opgeslagen' }).waitFor({ timeout: 5000 }).catch(() => fail('telefoon: geen plakbalk'));
+  const nameBox = page.getByLabel('Naam', { exact: true });
+  await nameBox.fill('');
+  await page.getByRole('status').filter({ hasText: 'Niet opgeslagen' }).waitFor({ timeout: 5000 }).catch(() => fail('telefoon: zonder naam geen balk "Niet opgeslagen"'));
   await page.screenshot({ path: path.join(shots, 'telefoon-editor.png') });
-  await page.getByRole('status').filter({ hasText: 'Niet opgeslagen' }).getByRole('button', { name: 'Opslaan' }).click();
-  // Wait for the save itself (a busy machine needs more than a fixed 800 ms).
-  for (let i = 0; i < 25 && app.ctx.store.agent(bots[1].id).name !== 'Onderzoeker 2'; i++) await page.waitForTimeout(200);
-  if (app.ctx.store.agent(bots[1].id).name !== 'Onderzoeker 2') fail('telefoon: Opslaan in de plakbalk bewaart niet');
-  step('telefoonbreedte zonder horizontale overflow; plakbalk werkt');
+  await nameBox.fill('Onderzoeker 2');
+  // Wait for the save itself (a busy machine needs more than a fixed time).
+  for (let i = 0; i < 40 && app.ctx.store.agent(bots[1].id).name !== 'Onderzoeker 2'; i++) await page.waitForTimeout(200);
+  if (app.ctx.store.agent(bots[1].id).name !== 'Onderzoeker 2') fail('telefoon: de naam wordt niet vanzelf opgeslagen');
+  await page.getByRole('status').filter({ hasText: 'Niet opgeslagen' }).waitFor({ state: 'detached', timeout: 5000 }).catch(() => fail('telefoon: de balk "Niet opgeslagen" blijft staan na opslaan'));
+  step('telefoonbreedte zonder horizontale overflow; slaat vanzelf op, en zonder naam zegt de balk het');
   step(`schermafbeeldingen: ${shots}`);
 } catch (e) {
   fail(e.stack || e.message);

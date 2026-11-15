@@ -199,6 +199,7 @@ export function NotificationList({ compact, onNavigate }: { compact?: boolean; o
 export function NotificationBell({ className, size = 'md' }: { className?: string; size?: 'md' | 'lg' }) {
   const unread = useNotifications((s) => s.unread);
   const open = useNotifications((s) => s.panelOpen);
+  const count = useNotifications((s) => s.items?.length ?? 0);
   const desktop = useIsDesktop();
   const ref = useRef<HTMLDivElement>(null);
   const titleId = useId();
@@ -207,6 +208,21 @@ export function NotificationBell({ className, size = 'md' }: { className?: strin
   useEffect(() => {
     if (!desktop && open) setOpen(false);
   }, [desktop, open]);
+  // The bell sits in the list panel, which clips what sticks out of it: the panel is placed fixed on the window, under
+  // the bell and kept inside it (a fixed element is not cut off by the list's overflow).
+  const [at, setAt] = useState<{ top: number; left: number } | null>(null);
+  useEffect(() => {
+    if (!open) return;
+    const place = () => {
+      const r = ref.current?.getBoundingClientRect();
+      if (!r) return;
+      const width = Math.min(420, window.innerWidth - 24);
+      setAt({ top: r.bottom + 6, left: Math.max(12, Math.min(r.left, window.innerWidth - width - 12)) });
+    };
+    place();
+    window.addEventListener('resize', place);
+    return () => window.removeEventListener('resize', place);
+  }, [open]);
   const label = unread ? `Meldingen, ${unread} ongelezen` : 'Meldingen';
   const btn = cx('relative flex items-center justify-center text-muted hover:bg-surface-2 hover:text-fg', size === 'lg' ? 'h-11 w-11 rounded-full bg-surface-2 text-fg' : 'h-9 w-9 rounded-control coarse:h-11 coarse:w-11', className);
   const badge = !!unread && (
@@ -227,8 +243,13 @@ export function NotificationBell({ className, size = 'md' }: { className?: strin
         <Bell className="size-icon-lg" aria-hidden />
         {badge}
       </button>
-      {open && (
-        <div role="dialog" aria-labelledby={titleId} className="absolute start-0 top-10 z-40 flex max-h-[min(640px,calc(100vh-80px))] w-[min(420px,calc(100vw-24px))] flex-col rounded-2xl border border-line bg-surface shadow-2xl">
+      {open && at && (
+        <div
+          role="dialog"
+          aria-labelledby={titleId}
+          style={{ top: at.top, left: at.left, maxHeight: `min(640px, calc(100vh - ${Math.round(at.top) + 12}px))` }}
+          className="fixed z-50 flex w-[min(420px,calc(100vw-24px))] flex-col rounded-2xl border border-line bg-surface shadow-2xl"
+        >
           <div className="flex items-center gap-1 px-4 pb-1 pt-3">
             <h2 id={titleId} className="min-w-0 flex-1 text-[15px] font-bold tracking-tight">
               Meldingen
@@ -250,9 +271,16 @@ export function NotificationBell({ className, size = 'md' }: { className?: strin
             <a href="#/m/notifications/" onClick={() => setOpen(false)} className="hover:underline">
               Alle meldingen
             </a>
-            <a href={SETTINGS_HREF} onClick={() => setOpen(false)} className="text-muted hover:text-fg hover:underline">
-              Per bot instellen
-            </a>
+            <button
+              type="button"
+              data-testid="bell-clear"
+              disabled={!count}
+              onClick={() => clearNotifications().then(() => toast('Meldingen gewist', 'ok'), toastError)}
+              className="inline-flex items-center gap-1.5 text-muted hover:text-fg hover:underline disabled:pointer-events-none disabled:opacity-50"
+            >
+              <Trash2 className="h-3.5 w-3.5" aria-hidden />
+              Alles wissen
+            </button>
           </div>
         </div>
       )}

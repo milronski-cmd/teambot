@@ -241,10 +241,11 @@ async function screen(name, { axe = true, empty = false } = {}) {
     const v = await page.evaluate(async () => {
       // @ts-ignore
       const r = await window.axe.run(document, { runOnly: { type: 'tag', values: ['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa', 'wcag22aa'] } });
-      return r.violations.map((x) => `${x.id}: ${x.nodes.slice(0, 3).map((n) => n.target.join(' ')).join(', ')}`);
+      // For contrast also the colours and the ratio axe measured, so a failure says what to change.
+      const why = (n) => (n.any?.[0]?.data?.contrastRatio ? ` (${n.any[0].data.fgColor} op ${n.any[0].data.bgColor}: ${n.any[0].data.contrastRatio})` : '');
+      return r.violations.map((x) => `${x.id}: ${x.nodes.slice(0, 3).map((n) => n.target.join(' ') + why(n)).join(', ')}`);
     });
-    if (v.length) fail(`a11y (donker) ${name}: ${v.join(' | ')}`);
-  }
+    if (v.length) fail(`a11y (donker) ${name}: ${v.join(' | ')}`);  }
   await shot(name.replace(/[^a-z0-9]+/gi, '-').toLowerCase());
   return info;
 }
@@ -351,7 +352,7 @@ try {
   if (tiny.length) fail(`chat: te kleine knoppen in de kop of naast het invoerveld: ${tiny.join(', ')}`);
   const composer = await box.evaluate((e) => {
     const r = e.getBoundingClientRect();
-    return { bottom: r.bottom, vh: window.innerHeight, size: parseFloat(getComputedStyle(e).fontSize), pb: parseFloat(getComputedStyle(e.closest('.rounded-bubble').parentElement).paddingBottom) };
+    return { bottom: r.bottom, vh: window.innerHeight, size: parseFloat(getComputedStyle(e).fontSize), pb: parseFloat(getComputedStyle(e.closest('[data-composer]').parentElement).paddingBottom) };
   });
   if (composer.size < 16) fail(`invoerveld: ${composer.size}px (iOS zoomt in)`);
   if (composer.bottom > composer.vh - 8) fail(`invoerveld plakt tegen de onderrand (${composer.bottom} van ${composer.vh})`);
@@ -761,10 +762,12 @@ try {
   // 0.4.4 P8: the phone gets alerts only when you are away from the pc; "Altijd ook op de telefoon" sends both.
   const always = main.getByRole('switch', { name: 'Altijd ook op de telefoon' });
   await always.waitFor({ timeout: 8000 }).catch(() => fail('Telefoon: schakelaar "Altijd ook op de telefoon" ontbreekt'));
-  if (!(await main.getByText('Je zit nu achter de pc: meldingen komen alleen op Windows.', { exact: false }).count())) fail('Telefoon: niet gezegd dat meldingen nu alleen op Windows komen');
+  // A switch's explanation is shown as its (i) (HintTip: its words are the (i)'s name) or as a line under it.
+  const says = async (words) => (await main.getByText(words, { exact: false }).count()) + (await main.locator(`[aria-label*="${words}"]`).count()) > 0;
+  if (!(await says('Je zit nu achter de pc: meldingen komen alleen op Windows.'))) fail('Telefoon: niet gezegd dat meldingen nu alleen op Windows komen');
   await tap(always);
   await until(() => app.ctx.store.getSetting(owner.id, 'mobilePush', {})?.alwaysPhone === true, 5000, 'Altijd ook op de telefoon niet opgeslagen');
-  await main.getByText('Meldingen gaan naar de pc én naar je telefoon', { exact: false }).waitFor({ timeout: 5000 }).catch(() => fail('Telefoon: uitleg bij Altijd ook op de telefoon ontbreekt'));
+  await until(() => says('Meldingen gaan naar de pc én naar je telefoon'), 5000, 'Telefoon: uitleg bij Altijd ook op de telefoon ontbreekt');
   await screen('instellingen-telefoon-meldingen');
   await tap(always);
   step('meldingen op de goede plek: achter de pc alleen Windows, Altijd ook op de telefoon aan en weer uit');
@@ -949,19 +952,19 @@ try {
 
   if ((await page.evaluate(() => window.__nativeWords)).includes('unauthorized')) fail('de app kreeg ergens een 401 (zou de koppeling laten controleren)');
 
-  // ================================================================ 12. the desktop default stays as it was
+  // ================================================================ 12. the desktop starts dark too (as OpenBot and Grok Bot)
   const desk = await browser.newContext({ viewport: { width: 1360, height: 880 }, colorScheme: 'light', locale: 'nl-NL' });
   const dp = await desk.newPage();
   await dp.goto(`${app.url}/#token=${pcToken}`);
   await dp.waitForTimeout(1500);
-  if (await dp.evaluate(() => document.documentElement.classList.contains('dark'))) fail('computer: het thema werd donker zonder keuze (moet het systeem volgen)');
+  if (!(await dp.evaluate(() => document.documentElement.classList.contains('dark')))) fail('computer: zonder keuze niet donker (standaard donker, ook bij een licht systeem)');
   const deskField = await dp.evaluate(() => {
     const e = document.querySelector('textarea[aria-label="Bericht"]');
     return e ? parseFloat(getComputedStyle(e).fontSize) : null;
   });
   if (deskField !== null && deskField !== 15) fail(`computer: invoerveld ${deskField}px (hoort 15px te blijven)`);
   await desk.close();
-  step('computer: thema volgt het systeem zoals altijd, lettergrootte ongewijzigd');
+  step('computer: standaard donker (ook bij een licht systeem), lettergrootte ongewijzigd');
 } catch (e) {
   fail(e.stack || e.message);
   await shot('fout').catch(() => {});

@@ -148,8 +148,13 @@ export async function cliLoop(ctx: Ctx, run: Run, agent: Agent, thread: Thread, 
     // numbers when it said them (withUsage), else an estimate (budget.ts).
     const used = recordUnfinished(ctx, run, agent, active.cfg, modelSaid(e?.model, active.model), { reported: usageOf(e), sent: (await ctxEstimate)?.total, received: heard() });
     if (watch.stopped && !signal.aborted) return endLoop(used || undefined);
-    if (ctx.store.message(msg.id)!.status === 'streaming')
-      save({ content: stream.text, status: signal.aborted ? 'cancelled' : 'error', ...(used ? { usage: used } : {}) }, signal.aborted ? {} : { error: redact(plainError(e, { engine: active.cfg.name, tz: tz() })), errorDetail: redactDetail(e) });
+    // Broken off for the owner's next message before the engine wrote anything: the attempt disappears, as in the API
+    // loop (chat-loop.ts), so neither the chat nor the bot's own history shows an empty answer.
+    const steeredEmpty = signal.aborted && !stream.text.trim() && !!ctx.store.run(run.id)?.meta?.steerInterrupt;
+    if (ctx.store.message(msg.id)!.status === 'streaming') {
+      if (steeredEmpty) save({ deleted: true, status: 'cancelled', ...(used ? { usage: used } : {}) } as Partial<Message>, { steered: true, switched: true });
+      else save({ content: stream.text, status: signal.aborted ? 'cancelled' : 'error', ...(used ? { usage: used } : {}) }, signal.aborted ? {} : { error: redact(plainError(e, { engine: active.cfg.name, tz: tz() })), errorDetail: redactDetail(e) });
+    }
     if (signal.aborted) throw e;
     return { error: e, messageId: msg.id };
   } finally {

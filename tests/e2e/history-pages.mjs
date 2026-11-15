@@ -246,9 +246,9 @@ try {
   await page.getByText('Zakelijk', { exact: true }).click();
   await axe(page, 'bot-editor met antwoordstijl');
   await shot(page, 'd4-antwoordstijl');
-  await page.getByRole('button', { name: /^Opslaan/ }).first().click();
+  // The page saves by itself a moment after the change.
   await until(() => app.ctx.store.agent(bot.id).settings?.answerStyle === 'business', 'antwoordstijl opgeslagen');
-  // the editor itself must know it is saved too (otherwise leaving asks "Wijzigingen opslaan?")
+  // the editor itself must know it is saved too (otherwise leaving would save again or ask)
   await page.getByText('Niet opgeslagen:').waitFor({ state: 'detached', timeout: 10000 });
   const before = systems.length;
   await api('POST', `/threads/${threadId}/messages`, { content: 'Vergelijk twee opties' });

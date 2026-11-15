@@ -740,7 +740,7 @@ try {
   await until(async () => /drie bronnen/.test(await instr.inputValue()), 8000, 'AI schreef de instructies niet');
   await axe(page, 'botpagina › Instructies');
   await shot(page, 'nieuwkomer-7b-botpagina');
-  await page.getByRole('button', { name: 'Opslaan' }).first().click();
+  // The bot page saves the written instructions by itself.
   await until(async () => /drie bronnen/.test(app.ctx.store.agents(owner.id).find((a) => a.name === 'Rik')?.instructions || ''), 8000, 'botpagina: de instructies zijn niet opgeslagen');
   rik = app.ctx.store.agents(owner.id).find((a) => a.name === 'Rik');
   if (rik.role !== 'Onderzoeker' || rik.access_mode !== 'full' || !rik.tool_groups.includes('team')) fail('AI-instructies: rol, toegang of tools van de gebruiker overschreven');

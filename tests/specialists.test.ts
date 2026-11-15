@@ -145,6 +145,8 @@ test('guard: instructions in source text are recognised and dropped; answers tha
   assert.deepEqual(newParagraphs([P1, P2].join('\n\n'), [P1, P2, P5].join('\n\n')), [P5]);
   for (const s of ['Dat weet ik niet.', 'Daar heb ik geen informatie over.', 'Dat staat niet in mijn kennisbank.', "I don't know that."]) assert.ok(saysUnknown(s), s);
   for (const s of ['De title tag mag hoogstens 60 tekens zijn [m:abc123].', 'Weet je wat ik ga doen? Ik zoek het op.']) assert.ok(!saysUnknown(s), s);
+  // Advice that only contains the words is no gap (an owner's "wat denk je zelf dat handig is?" became a learning goal).
+  for (const s of ['GA4. Zonder dat weet ik niet wat ik moet optimaliseren.', 'Ik weet dat niet alle sites even goed scoren.']) assert.ok(!saysUnknown(s), s);
 });
 
 test('feed and robots parsers: RSS and Atom, Disallow/Allow with the longest rule', () => {

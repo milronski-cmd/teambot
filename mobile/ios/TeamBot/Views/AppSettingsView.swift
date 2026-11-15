@@ -39,7 +39,7 @@ struct AppSettingsView: View {
                     } header: {
                         Text("Verbinding")
                     } footer: {
-                        Text(p.irohId == nil ? "De app probeert al deze adressen van je pc, dus wisselen tussen wifi en Tailscale gaat vanzelf." : "De app probeert eerst wifi en Tailscale, daarna de TeamBot-verbinding. Die werkt ook onderweg, zonder Tailscale, en is versleuteld tot op je pc.")
+                        Text(p.irohId == nil ? "De app probeert al deze adressen van je pc, dus wisselen tussen wifi en Tailscale gaat vanzelf." : "De app probeert wifi, Tailscale en de TeamBot-verbinding tegelijk, het adres dat het laatst werkte eerst. De TeamBot-verbinding werkt ook onderweg, zonder Tailscale, en is versleuteld tot op je pc.")
                     }
 
                     Section {

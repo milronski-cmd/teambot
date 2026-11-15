@@ -1,5 +1,5 @@
 /**
- * Desktop notifications with buttons + the optional floating status window ("eiland").
+ * Desktop notifications with buttons + the island at the top of the screen ("eiland").
  *
  * Notifications: the server's `notification` events (approvals, questions, usage limits, rooms …) become Windows
  * notifications while the TeamBot window is not in front, with buttons where that is safe:
@@ -9,8 +9,10 @@
  *   - a question: Beantwoorden (opens the chat).
  * A long task the owner started that finishes (or fails) while the window is in the background is notified too.
  *
- * Status window: a small always-on-top window with the running bots, what they do and what waits for the owner,
- * with stop (the UI page #/m/usage/eiland). Mode off / auto (only while something runs or waits) / always.
+ * The island (dynamic island): a black pill at the top middle of the screen, above every program, with what matters
+ * now — a question for the owner, who works and on what, who just finished — that opens into the whole list (answer,
+ * approve, stop). The UI page #/m/usage/eiland draws it in a transparent window that lets clicks through outside the
+ * pill. Mode off / auto (while something runs or waits; the default) / always.
  */
 import { BrowserWindow, Notification, screen } from 'electron';
 import type { AppHandle } from '../server/app.js';
@@ -20,6 +22,8 @@ import { PendingNotes } from './notes.js';
 export type StatusMode = 'off' | 'auto' | 'always';
 const MODES = new Set<StatusMode>(['off', 'auto', 'always']);
 const DONE_AFTER_MS = 60_000;
+/** The island's window: as wide and high as the island can open (the pill itself is smaller). */
+const ISLAND = { width: 460, height: 600 };
 
 interface Deps {
   handle(): AppHandle | null;
@@ -43,7 +47,6 @@ export class DesktopStatus {
   private hiddenByUser = false;
   private evalTimer: NodeJS.Timeout | null = null;
   private idleTimer: NodeJS.Timeout | null = null;
-  private boundsTimer: NodeJS.Timeout | null = null;
 
   constructor(private d: Deps) {}
 
@@ -171,11 +174,11 @@ export class DesktopStatus {
     note.show();
   }
 
-  // ---------------- floating status window ----------------
+  // ---------------- the island ----------------
 
   mode(): StatusMode {
     const o = this.owner();
-    const m = o ? this.d.handle()?.ctx.store.getSetting<string>(o.id, 'desktopStatusWindow', 'off') : 'off';
+    const m = o ? this.d.handle()?.ctx.store.getSetting<string>(o.id, 'desktopStatusWindow', 'auto') : 'off';
     return MODES.has(m as StatusMode) ? (m as StatusMode) : 'off';
   }
 
@@ -222,7 +225,11 @@ export class DesktopStatus {
       if (this.idleTimer) clearTimeout(this.idleTimer);
       this.idleTimer = null;
       const w = this.ensure();
-      if (!w.isVisible()) w.showInactive();
+      if (!w.isVisible()) {
+        // It went away with the mouse on it (Verbergen): it comes back letting clicks through again.
+        this.interactive(false);
+        w.showInactive();
+      }
     } else if (this.win && !this.win.isDestroyed() && this.win.isVisible() && !this.idleTimer) {
       // Let "klaar" sink in for a moment before the window goes away.
       this.idleTimer = setTimeout(() => {
@@ -232,57 +239,61 @@ export class DesktopStatus {
     }
   }
 
-  private ensure(): BrowserWindow {
-    if (this.win && !this.win.isDestroyed()) return this.win;
-    const o = this.owner();
-    const saved = o ? this.d.handle()?.ctx.store.getSetting<any>(o.id, 'desktopStatusBounds', null) : null;
-    // By itself it only ever opens in the bottom right corner (never over the middle of the screen), and never larger
-    // than the screen. A place the owner dragged it to is kept, but always completely on a screen.
+  /** Where the island goes: the top middle of the main screen, hanging from its top edge (above a top taskbar too). */
+  private place(): Electron.Rectangle {
     const wa = screen.getPrimaryDisplay().workArea;
-    const W = Math.min(340, Math.max(200, wa.width - 32));
-    const H = Math.min(400, Math.max(120, wa.height - 32));
-    const onScreen = saved && screen.getAllDisplays().some((d) => saved.x >= d.workArea.x - 20 && saved.y >= d.workArea.y - 20 && saved.x < d.workArea.x + d.workArea.width - 60 && saved.y < d.workArea.y + d.workArea.height - 40);
-    let b = { x: wa.x + wa.width - W - 16, y: wa.y + wa.height - H - 16, width: W, height: H };
-    if (onScreen) {
-      const width = Math.max(280, Math.min(600, saved.width || W));
-      const height = Math.max(160, Math.min(900, saved.height || H));
-      const d = screen.getDisplayMatching({ x: saved.x, y: saved.y, width, height }).workArea;
-      const w2 = Math.min(width, d.width);
-      const h2 = Math.min(height, d.height);
-      b = { x: Math.max(d.x, Math.min(saved.x, d.x + d.width - w2)), y: Math.max(d.y, Math.min(saved.y, d.y + d.height - h2)), width: w2, height: h2 };
+    const width = Math.min(ISLAND.width, wa.width);
+    return { x: Math.round(wa.x + (wa.width - width) / 2), y: wa.y, width, height: Math.min(ISLAND.height, wa.height) };
+  }
+
+  /** The island catches the mouse while it is on the pill, and lets every click through to what is underneath otherwise. */
+  interactive(on: boolean) {
+    const w = this.win;
+    if (!w || w.isDestroyed()) return;
+    if (on) w.setIgnoreMouseEvents(false);
+    else w.setIgnoreMouseEvents(true, { forward: true });
+  }
+
+  /** The island's window: transparent and as large as the island can open; only the pill itself is drawn (#/m/usage/eiland). */
+  private ensure(): BrowserWindow {
+    if (this.win && !this.win.isDestroyed()) {
+      this.win.setBounds(this.place());
+      return this.win;
     }
     const w = new BrowserWindow({
-      ...b,
-      minWidth: Math.min(280, b.width),
-      minHeight: Math.min(160, b.height),
+      ...this.place(),
       frame: false,
-      resizable: true,
+      transparent: true,
+      backgroundColor: '#00000000',
+      hasShadow: false,
+      resizable: false,
+      movable: false,
       minimizable: false,
       maximizable: false,
       fullscreenable: false,
       skipTaskbar: true,
       alwaysOnTop: true,
       show: false,
-      title: 'TeamBot — nu bezig',
+      title: 'TeamBot',
       icon: this.d.icon() || undefined,
-      backgroundColor: '#f4f3f6',
       webPreferences: { preload: this.d.preload, contextIsolation: true, sandbox: true, nodeIntegration: false, webSecurity: true, spellcheck: false },
     });
     w.setAlwaysOnTop(true, 'floating');
+    w.setVisibleOnAllWorkspaces?.(true, { visibleOnFullScreen: true });
+    w.setIgnoreMouseEvents(true, { forward: true });
     w.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
     w.webContents.on('will-navigate', (e, url) => {
       if (!this.d.isAppUrl(url)) e.preventDefault();
     });
-    const remember = () => {
-      if (this.boundsTimer) clearTimeout(this.boundsTimer);
-      this.boundsTimer = setTimeout(() => {
-        const ow = this.owner();
-        if (ow && !w.isDestroyed()) this.d.handle()?.ctx.store.setSetting(ow.id, 'desktopStatusBounds', w.getBounds());
-      }, 500);
-    };
-    w.on('moved', remember);
-    w.on('resized', remember);
+    // Another screen setup (a monitor plugged in, the taskbar moved): the island stays at the top middle.
+    const replace = () => !w.isDestroyed() && w.setBounds(this.place());
+    screen.on('display-metrics-changed', replace);
+    screen.on('display-added', replace);
+    screen.on('display-removed', replace);
     w.on('closed', () => {
+      screen.off('display-metrics-changed', replace);
+      screen.off('display-added', replace);
+      screen.off('display-removed', replace);
       if (this.win === w) this.win = null;
     });
     w.loadURL(`${this.d.baseUrl()}/#/m/usage/eiland`);

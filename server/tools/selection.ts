@@ -405,7 +405,9 @@ export function onDemand(i: OnDemandInput): OnDemand {
           used += b.length;
         }
       }
-      const out = [`Gevonden: ${found.length}. Gebruik er een met ${CALL_NAME} (name en args met de velden hieronder).`, '', full.join('\n\n')];
+      // "Rechtstreeks": a CLI engine refuses a tool it was not listed; a bot that read browser_navigate here called it by
+    // that name and failed (seen in real use, 15 nov).
+    const out = [`Gevonden: ${found.length}. Gebruik er een met ${CALL_NAME} (name en args met de velden hieronder); rechtstreeks aanroepen kan niet.`, '', full.join('\n\n')];
       if (more.length) out.push('', 'Ook gevonden (zoek op de naam voor de velden):', ...more.map((m) => `- ${m}`));
       const guide = await guides(found);
       if (guide) out.push('', guide);
@@ -491,7 +493,7 @@ export function onDemand(i: OnDemandInput): OnDemand {
           used += b.length;
         }
         const names = others.slice(full.length).map((t) => t.name);
-        if (others.length) extra.push([`Bij dit onderdeel horen ook (gebruik ze met ${CALL_NAME}):`, ...full, ...(names.length ? [`En: ${names.join(', ')} (velden via ${FIND_NAME}).`] : [])].join('\n\n'));
+        if (others.length) extra.push([`Bij dit onderdeel horen ook (alleen met ${CALL_NAME}, niet rechtstreeks):`, ...full, ...(names.length ? [`En: ${names.join(', ')} (velden via ${FIND_NAME}).`] : [])].join('\n\n'));
       }
       return withGuide(tool, out, extra);
     },

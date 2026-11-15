@@ -1,9 +1,9 @@
 import { createContext, useContext, useEffect, useRef } from 'react';
 
 /**
- * One "Opslaan" for the whole bot editor. Core fields live in the editor's draft; a module section with its own
- * state (e.g. Computer & bestanden) registers here, so the editor's main button saves it too, the sticky bar can
- * name it while it has unsaved changes, and leaving the editor warns instead of silently dropping it. Sections that
+ * One save for the whole bot editor (it saves by itself, a moment after a change). Core fields live in the editor's
+ * draft; a module section with its own state (e.g. Computer & bestanden) registers here, so the editor saves it too,
+ * the bar can name it when a save failed, and leaving the editor saves it instead of silently dropping it. Sections that
  * save every change at once (Apps, Kanalen, Meldingen …) need nothing: they have nothing pending.
  */
 
@@ -12,6 +12,11 @@ export interface EditorSection {
   label: string;
   /** True while the section holds changes that are not on the server yet. */
   dirty(): boolean;
+  /**
+   * True while an add-box holds a half-typed entry (a folder, a source). The editor does not save that section by
+   * itself while you type; leaving the page or the button Opslaan does (so nothing typed is lost).
+   */
+  typed?(): boolean;
   /**
    * Runs before the bot itself is saved; may return a patch for the bot (merged into what is saved), e.g. a typed
    * folder that was not added yet. Throw to stop the save with a clear message.
@@ -48,6 +53,13 @@ export function useEditorSection(id: string, s: EditorSection) {
       dirty: () => {
         try {
           return !!ref.current.dirty();
+        } catch {
+          return false;
+        }
+      },
+      typed: () => {
+        try {
+          return !!ref.current.typed?.();
         } catch {
           return false;
         }

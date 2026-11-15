@@ -187,6 +187,13 @@ const LINES: Record<string, string> = {
   'GET /skills/web/repo': 'Marktplaats: de skills in één repository op GitHub (query repo)',
   'GET /skills/market/skills':
     'Eigen catalogi: skills uit de TeamBot-startcatalogus en catalogi die je zelf toevoegde (in de Marktplaats onder Meer opties › Zelf geschreven en eigen catalogi). Gewone skills zoek je met GET /skills/web/search',
+  'GET /mcp/registry/servers': 'Apps: zoeken in de catalogus met apps om te koppelen (query q = je woorden, ook Engels; zonder q de aanbevolen apps)',
+  'GET /mcp/registry/server': 'Apps: één app uit de catalogus bekijken (query name), met zijn installatievormen (options)',
+  'POST /mcp/quick': 'Apps: een app uit de catalogus in één stap installeren (body registry met name uit de catalogus; option mag weg, dan de eerste die hier werkt)',
+  // Said with the services' own names: a bot that looks for "search console" or "apps koppelen" finds TeamBot's own
+  // Google login here, instead of inventing a Google Cloud project with a service account (seen in real use, 15 nov).
+  'GET /mcp/google':
+    'Apps › Google-koppeling van TeamBot: Search Console, Merchant Center, Google Ads, Analytics (GA4), Gmail, Agenda en Drive. De eigenaar koppelt Google één keer zelf in Apps › Google (het scherm leidt hem erdoor) en daarna hebben de bots die diensten als gereedschap; geen serviceaccount of eigen scripts nodig. Toont wat er gekoppeld is en wat aan staat',
 };
 
 /** The last fixed word of a path that says what happens. */

@@ -15,7 +15,7 @@ const mod: UIModule = {
   pages: [
     { path: '', title: 'Gebruik en limieten', icon: Gauge, nav: true, component: UsagePage },
     { path: 'status', title: 'Nu bezig', icon: Activity, nav: true, component: StatusPage },
-    { path: 'eiland', title: 'Statusvenster', bare: true, component: FloatingStatus },
+    { path: 'eiland', title: 'Eiland', bare: true, component: FloatingStatus },
   ],
   settingsTabs: [{ id: 'limits', title: 'Limieten', component: UsageLimits }],
   // Bot editor: the bot's own usage cap (spend or tokens per day or week; server/modules/usage/cap.ts).

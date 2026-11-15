@@ -39,17 +39,23 @@ export function Inspector({ thread, onClose, initialTab }: { thread: Thread; onC
   const usingComputer = useRunning((s) => !!(botId && s[botId]));
   const rehearsal = useHasRehearsal(botId);
   const modTabs = uiModules.flatMap((m) => (m.inspectorTabs || []).map((t) => ({ ...t, key: `${m.id}:${t.id}` })));
-  const all = [{ id: 'activity', label: 'Activiteit' }, { id: 'files', label: 'Bestanden' }, ...modTabs.map((t) => ({ id: t.key, label: t.title })), { id: 'details', label: 'Details' }];
-  const simple = new Set(['files', ...(usingComputer || initialTab === 'browser:computer' ? ['browser:computer'] : []), ...(rehearsal || initialTab === 'browser:changes' ? ['browser:changes'] : [])]);
+  // A bot's chat opens on the bot panel (its computer, routines and files, as in Grok Bot); a group on its files.
+  const first = botId ? { id: 'bot', label: 'Overzicht' } : { id: 'files', label: 'Bestanden' };
+  const all = [first, { id: 'activity', label: 'Activiteit' }, ...(botId ? [{ id: 'files', label: 'Bestanden' }] : []), ...modTabs.map((t) => ({ id: t.key, label: t.title })), { id: 'details', label: 'Details' }];
+  const simple = new Set([first.id, ...(rehearsal || initialTab === 'browser:changes' ? ['browser:changes'] : []), ...(!botId && (usingComputer || initialTab === 'browser:computer') ? ['browser:computer'] : [])]);
   const tabs = advanced ? all : all.filter((t) => simple.has(t.id));
-  const [picked, setTab] = useState<string>(initialTab && all.some((t) => t.id === initialTab) ? initialTab : advanced ? 'activity' : 'files');
+  const [picked, setTab] = useState<string>(initialTab && all.some((t) => t.id === initialTab) ? (botId && initialTab === 'browser:computer' && !advanced ? 'bot' : initialTab) : advanced ? 'activity' : first.id);
+  const agent = agentById(botId);
   // Switching "Geavanceerd tonen" off while an expert tab is open falls back to the first simple tab.
   const tab = tabs.some((t) => t.id === picked) ? picked : tabs[0]?.id || 'files';
   const Mod = modTabs.find((t) => t.key === tab)?.component;
   return (
     <div className="flex h-full flex-col">
       <div className="flex items-center justify-between px-4 pt-3">
-        <h2 className="text-[15px] font-bold tracking-tight">{tabs.length > 1 ? 'Zijpaneel' : 'Bestanden van dit gesprek'}</h2>
+        <h2 className="flex min-w-0 items-center gap-2 text-[15px] font-bold tracking-tight">
+          {agent && <BotAvatar bot={agent} size={22} />}
+          <span className="truncate">{tabs.length > 1 ? 'Zijpaneel' : agent ? agent.name : 'Bestanden van dit gesprek'}</span>
+        </h2>
         <Button variant="ghost" size="icon" aria-label="Zijpaneel sluiten" onClick={onClose}>
           <X className="h-4 w-4" />
         </Button>
@@ -60,6 +66,7 @@ export function Inspector({ thread, onClose, initialTab }: { thread: Thread; onC
         </div>
       )}
       <div className="scroll-thin min-h-0 flex-1 overflow-y-auto p-4">
+        {tab === 'bot' && botId && <BotPanel thread={thread} agentId={botId} />}
         {tab === 'activity' && <Activity thread={thread} />}
         {tab === 'files' && <Files thread={thread} />}
         {tab === 'details' && <Details thread={thread} />}
@@ -144,6 +151,27 @@ function Activity({ thread }: { thread: Thread }) {
  * it, the arrow opens its folder), then what was sent along in the chat. Nothing yet: one quiet line, no headed empty
  * boxes and no explanation of how folders work.
  */
+/** The bot panel: the sections the modules give (computer, routines …), then the files of this conversation. */
+function BotPanel({ thread, agentId }: { thread: Thread; agentId: string }) {
+  const sections = uiModules.flatMap((m) => (m.botPanel || []).map((s) => ({ ...s, key: `${m.id}:${s.id}` }))).sort((a, b) => a.order - b.order);
+  return (
+    <div className="space-y-6">
+      {sections.map((s) => (
+        <section key={s.key} aria-label={s.title} className="space-y-2.5">
+          <h3 className="text-[12.5px] font-semibold text-muted" data-i18n="title">
+            {s.title}
+          </h3>
+          <s.component threadId={thread.id} agentId={agentId} />
+        </section>
+      ))}
+      <section aria-label="Bestanden" className="space-y-2.5">
+        <h3 className="text-[12.5px] font-semibold text-muted">Bestanden</h3>
+        <Files thread={thread} />
+      </section>
+    </div>
+  );
+}
+
 function Files({ thread }: { thread: Thread }) {
   const messages = useApp((s) => s.messages[thread.id]) || [];
   const files = messages.flatMap((m) => (m.parts.attachments || []).map((a) => ({ a, m }))).reverse();

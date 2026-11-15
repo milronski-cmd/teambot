@@ -294,9 +294,10 @@ try {
       await page.waitForTimeout(1500);
       await openAll();
     };
+    // The page saves by itself a moment after a change: wait until the header says so.
     const save = async () => {
-      await page.getByRole('button', { name: 'Opslaan', exact: true }).first().click();
-      await page.waitForTimeout(900);
+      await page.getByTestId('save-state').filter({ hasText: 'Opgeslagen' }).waitFor({ timeout: 10000 });
+      await page.waitForTimeout(300);
       return api('GET', `/agents/${cc.bot.id}`);
     };
     await pickAi(cx.prov.name);

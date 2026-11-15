@@ -7,7 +7,8 @@
 //        [--recheck]  also re-send existing translations that fail the checks (placeholders, markup, still Dutch)
 //        [--tier flex|default]  flex (default) is half price and a little slower; falls back to default when busy
 //        [--effort low]  reasoning effort for reasoning models
-// Key: OPENAI_API_KEY, or a file named in TEAMBOT_TRANSLATE_KEY_FILE (never printed). Cost per language is printed
+// Key: OPENAI_API_KEY, or a file named in TEAMBOT_TRANSLATE_KEY_FILE (never printed). Another OpenAI-compatible service:
+// TEAMBOT_TRANSLATE_BASE_URL (e.g. https://api.deepseek.com with --model deepseek-chat). Cost per language is printed
 // from the token counts (cached input apart) with the model's list price, or TEAMBOT_TRANSLATE_PRICE
 // ("<usd per 1M in>,<usd per 1M cached in>,<usd per 1M out>").
 import fs from 'node:fs';
@@ -21,6 +22,8 @@ const opt = (name, def) => {
 };
 const flag = (name) => args.includes(`--${name}`);
 const model = opt('model', process.env.TEAMBOT_TRANSLATE_MODEL || 'gpt-5.4-mini');
+const baseUrl = (process.env.TEAMBOT_TRANSLATE_BASE_URL || 'https://api.openai.com/v1').replace(/\/+$/, '');
+const openai = /api\.openai\.com/.test(baseUrl);
 const concurrency = Math.max(1, Number(opt('concurrency', 8)));
 const dry = flag('dry');
 const recheck = flag('recheck');
@@ -32,7 +35,8 @@ const key = process.env.OPENAI_API_KEY || (process.env.TEAMBOT_TRANSLATE_KEY_FIL
 if (!key && !dry) throw new Error('Zet OPENAI_API_KEY of TEAMBOT_TRANSLATE_KEY_FILE');
 // USD per 1M tokens: input, cached input, output (standard tier; flex is half). developers.openai.com/api/docs/pricing
 const PRICES = { 'gpt-5.4-mini': [0.75, 0.075, 4.5], 'gpt-5.4-nano': [0.2, 0.02, 1.25], 'gpt-5.4': [2.5, 0.25, 15] };
-let tier = opt('tier', process.env.TEAMBOT_TRANSLATE_TIER || 'flex');
+// The flex tier and reasoning settings are OpenAI's; another service gets neither.
+let tier = opt('tier', process.env.TEAMBOT_TRANSLATE_TIER || (openai ? 'flex' : 'default'));
 const envPrice = (process.env.TEAMBOT_TRANSLATE_PRICE || '').split(',').map(Number);
 const listPrice = envPrice.length === 3 && envPrice.every((x) => x >= 0) ? envPrice : PRICES[model];
 /** Cost in USD of token counts {in, cached, out, flexShare} (flex requests at half price). */
@@ -148,7 +152,7 @@ let tout = 0;
 let flexCalls = 0;
 let calls = 0;
 // Reasoning models translate UI texts well with little thinking; 'low' keeps a language cheap and quick.
-let effort = opt('effort', process.env.TEAMBOT_TRANSLATE_EFFORT || 'low');
+let effort = opt('effort', process.env.TEAMBOT_TRANSLATE_EFFORT || (openai ? 'low' : 'none'));
 async function chat(system, user) {
   for (let attempt = 0; ; attempt++) {
     const useFlex = tier === 'flex' && attempt < 3;
@@ -156,7 +160,7 @@ async function chat(system, user) {
       const body = { model, response_format: { type: 'json_object' }, messages: [{ role: 'system', content: system }, { role: 'user', content: user }] };
       if (effort && effort !== 'none') body.reasoning_effort = effort;
       if (useFlex) body.service_tier = 'flex';
-      const r = await fetch('https://api.openai.com/v1/chat/completions', {
+      const r = await fetch(`${baseUrl}/chat/completions`, {
         method: 'POST',
         headers: { authorization: `Bearer ${key}`, 'content-type': 'application/json' },
         body: JSON.stringify(body),

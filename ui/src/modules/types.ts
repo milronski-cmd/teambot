@@ -52,6 +52,17 @@ export interface UIModule {
   /** Custom card for a pending approval/question of one of the module's tools (by tool name); replaces the default card. */
   approvalRenderers?: Record<string, React.ComponentType<{ a: Approval; showThreadLink?: boolean }>>;
 
+  /**
+   * Sections of the bot panel (the right-hand panel next to a bot's chat, in the manner of Grok Bot): what the bot has
+   * besides the conversation, such as its computer and its routines. Shown in `order`, under them its files.
+   */
+  botPanel?: {
+    id: string;
+    title: string;
+    order: number;
+    component: React.ComponentType<{ threadId: string; agentId: string }>;
+  }[];
+
   /** Tabs in the right-hand inspector next to a chat. */
   inspectorTabs?: {
     id: string;

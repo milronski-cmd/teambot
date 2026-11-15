@@ -1,6 +1,6 @@
 import React from 'react';
 import { createRoot } from 'react-dom/client';
-import '@fontsource-variable/figtree';
+import '@fontsource-variable/inter';
 import './styles.css';
 import { App } from './App';
 import { keepNames, startI18n } from './lib/i18n';
