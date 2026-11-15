@@ -214,7 +214,7 @@ test('a rule TeamBot cannot pin down goes to Auto Review, also outside auto mode
   }
 });
 
-test('making a bot looser is computer-only: the phone adds stricter rules and removes "allow" rules only', async () => {
+test('making a bot looser goes through /loosen only, from the computer or the owner\'s phone', async () => {
   const IPHONE_UA = 'Mozilla/5.0 (iPhone; CPU iPhone OS 26_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148 TeamBot/1.0';
   const t = await startTestApp();
   try {
@@ -240,16 +240,16 @@ test('making a bot looser is computer-only: the phone adds stricter rules and re
     };
     assert.equal((await D('GET', `/bot-rules?agentId=${a.id}`)).status, 200);
     assert.equal((await D('POST', '/bot-rules/preview', { text: 'Mag altijd bestanden maken in de map X' })).status, 200);
-    assert.equal((await D('POST', '/bot-rules', { agentId: a.id, text: 'Vraag altijd voordat je iets in Shopify verandert' })).status, 200, 'stricter: fine on the phone');
+    const shop = await D('POST', '/bot-rules', { agentId: a.id, text: 'Vraag altijd voordat je iets in Shopify verandert' });
+    assert.equal(shop.status, 200, 'stricter: fine on the phone');
+    // since 15 nov the owner's phone may make a bot looser too (through /loosen), for every way of writing the path
     for (const [m, p, b] of [
       ['POST', '/bot-rules/loosen', { agentId: a.id, text: 'Mag altijd bestanden maken in de map Y' }],
-      ['DELETE', `/bot-rules/loosen/${strict.id}`],
-      ['POST', '/Bot-Rules/Loosen', { agentId: a.id, text: 'Mag altijd bestanden maken in de map Y' }],
+      ['DELETE', `/bot-rules/loosen/${shop.body.id}`],
+      ['POST', '/Bot-Rules/Loosen', { agentId: a.id, text: 'Mag altijd bestanden maken in de map W' }],
     ] as [string, string, any?][]) {
       const r = await D(m, p, b);
-      assert.equal(r.status, 403, `${m} ${p}`);
-      assert.equal(r.body.code, 'mobile_denied');
-      assert.match(r.body.error, /computer/);
+      assert.equal(r.status, 200, `${m} ${p} → ${r.status} ${JSON.stringify(r.body)}`);
     }
     assert.equal((await D('POST', '/bot-rules', { agentId: a.id, text: 'Mag altijd bestanden maken in de map Z' })).status, 409, 'an allow rule never through the strict route');
     assert.equal((await D('DELETE', `/bot-rules/${allow.id}`)).status, 200, 'removing an allow rule makes it stricter');

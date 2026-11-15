@@ -148,8 +148,8 @@ test('the short code also works in the shell login tab (core /api/public/pair) a
     assert.equal(r.status, 200, r.text);
     // QR secret of the same ticket is now dead
     assert.equal((await call(t.app.url, null, 'POST', '/api/public/mobile/claim', { secret: secretOf(ticket) })).status, 400);
-    // the core-paired device is restricted too and gets its metadata on first use
-    assert.equal((await call(t.app.url, r.body.token, 'GET', '/api/secrets', undefined, android)).status, 403);
+    // the core-paired device is a phone too (other devices stay on the computer) and gets its metadata on first use
+    assert.equal((await call(t.app.url, r.body.token, 'GET', '/api/mobile/devices', undefined, android)).status, 403);
     assert.equal((await call(t.app.url, r.body.token, 'GET', '/api/threads')).status, 200);
     const dev = (await t.api('GET', '/mobile/devices')).find((d: any) => d.name === 'Pixel');
     assert.equal(dev.platform, 'android');
@@ -181,7 +181,7 @@ test('pairing attempts are rate limited per address', async () => {
 
 // ---------------------------------------------------------------- default-deny device access
 
-test('device token may chat but gets 403 on secrets, providers, admin, export and pairing', async () => {
+test('device token may do what the computer can but gets 403 on pairing, other devices and sessions', async () => {
   const t = await startTestApp();
   try {
     const agent = await t.agent();
@@ -213,7 +213,8 @@ test('device token may chat but gets 403 on secrets, providers, admin, export an
     assert.ok(!prov.text.includes('supersecretheader'));
     assert.deepEqual(prov.body[0].config, {});
 
-    // Since 0.4.1 the owner's phone can do what the computer can (make bots, connect AI, settings, …).
+    // Since 0.4.1 the owner's phone can do what the computer can (make bots, connect AI, settings, …); since 15 nov also
+    // secrets, admin, export, reachability, script keys and looser bot rules.
     for (const [m, p, b] of [
       ['GET', '/provider-kinds?detect=1'],
       ['POST', '/agents', { name: 'Telefoonbot' }],
@@ -222,12 +223,6 @@ test('device token may chat but gets 403 on secrets, providers, admin, export an
       ['GET', '/audit'],
       ['GET', '/rooms/defaults'],
       ['GET', '/agents/templates'],
-    ] as [string, string, any?][]) {
-      const r = await D(m, p, b);
-      assert.notEqual(r.status, 403, `${m} ${p} is allowed on the phone → ${r.status} ${r.text?.slice(0, 120)}`);
-    }
-    // Still computer-only: handing out access, revealing secrets, full export, reachability, account credentials.
-    for (const [m, p, b] of [
       ['GET', '/secrets'],
       ['PUT', '/secrets/x', { value: 'y' }],
       ['DELETE', '/secrets/github'],
@@ -237,12 +232,7 @@ test('device token may chat but gets 403 on secrets, providers, admin, export an
       ['GET', '/admin/settings'],
       ['POST', '/admin/invites', {}],
       ['GET', '/export'],
-      ['GET', '/sessions'],
-      ['POST', '/pairing'],
-      ['POST', '/mobile/pair', { baseUrl: 'http://1.2.3.4' }],
-      ['GET', '/mobile/devices'],
       ['PUT', '/mobile/gateway', { enabled: true }],
-      ['PATCH', '/me', { password: 'nieuwwachtwoord' }],
       // handing a stored secret to a bot's scripts (module script-keys)
       ['GET', '/script-keys'],
       ['POST', '/script-keys', { name: 'SHOPIFY_TOKEN', value: 'x'.repeat(20) }],
@@ -250,6 +240,22 @@ test('device token may chat but gets 403 on secrets, providers, admin, export an
       // own rules (module botrules): a rule that lets a bot do more, or removing a rule, makes it looser
       ['POST', '/bot-rules/loosen', { agentId: agent.id, text: 'Mag altijd bestanden maken in de map Offertes' }],
       ['DELETE', '/bot-rules/loosen/rule_x'],
+    ] as [string, string, any?][]) {
+      const r = await D(m, p, b);
+      assert.notEqual(r.status, 403, `${m} ${p} is allowed on the phone → ${r.status} ${r.text?.slice(0, 120)}`);
+    }
+    // Still computer-only: pairing a new device, managing the other devices and the login sessions; e-mail/password.
+    for (const [m, p, b] of [
+      ['GET', '/sessions'],
+      ['DELETE', '/sessions/sess_x'],
+      ['GET', '/SESSIONS'],
+      ['POST', '/pairing'],
+      ['POST', '/mobile/pair', { baseUrl: 'http://1.2.3.4' }],
+      ['GET', '/mobile/devices'],
+      ['GET', '/Mobile/Devices'],
+      ['POST', '/mobile/devices/dev_x/revoke', {}],
+      ['PATCH', '/mobile/devices/dev_x', { name: 'x' }],
+      ['PATCH', '/me', { password: 'nieuwwachtwoord' }],
     ] as [string, string, any?][]) {
       const r = await D(m, p, b);
       assert.equal(r.status, 403, `${m} ${p} → ${r.status}`);
@@ -546,7 +552,7 @@ test('phone gateway forwards only pairing routes, static shell and device tokens
     assert.equal((await call(gw, null, 'POST', '/api/public/setup', { password: 'x'.repeat(10) })).status, 403);
     assert.equal((await call(gw, null, 'POST', '/api/public/login', {})).status, 403);
     assert.equal((await call(gw, token, 'GET', '/api/me')).status, 200);
-    assert.equal((await call(gw, token, 'GET', '/api/secrets')).status, 403); // device policy still applies
+    assert.equal((await call(gw, token, 'GET', '/api/mobile/devices')).status, 403); // device policy still applies
     assert.equal((await call(gw, null, 'GET', '/api/public/mobile/pair')).status, 200);
     assert.equal((await call(gw, null, 'GET', '/api/public/status')).status, 200);
     assert.equal((await call(gw, null, 'GET', '/')).status, 200);
@@ -622,7 +628,7 @@ test('one-click Tailscale https: loopback gateway, served target, ready address 
     assert.equal(m.gatewaySettings().port, r.gateway.port);
 
     const { token } = await pair(t);
-    assert.equal((await call(t.app.url, token, 'POST', '/api/mobile/tailscale-https', { acknowledge: true })).status, 403); // phones can't change it
+    assert.equal((await call(t.app.url, token, 'POST', '/api/mobile/tailscale-https', { acknowledge: true })).status, 200); // the owner's phone may switch it on too (15 nov)
 
     m.serveRun = async () => ({ ok: false, detail: 'Zet eerst https aan voor je tailnet: https://login.tailscale.com/x' });
     const fail = await call(t.app.url, t.token, 'POST', '/api/mobile/tailscale-https', { acknowledge: true });

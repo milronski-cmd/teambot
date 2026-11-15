@@ -74,7 +74,7 @@ const mod: Module = {
     const api = ctx.api;
     // Handing a key to a bot hands out access: never from a paired phone (also closed in the mobile policy).
     const noDevice = (req: Request) => {
-      if ((req as any).session?.kind === 'device' && !(req as any).session?.keys) throw new HttpError(403, 'Sleutels voor scripts beheer je op je computer.', 'mobile_denied');
+      if ((req as any).session?.id === 'bot' && !(req as any).session?.keys) throw new HttpError(403, 'Sleutels voor scripts beheer je op je computer.', 'mobile_denied');
     };
     const uid = (req: Request) => {
       noDevice(req);

@@ -478,3 +478,24 @@ test('a statement that runs too long is stopped without freezing TeamBot', async
     await t.close();
   }
 });
+
+test('dashboard: a standard table the bots keep by key, read on one screen (GET /teamdata/dashboard)', async () => {
+  const t = await startTestApp();
+  try {
+    const m = await team(t);
+    const kantoor = await m.bot('Kantoor');
+    const owner = t.app.ctx.auth.owner()!;
+    const svc = svcOf(t);
+    const run = (sql: string, params: any[] = []) => svc.run(owner.id, { type: 'agent', id: kantoor.id, name: kantoor.name }, sql, params, 'execute');
+    const up = "INSERT INTO dashboard (sleutel, groep, titel, waarde, eenheid, bot) VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT(sleutel) DO UPDATE SET waarde = excluded.waarde, bijgewerkt = datetime('now','localtime')";
+    await run(up, ['mail-open', 'Mail', 'Open klantmails', '12', 'mails', 'Kantoor']);
+    await run(up, ['mail-open', 'Mail', 'Open klantmails', '9', 'mails', 'Kantoor']);
+    await run(up, ['omzet-week', 'Cijfers', 'Omzet deze week', '1.250', 'euro', 'Kantoor']);
+    const list = await t.api('GET', '/teamdata/dashboard');
+    assert.equal(list.length, 2, 'one row per key: an update, not a second row');
+    assert.equal(list.find((r: any) => r.sleutel === 'mail-open').waarde, '9');
+    assert.deepEqual(list.map((r: any) => r.groep), ['Cijfers', 'Mail']);
+  } finally {
+    await t.close();
+  }
+});

@@ -316,20 +316,21 @@ test('a bot on full access may set keys (owner, 15 nov); the vault, sessions and
   assert.match(refusal('DELETE', '/sessions/s_1', undefined, { keys: true }) || '', /inlogsessies/);
 });
 
-test('the phone lock: a bot call that may set keys passes key routes; a plain one, a phone and the vault do not', () => {
+test('the phone lock: the owner phone may do everything but pair a device and manage the others (15 nov)', () => {
   const policy = new DevicePolicy({ services: {}, modules: [], store: {}, config: {} } as any);
-  const ask = (path: string, session: any) => {
+  const ask = (path: string) => {
     try {
-      return policy.policy({ method: 'PUT', path } as any, {} as any, { user: {} as any, session }) ?? 'ok';
+      return policy.policy({ method: 'PUT', path } as any, {} as any, { user: {} as any, session: { id: 's1', kind: 'device' } as any }) ?? 'ok';
     } catch (e: any) {
       return e?.code || String(e);
     }
   };
-  const phone = { id: 's1', kind: 'device' };
-  const bot = { id: 'bot', kind: 'device', keys: true };
-  assert.equal(ask('/routines/triggers/tr_1/secret', phone), 'mobile_denied');
-  assert.equal(ask('/routines/triggers/tr_1/secret', bot), 'ok');
-  assert.equal(ask('/script-keys/k_1', bot), 'ok');
-  assert.equal(ask('/computers/vault/items', bot), 'mobile_denied');
-  assert.equal(ask('/sessions/s_2', bot), 'mobile_denied');
+  assert.equal(ask('/routines/triggers/tr_1/secret'), 'ok');
+  assert.equal(ask('/computers/vault/items'), 'ok');
+  assert.equal(ask('/app-update/channel'), 'ok');
+  assert.equal(ask('/mobile/pair'), 'mobile_denied');
+  assert.equal(ask('/mobile/devices/d_2'), 'mobile_denied');
+  assert.equal(ask('/sessions/s_2'), 'mobile_denied');
+  // A bot is held back before its call: teams/manage.ts refuses the vault, sessions and reading keys back.
+  assert.match(refusal('POST', '/computers/vault/items', { name: 'x' }, { keys: true }) || '', /kluis/);
 });

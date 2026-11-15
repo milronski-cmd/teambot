@@ -100,6 +100,7 @@ export function teamdataRoutes(ctx: Ctx, svc: TeamData) {
       run(() => svc.events(user(req).id, { q: q(req.query.q), soort: q(req.query.soort), verwerkt: q(req.query.verwerkt), before: Number(req.query.before) || 0, limit: Number(req.query.limit) || 50 }, team(req.query.team))),
     ),
   );
+  api.get('/teamdata/dashboard', ah(async (req) => run(() => svc.dashboard(user(req).id, team(req.query.team)))));
   api.get('/teamdata/experiments', ah(async (req) => run(() => svc.experiments(user(req).id, team(req.query.team)))));
 
   // A CSV or Excel file (an uploaded attachment) into a team table; undone with its source (import-file.ts).

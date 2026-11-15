@@ -990,6 +990,18 @@ export class TeamData {
     return { rows: list, next: more ? list[list.length - 1].id : null, soorten: facets?.[0].rows || null, total: facets ? Number(facets[1].rows[0]?.n) || 0 : null };
   }
 
+  /**
+   * The owner's dashboard: the numbers the bots keep, by group (the standard table dashboard). One team, or every team
+   * (`all`, the default), each tile with its team.
+   */
+  async dashboard(userId: string, teamId?: string | null) {
+    const keys = this.keysFor(userId, teamId);
+    const lists = await Promise.all(
+      keys.map(async (tk) => (await this.rowsIn(userId, tk, 'SELECT * FROM dashboard ORDER BY groep, volgorde, titel LIMIT 500', [])).map((r) => ({ ...r, id: Number(r.id), teamId: tk || null, team: this.teamName(tk) }))),
+    );
+    return lists.flat();
+  }
+
   async experiments(userId: string, teamId?: string | null) {
     const rows = await this.rows(userId, 'SELECT * FROM experimenten ORDER BY id DESC LIMIT 1000', [], true, teamId);
     return rows.map((r) => ({ ...r, id: Number(r.id) }));

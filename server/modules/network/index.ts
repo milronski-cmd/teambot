@@ -156,7 +156,7 @@ function privacyRoutes(ctx: Ctx) {
     ah(async (req) => {
       const u = user(req);
       const device = (req as any).session?.kind === 'device';
-      const admin = u.role !== 'member' && !device;
+      const admin = u.role !== 'member';
       const bots = ctx.store.agents(u.id).map((a) => agentPrivacy(ctx, a));
       const exp = admin ? exposureOf(ctx) : null;
       return {

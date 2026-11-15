@@ -175,7 +175,7 @@ export function registerAppUpdate(ctx: Ctx) {
     '/app-update/channel',
     ah(async (req) => {
       const u = owner(req);
-      if ((req as any).session?.kind === 'device') throw new HttpError(403, 'Het updatekanaal stel je in op je computer.', 'mobile_denied');
+      if ((req as any).session?.id === 'bot') throw new HttpError(403, 'Het updatekanaal stel je in op je computer.', 'mobile_denied');
       const channel = typeof req.body?.channel === 'string' ? req.body.channel.trim().slice(0, 500) : null;
       if (channel === null) throw bad('Geef het adres van het updatekanaal');
       const svc = service();

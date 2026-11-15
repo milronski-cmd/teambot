@@ -158,9 +158,11 @@ test('status: device, instance, addresses of this TeamBot (wifi, Tailscale, http
     assert.equal((await D('/mobile/status')).body.home, null);
     delete t.app.ctx.services.mobileHome;
 
-    // The phone may read status and privacy, but still nothing of the computer side.
-    assert.equal((await D('/mobile/reachability')).status, 403);
-    assert.equal((await call(t.app.url, token, 'PUT', '/api/mobile/gateway', { enabled: false })).status, 403);
+    // The phone may read status and privacy, and since 15 nov reachability and the gateway too; the other devices stay
+    // on the computer.
+    assert.equal((await D('/mobile/reachability')).status, 200);
+    assert.equal((await call(t.app.url, token, 'PUT', '/api/mobile/gateway', { enabled: false })).status, 200);
+    assert.equal((await D('/mobile/devices')).status, 403);
 
     // A revoked phone gets 401 (the app then checks the hello before it forgets its key).
     await t.api('POST', `/mobile/devices/${deviceId}/revoke`, {});

@@ -121,6 +121,8 @@ export const teamApi = {
   log: (p: Record<string, string | number | undefined>) => api.get<LogPage>(`/teamdata/log?${qs(p)}${tq('&')}`),
   events: (p: Record<string, string | number | undefined>) => api.get<EventPage>(`/teamdata/events?${qs(p)}${tq('&')}`),
   experiments: () => api.get<Row[]>(`/teamdata/experiments${tq('?')}`),
+  /** `team`: one team ('all' or empty: every team, each tile with its team). */
+  dashboard: (team = '') => api.get<Row[]>(`/teamdata/dashboard${team ? `?team=${encodeURIComponent(team)}` : ''}`),
   tables: () => api.get<TableInfo[]>(`/teamdata/tables${tq('?')}`),
   table: (name: string, offset = 0, limit = 50) =>
     api.get<{ table: TableInfo; columns: string[]; rows: Record<string, any>[]; offset: number; limit: number; total: number | null }>(`/teamdata/tables/${encodeURIComponent(name)}?offset=${offset}&limit=${limit}${tq('&')}`),

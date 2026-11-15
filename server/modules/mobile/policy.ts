@@ -4,14 +4,12 @@ import type { SessionInfo } from '../../core/auth.js';
 import { HttpError } from '../../core/http.js';
 
 /**
- * What a paired phone (session of kind "device") may do. Since 0.4.1 the owner's phone can do everything the
- * computer can — make bots, connect AI, change settings, routines, teams — because the owner is often away from the
- * computer (owner, 9 November 2026: "ik kan nu niks … ik kan niet eens wat bedienen via de app"). Only a short
- * denylist stays computer-only: things that hand out access or reveal secrets if a phone is lost — admin and user
- * management, pairing or managing other devices and sessions, revealing secrets and vault passwords, full data export,
- * and changing who can reach the computer over the network. The listed rules below still apply their checks
- * (e-mail/password only on the computer, "always allow" only on the computer) and their safe answers (provider list
- * without keys).
+ * What a paired phone (session of kind "device") may do. The owner's phone can do everything the computer can (owner,
+ * 9 November 2026: "ik kan niet eens wat bedienen via de app"; 15 November: "mobiel moet ook alle toegang hebben"),
+ * except pairing a new device and managing the other devices and their login sessions, so a lost phone cannot add a
+ * device of its own. The listed rules below still apply their checks (e-mail/password only on the computer, "always
+ * allow" only on the computer) and their safe answers (provider list without keys). A bot's own call is a device
+ * session too; what a bot may do is decided before that, in teams/manage.ts.
  */
 
 export interface MobileRoute {
@@ -28,44 +26,16 @@ interface Rule extends MobileRoute {
 const deny = (msg = 'Dit kan om veiligheidsredenen alleen op je computer.') => new HttpError(403, msg, 'mobile_denied');
 
 /**
- * Computer-only routes (prefix match on the path relative to /api). Everything else is allowed for the owner's phone.
- * `/mobile/devices/self…` stays allowed (the phone's own entry); other devices are managed on the computer.
+ * What the owner's phone may not do: pair a new device, manage the other devices and their sessions, so a lost phone
+ * cannot add a device of its own. Everything else the computer can, the phone can too (owner, 15 nov: "mobiel moet
+ * ook alle toegang hebben", "alles, maar koppelen blijft pc"). A bot calls TeamBot as a device too; what a bot may
+ * not do is decided in teams/manage.ts (NEVER), before its call is made. `/mobile/devices/self…` stays allowed: the
+ * phone's own entry.
  */
-/**
- * `key`: setting a key. Never from a phone, but a bot on full access may (its own call carries `keys`; the owner chose
- * that on 15 nov: "Volledige toegang mag het"); reading keys back stays closed in teams/manage.ts.
- */
-const COMPUTER_ONLY: { re: RegExp; msg: string; key?: boolean }[] = [
-  { re: /^\/admin(\/|$)/i, msg: 'Beheer (gebruikers, uitnodigingen, netwerk, SSO) doe je op je computer.' },
-  { re: /^\/(export|memory\/export)(\/|$)/i, msg: 'Al je gegevens exporteren kan alleen op je computer.' },
-  { re: /^\/secrets(\/|$)/i, msg: 'Opgeslagen sleutels bekijken kan alleen op je computer.', key: true },
-  { re: /^\/computers\/vault(\/|$)/i, msg: 'De kluis met wachtwoorden open je alleen op je computer.' },
-  // The proxy of a browser profile carries a login (module browser, 0.4.4).
-  { re: /^\/computers\/profiles\/[^/]+\/proxy(\/|$)/i, msg: 'De proxy van een browserprofiel stel je in op je computer.' },
-  // Giving a stored secret to a bot's scripts hands out access (module script-keys).
-  { re: /^\/script-keys(\/|$)/i, msg: 'Sleutels voor scripts beheer je op je computer.', key: true },
-  { re: /^\/routines\/triggers\/[^/]+\/secret(\/|$)/i, msg: 'Het geheim van een webhook bekijk je op je computer.', key: true },
-  // Own rules (module botrules): a rule that lets a bot do more, or removing a rule, makes the bot looser.
-  { re: /^\/bot-rules\/loosen(\/|$)/i, msg: 'Een regel die de bot meer laat doen, of een regel weghalen, doe je op je computer.' },
-  { re: /^\/realtime\/client_secrets(\/|$)/i, msg: 'Dit kan alleen op je computer.' },
+const COMPUTER_ONLY: { re: RegExp; msg: string }[] = [
   { re: /^\/(pair|pairing|mobile\/pair)(\/|$)/i, msg: 'Een nieuw apparaat koppelen doe je op je computer.' },
   { re: /^\/mobile\/devices(?!\/self(\/|$))(\/|$)/i, msg: 'Andere gekoppelde apparaten beheer je op je computer.' },
   { re: /^\/sessions(\/|$)/i, msg: 'Inlogsessies beheer je op je computer.' },
-  { re: /^\/mobile\/gateway(\/|$)/i, msg: 'Telefoontoegang aan- of uitzetten doe je op je computer.' },
-  { re: /^\/mobile\/iroh(\/|$)/i, msg: 'De TeamBot-verbinding zet je aan of uit op je computer.' },
-  // Who can reach the computer over the network (its addresses, Tailscale): the phone never asks (0.4.3; the routes
-  // themselves refuse a phone too).
-  { re: /^\/mobile\/(reachability|tailscale-https)(\/|$)/i, msg: 'Wie je computer via het netwerk kan bereiken, stel je in op je computer.' },
-  // Remote desktop: switching it on or changing it stays at the computer (a lost phone can never turn it on);
-  // switching it off (`/remote-desktop/off`) and using it while it is on work from the phone.
-  { re: /^\/remote-desktop\/switch(\/|$)/i, msg: 'Bureaublad op afstand aanzetten of instellen doe je op de computer zelf. Uitzetten kan ook hier.' },
-
-  // A folder on this computer and the password of the encrypted copies (module backups, offsite.ts).
-  { re: /^\/backups\/offsite(\/|$)/i, msg: 'De tweede plek voor back-ups stel je in op je computer.' },
-
-  // Where TeamBot fetches its own updates (0.4.4): a lost phone must not point the computer at another server. The
-  // status, "Nu bijwerken" and Automatisch bijwerken stay available on the phone.
-  { re: /^\/app-update\/channel(\/|$)/i, msg: 'Het updatekanaal stel je in op je computer.' },
 ];
 
 export function coreRules(ctx: Ctx): Rule[] {
@@ -272,8 +242,7 @@ export class DevicePolicy {
     this.onDeviceSeen?.(req, who.session);
     const rule = this.match(req.method, req.path);
     if (!rule) {
-      const keys = !!(who.session as any).keys;
-      const blocked = COMPUTER_ONLY.find((b) => b.re.test(req.path) && !(b.key && keys));
+      const blocked = COMPUTER_ONLY.find((b) => b.re.test(req.path));
       if (blocked) throw deny(blocked.msg);
       return;
     }

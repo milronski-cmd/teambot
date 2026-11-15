@@ -23,6 +23,7 @@ import { InboxPage } from './pages/Inbox';
 import { SearchPage } from './pages/Search';
 import { MorePage } from './pages/More';
 import { TasksPage } from './pages/Tasks';
+import { DashboardPage } from './pages/Dashboard';
 import { settingsHostOf } from './lib/palette';
 import { DESTINATIONS, PHONE_TABS, activePhoneTab } from './shell/nav';
 import { onLanguageSave, syncLanguage } from './lib/i18n';
@@ -68,6 +69,7 @@ function Routed({ parts }: { parts: string[] }) {
   if (a === 'more') return <MorePage />;
   // Taken: the one task board at #/tasks (room_tasks and the team database in one view).
   if (a === 'tasks') return <TasksPage />;
+  if (a === 'dashboard') return <DashboardPage />;
   const el = a === 'm' && b ? modulePage(parts) : null;
   if (el) return el;
   return (

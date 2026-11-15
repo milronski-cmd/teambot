@@ -306,6 +306,10 @@ export class Mobile {
       // A second line behind the device policy (policy.ts COMPUTER_ONLY says it first, with a reason per route).
       if (session(req)?.kind === 'device') throw forbidden('Dit doe je op je computer.');
     };
+    /** The owner's phone may (15 nov); a bot's own call may not (teams/manage.ts refuses it first). */
+    const notBot = (req: Request) => {
+      if ((session(req) as any)?.id === 'bot') throw forbidden('Dit doe je op je computer.');
+    };
 
     // ----- public: pairing page + claim -----
     ctx.publicApi.get('/mobile/pair', (_req, res) => {
@@ -338,7 +342,7 @@ export class Mobile {
     api.put(
       '/mobile/iroh',
       ah(async (req) => {
-        notDevice(req);
+        notBot(req);
         const me = requireRole(req, 'admin');
         const b = req.body || {};
         const patch: { enabled?: boolean; relay?: string | null } = {};
@@ -424,14 +428,14 @@ export class Mobile {
     api.get(
       '/mobile/reachability',
       ah(async (req) => {
-        notDevice(req);
+        notBot(req);
         return this.reachability(req);
       }),
     );
     api.put(
       '/mobile/gateway',
       ah(async (req) => {
-        notDevice(req);
+        notBot(req);
         const me = requireRole(req, 'admin');
         const b = req.body || {};
         const cur = this.gatewaySettings();
@@ -461,7 +465,7 @@ export class Mobile {
     api.post(
       '/mobile/tailscale-https',
       ah(async (req) => {
-        notDevice(req);
+        notBot(req);
         const me = requireRole(req, 'admin');
         if (req.body?.acknowledge !== true) throw bad('Bevestig eerst dat je de waarschuwing hebt gelezen');
         const ts = await this.tailscaleProbe(interfaces().tailscale.map((a) => a.address));

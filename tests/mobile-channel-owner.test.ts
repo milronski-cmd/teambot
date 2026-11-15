@@ -28,15 +28,19 @@ test('phone: a normal pairing code is allowed, an owner pairing code is not', ()
 });
 
 test('phone: the computer-only list still holds', () => {
-  assert.equal(run('GET', '/secrets'), 'denied');
-  assert.equal(run('GET', '/Admin/Users'), 'denied');
+  assert.equal(run('GET', '/mobile/devices'), 'denied');
+  assert.equal(run('GET', '/Sessions'), 'denied');
+  // since 15 nov the owner's phone may do the rest, secrets and admin included
+  assert.equal(run('GET', '/secrets'), 'allowed');
+  assert.equal(run('GET', '/Admin/Users'), 'allowed');
   assert.equal(run('POST', '/agents', { name: 'x' }), 'allowed');
 });
 
-test('phone (0.4.3): who can reach the computer over the network stays on the computer, with a calm reason', () => {
+test('phone (15 nov): pairing a new device, other devices and sessions stay on the computer, with a calm reason', () => {
   for (const [method, path] of [
-    ['GET', '/mobile/reachability'],
-    ['POST', '/mobile/tailscale-https'],
+    ['POST', '/mobile/pair'],
+    ['POST', '/mobile/devices/dev_x/revoke'],
+    ['DELETE', '/sessions/sess_x'],
   ]) {
     try {
       policy.policy({ method, path, body: {} } as any, {} as any, who);
@@ -47,7 +51,9 @@ test('phone (0.4.3): who can reach the computer over the network stays on the co
       assert.match(e.message, /op je computer/);
     }
   }
-  // The phone's own entry and its status stay available.
+  // The phone's own entry and its status stay available; who can reach the computer is the phone's too (15 nov).
   assert.equal(run('GET', '/mobile/devices/self'), 'allowed');
   assert.equal(run('GET', '/mobile/status'), 'allowed');
+  assert.equal(run('GET', '/mobile/reachability'), 'allowed');
+  assert.equal(run('POST', '/mobile/tailscale-https'), 'allowed');
 });

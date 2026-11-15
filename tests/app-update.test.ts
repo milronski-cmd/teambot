@@ -1,6 +1,6 @@
 // Automatic updates wired up (parity 16.2): /api/app-update for Instellingen › Back-ups (computer and phone), the
 // three settings for a normal person (aan / alleen melden / uit), "Nu bijwerken", the calm sentence without a channel,
-// the channel computer-only (policy.ts COMPUTER_ONLY), the daily look, and the way back that is not undone by itself.
+// the channel (also from the owner's phone since 15 nov), the daily look, and the way back that is not undone by itself.
 // A fake electron-updater (same events); nothing is downloaded or installed. The real electron-updater against a local
 // feed is tests/update-feed.test.ts.
 import { test } from 'node:test';
@@ -140,7 +140,7 @@ test('the installed app without a channel: off, "next installer"; a channel type
   }
 });
 
-test('on the phone: the status, Nu bijwerken and Automatisch bijwerken work; the channel is computer-only', async () => {
+test('on the phone: the status, Nu bijwerken, Automatisch bijwerken and the channel work', async () => {
   const t = await startTestApp();
   const w = wire(t, { next: '99.1.0', builtIn: { provider: 'generic', url: 'https://downloads.voorbeeld.nl/teambot/' } });
   try {
@@ -150,11 +150,12 @@ test('on the phone: the status, Nu bijwerken and Automatisch bijwerken work; the
     assert.equal(v.body.channel.source, 'built-in');
     assert.equal(v.body.state.phase, 'idle');
     assert.equal((await phone('PUT', '/app-update/settings', { auto: 'notify' })).body.auto, 'notify');
+    // the owner's phone may set the channel too (15 nov); empty again: the built-in channel applies
     const r = await phone('PUT', '/app-update/channel', { channel: 'https://ander.voorbeeld.nl/' });
-    assert.equal(r.status, 403);
-    assert.equal(r.body.code, 'mobile_denied');
-    assert.match(r.body.error, /computer/);
-    assert.equal((await t.api('GET', '/app-update')).channel.source, 'built-in', 'unchanged');
+    assert.equal(r.status, 200);
+    assert.equal((await t.api('GET', '/app-update')).channel.source, 'saved');
+    assert.equal((await phone('PUT', '/app-update/channel', { channel: '' })).status, 200);
+    assert.equal((await t.api('GET', '/app-update')).channel.source, 'built-in');
     // "Nu bijwerken" from the phone: found, downloaded, installs once no task runs (the owner may be on the phone).
     assert.equal((await phone('POST', '/app-update/install')).status, 200);
     await new Promise((r) => setTimeout(r, 100));

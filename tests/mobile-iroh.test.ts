@@ -102,11 +102,14 @@ test('iroh: off by default, on from the computer, QR carries the key, phone work
     assert.equal(st.status, 200, st.text);
     assert.deepEqual(st.body.iroh, { id, relay: null });
     assert.equal((await call(phone.base, token, 'GET', '/api/me')).status, 200);
-    assert.equal((await call(phone.base, token, 'PUT', '/api/mobile/iroh', { enabled: false })).status, 403); // computer-only
-    assert.equal((await call(phone.base, token, 'GET', '/api/mobile/reachability')).status, 403);
+    // the owner's phone may set the connection too (15 nov): a bad relay gets 400, not 403 (a valid change would
+    // restart the connection this phone is using)
+    assert.equal((await call(phone.base, token, 'PUT', '/api/mobile/iroh', { relay: 'http://relay.voorbeeld.nl' })).status, 400);
+    assert.equal((await call(phone.base, token, 'GET', '/api/mobile/reachability')).status, 200);
+    // pairing a new device stays computer-only
     assert.equal((await call(phone.base, token, 'POST', '/api/mobile/pair', { baseUrl: 'iroh' })).status, 403);
-    // also from the computer's own address a phone cannot switch it
-    assert.equal((await call(t.app.url, token, 'PUT', '/api/mobile/iroh', { enabled: false })).status, 403);
+    // the same from the computer's own address
+    assert.equal((await call(t.app.url, token, 'PUT', '/api/mobile/iroh', { relay: 'http://relay.voorbeeld.nl' })).status, 400);
 
     // each phone gets its own stable address (rate limits, audit), never the client-sent one
     t.app.ctx.publicApi.get('/mobile/test-ip', (req, res) => res.json({ ip: req.ip }));

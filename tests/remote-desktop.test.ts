@@ -321,7 +321,7 @@ async function setup(o: { indicator?: boolean } = {}) {
 
 const audits = (t: TestApp, kind: string) => t.app.ctx.store.all<any>('SELECT data FROM audit WHERE kind = ? ORDER BY id', kind).map((r) => JSON.parse(r.data));
 
-test('off by default; switching on only at the computer itself (phone: computer-only, other PC: refused)', async () => {
+test('off by default; switching on at the computer itself or from the owner\'s phone (other PC: refused)', async () => {
   const { t, fake } = await setup();
   try {
     const phone = await pairPhone(t);
@@ -330,13 +330,6 @@ test('off by default; switching on only at the computer itself (phone: computer-
     assert.equal(st.here, true, 'the desktop app on this computer');
     assert.equal(st.available, true);
 
-    // the phone: COMPUTER_ONLY (server/modules/mobile/policy.ts), for every way of writing the path
-    for (const p of ['/remote-desktop/switch', '/Remote-Desktop/Switch', '/remote-desktop/switch/']) {
-      const r = await call(t, phone, 'PUT', p, { enabled: true });
-      assert.equal(r.status, 403, `${p} → ${r.status}`);
-      assert.equal(r.body.code, 'mobile_denied');
-      assert.match(r.body.error, /computer/);
-    }
     const ps = await call(t, phone, 'GET', '/remote-desktop');
     assert.equal(ps.status, 200);
     assert.equal(ps.body.here, false);
@@ -361,6 +354,13 @@ test('off by default; switching on only at the computer itself (phone: computer-
     assert.equal(r.status, 200);
     assert.equal(r.body.enabled, false);
     assert.equal(audits(t, 'remote_desktop.off')[0].source, 'telefoon');
+
+    // switching ON works from the owner's phone too (15 nov), for every way of writing the path
+    for (const p of ['/remote-desktop/switch', '/Remote-Desktop/Switch', '/remote-desktop/switch/']) {
+      const r = await call(t, phone, 'PUT', p, { enabled: true });
+      assert.equal(r.status, 200, `${p} → ${r.status}`);
+      assert.equal(r.body.enabled, true);
+    }
     assert.ok(!fake.calls.some((c) => ['click', 'type', 'key', 'drag', 'scroll', 'move'].includes(c.action)), 'no input at all');
   } finally {
     await t.close();
@@ -604,7 +604,7 @@ test('auto-stop: after the chosen minutes without input, and when the viewer is 
   }
 });
 
-test('watch only at the computer: no input from anywhere, open sessions switch to watching', async () => {
+test('watch only: no input from anywhere, open sessions switch to watching', async () => {
   const { t, fake } = await setup();
   try {
     await t.api('PUT', '/remote-desktop/switch', { enabled: true });
@@ -616,8 +616,8 @@ test('watch only at the computer: no input from anywhere, open sessions switch t
     assert.equal(r.status, 403);
     assert.equal(r.body.code, 'remote_view_only');
     assert.equal((await call(t, phone, 'POST', `/remote-desktop/sessions/${s.body.id}/view`, { view: false })).body.view, true, 'the phone cannot undo the setting of the computer');
-    // changing options is computer-only too
-    assert.equal((await call(t, phone, 'PUT', '/remote-desktop/switch', { control: true })).status, 403);
+    // the owner's phone may change the options itself (15 nov)
+    assert.equal((await call(t, phone, 'PUT', '/remote-desktop/switch', { control: true })).status, 200);
     assert.ok(!fake.calls.some((c) => c.action === 'key'));
   } finally {
     await t.close();

@@ -244,7 +244,7 @@ const mod: Module = {
     const loosenMsg = 'Een regel die de bot meer laat doen, of een regel weghalen, doe je op je computer.';
     // Making a bot looser hands out access: never from a paired phone (also closed in the mobile policy).
     const noDevice = (req: Request) => {
-      if ((req as any).session?.kind === 'device') throw new HttpError(403, loosenMsg, 'mobile_denied');
+      if ((req as any).session?.id === 'bot') throw new HttpError(403, loosenMsg, 'mobile_denied');
     };
     const scopeOf = (req: Request, b: any): Scope => {
       const u = user(req);

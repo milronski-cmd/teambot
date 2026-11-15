@@ -13,7 +13,7 @@ export function vaultRoutes(ctx: Ctx, vault: VaultService) {
   const api = ctx.api;
   const entryOf = (req: Request): VaultRow => own(req, vault.row(String(req.params.id)), 'Login niet gevonden');
   const noDevice = (req: Request) => {
-    if ((req as any).session?.kind === 'device') throw new HttpLike(403, 'De kluis beheer je op je computer.');
+    if ((req as any).session?.id === 'bot') throw new HttpLike(403, 'De kluis beheer je op je computer.');
   };
 
   api.get(

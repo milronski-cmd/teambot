@@ -158,6 +158,7 @@ export function NavRail({ route, onNavigate }: { route: string[]; onNavigate?():
       <RailItem href={d.chats.href} label={d.chats.label} icon={d.chats.icon} active={d.chats.active(route)} onNavigate={onNavigate} />
       <RailItem href={d.inbox.href} label={d.inbox.label} icon={Inbox} active={d.inbox.active(route)} count={approvals} onNavigate={onNavigate} />
       <RailItem href={d.tasks.href} label={d.tasks.label} icon={d.tasks.icon} active={d.tasks.active(route)} onNavigate={onNavigate} />
+      <RailItem href={d.dashboard.href} label={d.dashboard.label} icon={d.dashboard.icon} active={d.dashboard.active(route)} onNavigate={onNavigate} />
       <div className="mt-auto flex w-full flex-col items-center gap-1.5">
         <RailItem href={d.market.href} label={d.market.label} icon={d.market.icon} active={d.market.active(route)} onNavigate={onNavigate} />
         <RailItem href={d.settings.href} label={d.settings.label} icon={d.settings.icon} active={d.settings.active(route)} onNavigate={onNavigate} />

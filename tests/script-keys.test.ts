@@ -24,7 +24,7 @@ test('scrubbing: plain, encoded and half-printed values never show', () => {
   assert.equal(cutPartial('klaar', items), 'klaar');
 });
 
-test('a key reaches the bot (and its team) as an env var, never the model, transcript or export; computer-only on a phone', async () => {
+test('a key reaches the bot (and its team) as an env var, never the model, transcript or export; the owner\'s phone manages keys too', async () => {
   const t = await startTestApp();
   try {
     const bot = await t.agent({ name: 'Winkelbot', tool_groups: ['shell'] });
@@ -86,24 +86,23 @@ test('a key reaches the bot (and its team) as an env var, never the model, trans
     assert.match(view.keys[0].blocked, /Alleen voor team “Tweede team”/);
     await t.api('PUT', `/teams/keys/script/${k.id}`, { teamId: null });
 
-    // a paired phone cannot list, add or give keys
+    // the owner's paired phone may list, add, give and delete keys too (15 nov); the value never shows there either
     const ticket = await t.api('POST', '/mobile/pair', { baseUrl: 'http://192.168.1.5:4761' });
     const secret = new URLSearchParams(new URL(ticket.url).hash.slice(1)).get('t');
     const claim = await fetch(t.app.url + '/api/public/mobile/claim', { method: 'POST', headers: { 'content-type': 'application/json', 'user-agent': IPHONE_UA }, body: JSON.stringify({ secret, name: 'Telefoon' }) });
     const phone = (await claim.json()).token as string;
-    for (const [m, p, b] of [
-      ['GET', '/script-keys'],
-      ['POST', '/script-keys', { name: 'X_TOKEN', value: VALUE, agent_id: bot.id }],
-      ['GET', `/script-keys/agents/${bot.id}`],
-      ['POST', `/script-keys/${k.id}/grants`, { target: 'agent', id: other.id }],
-      ['DELETE', `/script-keys/${k.id}`],
-    ] as [string, string, any?][]) {
+    const P = async (m: string, p: string, b?: any) => {
       const r = await fetch(t.app.url + '/api' + p, { method: m, headers: { authorization: `Bearer ${phone}`, ...(b ? { 'content-type': 'application/json' } : {}) }, body: b ? JSON.stringify(b) : undefined });
-      const j: any = await r.json().catch(() => ({}));
-      assert.equal(r.status, 403, `${m} ${p}`);
-      assert.equal(j.code, 'mobile_denied');
-      assert.match(j.error, /computer/);
-    }
+      const text = await r.text();
+      assert.equal(r.status, 200, `${m} ${p} → ${r.status} ${text.slice(0, 160)}`);
+      assert.ok(!text.includes(VALUE), `${m} ${p} shows the value`);
+      return JSON.parse(text || 'null');
+    };
+    await P('GET', '/script-keys');
+    const x = await P('POST', '/script-keys', { name: 'X_TOKEN', value: VALUE, agent_id: bot.id });
+    await P('GET', `/script-keys/agents/${bot.id}`);
+    await P('POST', `/script-keys/${k.id}/grants`, { target: 'agent', id: other.id });
+    await P('DELETE', `/script-keys/${x.id}`);
 
     // take it away, then delete: the secret row goes too
     await t.api('DELETE', `/script-keys/${k.id}/grants/agent/${bot.id}`);

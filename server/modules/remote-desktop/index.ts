@@ -58,7 +58,8 @@ const mod: Module = {
       '/remote-desktop/switch',
       ah(async (req) => {
         const u = ownerOf(ctx, req);
-        if (!atComputer(req)) throw new HttpError(403, 'Bureaublad op afstand aanzetten of instellen kan alleen op de computer zelf. Uitzetten kan overal.', 'remote_here_only');
+        // The computer itself or the owner's paired phone (15 nov); never a bot's own call.
+        if (!atComputer(req) && !(authOf(req).kind === 'device' && authOf(req).id !== 'bot')) throw new HttpError(403, 'Bureaublad op afstand aanzetten of instellen kan alleen op de computer zelf. Uitzetten kan overal.', 'remote_here_only');
         svc.configure(u, req.body || {});
         return svc.state({ userId: u.id, authSessionId: authOf(req).id, here: true });
       }),

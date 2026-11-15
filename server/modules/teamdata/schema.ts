@@ -99,6 +99,18 @@ export const STANDARD_TABLES: StandardTable[] = [
   voorgelegd TEXT, beslist TEXT, project_id INTEGER, aangemaakt TEXT DEFAULT (datetime('now','localtime')))`,
     indexes: ['CREATE INDEX IF NOT EXISTS kansen_status ON kansen(status)'],
   },
+  {
+    // The owner's dashboard (15 nov: "een dashboardje van de mails, cijfers, WhatsApp, klantenservice … alles in 1"):
+    // the bots keep the numbers, the owner sees them on one screen (Dashboard). One row per number, by its sleutel.
+    name: 'dashboard',
+    label: 'Dashboard',
+    about:
+      "Tegels op het dashboard van de eigenaar: één rij per cijfer of stand (mail, klantvragen, WhatsApp, omzet, leads …), in een groep. Houd je eigen tegels bij op een vaste sleutel, met INSERT … ON CONFLICT(sleutel) DO UPDATE SET waarde = excluded.waarde, toelichting = excluded.toelichting, bijgewerkt = datetime('now','localtime'): nooit een tweede rij voor hetzelfde cijfer. bot = je naam.",
+    ddl: `CREATE TABLE IF NOT EXISTS dashboard (
+  id INTEGER PRIMARY KEY, sleutel TEXT NOT NULL UNIQUE, groep TEXT, titel TEXT NOT NULL, waarde TEXT, eenheid TEXT,
+  toelichting TEXT, link TEXT, bot TEXT, volgorde INTEGER, bijgewerkt TEXT DEFAULT (datetime('now','localtime')))`,
+    indexes: [],
+  },
 ];
 
 export const STANDARD = new Set(STANDARD_TABLES.map((t) => t.name));
