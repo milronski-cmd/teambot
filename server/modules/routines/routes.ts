@@ -27,10 +27,8 @@ async function wrapAsync<T>(fn: () => Promise<T>): Promise<T> {
   }
 }
 
-export function baseUrl(ctx: Ctx, req: Request): string {
-  if (ctx.config.publicUrl) return ctx.config.publicUrl.replace(/\/$/, '');
-  return `${req.protocol}://${req.get('host')}`;
-}
+import { baseUrl } from '../../core/http.js';
+export { baseUrl };
 
 /** History filter: "done" = geslaagd (with a result), "no_result" = klaar gemeld zonder resultaat, else the status. */
 function statusFilter(status: string): { sql: string; args: any[] } {

@@ -24,12 +24,8 @@ import { probeUrl } from './oauth.js';
 import { registerImportRoutes } from './import-routes.js';
 import { actionsByDefault } from './defaults.js';
 
-export function baseUrl(ctx: Ctx, req: Request): string {
-  if (ctx.config.publicUrl) return ctx.config.publicUrl.replace(/\/+$/, '');
-  const host = String(req.get('host') || '').trim();
-  if (!/^[A-Za-z0-9.\-:[\]]{1,255}$/.test(host)) throw bad('Ongeldige host-header');
-  return `${req.protocol === 'https' ? 'https' : 'http'}://${host}`;
-}
+import { baseUrl } from '../../core/http.js';
+export { baseUrl };
 
 function tools(ctx: Ctx, connId: string): ToolRow[] {
   return ctx.store.find<ToolRow>('mcp_tools', { connection_id: connId }, { order: 'name' });

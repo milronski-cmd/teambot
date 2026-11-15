@@ -8,6 +8,20 @@ export class HttpError extends Error {
 }
 
 export const bad = (msg: string) => new HttpError(400, msg);
+
+/**
+ * This TeamBot's address as the caller reaches it, for links and callbacks it hands out (a Google login, a webhook,
+ * an app's endpoint). The public address when one is set. A bot's own call (teams/inner.ts, host "*.invalid") gets
+ * this computer's local address: what it hands on must open in a browser here (a bot once typed
+ * "http://bot.teambot.invalid/…" into Google as the login's return address).
+ */
+export function baseUrl(ctx: { config: { publicUrl?: string; port: number } }, req: Request): string {
+  if (ctx.config.publicUrl) return ctx.config.publicUrl.replace(/\/+$/, '');
+  const host = String(req.get('host') || '').trim();
+  if (/\.invalid(:\d+)?$/i.test(host)) return `http://127.0.0.1:${ctx.config.port}`;
+  if (!/^[A-Za-z0-9.\-:[\]]{1,255}$/.test(host)) throw bad('Ongeldige host-header');
+  return `${req.protocol === 'https' ? 'https' : 'http'}://${host}`;
+}
 export const notFound = (what = 'Niet gevonden') => new HttpError(404, what);
 export const forbidden = (msg = 'Geen toegang') => new HttpError(403, msg);
 
