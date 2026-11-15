@@ -495,7 +495,11 @@ export class ScreenControl {
     const l = this.svc.leases.current(RESOURCE);
     const waiting = this.svc.leases.waiting(RESOURCE);
     const botHolder = l?.holder.kind === 'bot' ? l.holder : waiting.find((h) => h.kind === 'bot') || null;
-    const agentId = botHolder?.agentId || (l?.holder.kind === 'user' && this.last && Date.now() - this.last.at < 10 * 60_000 ? this.last.agentId : null);
+    // The owner holds it: "Bot wacht" only while that bot still has a turn going. With its turn stopped nothing waits,
+    // and the blue frame stayed for ten minutes while the owner looked for a way to make it go (15 nov).
+    const last = this.last;
+    const lastWaits = !!last && Date.now() - last.at < 10 * 60_000 && this.ctx.store.runsByStatus(['queued', 'running', 'waiting']).some((r) => r.agent_id === last.agentId);
+    const agentId = botHolder?.agentId || (l?.holder.kind === 'user' && lastWaits ? last!.agentId : null);
     const agent = agentId ? this.ctx.store.agent(agentId) : null;
     const cfg = agent ? this.svc.config(agent) : null;
     const mon = this.last?.agentId === agentId ? this.last?.monitor : null;
