@@ -244,6 +244,28 @@ export function ChatView({ threadId }: { threadId: string }) {
   // A question card is open: what you type is the answer (server/agent/queue.ts answerOpenQuestion).
   const asking = approvals.some((a) => a.kind === 'question' && a.status === 'pending');
   const runs = useApp(useShallow((s) => s.runs.filter((r) => r.thread_id === threadId)));
+  // What this bot does in its other conversations right now (work another bot gave it, a routine): the owner saw
+  // nothing in the bot's own chat and could not tell what it was doing (15 nov). One line per conversation, with a link.
+  // Selected as one string (equal when nothing changed): new objects on every read made React render without end.
+  const elsewhereKey = useApp((s) => {
+    const t = s.threads.find((x) => x.id === threadId);
+    if (!t || t.kind === 'room') return '';
+    const seen = new Set<string>();
+    return s.runs
+      .filter((r) => r.agent_id === t.agent_id && r.thread_id !== threadId && !seen.has(r.thread_id) && (seen.add(r.thread_id), true))
+      .map((r) => [r.thread_id, s.threads.find((x) => x.id === r.thread_id)?.title || '', s.alive[r.id]?.doing || ''].join('\u0001'))
+      .join('\u0002');
+  });
+  const elsewhere = useMemo(
+    () =>
+      elsewhereKey
+        ? elsewhereKey.split('\u0002').map((x) => {
+            const [id, title, doing] = x.split('\u0001');
+            return { id, title, doing };
+          })
+        : [],
+    [elsewhereKey],
+  );
   const providers = useApp((s) => s.providers);
   // The bot itself: a change to it (another model picked in the header, a new name, from another device) shows at
   // once in the header and next to the message box (agentById below reads the store when this renders).
@@ -787,6 +809,21 @@ export function ChatView({ threadId }: { threadId: string }) {
         </div>
 
         <div className="mx-auto w-full max-w-[860px]">
+          {elsewhere.map((w) => (
+            <a
+              key={w.id}
+              href={`#/t/${w.id}`}
+              data-testid="busy-elsewhere"
+              className="mx-3 mb-2 flex min-w-0 items-center gap-2 rounded-xl border border-line bg-surface-2 px-3 py-2 text-[13px] transition-colors hover:border-fg/30 sm:mx-4"
+            >
+              <span className="tb-pulse h-1.5 w-1.5 shrink-0 rounded-full bg-ok" aria-hidden />
+              <span className="min-w-0 flex-1 truncate">
+                {t('Werkt nu aan: {0}', w.title || t('een taak'))}
+                {w.doing && <span className="text-muted"> · {w.doing}</span>}
+              </span>
+              <span className="shrink-0 font-semibold text-accent">{t('Bekijken')}</span>
+            </a>
+          ))}
           <QueueBar queue={queue} className="mx-3 mb-2 sm:mx-4" />
           <Composer
             key={threadId}

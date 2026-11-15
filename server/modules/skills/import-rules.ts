@@ -17,8 +17,11 @@ import { LIMITS } from './files.js';
  */
 
 export const CURATED_LIMITS = {
-  /** Files in one skill (including licence and source files). */
-  maxFiles: 150,
+  /**
+   * Files in one skill (including licence and source files). 150 refused a skill with its own script library (15 nov)
+   * that its link would have let in; the size limits below still bound what comes in.
+   */
+  maxFiles: 1000,
   /**
    * Bytes per file and per skill: the same as for a skill added by its address (files.ts LIMITS), so one skill is not
    * refused by its id and accepted by its link (15 nov: a skill with a 1.1 MB data file was refused at 512 kB).

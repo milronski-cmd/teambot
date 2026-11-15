@@ -49,7 +49,7 @@ function innerApp(ctx: Ctx): express.Express {
  * session), so routes that refuse a paired phone (things that hand out access or show secrets) refuse this caller too;
  * the host is not this computer's, so nothing treats it as "the computer itself".
  */
-export function callAsUser(ctx: Ctx, user: User, call: { method: string; url: string; body?: any }, signal?: AbortSignal): Promise<CallResult> {
+export function callAsUser(ctx: Ctx, user: User, call: { method: string; url: string; body?: any; keys?: boolean }, signal?: AbortSignal): Promise<CallResult> {
   return new Promise<CallResult>((resolve) => {
     const socket = new Duplex({ read() {}, write(_c, _e, cb) { cb(); } });
     Object.defineProperty(socket, 'remoteAddress', { value: '0.0.0.0' });
@@ -59,7 +59,8 @@ export function callAsUser(ctx: Ctx, user: User, call: { method: string; url: st
     req.headers = { host: 'bot.teambot.invalid', accept: 'application/json', 'content-type': 'application/json', 'user-agent': 'TeamBot bot' };
     (req as any).body = call.body;
     (req as any).user = user;
-    (req as any).session = { id: 'bot', user_id: user.id, kind: 'device', name: 'Bot' };
+    // keys: a bot on full access may set keys (mobile/policy.ts); everything else a phone may not do stays closed.
+    (req as any).session = { id: 'bot', user_id: user.id, kind: 'device', name: 'Bot', ...(call.keys ? { keys: true } : {}) };
     (req as any).signedUrl = false;
     req.push(null);
     const res = new http.ServerResponse(req);

@@ -14695,6 +14695,7 @@
  "Werkt niet",
  "Werkt niet als TeamBot via een IP-adres open staat ({0}). Open TeamBot via een naam, zoals http://localhost op deze computer of je Tailscale-adres (…ts.net) op de telefoon.",
  "Werkt niet meer…",
+ "Werkt nu aan: {0}",
  "Werkt op de server die aan de bot gekoppeld is.",
  "Werkt op deze pc, maar traag. Downloaden: {0}.",
  "Werkt traag",

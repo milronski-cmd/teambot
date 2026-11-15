@@ -820,7 +820,7 @@ export function manageTools(ctx: Ctx, svc: TeamsService): ToolDef[] {
         }
         // The call as this bot makes it: its own team where none was named, a list merged with what it cannot see.
         const url = mine ? (mine.query ? `${p.path}?${mine.query}` : p.path) : p.url;
-        const r = await callAsUser(ctx, owner, { method: p.method, url, body: mine ? mine.body : p.body }, t.signal);
+        const r = await callAsUser(ctx, owner, { method: p.method, url, body: mine ? mine.body : p.body, keys: fullAccess(t.agent) }, t.signal);
         const isJson = /json/i.test(r.type);
         let json: any;
         if (isJson) {

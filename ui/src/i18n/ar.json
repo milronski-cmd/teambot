@@ -14711,6 +14711,7 @@
  "Werkt niet": "لا يعمل",
  "Werkt niet als TeamBot via een IP-adres open staat ({0}). Open TeamBot via een naam, zoals http://localhost op deze computer of je Tailscale-adres (…ts.net) op de telefoon.": "لا يعمل إذا كان TeamBot مفتوحًا عبر عنوان IP ({0}). افتح TeamBot عبر اسم، مثل http://localhost على هذا الكمبيوتر أو عنوان Tailscale الخاص بك (…ts.net) على الهاتف.",
  "Werkt niet meer…": "لم يعد يعمل…",
+ "Werkt nu aan: {0}": "يعمل الآن على: {0}",
  "Werkt op de server die aan de bot gekoppeld is.": "يعمل على الخادم المرتبط بالبوت.",
  "Werkt op deze pc, maar traag. Downloaden: {0}.": "يعمل على هذا الكمبيوتر، لكنه بطيء. التنزيل: {0}.",
  "Werkt traag": "يعمل ببطء",

@@ -14,6 +14,7 @@ import assert from 'node:assert/strict';
 import { ownerTurn, startTestApp, type TestApp } from './helpers.js';
 import { MANAGE_DO, MANAGE_FIND, MANAGE_TOOL_NAMES, planCall, refusal, routesOf } from '../server/modules/teams/manage.js';
 import { callAsUser } from '../server/modules/teams/inner.js';
+import { DevicePolicy } from '../server/modules/mobile/policy.js';
 import { CALL_NAME, FIND_NAME } from '../server/tools/selection.js';
 import { checkinSettings } from '../server/modules/teams/proactive.js';
 import { callRisk } from '../server/tools/broker.js';
@@ -313,4 +314,22 @@ test('a bot on full access may set keys (owner, 15 nov); the vault, sessions and
   assert.match(refusal('GET', '/secrets', undefined, { keys: true }) || '', /sleutels en tokens/);
   assert.match(refusal('POST', '/computers/vault/items', { password: 'x' }, { keys: true }) || '', /kluis/);
   assert.match(refusal('DELETE', '/sessions/s_1', undefined, { keys: true }) || '', /inlogsessies/);
+});
+
+test('the phone lock: a bot call that may set keys passes key routes; a plain one, a phone and the vault do not', () => {
+  const policy = new DevicePolicy({ services: {}, modules: [], store: {}, config: {} } as any);
+  const ask = (path: string, session: any) => {
+    try {
+      return policy.policy({ method: 'PUT', path } as any, {} as any, { user: {} as any, session }) ?? 'ok';
+    } catch (e: any) {
+      return e?.code || String(e);
+    }
+  };
+  const phone = { id: 's1', kind: 'device' };
+  const bot = { id: 'bot', kind: 'device', keys: true };
+  assert.equal(ask('/routines/triggers/tr_1/secret', phone), 'mobile_denied');
+  assert.equal(ask('/routines/triggers/tr_1/secret', bot), 'ok');
+  assert.equal(ask('/script-keys/k_1', bot), 'ok');
+  assert.equal(ask('/computers/vault/items', bot), 'mobile_denied');
+  assert.equal(ask('/sessions/s_2', bot), 'mobile_denied');
 });

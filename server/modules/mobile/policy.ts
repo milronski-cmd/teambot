@@ -31,16 +31,20 @@ const deny = (msg = 'Dit kan om veiligheidsredenen alleen op je computer.') => n
  * Computer-only routes (prefix match on the path relative to /api). Everything else is allowed for the owner's phone.
  * `/mobile/devices/self…` stays allowed (the phone's own entry); other devices are managed on the computer.
  */
-const COMPUTER_ONLY: { re: RegExp; msg: string }[] = [
+/**
+ * `key`: setting a key. Never from a phone, but a bot on full access may (its own call carries `keys`; the owner chose
+ * that on 15 nov: "Volledige toegang mag het"); reading keys back stays closed in teams/manage.ts.
+ */
+const COMPUTER_ONLY: { re: RegExp; msg: string; key?: boolean }[] = [
   { re: /^\/admin(\/|$)/i, msg: 'Beheer (gebruikers, uitnodigingen, netwerk, SSO) doe je op je computer.' },
   { re: /^\/(export|memory\/export)(\/|$)/i, msg: 'Al je gegevens exporteren kan alleen op je computer.' },
-  { re: /^\/secrets(\/|$)/i, msg: 'Opgeslagen sleutels bekijken kan alleen op je computer.' },
+  { re: /^\/secrets(\/|$)/i, msg: 'Opgeslagen sleutels bekijken kan alleen op je computer.', key: true },
   { re: /^\/computers\/vault(\/|$)/i, msg: 'De kluis met wachtwoorden open je alleen op je computer.' },
   // The proxy of a browser profile carries a login (module browser, 0.4.4).
   { re: /^\/computers\/profiles\/[^/]+\/proxy(\/|$)/i, msg: 'De proxy van een browserprofiel stel je in op je computer.' },
   // Giving a stored secret to a bot's scripts hands out access (module script-keys).
-  { re: /^\/script-keys(\/|$)/i, msg: 'Sleutels voor scripts beheer je op je computer.' },
-  { re: /^\/routines\/triggers\/[^/]+\/secret(\/|$)/i, msg: 'Het geheim van een webhook bekijk je op je computer.' },
+  { re: /^\/script-keys(\/|$)/i, msg: 'Sleutels voor scripts beheer je op je computer.', key: true },
+  { re: /^\/routines\/triggers\/[^/]+\/secret(\/|$)/i, msg: 'Het geheim van een webhook bekijk je op je computer.', key: true },
   // Own rules (module botrules): a rule that lets a bot do more, or removing a rule, makes the bot looser.
   { re: /^\/bot-rules\/loosen(\/|$)/i, msg: 'Een regel die de bot meer laat doen, of een regel weghalen, doe je op je computer.' },
   { re: /^\/realtime\/client_secrets(\/|$)/i, msg: 'Dit kan alleen op je computer.' },
@@ -268,7 +272,8 @@ export class DevicePolicy {
     this.onDeviceSeen?.(req, who.session);
     const rule = this.match(req.method, req.path);
     if (!rule) {
-      const blocked = COMPUTER_ONLY.find((b) => b.re.test(req.path));
+      const keys = !!(who.session as any).keys;
+      const blocked = COMPUTER_ONLY.find((b) => b.re.test(req.path) && !(b.key && keys));
       if (blocked) throw deny(blocked.msg);
       return;
     }

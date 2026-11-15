@@ -14703,6 +14703,7 @@
  "Werkt niet": "Nie działa",
  "Werkt niet als TeamBot via een IP-adres open staat ({0}). Open TeamBot via een naam, zoals http://localhost op deze computer of je Tailscale-adres (…ts.net) op de telefoon.": "Nie działa, gdy TeamBot jest otwarty przez adres IP ({0}). Otwórz TeamBot przez nazwę, np. http://localhost na tym komputerze albo swój adres Tailscale (…ts.net) na telefonie.",
  "Werkt niet meer…": "Już nie działa…",
+ "Werkt nu aan: {0}": "Pracuje teraz nad: {0}",
  "Werkt op de server die aan de bot gekoppeld is.": "Działa na serwerze połączonym z botem.",
  "Werkt op deze pc, maar traag. Downloaden: {0}.": "Działa na tym komputerze, ale wolno. Pobieranie: {0}.",
  "Werkt traag": "Działa wolno",
