@@ -276,8 +276,9 @@ export function Composer({ threadId, agentId, busy, disabled, replyTo, onCancelR
               send={(t, o) => send(t, { voice: o?.voice, attachments: o?.attachments })}
             />
           ))}
-          {busy && (
-            // Stopping the bot while you type your next message leaves the keyboard up, like sending does.
+          {busy && !text.trim() && !files.length && (
+            // Only with nothing typed: right next to Versturen it was hit by mistake while sending the next message (the
+            // owner stopped his bots several times that way, 15 nov). Stopping leaves the keyboard up, like sending does.
             <Button variant="soft" size="icon" className="rounded-full" aria-label="Stoppen" title="Stoppen" {...keepsFocus(onStop)}>
               <Square className="h-3.5 w-3.5 fill-current" />
             </Button>

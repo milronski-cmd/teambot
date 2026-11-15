@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState, useSyncExternalStore } from 'react';
+import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { ArrowDownUp, Check, ChevronDown, ChevronUp, Ellipsis, FolderPlus, GripVertical, Pin, PinOff, Settings2 } from 'lucide-react';
 import { useShallow } from 'zustand/react/shallow';
 import { api } from '../lib/api';
@@ -307,6 +307,17 @@ function RowMenu({ agent }: { agent: Agent }) {
   const wrap = useRef<HTMLDivElement>(null);
   const btn = useRef<HTMLButtonElement>(null);
   useDismiss(open, wrap, () => setOpen(false), btn);
+  // Placed on the window, not in the row: inside the row it lay under the next bot's row (a click on "Vastzetten"
+  // went to that bot) and the list cut it off at the bottom (owner, 15 nov). Below the button, or above it near the
+  // bottom of the window.
+  const [at, setAt] = useState<{ top: number; left: number } | null>(null);
+  useEffect(() => {
+    if (!open) return;
+    const r = btn.current?.getBoundingClientRect();
+    if (!r) return;
+    const h = 96;
+    setAt({ top: r.bottom + 4 + h > window.innerHeight ? Math.max(8, r.top - 4 - h) : r.bottom + 4, left: Math.max(8, Math.min(r.right - 208, window.innerWidth - 216)) });
+  }, [open]);
   const togglePin = async () => {
     setOpen(false);
     try {
@@ -317,7 +328,7 @@ function RowMenu({ agent }: { agent: Agent }) {
     }
   };
   return (
-    <div ref={wrap} className="absolute end-1 top-1/2 -translate-y-1/2">
+    <div ref={wrap} className="absolute inset-y-0 end-1 flex items-center">
       <button
         ref={btn}
         type="button"
@@ -329,7 +340,7 @@ function RowMenu({ agent }: { agent: Agent }) {
       >
         <Ellipsis className="size-icon" aria-hidden />
       </button>
-      <Pop open={open} origin="top right" onKeyDown={menuKeys} className="absolute end-0 top-full z-30 mt-1 w-52 p-1.5">
+      <Pop open={open && !!at} origin="top right" onKeyDown={menuKeys} style={at ? { top: at.top, left: at.left } : undefined} className="fixed z-50 w-52 p-1.5">
         <a className={menuRow} href={`#/agents/${agent.id}`} onClick={() => setOpen(false)}>
           <Settings2 aria-hidden /> Bot-instellingen
         </a>

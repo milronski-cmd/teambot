@@ -21,16 +21,22 @@ export async function stageUrl(importer: Importer, fetcher: Fetcher, userId: str
       throw new HttpError(422, e?.message || String(e));
     }
   };
-  const unzip = (body: Buffer): FileMap => {
+  /**
+   * A GitHub repository comes as one zip of the whole repo. Only the skill's own folder counts: its size and file count,
+   * and something unsafe elsewhere in the repo (a symbolic link such as CLAUDE.md at the top) is left out instead of
+   * refusing the skill (15 nov: one skill of a repo with 7,365 files, and one next to a linked CLAUDE.md, were refused).
+   */
+  const unzip = (body: Buffer, o: { subdir?: string; repo?: boolean } = {}): FileMap => {
+    const pre = o.subdir ? o.subdir.replace(/^\/+|\/+$/g, '') + '/' : '';
     try {
-      return stripTopFolder(filesFromZip(body));
+      return stripTopFolder(filesFromZip(body, { ...(pre ? { include: (rel: string) => rel.slice(rel.indexOf('/') + 1).startsWith(pre) } : {}), ...(o.repo ? { lenient: true } : {}) }));
     } catch (e: any) {
       throw new HttpError(422, e.message);
     }
   };
   if (gh?.kind === 'zip') {
     const r = await fetchIt(gh.url);
-    return importer.stageFiles(userId, unzip(r.body), { type: 'github', label: gh.label, url }, { subdir: gh.subdir || undefined, fallbackName: gh.subdir ? path.posix.basename(gh.subdir) : gh.label.split('/')[1] });
+    return importer.stageFiles(userId, unzip(r.body, { subdir: gh.subdir || undefined, repo: true }), { type: 'github', label: gh.label, url }, { subdir: gh.subdir || undefined, fallbackName: gh.subdir ? path.posix.basename(gh.subdir) : gh.label.split('/')[1] });
   }
   const r = await fetchIt(gh?.url || url);
   if (r.body.subarray(0, 2).toString('latin1') === 'PK') return importer.stageFiles(userId, unzip(r.body), { type: 'url', label: new URL(url).hostname, url });
