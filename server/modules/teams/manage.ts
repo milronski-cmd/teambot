@@ -194,6 +194,8 @@ const LINES: Record<string, string> = {
   // The owner took the mouse and could not find "Geef terug" (15 nov): he asks the bot in the chat to carry on.
   'POST /computers/:agentId/screen/resume':
     'Bureaublad: de bediening teruggeven aan een bot nadat de eigenaar hem overnam (muis bewogen, pauze) of na een noodstop; alleen als de eigenaar daar in dit gesprek om vraagt',
+  // Where the owner sees it: a bot was asked "waar staat het kansenbord" and could not say (15 nov).
+  'GET /proactive/kansen': 'Kansenbord: de kansen die bots vonden, met score, bronnen en status; de eigenaar ziet en beslist ze in het scherm onder Taken › Kansen',
   // Said with the services' own names: a bot that looks for "search console" or "apps koppelen" finds TeamBot's own
   // Google login here, instead of inventing a Google Cloud project with a service account (seen in real use, 15 nov).
   'GET /mcp/google':

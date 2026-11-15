@@ -1,20 +1,22 @@
-import { ListChecks, Repeat } from 'lucide-react';
+import { Lightbulb, ListChecks, Repeat } from 'lucide-react';
 import { t } from '../../lib/i18n';
 import { MoreInfo } from '../../components/MoreInfo';
 import { PageLinks } from '../../components/overview';
 import { fmtDate, type Meta } from './lib';
 
 /**
- * The two places work lives: Taken (what is being done) and Automatisch (what runs by itself). The same two links on
- * both pages; everything else (calendar, projects, limits …) is behind the "Meer" menu of the page it belongs to.
+ * Where work lives: Taken (what is being done), Automatisch (what runs by itself) and Kansen (ideas the bots found,
+ * for the owner to decide on; it hung under "Meer" and the owner could not find it, 15 nov). The same links on every
+ * one of those pages; calendar, projects and limits stay behind the "Meer" menu of the page they belong to.
  */
-export function TaskLinks({ current }: { current: 'tasks' | 'auto' }) {
+export function TaskLinks({ current }: { current: 'tasks' | 'auto' | 'kansen' }) {
   return (
     <PageLinks
       label="Taken en automatisch"
       items={[
         { href: '#/tasks', label: 'Taken', icon: <ListChecks aria-hidden />, current: current === 'tasks' },
         { href: '#/m/routines/', label: 'Automatisch', icon: <Repeat aria-hidden />, current: current === 'auto' },
+        { href: '#/m/routines/werk/kansen', label: 'Kansen', icon: <Lightbulb aria-hidden />, current: current === 'kansen' },
       ]}
     />
   );

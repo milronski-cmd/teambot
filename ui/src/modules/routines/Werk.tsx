@@ -481,8 +481,12 @@ export function WerkPage({ params }: { params: string[] }) {
       <PageHeader title="Werk" subtitle="Wat je team uit zichzelf doet." back={{ href: '#/m/routines/', label: 'Automatisch' }} />
       <div className="mx-auto w-full max-w-4xl space-y-4 px-4 pb-10">
         {/* The same two links as on Taken and Automatisch (this page hangs under Automatisch). */}
-        <TaskLinks current="auto" />
+        <TaskLinks current={tab === 'kansen' ? 'kansen' : 'auto'} />
         <TeamFilterNote />
+        {/* Kansen opened from the page links: the kansen right away, not under everything else (they were a screen
+            down, 15 nov). The rest of this page stays for its other tabs. */}
+        {tab !== 'kansen' && (
+          <>
         {/* The one list of everything that will start by itself, and what can be switched on. */}
         <PlannedList />
         {briefing?.text && (
@@ -513,7 +517,9 @@ export function WerkPage({ params }: { params: string[] }) {
               ))}
           </Card>
         )}
-        <Tabs tabs={TABS.map((t) => (t.id === 'kansen' && kansen.some((k) => k.status === 'voorgelegd') ? { ...t, label: `Kansen (${kansen.filter((k) => k.status === 'voorgelegd').length})` } : t))} value={tab} onChange={(v) => (location.hash = `#/m/routines/werk/${v}`)} />
+          </>
+        )}
+        {tab !== 'kansen' && <Tabs tabs={TABS.filter((t) => t.id !== 'kansen')} value={tab} onChange={(v) => (location.hash = `#/m/routines/werk/${v}`)} />}
 
         {tab === 'vast' &&
           (duties === null ? (

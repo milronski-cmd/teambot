@@ -1,5 +1,6 @@
 import React, { type ReactNode, useEffect, useMemo, useRef, useState } from 'react';
 import { Activity, CircleAlert, Flag, FlaskConical, ListChecks, MessageSquare, Paperclip, Plus, Repeat, Scale, ScrollText, Table2, Trash2, Users, Waypoints } from 'lucide-react';
+import { TaskLinks } from '../modules/routines/Head';
 import { useAdvanced } from '../shell/advanced';
 import { api, on } from '../lib/api';
 import { useApp } from '../lib/store';
@@ -36,18 +37,6 @@ const TEAMWORK_LINKS = [
   { tab: 'experimenten', label: 'Experimenten', icon: FlaskConical },
   { tab: 'tabellen', label: 'Tabellen', icon: Table2 },
 ];
-
-function TeamworkLinks() {
-  return (
-    <PageLinks
-      label="Taken en automatisch werk"
-      items={[
-        { href: '#/tasks', label: 'Taken', icon: <ListChecks aria-hidden />, current: true },
-        { href: '#/m/routines/', label: 'Automatisch', icon: <Repeat aria-hidden /> },
-      ]}
-    />
-  );
-}
 
 /** Behind the "⋯" of the page: what is rarely needed. */
 function BoardMenu() {
@@ -652,7 +641,7 @@ export function TasksPage() {
         }
       />
       <div className="space-y-4 px-4 pb-8 pt-2 sm:px-6">
-        <TeamworkLinks />
+        <TaskLinks current="tasks" />
         <WorkingNow />
         <TeamFilterNote>Je ziet de taken van dit team en je eigen taken.</TeamFilterNote>
         {loading ? (
