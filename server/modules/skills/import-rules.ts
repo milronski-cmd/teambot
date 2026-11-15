@@ -2,6 +2,7 @@ import path from 'node:path';
 import { editDistance } from '../../../shared/editDistance.js';
 import YAML from 'yaml';
 import { splitFrontmatter } from './format.js';
+import { LIMITS } from './files.js';
 
 /**
  * Import rules for skills from TeamBot's own catalogue (research 2026-11-09: scanners can be bypassed, so the rules
@@ -18,10 +19,12 @@ import { splitFrontmatter } from './format.js';
 export const CURATED_LIMITS = {
   /** Files in one skill (including licence and source files). */
   maxFiles: 150,
-  /** Bytes per file. */
-  maxFileBytes: 512 * 1024,
-  /** Bytes per skill. */
-  maxSkillBytes: 4 * 1024 * 1024,
+  /**
+   * Bytes per file and per skill: the same as for a skill added by its address (files.ts LIMITS), so one skill is not
+   * refused by its id and accepted by its link (15 nov: a skill with a 1.1 MB data file was refused at 512 kB).
+   */
+  maxFileBytes: LIMITS.maxFileBytes,
+  maxSkillBytes: LIMITS.maxSkillBytes,
   /** Files referenced from outside the skill folder (`../shared/x.md`) that are taken along. */
   maxSourceFiles: 40,
   /** Empty lines in a row. */
