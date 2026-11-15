@@ -218,9 +218,9 @@ try {
   for (const rel of ['index.html', 'en/index.html', 'vergelijking.html']) {
     await fp.goto(pathToFileURL(path.join(dist, rel)).href);
     await fp.evaluate(() => document.fonts.ready);
-    const s = await fp.evaluate(() => ({ bg: getComputedStyle(document.body).backgroundColor, font: document.fonts.check('16px "Figtree Variable"'), imgs: [...document.images].filter((i) => i.complete && i.naturalWidth === 0).length }));
+    const s = await fp.evaluate(() => ({ bg: getComputedStyle(document.body).backgroundColor, font: document.fonts.check('16px "Inter Variable"'), imgs: [...document.images].filter((i) => i.complete && i.naturalWidth === 0).length }));
     if (s.bg === 'rgba(0, 0, 0, 0)' || s.bg === 'rgb(255, 255, 255)') problem(`file://${rel}`, 'stylesheet niet geladen');
-    if (!s.font) problem(`file://${rel}`, 'Figtree niet geladen');
+    if (!s.font) problem(`file://${rel}`, 'Inter niet geladen');
     if (s.imgs) problem(`file://${rel}`, `${s.imgs} afbeelding(en) niet geladen`);
   }
   for (const u of failed) problem('file://', `laden mislukt: ${u}`);

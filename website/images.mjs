@@ -19,8 +19,8 @@ const { chromium } = require('playwright-core');
 const { iconSvg, faceSvg } = await import('./build.mjs');
 const out = path.join(here, 'src/img');
 fs.mkdirSync(out, { recursive: true });
-const fontDir = path.dirname(require.resolve('@fontsource-variable/figtree/package.json'));
-const font = fs.readFileSync(path.join(fontDir, 'files/figtree-latin-wght-normal.woff2')).toString('base64');
+const fontDir = path.dirname(require.resolve('@fontsource-variable/inter/package.json'));
+const font = fs.readFileSync(path.join(fontDir, 'files/inter-latin-wght-normal.woff2')).toString('base64');
 
 // Same words as the first screen of the site (home.title in nl.json / en.json).
 const TEXT = {

@@ -939,7 +939,7 @@ export function build() {
     }
   uidN = 0;
   fs.writeFileSync(path.join(dist, '404.html'), stamp(render('nl', 'notfound')));
-  // assets: css, js, self-hosted Figtree (SIL OFL 1.1, licence copied along), icons, images
+  // assets: css, js, self-hosted Inter (SIL OFL 1.1, licence copied along), icons, images
   // light minifying: drop comments and line breaks (the source keeps one property per line for readable diffs)
   const css = fs
     .readFileSync(path.join(src, 'site.css'), 'utf8')
@@ -949,8 +949,8 @@ export function build() {
   fs.mkdirSync(path.join(dist, 'assets'), { recursive: true });
   fs.writeFileSync(path.join(dist, 'assets/site.css'), css + '\n');
   copy(path.join(src, 'site.js'), path.join(dist, 'assets/site.js'));
-  const fontDir = path.dirname(require.resolve('@fontsource-variable/figtree/package.json'));
-  for (const f of ['figtree-latin-wght-normal.woff2', 'figtree-latin-ext-wght-normal.woff2']) copy(path.join(fontDir, 'files', f), path.join(dist, 'assets/fonts', f));
+  const fontDir = path.dirname(require.resolve('@fontsource-variable/inter/package.json'));
+  for (const f of ['inter-latin-wght-normal.woff2', 'inter-latin-ext-wght-normal.woff2']) copy(path.join(fontDir, 'files', f), path.join(dist, 'assets/fonts', f));
   copy(path.join(fontDir, 'LICENSE'), path.join(dist, 'assets/fonts/OFL.txt'));
   fs.writeFileSync(path.join(dist, 'assets/favicon.svg'), iconSvg());
   // only what a page uses: the social preview images and the files of the screenshot slots
