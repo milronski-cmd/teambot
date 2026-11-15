@@ -1,5 +1,6 @@
 import type { Agent, Ctx, Thread, ToolDef, ToolImpact, ToolRisk } from '../../core/types.js';
 import { toolError } from '../../tools/registry.js';
+import { fullAccess } from '../../tools/builtin/files.js';
 import { inputLine } from '../../core/util.js';
 import { redact } from '../../core/secrets.js';
 import { askYesNo } from '../../tools/builtin/selfserve.js';
@@ -190,6 +191,9 @@ const LINES: Record<string, string> = {
   'GET /mcp/registry/servers': 'Apps: zoeken in de catalogus met apps om te koppelen (query q = je woorden, ook Engels; zonder q de aanbevolen apps)',
   'GET /mcp/registry/server': 'Apps: één app uit de catalogus bekijken (query name), met zijn installatievormen (options)',
   'POST /mcp/quick': 'Apps: een app uit de catalogus in één stap installeren (body registry met name uit de catalogus; option mag weg, dan de eerste die hier werkt)',
+  // The owner took the mouse and could not find "Geef terug" (15 nov): he asks the bot in the chat to carry on.
+  'POST /computers/:agentId/screen/resume':
+    'Bureaublad: de bediening teruggeven aan een bot nadat de eigenaar hem overnam (muis bewogen, pauze) of na een noodstop; alleen als de eigenaar daar in dit gesprek om vraagt',
   // Said with the services' own names: a bot that looks for "search console" or "apps koppelen" finds TeamBot's own
   // Google login here, instead of inventing a Google Cloud project with a service account (seen in real use, 15 nov).
   'GET /mcp/google':
@@ -400,11 +404,16 @@ function lineWords(ctx: Ctx, method: string, pattern: string, call?: { userId: s
 
 // ---------- the line the owner drew ----------
 
-const NEVER: { re: RegExp; write?: boolean; why: string }[] = [
+/**
+ * What never goes through a bot. `key`: keys, tokens and logging in to a service; a bot on full access may set those
+ * (owner, 15 nov: "Volledige toegang mag het": fill in a Google client, connect an app). Never reading them back, and
+ * never the password vault, sessions, pairing, the account itself, export or restore.
+ */
+const NEVER: { re: RegExp; write?: boolean; key?: boolean; why: string }[] = [
   { re: /^\/(admin|memory\/admin)(\/|$)/i, why: 'beheer van gebruikers en van de installatie doet de eigenaar zelf' },
-  { re: /^\/(secrets|script-keys|realtime\/client_secrets|teams\/keys|mcp\/server-tokens)(\/|$)/i, why: 'sleutels en tokens gaan nooit via een bot' },
+  { re: /^\/(secrets|script-keys|realtime\/client_secrets|teams\/keys|mcp\/server-tokens)(\/|$)/i, key: true, why: 'sleutels en tokens gaan nooit via een bot' },
   { re: /^\/computers\/vault(\/|$)/i, why: 'de kluis met wachtwoorden opent alleen de eigenaar' },
-  { re: /(^|\/)(secret|secrets|client_secrets|token|tokens|github-token|credential|credentials|password|login|oauth|rotate|revoke-previous|proxy)(\/|$)/i, why: 'sleutels, wachtwoorden en inloggen bij een dienst gaan nooit via een bot' },
+  { re: /(^|\/)(secret|secrets|client_secrets|token|tokens|github-token|credential|credentials|password|login|oauth|rotate|revoke-previous|proxy)(\/|$)/i, key: true, why: 'sleutels, wachtwoorden en inloggen bij een dienst gaan nooit via een bot' },
   { re: /^\/voice\/(realtime|gemini)\/session(\/|$)/i, why: 'dit geeft een tijdelijke sleutel uit' },
   { re: /^\/(sessions|pairing|pair|auth|mobile|remote-desktop)(\/|$)/i, why: 'inlogsessies, gekoppelde apparaten, koppelen en bureaublad op afstand regelt de eigenaar zelf' },
   { re: /(^|\/)(pair-codes|pair-phone)(\/|$)/i, why: 'koppelen van een apparaat of afzender doet de eigenaar zelf' },
@@ -432,13 +441,13 @@ function deep(v: any, fn: (key: string, value: any) => boolean, depth = 0): bool
   return false;
 }
 
-/** Why a call never goes through a bot (one sentence), or null. */
-export function refusal(method: string, path: string, body?: any): string | null {
+/** Why a call never goes through a bot (one sentence), or null. `keys`: the bot is on full access (it may set keys). */
+export function refusal(method: string, path: string, body?: any, o: { keys?: boolean } = {}): string | null {
   const write = method !== 'GET';
   const no = (why: string) => `Geweigerd door TeamBot: ${why}. Zeg de eigenaar eerlijk dat hij dit zelf doet in TeamBot.`;
-  for (const n of NEVER) if ((write || !n.write) && n.re.test(path)) return no(n.why);
+  for (const n of NEVER) if ((write || !n.write) && !(o.keys && n.key && write) && n.re.test(path)) return no(n.why);
   if (method === 'DELETE' && /^\/backups(\/|$)/i.test(path)) return no('een back-up weggooien doet de eigenaar zelf');
-  if (write && deep(body, (k, v) => (SECRET_FIELD.test(k) && typeof v === 'string' && v.trim() !== '') || (k === 'headers' && isObj(v) && Object.keys(v).length > 0))) return no('een sleutel, token of wachtwoord gaat nooit via een bot; de eigenaar vult die zelf in');
+  if (write && !o.keys && deep(body, (k, v) => (SECRET_FIELD.test(k) && typeof v === 'string' && v.trim() !== '') || (k === 'headers' && isObj(v) && Object.keys(v).length > 0))) return no('een sleutel, token of wachtwoord gaat nooit via een bot; de eigenaar vult die zelf in');
   if (write && /^\/settings\/?$/i.test(path) && isObj(body) && 'closedFolders' in body) return no('welke mappen dicht zijn voor bots bepaalt de eigenaar zelf');
   if (write && /^\/channels\//i.test(path) && isObj(body) && (body.is_owner || body.owner)) return no('iemand eigenaar van een kanaal maken doet de eigenaar zelf');
   return null;
@@ -472,7 +481,7 @@ function widening(ctx: Ctx, method: string, path: string, body: any, parts: bool
 }
 
 /** Read the arguments of one call and decide its risk. Never throws. `o.parts`: see `widening`. */
-export function planCall(ctx: Ctx, userId: string, a: any, o: { parts?: boolean } = {}): CallPlan {
+export function planCall(ctx: Ctx, userId: string, a: any, o: { parts?: boolean; keys?: boolean } = {}): CallPlan {
   const method = inputLine(a?.method, 10).toUpperCase() || 'GET';
   if (!(METHODS as readonly string[]).includes(method)) return { error: `Onbekende methode “${method}”. Kies uit: ${METHODS.join(', ')}.` };
   let raw = inputLine(a?.path, 600);
@@ -500,7 +509,7 @@ export function planCall(ctx: Ctx, userId: string, a: any, o: { parts?: boolean 
   }
   if (method !== 'GET' && given !== undefined && given !== null && given !== '' && !isObj(given) && !Array.isArray(given)) return { error: 'De body moet een object zijn met de velden, bijvoorbeeld { "name": "Nieuwe naam" }.' };
   const body = method === 'GET' ? undefined : isObj(given) || Array.isArray(given) ? given : {};
-  const never = refusal(method, path, body);
+  const never = refusal(method, path, body, { keys: o.keys });
   if (never) return { refuse: never };
   const route = matchRoute(ctx, method, path);
   if (!route) {
@@ -676,7 +685,7 @@ export function manageTools(ctx: Ctx, svc: TeamsService): ToolDef[] {
     notOwnersTalk(ctx, agent, thread) ? `Geweigerd door TeamBot: ${agent.name} bedient TeamBot alleen in een gesprek met zijn eigenaar zelf. In dit gesprek kan dat niet, ook niet om iets op te zoeken.` : null;
   const plan = (a: any, agent: Agent): CallPlan => {
     try {
-      return planCall(ctx, agent.user_id, a, { parts: !isMain(agent) });
+      return planCall(ctx, agent.user_id, a, { parts: !isMain(agent), keys: fullAccess(agent) });
     } catch (e: any) {
       return { error: `Deze actie kan TeamBot niet lezen: ${e?.message || e}` };
     }
@@ -710,7 +719,7 @@ export function manageTools(ctx: Ctx, svc: TeamsService): ToolDef[] {
       async run(a, t) {
         const no = outside(t.agent, t.thread);
         if (no) return toolError(no);
-        const all = routesOf(ctx).filter((r) => !refusal(r.method, r.path.replace(/:[^/]+/g, 'x'), undefined));
+        const all = routesOf(ctx).filter((r) => !refusal(r.method, r.path.replace(/:[^/]+/g, 'x'), undefined, { keys: fullAccess(t.agent) }));
         const label = (g: string) => NOUNS.find(([k]) => k === g)?.[1] || ctx.modules.find((m) => m.id === g)?.label || cap(g.replace(/-/g, ' '));
         const words = fold(inputLine(a?.word ?? a?.query ?? a?.q, 120)).replace(/[“”"'‘’?!.,:;()]/g, ' ').split(' ').filter(Boolean);
         if (!words.length) {
@@ -763,7 +772,7 @@ export function manageTools(ctx: Ctx, svc: TeamsService): ToolDef[] {
         `Doe in TeamBot wat de eigenaar anders zelf in een scherm zou doen, binnen de teams waar jij toegang toe hebt. Geef de methode en het pad van de actie (zoek ze op met ${MANAGE_FIND}) en bij een wijziging de velden in body. ` +
         'GET kijkt alleen. POST maakt of start iets, PUT en PATCH passen iets aan, DELETE verwijdert. ' +
         'Verwijderen, iets naar anderen versturen of publiceren en een bot meer toegang geven vraagt TeamBot de eigenaar eerst; alles wat over geld gaat vraagt TeamBot altijd. ' +
-        'Sleutels, wachtwoorden, inlogsessies, apparaten koppelen, alles exporteren, back-ups terugzetten en bijwerken van TeamBot gaan hier nooit doorheen: dat doet de eigenaar zelf.',
+        'Wachtwoorden, inlogsessies, apparaten koppelen, alles exporteren, back-ups terugzetten en TeamBot bijwerken doet de eigenaar altijd zelf; sleutels alleen met volledige toegang.',
       parameters: {
         type: 'object',
         properties: {

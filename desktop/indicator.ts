@@ -157,7 +157,7 @@ export class DesktopIndicator {
     w.setBounds(this.bounds(s.monitor));
     await this.ready;
     const view = s.paused
-      ? { paused: true, title: `${s.agentName || 'Bot'} wacht`, detail: 'jij hebt de bediening', hint: '· geef terug in TeamBot' }
+      ? { paused: true, title: `${s.agentName || 'Bot'} wacht`, detail: 'jij hebt de bediening', hint: '· teruggeven: TeamBot-icoon rechtsonder, of zeg het de bot' }
       : { paused: false, title: `${s.agentName || 'Een bot'} bedient je computer`, detail: s.lastAction ? `· ${String(s.lastAction).slice(0, 70)}` : '', hint: `· muis bewegen = pauze${s.hotkey ? ` · noodstop ${s.hotkey}` : ''}` };
     if (w.isDestroyed()) return;
     await w.webContents.executeJavaScript(`window.tbState(${JSON.stringify(view)})`).catch(() => {});

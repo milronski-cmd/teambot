@@ -304,3 +304,13 @@ test('the route list comes from the registered routes and finds a call by a word
     await e.t.close();
   }
 });
+
+test('a bot on full access may set keys (owner, 15 nov); the vault, sessions and reading keys back stay closed', () => {
+  const google = { method: 'PUT', path: '/mcp/google/client', body: { clientId: 'x.apps.googleusercontent.com', clientSecret: 'GOCSPX-test' } };
+  assert.match(refusal(google.method, google.path, google.body) || '', /sleutel, token of wachtwoord gaat nooit via een bot/);
+  assert.equal(refusal(google.method, google.path, google.body, { keys: true }), null);
+  assert.equal(refusal('POST', '/providers', { kind: 'openai', apiKey: 'sk-test-1234567890abcdefghij' }, { keys: true }), null);
+  assert.match(refusal('GET', '/secrets', undefined, { keys: true }) || '', /sleutels en tokens/);
+  assert.match(refusal('POST', '/computers/vault/items', { password: 'x' }, { keys: true }) || '', /kluis/);
+  assert.match(refusal('DELETE', '/sessions/s_1', undefined, { keys: true }) || '', /inlogsessies/);
+});
