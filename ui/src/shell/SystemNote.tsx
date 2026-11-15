@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { Info } from 'lucide-react';
 import { agentById } from '../lib/store';
 import type { Message } from '../lib/types';
@@ -6,6 +7,7 @@ import { stripRefs } from '../lib/preview';
 import { BotAvatar } from '../components/BotFace';
 import { Words } from '../components/Words';
 import { Markdown } from './Markdown';
+import { cx } from '../components/ui';
 
 /** What the second look said about a result, in the owner's words. */
 const CHECK: Record<string, string> = {
@@ -64,9 +66,14 @@ export function SystemNote({ m }: { m: Message }) {
   );
 }
 
-/** A colleague's answer, like its messages in the chat: its face, its name, what it wrote. */
+/**
+ * A colleague's answer, like its messages in the chat: its face, its name, what it wrote. A long one shows its first
+ * lines with "Lees alles": with several bots working, their answers filled the owner's chat with the main bot (15 nov).
+ */
 function Said({ a, threadId }: { a: Answer; threadId?: string }) {
   const bot = agentById(a.from);
+  const long = (a.said || '').length > 280;
+  const [open, setOpen] = useState(false);
   return (
     <div className="flex gap-2.5 px-4 pt-2 sm:px-6">
       <BotAvatar bot={bot || { id: a.from, name: '' }} size={30} className="mt-0.5" />
@@ -78,9 +85,15 @@ function Said({ a, threadId }: { a: Answer; threadId?: string }) {
           {!a.said && a.status && ENDED[a.status] && <span className="text-[11px] text-muted">{ENDED[a.status]}</span>}
         </div>
         {a.said && (
-          <div className="w-full max-w-full py-1 text-[14.5px] leading-relaxed">
+          <div className={cx('relative w-full max-w-full py-1 text-[14.5px] leading-relaxed', long && !open && 'max-h-[6.5em] overflow-hidden')}>
             <Markdown text={stripRefs(a.said)} />
+            {long && !open && <div className="pointer-events-none absolute inset-x-0 bottom-0 h-8 bg-gradient-to-t from-surface to-transparent" aria-hidden />}
           </div>
+        )}
+        {long && (
+          <button type="button" data-testid="said-toggle" onClick={() => setOpen(!open)} className="px-1 text-xs font-semibold text-muted underline-offset-2 hover:text-fg hover:underline">
+            {open ? 'Minder' : 'Lees alles'}
+          </button>
         )}
         {a.reason && (
           <p className="px-1 text-xs text-muted" translate="no">
