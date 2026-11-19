@@ -39,6 +39,8 @@ import { tText } from '../lib/format';
 
 const kindTitle: Record<Thread['kind'], string> = { chat: 'Chat', room: 'Groep', routine: 'Routine', delegation: 'Subtaak', channel: 'Kanaal' };
 
+const openingChat = new Map<string, Promise<Thread>>();
+
 /** #/a/<agentId>: open the bot's most recent 1:1 chat, or start one. */
 export function AgentChatRoute({ agentId }: { agentId: string }) {
   const threads = useApp((s) => s.threads);
@@ -48,8 +50,13 @@ export function AgentChatRoute({ agentId }: { agentId: string }) {
     const from = `#/a/${agentId}`;
     const existing = threads.find((t) => t.agent_id === agentId && t.kind === 'chat' && !t.room_id && !t.archived);
     if (existing) return navigate(`/t/${existing.id}`, { from, replace: true });
-    api
-      .post<Thread>('/threads', { agentId })
+    // One request per bot at a time: opening the same bot twice at once (a remount, a second window) makes one chat.
+    let opening = openingChat.get(agentId);
+    if (!opening) {
+      opening = api.post<Thread>('/threads', { agentId }).finally(() => openingChat.delete(agentId));
+      openingChat.set(agentId, opening);
+    }
+    opening
       .then((t) => {
         useApp.setState((s) => ({ threads: [t, ...s.threads.filter((x) => x.id !== t.id)] }));
         // The chat is made either way.

@@ -1,5 +1,28 @@
 # Changelog
 
+## [4.8.1] — 2026-11-19
+
+OmniRoute als gratis bron, en Caveman in de Marktplaats.
+
+### Gratis modellen
+- **OmniRoute staat bij Gratis modellen.** OmniRoute is een gratis programma op je eigen computer dat je vragen verdeelt
+  over de aanbieders die je in zijn dashboard koppelt, waaronder veel gratis; valt er één uit, dan neemt een andere het
+  over. Je downloadt het met de link op de kaart, maakt in het dashboard (API Manager) een sleutel en plakt die in
+  TeamBot. Voor het gratis werk gebruikt TeamBot alleen de routes "auto/best-free" en "auto/coding:free". Als gewone
+  AI-koppeling kun je ook elk ander model van OmniRoute kiezen.
+- Bij een antwoord via OmniRoute staat het model dat echt antwoordde. Het dashboard van OmniRoute
+  (`http://localhost:20128`) laat per verzoek zien welke aanbieder en welk model het kreeg.
+- Goed om te weten: zonder gekoppelde aanbieder geeft OmniRoute geen antwoord. De aanbieders bepalen zelf hun gratis
+  limiet en wat ze met je vragen doen.
+
+### Marktplaats
+- **Caveman** (Julius Brussee, Apache-2.0) staat bij Werkwijze: de bot antwoordt kort en zakelijk, zonder opvulling,
+  en verbruikt daardoor minder tokens. Eén klik, werkt meteen voor het hele team.
+
+### Telefoon
+- De botnaam past in de kop van het gesprek, de rol staat niet meer dubbel in de chatlijst, de hoofdbot heet overal
+  Hoofdbot, en twee keer tegelijk openen geeft één gesprek.
+
 ## [4.8.0] — 2026-11-19
 
 Koppelen met inloggen in plaats van sleutels: Google en GitHub met één klik.

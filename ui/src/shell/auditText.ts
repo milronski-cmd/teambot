@@ -128,7 +128,7 @@ const adapter = (v: unknown) => ADAPTERS[String(v || '').toLowerCase()] || clean
 const KINDS: Record<string, string> = {
   openai: 'OpenAI', anthropic: 'Anthropic', google: 'Google Gemini', gemini: 'Google Gemini', ollama: 'Ollama', lmstudio: 'LM Studio', openrouter: 'OpenRouter', mistral: 'Mistral', deepseek: 'DeepSeek', groq: 'Groq', xai: 'xAI',
   'openai-compatible': 'een eigen endpoint', custom: 'een eigen endpoint', hetzner: 'Hetzner', digitalocean: 'DigitalOcean', mock: 'een testprovider',
-  cloudflare: 'Cloudflare Workers AI', zai: 'Z.ai GLM', kilo: 'Kilo Gateway',
+  cloudflare: 'Cloudflare Workers AI', zai: 'Z.ai GLM', kilo: 'Kilo Gateway', omniroute: 'OmniRoute',
 };
 /** "Claude Code", "OpenAI" … for a provider/engine kind; never the raw id. */
 export function engineName(kind: unknown): string {

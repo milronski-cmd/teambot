@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { ChevronDown, X } from 'lucide-react';
+import { ChevronDown, Sparkles, X } from 'lucide-react';
 import { api } from '../lib/api';
 import { useApp } from '../lib/store';
 import { useIsDesktop } from '../lib/media';
@@ -97,6 +97,7 @@ export function ModelSwitcher({ agent: given, busy }: { agent: Agent; busy: bool
   );
   return (
     // Narrow header: only the model, and the control gives way before the bot's name does (it shrinks twenty times as fast).
+    // On a phone (under 440 px) it is an icon: the bot's name gets the room, the model's name is in the sheet.
     <div className="relative min-w-0 max-w-[6.75rem] shrink-[20] coarse:min-w-11 @[620px]:max-w-[17rem]" ref={wrap}>
       <button
         ref={btn}
@@ -110,7 +111,8 @@ export function ModelSwitcher({ agent: given, busy }: { agent: Agent; busy: bool
         onClick={() => setOpen(!open)}
       >
         <span className="flex h-7 min-w-0 items-center gap-0.5 rounded-full ps-2 pe-1 text-[12px] font-medium text-muted transition-colors group-hover:bg-surface-2 group-hover:text-fg group-aria-expanded:bg-surface-2 group-aria-expanded:text-fg @[620px]:gap-1 @[620px]:ps-2.5 @[620px]:pe-1.5 @[620px]:text-[12.5px]">
-          <span className="min-w-0 truncate">
+          <Sparkles className="size-4 shrink-0 @[440px]:hidden" aria-hidden />
+          <span className="hidden min-w-0 truncate @[440px]:inline">
             {text.ai && (
               <span className="hidden @[620px]:inline" translate="no">
                 {text.ai} ·{' '}

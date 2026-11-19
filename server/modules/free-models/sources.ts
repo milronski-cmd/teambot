@@ -26,6 +26,8 @@ export interface FreeSourceDef {
   card: boolean;
   needsKey: boolean;
   signupUrl?: string;
+  /** Text of that link when it is not a page to make a key (default: "Gratis sleutel aanmaken"). */
+  signupLabel?: string;
   /** Extra setting beside the key (Cloudflare account). */
   fields?: { key: string; label: string; placeholder?: string; hint?: string; pattern?: RegExp; invalid?: string }[];
   /** Which listed models are free to use. */
@@ -138,6 +140,22 @@ export const FREE_SOURCES: FreeSourceDef[] = [
     rank: 5,
     limitNote: 'Werkt zonder sleutel: alleen de gratis modellen, 200 verzoeken per uur per internetadres.',
     docs: { limits: 'https://kilo.ai/docs/gateway/authentication', terms: 'https://kilo.ai/docs/code-with-ai/agents/free-and-budget-models', checked: CHECKED },
+  },
+  {
+    kind: 'omniroute',
+    label: 'OmniRoute',
+    engine: 'api',
+    card: true,
+    needsKey: true,
+    signupUrl: 'https://github.com/cheaper-inference/OmniRoute/releases/latest',
+    signupLabel: 'OmniRoute downloaden',
+    // Only OmniRoute's own free routes: its other routes may use a paid account the user connected there.
+    isFree: (m) => /^auto\/(best-free|coding:free)$/i.test(m.id),
+    quotaScope: 'model',
+    probesPerDay: 2,
+    rank: 6,
+    limitNote: 'Een programma op je eigen computer dat je vragen verdeelt over de gratis aanbieders die je in zijn dashboard koppelt. Hoeveel gratis is, hangt af van die aanbieders; zonder gekoppelde aanbieder komt er geen antwoord. De sleutel maak je in het dashboard van OmniRoute, onder API Manager.',
+    docs: { limits: 'https://github.com/cheaper-inference/OmniRoute/blob/main/docs/getting-started/FREE-TIERS-GUIDE.md', terms: 'https://github.com/cheaper-inference/OmniRoute/blob/main/docs/getting-started/FREE-TIERS-GUIDE.md', checked: '2026-11-19' },
   },
   ...[...LOCAL_IDS].map(
     (kind): FreeSourceDef => ({

@@ -214,7 +214,7 @@ export const KNOWN_PUBLISHERS = [
   'agentskills', 'agentsmd', 'obra', 'mattpocock', 'addyosmani', 'coreyhaines31', 'agricidaniel', 'blader', 'othmanadi', 'kepano', 'wshobson', 'trailofbits',
   'browser-use', 'paperclipai', 'jina-ai', 'nickclyde', 'taylorwilsdon', 'k-dense-ai', 'playwright', 'puppeteer', 'zubair-trabzada', 'alirezarezvani',
   'obsidianmd', 'phuryn', 'sawyerhood', 'czlonkowski', 'sergebulaev', 'lackeyjb', 'wondelai', 'kappaemme-git', 'jezweb', 'growthenginenowoslawski', '40rty-ai',
-  'leonxlnx', 'mvanhorn', 'nicobailon', 'nidhinjs',
+  'leonxlnx', 'mvanhorn', 'nicobailon', 'nidhinjs', 'juliusbrussee',
 ];
 
 /** Distinctive repository names: the same name under another owner is a copy or a fake. */
@@ -226,6 +226,7 @@ export const KNOWN_REPOS: Record<string, string> = {
   marketingskills: 'coreyhaines31',
   'claude-seo': 'agricidaniel',
   humanizer: 'blader',
+  caveman: 'juliusbrussee',
   'planning-with-files': 'othmanadi',
   'browser-use': 'browser-use',
   'playwright-mcp': 'microsoft',

@@ -9,6 +9,7 @@ import { BotFace, LiveBotAvatar } from '../components/BotFace';
 import { useAgentMood } from '../lib/mood';
 import { MOOD_LABELS } from '../lib/botface';
 import { botModelText } from '../lib/modelLabel';
+import { useMainBotId } from '../modules/teams/scope';
 
 /** The bot's state as text next to its face (the face alone never carries the status). */
 function MoodBadge({ agent }: { agent: Agent }) {
@@ -22,6 +23,7 @@ function MoodBadge({ agent }: { agent: Agent }) {
 export function AgentsPage() {
   const agents = useApp((s) => s.agents);
   const providers = useApp((s) => s.providers);
+  const mainId = useMainBotId();
   const [q, setQ] = useState('');
   const [archived, setArchived] = useState(false);
   const [archivedList, setArchivedList] = useState<Agent[] | null>(null);
@@ -142,7 +144,7 @@ export function AgentsPage() {
                       {!provider && <Badge tone="warn">geen AI gekoppeld</Badge>}
                     </div>
                     <div className="truncate text-[13px] text-muted" translate={a.role || a.description ? 'no' : undefined}>
-                      {a.role || a.description || 'Bot'}
+                      {a.role || a.description || (a.id === mainId ? 'Hoofdbot' : 'Bot')}
                     </div>
                   </div>
                   <div className="flex shrink-0 items-center gap-1">

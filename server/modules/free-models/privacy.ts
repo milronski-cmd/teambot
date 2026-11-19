@@ -44,6 +44,8 @@ export function privacyLabel(kind: string, model = ''): PrivacyLabel {
       return lbl('may-train', 'Volgens de voorwaarden van OpenRouter mogen sommige modellen je vragen bewaren of ermee trainen; dat geldt vooral voor gratis modellen.', 'https://openrouter.ai/terms');
     case 'kilo':
       return lbl('may-train', 'De gratis modellen van Kilo kunnen via aanbieders lopen die vragen en antwoorden bewaren en gebruiken om hun diensten te verbeteren.', 'https://kilo.ai/docs/code-with-ai/agents/free-and-budget-models');
+    case 'omniroute':
+      return lbl('may-train', 'OmniRoute zelf draait op je computer, maar stuurt je vragen door naar de aanbieders die je daar koppelt. Gratis aanbieders bewaren vragen vaak of trainen ermee.', 'https://github.com/cheaper-inference/OmniRoute/blob/main/docs/getting-started/FREE-TIERS-GUIDE.md');
     case 'zai':
       return lbl('may-train', 'Z.ai zegt in zijn openbare documentatie niet wat het met je vragen doet; TeamBot gaat daarom uit van het ergste.', 'https://docs.z.ai/guides/overview/pricing');
     case 'opencode':

@@ -909,7 +909,8 @@ test('catalogue: every provider and CLI is complete, honest about costs and date
     ids.add(p.id);
     assert.ok(['free', 'subscription', 'local', 'key'].includes(p.section), p.id);
     assert.ok(p.costNote.length > 10 && /^\d{4}-\d{2}-\d{2}$/.test(p.costCheckedAt), `${p.id}: cost note with a date`);
-    if (p.needsKey && !p.retired) assert.match(p.keyUrl || '', /^https:\/\//, `${p.id}: where to get a key`);
+    // A key is made on the provider's site, or in the dashboard of a program on the user's own computer (OmniRoute).
+    if (p.needsKey && !p.retired) assert.match(p.keyUrl || '', /^https:\/\/|^http:\/\/localhost:\d+\//, `${p.id}: where to get a key`);
     if (p.section !== 'local' && !p.retired && p.id !== 'openai-compatible') assert.match(p.pricingUrl || '', /^https:\/\//, `${p.id}: price page`);
   }
   assert.ok(PROVIDERS.length >= 34);

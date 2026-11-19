@@ -173,6 +173,8 @@ function BotRow({ agent, thread, active, size, onNavigate }: { agent: Agent; thr
   );
   const unread = !!thread && isUnread(thread);
   const last = thread?.last;
+  // The sidebar shows the role as a label next to the name; the line under it then says something else.
+  const roleLabel = size === 'desk' && !agent.shared_from && agent.settings?.shared !== true && !!agent.role;
   let text = '';
   let tone = 'text-muted';
   if (mood === 'waiting') {
@@ -194,7 +196,7 @@ function BotRow({ agent, thread, active, size, onNavigate }: { agent: Agent; thr
   } else if (last) {
     text = (last.role === 'user' ? 'Jij: ' : '') + previewText(last.content);
     tone = unread ? 'text-fg' : 'text-muted';
-  } else text = agent.role || agent.description || 'Nog geen gesprek';
+  } else text = (roleLabel ? '' : agent.role) || agent.description || 'Nog geen gesprek';
   // What the line shows when the bot is idle: a TeamBot note as its line for the owner; a message, the role or the
   // description as written (never translated, also not in part); "Jij: " and a TeamBot event are interface text.
   const idle = mood === 'idle';
@@ -206,7 +208,7 @@ function BotRow({ agent, thread, active, size, onNavigate }: { agent: Agent; thr
         {last.role === 'user' && 'Jij: '}
         <span translate="no">{previewText(last.content)}</span>
       </>
-    ) : idle && !last && (agent.role || agent.description) ? (
+    ) : idle && !last && text !== 'Nog geen gesprek' ? (
       <span translate="no">{text}</span>
     ) : (
       text
@@ -238,7 +240,7 @@ function BotRow({ agent, thread, active, size, onNavigate }: { agent: Agent; thr
             </span>
             {whose}
             {/* The bot's role as a small label next to its name (as OpenBot's "Team lead"). */}
-            {desk && !whose && agent.role && (
+            {roleLabel && (
               <span className="min-w-0 max-w-[104px] truncate rounded-md bg-surface-3 px-1.5 text-[11px] font-medium leading-[18px] text-muted" translate="no">
                 {agent.role}
               </span>

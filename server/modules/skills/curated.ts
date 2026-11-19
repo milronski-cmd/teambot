@@ -133,6 +133,21 @@ export const CURATED_SOURCES: CuratedSource[] = [
     ],
   },
   {
+    id: 'caveman',
+    repo: 'JuliusBrussee/caveman',
+    stars: 121458,
+    commit: 'a192894723a8f47e7f504c7b5041967ff1f18e55',
+    commitDate: '2026-11-17',
+    owner: 'JuliusBrussee',
+    publisher: 'Julius Brussee',
+    license: 'Apache-2.0',
+    verifiedAt: '2026-11-19',
+    note: 'Korte antwoorden zonder opvulling, zodat een bot minder tokens verbruikt.',
+    skills: [
+      { path: 'skills/caveman', pack: 'Werkwijze', category: 'Werkwijze', note: 'Laat de bot kort en zakelijk antwoorden: eerst het antwoord, geen opvulling, alle feiten blijven staan.' },
+    ],
+  },
+  {
     id: 'agent-skills',
     repo: 'addyosmani/agent-skills',
     stars: 115896,

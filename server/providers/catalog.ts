@@ -417,6 +417,26 @@ export const PROVIDERS: ProviderDef[] = [
     publicModelList: true,
     answerCheck: true,
   },
+  {
+    // OmniRoute (MIT, github.com/cheaper-inference/OmniRoute; tried with 3.8.54 on 2026-11-19): a gateway on the user's
+    // own computer that spreads requests over the provider accounts connected in its dashboard. Every answer carries
+    // the model that really answered (`model`), which TeamBot shows.
+    id: 'omniroute',
+    label: 'OmniRoute',
+    section: 'free',
+    baseUrl: 'http://127.0.0.1:20128/v1',
+    needsKey: true,
+    keyUrl: 'http://localhost:20128/dashboard/api-manager',
+    keyLabel: 'OmniRoute-sleutel',
+    description: 'OmniRoute draait op je eigen computer en verdeelt je vragen over de aanbieders die je in zijn dashboard koppelt, waaronder veel gratis. Valt er één uit, dan neemt een andere het over.',
+    costNote: 'OmniRoute zelf is gratis. Je koppelt in het dashboard je eigen accounts bij aanbieders; hun gratis limieten en voorwaarden gelden. De routes "auto/best-free" en "auto/coding:free" gebruiken alleen gratis aanbieders; andere routes kunnen ook een betaald account gebruiken dat je hebt gekoppeld.',
+    costCheckedAt: '2026-11-19',
+    pricingUrl: 'https://github.com/cheaper-inference/OmniRoute/blob/main/docs/getting-started/FREE-TIERS-GUIDE.md',
+    recommend: ['auto/best-free', 'auto/coding:free', 'auto'],
+    // Image and video pools are in the same list; TeamBot chats.
+    modelFilter: (id) => !/^(aihorde|veo-free|veoaifree-web)\//i.test(id),
+    answerCheck: true,
+  },
 
   // ---------------- Met API-sleutel ----------------
   {

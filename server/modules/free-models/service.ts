@@ -847,6 +847,7 @@ export class FreeModelsService {
       keyPlaceholder: kind?.keyPlaceholder || null,
       fields: (def.fields || []).map(({ key, label, placeholder, hint }) => ({ key, label, placeholder: placeholder || null, hint: hint || null, value: key && cfg ? String(cfg.config?.[key] || '') : '' })),
       signupUrl: def.signupUrl || null,
+      signupLabel: def.signupLabel || null,
       on,
       ...st,
       privacy: this.privacyOf(def.kind),

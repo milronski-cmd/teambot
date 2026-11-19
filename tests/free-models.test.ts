@@ -239,13 +239,13 @@ test('privacy labels of the network module (P): the terms of Kilo and Z.ai come 
 
 test('catalogue: free sources with sign-up page, limits, terms and a date; no Gemini; Kilo works without a key', () => {
   const ids = FREE_SOURCES.map((d) => d.kind);
-  for (const want of ['groq', 'openrouter', 'cloudflare', 'zai', 'kilo', 'opencode', 'ollama']) assert.ok(ids.includes(want), want);
+  for (const want of ['groq', 'openrouter', 'cloudflare', 'zai', 'kilo', 'omniroute', 'opencode', 'ollama']) assert.ok(ids.includes(want), want);
   assert.ok(!ids.includes('google'), 'Gemini free tier: not allowed in apps for EEA users');
   for (const d of cardSources()) {
     assert.match(d.signupUrl || '', /^https:\/\//, `${d.kind}: sign-up page`);
     assert.match(d.docs.limits, /^https:\/\//, `${d.kind}: limits page`);
     assert.match(d.docs.terms, /^https:\/\//, `${d.kind}: terms page`);
-    assert.equal(d.docs.checked, '2026-11-09');
+    assert.match(d.docs.checked, /^2026-11-(09|19)$/, `${d.kind}: the day its limits and terms were checked`);
     assert.ok(d.limitNote.length > 20);
     assert.ok(privacyLabel(d.kind).note && privacyLabel(d.kind).source, `${d.kind}: privacy note with its source`);
     assert.ok(d.probesPerDay > 0 && d.probesPerDay <= 6, `${d.kind}: probes stay a small part of the free quota`);
@@ -811,7 +811,7 @@ test('settings card API: a key is needed where the provider needs one, the Cloud
     assert.match(cf.signupUrl, /^https:\/\/dash\.cloudflare\.com/);
     assert.ok(!JSON.stringify(v).includes('cf-token'));
     const off = await t.api('GET', '/free-models');
-    assert.deepEqual(off.sources.map((x: any) => x.kind), ['groq', 'openrouter', 'cloudflare', 'zai', 'kilo']);
+    assert.deepEqual(off.sources.map((x: any) => x.kind), ['groq', 'openrouter', 'cloudflare', 'zai', 'kilo', 'omniroute']);
     assert.ok(off.sources.filter((x: any) => x.kind !== 'cloudflare').every((x: any) => x.status === 'off' && !x.on), 'everything that leaves the pc is off until you switch it on');
   } finally {
     await t.close();

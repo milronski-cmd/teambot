@@ -38,6 +38,7 @@ interface Source {
   keyPlaceholder: string | null;
   fields: { key: string; label: string; placeholder: string | null; hint: string | null; value: string }[];
   signupUrl: string | null;
+  signupLabel?: string | null;
   on: boolean;
   status: Status;
   resetsAt: number | null;
@@ -430,7 +431,7 @@ function SourceRow({ s, more, onView }: { s: Source; more: boolean; onView(v: Vi
             </div>
             {s.signupUrl && (
               <p className="text-xs text-muted">
-                <ExtLink href={s.signupUrl}>Gratis sleutel aanmaken</ExtLink>
+                <ExtLink href={s.signupUrl}>{s.signupLabel || 'Gratis sleutel aanmaken'}</ExtLink>
               </p>
             )}
           </form>
