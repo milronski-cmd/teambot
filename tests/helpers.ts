@@ -1,9 +1,8 @@
 import crypto from 'node:crypto';
 import fs from 'node:fs';
-import os from 'node:os';
-import path from 'node:path';
 import { createApp, type AppHandle } from '../server/app.js';
 import type { ChatRequest, ChatResult, Module, ProviderAdapter, StreamEvent } from '../server/core/types.js';
+import { tmpDir } from './tmp.js';
 
 /** Scripted responses for the "mock" provider. Push before sending a message. */
 export interface MockStep {
@@ -65,7 +64,7 @@ export async function startTestApp(opts: { modules?: Module[]; mode?: 'desktop' 
   process.env.TEAMBOT_TEST_NO_STARTER_RULES = '1';
   // An e2e script on this helper (no node --test around it) never fetches the 124 MB search model by itself either.
   process.env.TEAMBOT_NO_AUTO_DOWNLOAD ??= '1';
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'tb-test-'));
+  const dir = tmpDir('tb-test-');
   const script: MockStep[] = [];
   const requests: ChatRequest[] = [];
   // TEAMBOT_TEST_PORT: a fixed port for live runs on a pc where other TeamBots run (default: any free port).

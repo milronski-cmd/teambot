@@ -1,5 +1,31 @@
 # Changelog
 
+## [4.8.0] — 2026-11-19
+
+Koppelen met inloggen in plaats van sleutels: Google en GitHub met één klik.
+
+### Apps koppelen
+- **Inloggen met Google werkt met één klik.** TeamBot heeft nu een eigen Google-app: één keer inloggen geeft je bots
+  Gmail, Agenda, Drive, Search Console, Analytics, Ads en Merchant Center. Geen eigen Google Cloud-project meer nodig.
+  Google noemt de app nog "niet geverifieerd": klik dan op "Geavanceerd" en "Ga naar TeamBot", en zet de vinkjes aan.
+- **Alleen lezen aanvinken bij Google werkt.** Vink je bij Gmail alleen "e-mails bekijken" aan, dan kan de bot mail
+  lezen en zoeken; concepten en versturen staan er dan niet bij. Eerder gaf dat "geen rechten aangevinkt".
+- **GitHub koppel je door in te loggen**, met de eigen GitHub-app van TeamBot, ook voor privé-repositories. Een token
+  kan nog steeds onder "Alle instellingen". Ontkoppelen trekt de toegang ook bij GitHub in.
+- **In de Marktplaats staat Google bovenaan** bij Apps, en bij zoeken op Gmail, Agenda of Drive vóór de koppelingen van
+  andere partijen.
+- Onder Instellingen › Apps staan de apps die met één klik of met inloggen werken eerst; apps die een sleutel nodig
+  hebben daarna.
+- De inlogknop van een app in de Marktplaats staat in de kaart zelf.
+
+### Onderhoud
+- Een bot kan het dashboard van zijn eigen team lezen; die route had nog geen regel voor bots.
+- Tests die nog uitgingen van een telefoon met minder rechten zijn bijgewerkt (de telefoon mag sinds 4.4.3 alles
+  behalve koppelen), en tests ruimen hun tijdelijke mappen op.
+- Twee stukken code die niets meer deden zijn weg.
+- Schermtests bijgewerkt naar het design van 4.4.2 (uitleg achter de "i", donker als standaard) en de zijbalk met
+  Dashboard; ze hangen niet meer af van een draaiende Ollama.
+
 ## [4.4.3] — 2026-11-15
 
 Bijwerken zonder opnieuw te installeren, een dashboard, de telefoon mag bijna alles, en het geheugen loopt niet meer vol.

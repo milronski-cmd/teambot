@@ -1235,7 +1235,8 @@
         "**Chat-apps:** berichten via Telegram, WhatsApp, Discord, Slack of e-mail lopen via die diensten zelf.",
         "**Je telefoon:** de verbinding is versleuteld van je telefoon tot je eigen pc. Lukt een rechtstreekse verbinding niet, dan loopt het verkeer via een relay-server die alleen versleutelde gegevens ziet. Wat je inspreekt, gaat naar je pc.",
         "**Spraak:** blijft op je pc, behalve als je een live stem of een stem van een aanbieder kiest.",
-        "**Updates:** TeamBot kijkt of er een nieuwe versie is en downloadt pas na jouw klik."
+        "**Inloggen met Google of GitHub:** je logt in bij Google of GitHub zelf, en TeamBot krijgt alleen wat jij aanvinkt. De toegang staat versleuteld op je pc. Wat een bot ophaalt, gaat alleen naar de AI die je bij die bot koos. TeamBot gebruikt Google-gegevens alleen voor wat je bots voor jou doen: geen advertenties, niet doorverkopen en niet om AI-modellen te trainen. Ontkoppelen trekt de toegang ook weer in.",
+        "**Updates:** TeamBot haalt nieuwe versies uit de releases op GitHub en installeert ze als je even niet bezig bent."
       ]
     },
     "keys": {

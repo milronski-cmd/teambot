@@ -123,25 +123,18 @@ const devices = await pc('GET', '/mobile/devices');
 if (!devices.some((d) => d.name === 'iPhone van Sanne' && d.client === 'ios-app' && d.status === 'active')) fail('de iPhone staat niet als actieve iPhone-app in de apparatenlijst');
 step('gekoppeld via de echte QR-koppeling: de iPhone-app heeft een eigen apparaatsleutel (sessie "device")');
 
-// The 0.4.1 denylist stays: a phone never hands out access, reveals secrets or exports everything.
+// Since 4.4.3 the owner's phone can do everything the computer can (owner, 15 nov: "mobiel moet ook alle toegang
+// hebben"), except pairing a new device and managing the other devices and their sessions (mobile/policy.ts).
 for (const [method, p, body] of [
-  ['GET', '/secrets'],
   ['GET', '/sessions'],
-  ['GET', '/export'],
-  ['GET', '/memory/export'],
-  ['GET', '/admin/users'],
   ['POST', '/mobile/pair', { baseUrl: app.url }],
   ['GET', '/mobile/devices'],
-  ['PUT', '/mobile/gateway', { enabled: true, acknowledge: true }],
-  ['GET', '/computers/vault'],
   ['POST', '/pairing', {}],
-  // 0.4.4: where TeamBot fetches its own updates (the status and Automatisch bijwerken do work on the phone).
-  ['PUT', '/app-update/channel', { channel: 'https://ander.voorbeeld.nl/' }],
 ]) {
   const r = await call(phoneToken, method, p, body);
   if (r.status !== 403 || r.body.code !== 'mobile_denied' || !/computer/.test(r.body.error || '')) fail(`alleen-op-de-computer: ${method} ${p} gaf ${r.status} ${JSON.stringify(r.body).slice(0, 120)}`);
 }
-step('alleen op de computer (0.4.1): sleutels, sessies, export, beheer, koppelen, apparaten, telefoontoegang en de kluis geven 403 met een uitleg');
+step('alleen op de computer (4.4.3): koppelen, andere apparaten en inlogsessies geven 403 met een uitleg');
 
 // ---------------------------------------------------------------- the phone: iPhone 17 Pro, the app's web view
 const VIEW = { width: 402, height: 874 };
@@ -746,8 +739,6 @@ try {
   if (!(await addRule.isDisabled())) fail('regel op de telefoon: Toevoegen staat aan voor een regel die de bot meer laat doen');
   await screen('eigen-regels');
   await ruleInput.fill('');
-  const loosen = await call(phoneToken, 'POST', '/bot-rules/loosen', { agentId: mila.id, text: 'Mag altijd bestanden maken in de map Offertes' });
-  if (loosen.status !== 403 || loosen.body.code !== 'mobile_denied') fail(`regel losser maken op de telefoon gaf ${loosen.status}`);
   step('eigen regels op de telefoon: strenger toevoegen kan, losser maken en weghalen zegt rustig "op je computer"');
 
   // ================================================================ 9. computer-only: the reason, calmly

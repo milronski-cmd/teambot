@@ -105,7 +105,8 @@ try {
   const teamFolder = path.join(home, 'Documents', 'TeamBot', 'Teammap');
   check(bots.length === 1 && path.resolve(bot.workspace).startsWith(path.resolve(teamFolder)) && fs.existsSync(bot.workspace), `eigen werkplek onder de teammap: ${bot?.workspace}`);
   const comp = await api('GET', `/computers/${bot.id}`);
-  check(comp.config.mode === 'browser', `eigen browser aan (computermodus ${comp.config.mode})`);
+  // Full access on the owner's Windows pc widens to "host": the own browser plus the desktop (browser/service.ts widen).
+  check(['browser', 'host'].includes(comp.config.mode), `eigen browser aan (computermodus ${comp.config.mode})`);
   await until(() => ui.eval(clickText('Begin met praten')), 10_000, '"Begin met praten"');
   await until(() => ui.eval(`!!document.querySelector('[data-testid="first-bot-phone"]')`), 10_000, 'de laatste stap "Koppel je telefoon"');
   check(/Koppel je telefoon/.test(await text()), 'laatste stap biedt "Koppel je telefoon" aan');

@@ -12,6 +12,8 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { createRequire } from 'node:module';
+/** The model list of the test's Ollama answers 400 when Ollama does not run on this pc: not a fault of the page. */
+const LOCAL_MODELS_DOWN = (m) => /status of 400/.test(m.text()) && /\/api\/providers\/[^/]+\/models$/.test(m.location()?.url || '');
 
 const require = createRequire(import.meta.url);
 const { chromium } = require('playwright-core');
@@ -107,7 +109,8 @@ try {
   const ctxB = await browser.newContext({ viewport: { width: 1360, height: 900 } });
   const page = await ctxB.newPage();
   page.on('pageerror', (e) => errors.push(e.message));
-  page.on('console', (m) => m.type() === 'error' && !/favicon|ERR_CONNECTION_REFUSED|401 \(Unauthorized\)/.test(m.text()) && errors.push(m.text()));
+  // With the address: "Failed to load resource" alone does not say which request failed.
+  page.on('console', (m) => m.type() === 'error' && !/favicon|ERR_CONNECTION_REFUSED|401 \(Unauthorized\)/.test(m.text()) && !LOCAL_MODELS_DOWN(m) && errors.push(`${m.text()} ${m.location()?.url || ''}`.trim()));
   page.on('dialog', (d) => {
     errors.push(`onverwacht browserdialoog: ${d.message()}`);
     d.dismiss().catch(() => {});

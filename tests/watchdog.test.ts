@@ -6,12 +6,12 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
-import os from 'node:os';
 import path from 'node:path';
 import { execFile, spawn } from 'node:child_process';
 import { promisify } from 'node:util';
 import { startTestApp } from './helpers.js';
 import { markStopped, stoppedFile } from '../server/modules/health/heartbeat.js';
+import { tmpDir } from './tmp.js';
 
 const root = path.resolve(import.meta.dirname, '..');
 const script = path.join(root, 'build', 'watchdog.ps1');
@@ -19,7 +19,7 @@ const win = process.platform !== 'win32';
 
 // Asynchronous: the server in this process must keep answering /healthz while the script asks.
 async function watch(dataDir: string, args: string[] = ['-NoPopup']) {
-  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'tb-watch-home-'));
+  const home = tmpDir('tb-watch-home-');
   await promisify(execFile)('powershell.exe', ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', script, '-DataDir', dataDir, '-ConfirmSeconds', '0', ...args], { env: { ...process.env, APPDATA: path.join(home, 'Roaming'), LOCALAPPDATA: path.join(home, 'Local') }, timeout: 60_000, windowsHide: true });
   return JSON.parse(fs.readFileSync(path.join(dataDir, 'health', 'watchdog.json'), 'utf8').replace(/^﻿/, ''));
 }

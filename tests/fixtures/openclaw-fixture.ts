@@ -1,6 +1,6 @@
 import fs from 'node:fs';
-import os from 'node:os';
 import path from 'node:path';
+import { tmpDir } from '../tmp.js';
 
 /**
  * A synthetic OpenClaw installation (state folder ~/.openclaw) in a temp folder, laid out as OpenClaw documents it:
@@ -13,7 +13,7 @@ import path from 'node:path';
 export const DECOY = 'LOKAAS';
 
 export function makeOpenClawFixture() {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'tb-openclaw-'));
+  const root = tmpDir('tb-openclaw-');
   const home = path.join(root, 'home');
   const state = path.join(home, '.openclaw');
   const w = (rel: string, text: string) => {

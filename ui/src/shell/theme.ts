@@ -16,13 +16,6 @@ export type ThemePref = 'system' | 'light' | 'dark';
 
 const KEY = 'tb_theme';
 
-/** A phone or tablet: the iPhone app (its web view says "TeamBotiOS/…") or a touch screen as the main pointer. */
-export function isPhoneLike(): boolean {
-  if (typeof window === 'undefined') return false;
-  if (/TeamBotiOS\//.test(navigator.userAgent)) return true;
-  return typeof window.matchMedia === 'function' && window.matchMedia('(pointer: coarse)').matches;
-}
-
 /** What this device uses when nobody chose a theme here. */
 // Dark by default (as OpenBot and Grok Bot), on the phone and the computer; light and the system's choice are a setting.
 export const defaultThemePref = (): ThemePref => 'dark';

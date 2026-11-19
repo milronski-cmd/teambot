@@ -1235,7 +1235,8 @@
         "**Chat apps:** messages via Telegram, WhatsApp, Discord, Slack or e-mail go through those services themselves.",
         "**Your phone:** the connection is encrypted from your phone to your own PC. If a direct connection fails, the traffic goes through a relay server that only sees encrypted data. What you say goes to your PC.",
         "**Voice:** stays on your PC, unless you pick a live voice or a provider's voice.",
-        "**Updates:** TeamBot checks whether there is a new version and only downloads after your click."
+        "**Signing in with Google or GitHub:** you sign in at Google or GitHub itself, and TeamBot only gets what you tick. The access is stored encrypted on your PC. What a bot fetches only goes to the AI you picked for that bot. TeamBot uses Google data only for what your bots do for you: no ads, no selling and no training of AI models. Disconnecting revokes the access too.",
+        "**Updates:** TeamBot gets new versions from the releases on GitHub and installs them when you are not busy."
       ]
     },
     "keys": {

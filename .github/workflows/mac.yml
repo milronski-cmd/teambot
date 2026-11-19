@@ -23,6 +23,11 @@ jobs:
     env:
       HAVE_CERT: ${{ secrets.MAC_CSC_LINK != '' }}
       HAVE_NOTARY: ${{ secrets.MAC_CSC_LINK != '' && secrets.ASC_KEY_P8 != '' }}
+      # TeamBot's own login apps for Google and GitHub (scripts/build.mjs builds them in; never in the source).
+      TEAMBOT_GOOGLE_CLIENT_ID: ${{ secrets.TEAMBOT_GOOGLE_CLIENT_ID }}
+      TEAMBOT_GOOGLE_CLIENT_SECRET: ${{ secrets.TEAMBOT_GOOGLE_CLIENT_SECRET }}
+      TEAMBOT_GITHUB_CLIENT_ID: ${{ secrets.TEAMBOT_GITHUB_CLIENT_ID }}
+      TEAMBOT_GITHUB_CLIENT_SECRET: ${{ secrets.TEAMBOT_GITHUB_CLIENT_SECRET }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4

@@ -260,7 +260,7 @@ export function GoogleCard() {
       title="Google"
       state={state}
       stateLabel={phase === 'waiting' ? 'wacht op inloggen' : phase === 'testing' ? 'testen' : s?.status === 'expired' ? 'opnieuw inloggen' : undefined}
-      line={s?.status === 'on' && s.email ? t('Ingelogd als {0}', s.email) : 'Search Console, Merchant Center, Ads, Analytics, Gmail, Agenda en Drive: één keer inloggen.'}
+      line={s?.status === 'on' && s.email ? t('Ingelogd als {0}', s.email) : 'Gmail, Agenda, Drive, Search Console en meer: één keer inloggen.'}
       action={
         !s ? null : s.status === 'on' ? (
           <Button loading={phase === 'testing'} onClick={runTest}>
@@ -356,7 +356,7 @@ export function GoogleCard() {
           <div className="flex items-center gap-2 font-medium">
             <Spinner /> Log in bij Google in het venster dat is geopend…
           </div>
-          {s?.client === 'own' && <div className="text-xs text-muted">Zegt Google “deze app is niet geverifieerd”? Klik op “Geavanceerd” en dan op “Ga naar TeamBot”.</div>}
+          <div className="text-xs text-muted">Zegt Google “deze app is niet geverifieerd”? Klik op “Geavanceerd” en dan op “Ga naar TeamBot”. Zet daarna de vinkjes aan voor wat TeamBot mag gebruiken.</div>
           <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs">
             {loginUrl && (
               <a href={loginUrl} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 font-medium text-fg underline">

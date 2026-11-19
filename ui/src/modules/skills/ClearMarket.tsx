@@ -250,7 +250,7 @@ export function useOwnBots(): Agent[] {
 // ---------------------------------------------------------------- an app
 
 /** An app from the MCP register, as plain as a skill card: name, one sentence, one button. `onOpen`: the name opens the details. */
-export function AppCard({ i, onAdd, onOpen, busy }: { i: RegistryCard; onAdd(): void; onOpen?(): void; busy?: boolean }) {
+export function AppCard({ i, onAdd, onOpen, busy, children }: { i: RegistryCard; onAdd(): void; onOpen?(): void; busy?: boolean; /** Shown inside the card, below its row of actions (the login of a quick connect). */ children?: React.ReactNode }) {
   const upd = i.installed.some((x) => x.version !== i.version);
   return (
     <div data-card="app" className={CARD}>
@@ -293,6 +293,7 @@ export function AppCard({ i, onAdd, onOpen, busy }: { i: RegistryCard; onAdd(): 
           </span>
         )}
       </div>
+      {children && <div className="relative z-10 mt-3">{children}</div>}
     </div>
   );
 }

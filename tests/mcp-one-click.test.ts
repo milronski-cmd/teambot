@@ -5,6 +5,7 @@ import { startTestApp } from './helpers.js';
 import { CATALOG, type CatalogEntry, catalogEntry } from '../server/modules/mcp/catalog.js';
 import { oneClick } from '../server/modules/mcp/api.js';
 import { ownAppNeeded } from '../server/modules/mcp/oauth.js';
+import { teambotAppFor } from '../server/modules/mcp/teambot-apps.js';
 import { bareSystemPath, fakeNpm, serve, withPath } from './toolchain-fixture.js';
 import { sri } from './runtime-fixture.js';
 
@@ -35,6 +36,18 @@ test('catalogue: each app says what one click does', async () => {
   assert.equal(oneClick(catalogEntry('filesystem')!), 'connect');
   assert.equal(oneClick(catalogEntry('notion')!), 'login');
   assert.equal(oneClick(catalogEntry('github')!), 'form');
+  // With TeamBot's own GitHub app in the build, GitHub is a login like Notion, and every GitHub login uses that app.
+  process.env.TEAMBOT_GITHUB_CLIENT_ID = 'Ov23TestTestTest';
+  process.env.TEAMBOT_GITHUB_CLIENT_SECRET = 'geheim';
+  try {
+    assert.equal(oneClick(catalogEntry('github')!), 'login');
+    assert.equal(oneClick(catalogEntry('github-readonly')!), 'login');
+    assert.equal(teambotAppFor('https://github.com/login/oauth/')?.clientId, 'Ov23TestTestTest');
+    assert.equal(teambotAppFor('https://mcp.notion.com'), null);
+  } finally {
+    delete process.env.TEAMBOT_GITHUB_CLIENT_ID;
+    delete process.env.TEAMBOT_GITHUB_CLIENT_SECRET;
+  }
   assert.equal(oneClick(catalogEntry('slack')!), 'form');
   assert.equal(oneClick(catalogEntry('custom')!), 'form');
   const t = await startTestApp();

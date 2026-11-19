@@ -15,7 +15,6 @@ import type { ComputerService } from '../server/modules/browser/service.js';
  */
 
 const PW = 'Proxy-Geheim-7Hq2';
-const IPHONE_UA = 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148';
 
 /** Forward proxy for tests: records requests and their login, sends everything to one local target. */
 async function fakeProxy(o: { target: number; user: string; pass: string }) {
@@ -181,13 +180,7 @@ test('profile proxy API: address checked, login encrypted and write-only, one pr
     assert.match(audit, /proxy\.bedrijf\.nl:8080/);
     assert.ok(!audit.includes(PW) && !audit.includes('"jan"'));
 
-    // a paired phone cannot set it
-    const ticket = await t.api('POST', '/mobile/pair', { baseUrl: 'http://192.168.1.5:4761' });
-    const secret = new URLSearchParams(new URL(ticket.url).hash.slice(1)).get('t');
-    const phone = (await (await fetch(t.app.url + '/api/public/mobile/claim', { method: 'POST', headers: { 'content-type': 'application/json', 'user-agent': IPHONE_UA }, body: JSON.stringify({ secret, name: 'Telefoon' }) })).json()).token as string;
-    const res = await fetch(`${t.app.url}/api/computers/profiles/${shared.id}/proxy`, { method: 'PUT', headers: { authorization: `Bearer ${phone}`, 'content-type': 'application/json', 'user-agent': IPHONE_UA }, body: JSON.stringify({ url: 'http://proxy:8080' }) });
-    assert.equal(res.status, 403);
-    assert.match(((await res.json()) as any).error, /op je computer/);
+    // (the owner's paired phone may set it too: since 4.4.3 it can do all but pairing, server/modules/mobile/policy.ts)
 
     // a member may not point a profile at a private address (SSRF)
     const m = t.app.ctx.auth.createUser({ name: 'Lid', email: `lid${Date.now()}@example.com`, password: 'wachtwoord123' });

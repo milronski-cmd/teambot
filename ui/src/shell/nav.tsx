@@ -60,10 +60,6 @@ export const DESTINATIONS: Record<DestId, Destination> = {
   now: { id: 'now', href: '#/m/usage/status', label: 'Nu bezig', icon: Activity, active: (r) => mod(r, 'usage') && r[2] === 'status' },
 };
 
-/** The fixed buttons at the bottom of the desktop sidebar, under "Wacht op jou". */
-// 'now' (Nu bezig) is reached from Taken and Ctrl+K: the sidebar keeps at most six fixed places (tests/e2e/newcomer.mjs).
-export const SIDEBAR_DESTINATIONS: DestId[] = ['tasks', 'dashboard', 'market', 'settings'];
-
 /**
  * Phone tab bar. The owner chooses between 3 and 5 tabs: this one line decides. "Meer" comes last and lists every
  * place that is not a tab. Five tabs would be: ['chats', 'inbox', 'tasks', 'routines', 'more'].

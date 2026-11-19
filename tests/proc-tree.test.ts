@@ -11,6 +11,7 @@ import { fileURLToPath } from 'node:url';
 import { startProc } from '../server/modules/cli-agents/proc.js';
 import { jobs } from '../server/modules/cli-agents/jobs.js';
 import { startTestApp, type TestApp } from './helpers.js';
+import { tmpDir } from './tmp.js';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const TREE = path.join(here, 'fixtures', 'proc-tree.mjs');
@@ -40,7 +41,7 @@ async function until<T>(fn: () => T | null | undefined | false | Promise<T | nul
 
 const readLog = (file: string): any[] => (fs.existsSync(file) ? fs.readFileSync(file, 'utf8').trim().split('\n').filter(Boolean).map((l) => JSON.parse(l)) : []);
 const pidsIn = (lines: any[]) => [...new Set(lines.flatMap((l) => [l.root, l.mid, l.leaf, l.self, l.grandchild]).filter((x) => typeof x === 'number'))] as number[];
-const tmpLog = () => path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'tb-tree-')), 'tree.log');
+const tmpLog = () => path.join(tmpDir('tb-tree-'), 'tree.log');
 const killAll = (pids: number[]) => {
   for (const p of pids) {
     try {

@@ -8,7 +8,7 @@ import { ah, bad, str, user } from '../../core/http.js';
 import type { ConnectionRow } from './db.js';
 import type { McpManager } from './runtime.js';
 import { AuthRequiredError, getConn, patchOAuth } from './oauth.js';
-import { TEAMBOT_GOOGLE_CLIENT } from './google-client.js';
+import { teambotApp } from './teambot-apps.js';
 import { cleanError, guardedFetch, sha256 } from './util.js';
 import { actionsByDefault } from './defaults.js';
 
@@ -81,9 +81,8 @@ export function googleClient(ctx: Ctx, userId: string): GClient | null {
   } catch {
     /* unreadable: treated as absent */
   }
-  const id = process.env.TEAMBOT_GOOGLE_CLIENT_ID || TEAMBOT_GOOGLE_CLIENT.clientId;
-  const secret = process.env.TEAMBOT_GOOGLE_CLIENT_SECRET || TEAMBOT_GOOGLE_CLIENT.clientSecret;
-  return id ? { id, secret, source: 'teambot' } : null;
+  const app = teambotApp('google');
+  return app ? { id: app.clientId, secret: app.clientSecret, source: 'teambot' } : null;
 }
 
 /** An own client: the pasted JSON file from Google Cloud ("installed" or "web"), or the ID and secret typed in. */
@@ -213,7 +212,21 @@ interface GTool {
   input: Record<string, z.ZodTypeAny>;
   /** read: no change; write: makes something (a draft, an appointment); send: goes to other people. */
   kind: 'read' | 'write' | 'send';
+  /** The Google scope the tool needs when that is not the service's first one (Gmail: compose for drafts and sending). */
+  scope?: string;
   run(a: any, g: Call, x: { ctx: Ctx; conn: ConnectionRow }): Promise<any>;
+}
+
+/**
+ * Google lets the owner tick each right separately (all unticked at first). A service is on when one of its rights was
+ * given, and a tool only when its own right was given, so "only reading mail" works and sending simply is not offered.
+ */
+function grantedServices(asked: string[], scope: string): string[] {
+  const granted = scope.split(/\s+/);
+  return asked.filter((id) => !scope || GOOGLE_SERVICES.find((s) => s.id === id)!.scopes.some((sc) => granted.includes(sc)));
+}
+function toolGranted(t: GTool, scope: string): boolean {
+  return !scope || scope.split(/\s+/).includes(t.scope || GOOGLE_SERVICES.find((s) => s.id === t.service)!.scopes[0]);
 }
 
 const day = (offset: number) => new Date(Date.now() + offset * 86_400_000).toISOString().slice(0, 10);
@@ -374,6 +387,7 @@ export const GOOGLE_TOOLS: GTool[] = [
     service: 'gmail',
     title: 'Concept maken',
     kind: 'write',
+    scope: S + 'gmail.compose',
     description: 'Zet een concept-e-mail klaar in Gmail (wordt niet verstuurd). Voor een antwoord: geef thread en inReplyTo (het messageId uit gmail_read).',
     input: { to: z.string(), subject: z.string(), body: z.string(), cc: z.string().optional(), thread: z.string().optional(), inReplyTo: z.string().optional() },
     run: (a, g) => g('POST', `${GMAIL}/drafts`, { body: { message: { raw: rfc822(a), ...(a.thread ? { threadId: a.thread } : {}) } } }),
@@ -383,6 +397,7 @@ export const GOOGLE_TOOLS: GTool[] = [
     service: 'gmail',
     title: 'Mail versturen',
     kind: 'send',
+    scope: S + 'gmail.compose',
     description: 'Verstuur een e-mail vanuit het Gmail-adres van de gebruiker. Voor een antwoord: geef thread en inReplyTo (het messageId uit gmail_read).',
     input: { to: z.string(), subject: z.string(), body: z.string(), cc: z.string().optional(), thread: z.string().optional(), inReplyTo: z.string().optional() },
     run: (a, g) => g('POST', `${GMAIL}/messages/send`, { body: { raw: rfc822(a), ...(a.thread ? { threadId: a.thread } : {}) } }),
@@ -453,7 +468,8 @@ export function googleServer(ctx: Ctx, mgr: McpManager, c: ConnectionRow): McpSe
   const server = new McpServer({ name: 'Google', version: ctx.config.version }, { capabilities: { tools: {} } });
   const on = new Set(serviceIds((c.oauth as any)?.services));
   const g = caller(ctx, mgr, c.id);
-  for (const t of GOOGLE_TOOLS.filter((x) => on.has(x.service))) {
+  const scope = String(c.oauth?.scope || '');
+  for (const t of GOOGLE_TOOLS.filter((x) => on.has(x.service) && toolGranted(x, scope))) {
     server.registerTool(
       t.name,
       { title: t.title, description: t.description, inputSchema: z.object(t.input), annotations: { readOnlyHint: t.kind === 'read', destructiveHint: t.kind === 'send', openWorldHint: t.kind === 'send' } },
@@ -610,10 +626,9 @@ export function registerGoogle(ctx: Ctx, mgr: McpManager, h: GoogleHelpers) {
       } catch {
         /* no id token: the address is only for display */
       }
-      const granted = String(tok.scope || '').split(/\s+/);
       // Only what the owner really ticked on Google's screen counts.
-      const services = flow.services.filter((id) => GOOGLE_SERVICES.find((s) => s.id === id)!.scopes.every((sc) => !tok.scope || granted.includes(sc)));
-      if (!services.length) return fail('Je hebt bij Google geen van de gevraagde rechten aangevinkt. Probeer het opnieuw en laat de vinkjes aan.', flow.userId);
+      const services = grantedServices(flow.services, String(tok.scope || ''));
+      if (!services.length) return fail('Je hebt bij Google geen van de gevraagde rechten aangevinkt. Probeer het opnieuw en zet de vinkjes aan voor wat TeamBot mag gebruiken.', flow.userId);
       let c = googleConn(ctx, flow.userId);
       const ts = now();
       const fresh = !c;

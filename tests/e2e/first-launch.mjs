@@ -171,11 +171,32 @@ async function run(name, { installed }) {
   }
 }
 
+// "Start with Windows" is one value in HKCU\…\Run, shared by name with an installed TeamBot (it does not follow APPDATA):
+// the "installed" start registers this build there. Whatever was there before is put back afterwards.
+const RUN_KEY = String.raw`HKCU\Software\Microsoft\Windows\CurrentVersion\Run`;
+const RUN_VALUE = 'app.teambot.desktop';
+const runBefore = (() => {
+  try {
+    return /REG_SZ\s+(.+)$/m.exec(execFileSync('reg', ['query', RUN_KEY, '/v', RUN_VALUE], { encoding: 'utf8', windowsHide: true }))?.[1].trim() ?? null;
+  } catch {
+    return null; // no such value
+  }
+})();
+function restoreRun() {
+  try {
+    if (runBefore === null) execFileSync('reg', ['delete', RUN_KEY, '/v', RUN_VALUE, '/f'], { stdio: 'ignore', windowsHide: true });
+    else execFileSync('reg', ['add', RUN_KEY, '/v', RUN_VALUE, '/t', 'REG_SZ', '/d', runBefore, '/f'], { stdio: 'ignore', windowsHide: true });
+  } catch {
+    /* the value was not there and still is not */
+  }
+}
+
 try {
   await run('1-first-start-after-install', { installed: true });
   await run('2-next-start', { installed: false });
 } finally {
   fs.rmSync(marker, { force: true });
+  restoreRun();
 }
 console.log(`\nScreenshots: ${work}`);
 if (failures.length) {

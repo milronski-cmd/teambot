@@ -527,7 +527,8 @@ try {
   // A calm desktop on the first run: few places in the sidebar, a short list of plain settings groups.
   const calm = await countCalm(page);
   console.log(`RUSTIG: zijbalk ${calm.links} plekken (${calm.linkNames.join(', ')}), ${calm.controls} knoppen en velden; instellingen ${calm.groups} groepen, ${calm.rows} regels (${calm.rowNames.join(', ')})`);
-  if (calm.links > 6) fail(`zijbalk: ${calm.links} plekken, doel hoogstens 6 (${calm.linkNames.join(', ')})`);
+  // Seven since 4.4.3: the owner wanted the Dashboard in the sidebar, under Taken.
+  if (calm.links > 7) fail(`zijbalk: ${calm.links} plekken, doel hoogstens 7 (${calm.linkNames.join(', ')})`);
   // "Het moet cleaner": one list where each row opens one thing. First what you set yourself (at most 7 rows), then
   // under the one small title "Van je bots" what your bots have, and last the ONE row for everything optional.
   if (calm.groups) fail(`instellingen: ${calm.groups} groepstitels (${calm.groupNames.join(', ')}), doel geen`);

@@ -12,6 +12,7 @@ import { refreshLabel } from './merge';
 import { Collapse, SignatureBadge } from './common';
 import { Wizard, type RegistryPick } from '../mcp/Wizard';
 import { QuickStatus, useQuickConnect } from '../mcp/quick';
+import { GoogleCard } from '../mcp/Google';
 import { AppIcon } from './AppIcon';
 import type { CatalogEntry } from '../mcp/shared';
 import { AppCard, CategoryTiles } from './ClearMarket';
@@ -33,6 +34,9 @@ function useDebounced<T>(v: T, ms = 400) {
  * from the cache at once (checked in the background); on the very first start TeamBot's own connectors are shown while
  * the registry answers, and recommendations are added below without moving what is already there.
  */
+/** Searches that mean TeamBot's own Google login. */
+const GOOGLE_WORDS = /google|gmail|g ?mail|agenda|calendar|kalender|drive|sheets|spreadsheet|search console|analytics|merchant|google ads|adwords/i;
+
 export function RegistryApps({ onOpenCatalog, onShowCatalog, tools }: { onOpenCatalog?: (id: string) => void; onShowCatalog?: () => void; /** Shown next to the search box (the switch to TeamBot's own apps). */ tools?: React.ReactNode } = {}) {
   const [q, setQ] = useState('');
   const [tile, setTile] = useState('');
@@ -89,6 +93,8 @@ export function RegistryApps({ onOpenCatalog, onShowCatalog, tools }: { onOpenCa
       </div>
       {/* The row of subjects keeps its height while the list loads. */}
       {all.length > 0 ? <CategoryTiles tiles={tiles} value={activeTile} onChange={setTile} /> : !error && (!data || loadingRegistry) && <div className="h-9 coarse:h-11" aria-hidden />}
+      {/* Google is TeamBot's own login (Gmail, Agenda, Drive and more in one go): first, and above any lookalike from the register. */}
+      {(!query || GOOGLE_WORDS.test(query)) && !activeTile && <GoogleCard />}
       {showStarter && (
         <section aria-labelledby="starter-apps" className="space-y-3">
           <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
@@ -171,10 +177,9 @@ export function QuickAppCard({ i, onDetails, onChanged }: { i: RegistryCard; onD
     if (s.phase === 'done' || s.phase === 'error') onChanged();
   }, [s.phase]);
   return (
-    <div className="space-y-2">
-      <AppCard i={i} busy={q.busy && s.phase !== 'login'} onOpen={onDetails} onAdd={() => (i.needsSecrets ? onDetails() : q.start({ registry: { name: i.name } }))} />
+    <AppCard i={i} busy={q.busy && s.phase !== 'login'} onOpen={onDetails} onAdd={() => (i.needsSecrets ? onDetails() : q.start({ registry: { name: i.name } }))}>
       {s.phase !== 'idle' && <QuickStatus s={s} name={i.title} />}
-    </div>
+    </AppCard>
   );
 }
 

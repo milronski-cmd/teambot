@@ -3,13 +3,13 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
-import os from 'node:os';
 import path from 'node:path';
 import { DESKTOP_LOG, isDamagedInstall, recordCrash, startFailureText } from '../desktop/startup-errors.js';
 import { createApp } from '../server/app.js';
 import { modules } from '../server/modules/index.js';
+import { tmpDir } from './tmp.js';
 
-const tmp = () => fs.mkdtempSync(path.join(os.tmpdir(), 'tb-startup-'));
+const tmp = () => tmpDir('tb-startup-');
 
 test('a missing file or dependency is a damaged install; a database error is a failed start', () => {
   assert.equal(isDamagedInstall(Object.assign(new Error("Cannot find package 'express' imported from main.js"), { code: 'ERR_MODULE_NOT_FOUND' })), true);

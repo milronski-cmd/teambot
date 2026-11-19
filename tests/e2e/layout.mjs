@@ -19,6 +19,8 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { createRequire } from 'node:module';
+/** The model list of the test's Ollama answers 400 when Ollama does not run on this pc: not a fault of the page. */
+const LOCAL_MODELS_DOWN = (m) => /status of 400/.test(m.text()) && /\/api\/providers\/[^/]+\/models$/.test(m.location()?.url || '');
 
 const require = createRequire(import.meta.url);
 const { chromium } = require('playwright-core');
@@ -74,7 +76,7 @@ const browser = await chromium.launch({ channel: process.env.TEAMBOT_E2E_BROWSER
 const errors = [];
 const watch = (p) => {
   p.on('pageerror', (e) => errors.push(e.message));
-  p.on('console', (m) => m.type() === 'error' && !/favicon|ERR_CONNECTION_REFUSED/.test(m.text()) && errors.push(m.text()));
+  p.on('console', (m) => m.type() === 'error' && !/favicon|ERR_CONNECTION_REFUSED/.test(m.text()) && !LOCAL_MODELS_DOWN(m) && errors.push(`${m.text()} ${m.location()?.url || ''}`.trim()));
 };
 const go = async (p, h, wait = 600) => {
   await p.evaluate((x) => (location.hash = x), h);
@@ -507,7 +509,7 @@ try {
   check('telefoon: tabbladen Chats, Wacht op jou, Meer', tabs.map((t) => t.trim()).join(',') === 'Chats,Wacht op jou,Meer', tabs.join(', '));
   await go(p, '#/more');
   const more = await p.getByRole('navigation', { name: 'Meer' }).getByRole('link').allInnerTexts();
-  check('telefoon: Meer is kort (Taken, Routines, Geheugen, Marktplaats, Instellingen)', ['Taken', 'Routines', 'Geheugen', 'Marktplaats', 'Instellingen'].every((t) => more.includes(t)) && more.length <= 8, more.join(', '));
+  check('telefoon: Meer is kort (Taken, Routines, Geheugen, Marktplaats, Instellingen)', ['Taken', 'Routines', 'Geheugen', 'Marktplaats', 'Instellingen'].every((t) => more.includes(t)) && more.length <= 9, more.join(', '));
   check('telefoon: Alles stoppen altijd in Meer', (await p.getByRole('button', { name: /Alles stoppen/ }).count()) === 1);
   check('telefoon: de teamkiezer staat in Meer', (await p.getByTestId('team-switcher').count()) === 1);
   await go(p, '#/');

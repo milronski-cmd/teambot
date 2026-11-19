@@ -226,3 +226,28 @@ test("Google: with TeamBot's own client there is nothing to set up, and sending 
     await g.close();
   }
 });
+
+test('Google: only reading mail ticked gives Gmail for reading, without drafts or sending', async () => {
+  const g = await fakeGoogle();
+  process.env.TEAMBOT_GOOGLE_BASE = g.base;
+  process.env.TEAMBOT_GOOGLE_CLIENT_ID = '999-teambot.apps.googleusercontent.com';
+  process.env.TEAMBOT_GOOGLE_CLIENT_SECRET = 'secret-x';
+  const t = await startTestApp({ mode: 'desktop' });
+  try {
+    const { authorizationUrl } = await t.api('POST', '/mcp/google/start', { services: ['gmail'] });
+    const a = new URL(authorizationUrl);
+    // Google shows every right unticked; the owner ticked only "je e-mailberichten bekijken".
+    g.state.grantScope = 'openid email https://www.googleapis.com/auth/gmail.readonly';
+    assert.equal((await fetch(`${a.searchParams.get('redirect_uri')}?code=code-123&state=${a.searchParams.get('state')}`)).status, 200);
+    const s = await t.api('GET', '/mcp/google');
+    assert.deepEqual(s.services.filter((x: any) => x.on).map((x: any) => x.id), ['gmail']);
+    const r = await t.api('POST', `/mcp/connections/${s.connection.id}/test`, {});
+    assert.deepEqual(r.connection.tools.map((x: any) => x.name).sort(), ['gmail_read', 'gmail_search']);
+  } finally {
+    delete process.env.TEAMBOT_GOOGLE_BASE;
+    delete process.env.TEAMBOT_GOOGLE_CLIENT_ID;
+    delete process.env.TEAMBOT_GOOGLE_CLIENT_SECRET;
+    await t.close();
+    await g.close();
+  }
+});

@@ -17,6 +17,7 @@ import type { ConnectionRow, OAuthState } from './db.js';
 import { entryForConn } from './package.js';
 import { GOOGLE_PREVIEW } from './catalog.js';
 import { cleanError, guardedFetch, mayUsePrivateNetwork, randomToken, resolveKV, sha256 } from './util.js';
+import { revokeWithTeambotApp, teambotAppFor } from './teambot-apps.js';
 
 export const CALLBACK_PATH = '/api/public/mcp/oauth/callback';
 const FLOW_TTL_MS = 10 * 60_000;
@@ -73,12 +74,16 @@ function clientInfoFor(ctx: Ctx, c: ConnectionRow): (OAuthClientInformationMixed
     return { client_id: o.client_id, ...(secret ? { client_secret: secret } : {}), issuer: (o as any).client_issuer } as any;
   }
   const raw = ctx.secrets.getByName(c.user_id, secretName(c.id, 'client'));
-  if (!raw) return undefined;
-  try {
-    return JSON.parse(raw);
-  } catch {
-    return undefined;
+  if (raw) {
+    try {
+      return JSON.parse(raw);
+    } catch {
+      /* unreadable: as if there were none */
+    }
   }
+  // A login server without self-registration where TeamBot brings its own app (GitHub): that app, unless the owner set one.
+  const app = teambotAppFor(o.discovery?.authorizationServerUrl);
+  return app ? ({ client_id: app.clientId, ...(app.clientSecret ? { client_secret: app.clientSecret } : {}) } as any) : undefined;
 }
 
 function saveClientInfoFor(ctx: Ctx, c: ConnectionRow, info: OAuthClientInformationMixed & { issuer?: string }) {
@@ -274,7 +279,7 @@ export async function prepareOAuth(ctx: Ctx, c: ConnectionRow) {
     authorizationServer: new URL(info.authorizationServerUrl).host,
     resourceHost: new URL(c.url).host,
     scopes,
-    registration: md.registration_endpoint ? 'dynamic' : clientReady ? 'preregistered' : 'missing',
+    registration: md.registration_endpoint ? 'dynamic' : clientReady || teambotAppFor(info.authorizationServerUrl) ? 'preregistered' : 'missing',
     canRevoke: !!(md as any).revocation_endpoint,
     pkce: !md.code_challenge_methods_supported || (md.code_challenge_methods_supported as string[]).includes('S256'),
   };
@@ -466,7 +471,9 @@ export async function revokeOAuth(ctx: Ctx, c: ConnectionRow, opts: { forget?: b
       }
     }
   } else if (t) {
-    detail = 'De dienst biedt geen intrekkingsadres aan; de tokens zijn alleen lokaal gewist. Trek de toegang zo nodig zelf in bij de dienst.';
+    const done = t.access_token ? await revokeWithTeambotApp(disc?.authorizationServerUrl, t.access_token, fetchFn).catch(() => false) : null;
+    if (done) revokedAtService = true;
+    else detail = 'De dienst biedt geen intrekkingsadres aan; de tokens zijn alleen lokaal gewist. Trek de toegang zo nodig zelf in bij de dienst.';
   }
   if (opts.forget && client?.registration_client_uri && client?.registration_access_token) {
     try {

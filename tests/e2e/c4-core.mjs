@@ -100,6 +100,9 @@ try {
   const page = await ctxb.newPage();
   watch(page);
   await page.goto(`${app.url}/#token=${token}`);
+  // TeamBot starts dark since 4.4.2; this context checks the light theme (the dark one follows below).
+  await page.evaluate(() => localStorage.setItem('tb_theme', 'light'));
+  await page.reload();
   await page.goto(`${app.url}/#/t/${th.id}`);
   await page.getByRole('textbox', { name: 'Bericht' }).waitFor({ timeout: 10000 });
 
@@ -185,7 +188,8 @@ try {
   await page.goto(`${app.url}/#/settings/systeem`);
   const awake = page.getByRole('switch', { name: /Houd de pc wakker/ }).or(page.getByLabel(/Houd de pc wakker/)).first();
   await awake.waitFor({ timeout: 8000 });
-  if (!(await page.getByText('Kan alleen in de desktop-app van TeamBot').count())) fail('zonder desktop-app geen eerlijke uitleg bij "pc wakker houden"');
+  // The explanation sits behind the "i" next to the setting (less text on the page since 4.4.2).
+  if (!(await page.getByRole('img', { name: /Kan alleen in de desktop-app van TeamBot/ }).count())) fail('zonder desktop-app geen eerlijke uitleg bij "pc wakker houden"');
   if (!(await awake.isDisabled())) fail('"pc wakker houden" is aan te zetten zonder desktop-app');
   const held = [];
   const detachPower = app.ctx.services.power.attach({ set: (a, r) => held.push([a, r]) });

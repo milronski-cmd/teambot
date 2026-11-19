@@ -461,6 +461,8 @@ export const RULES: Record<string, Rule> = {
   }),
   'GET /routines/runs/summary': r('totals', { before: ownTeamTotals('teamId') }),
   'GET /teamdata/summary': r('totals', { before: ownTeamTotals('team') }),
+  // The owner's dashboard (4.4.3): a bot sees the tiles of its own team, as with the summary.
+  'GET /teamdata/dashboard': r('totals', { before: ownTeamTotals('team') }),
   'GET /teamdata/decisions': r('totals', { before: ownTeamTotals('team') }),
   'GET /proactive/projects': r('totals', { before: ownTeamTotals('team') }),
   'GET /proactive/kansen': r('totals', { before: ownTeamTotals('team') }),

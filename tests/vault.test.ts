@@ -185,11 +185,10 @@ test('vault API: encrypted at rest, write-only secrets, own entries only, not on
     assert.equal((await asUser(t, otherTok, 'GET', '/computers/vault')).body.length, 0);
     assert.equal((await asUser(t, otherTok, 'PUT', `/computers/vault/${e.id}`, { password: 'gekaapt' })).status, 404);
     assert.equal((await asUser(t, otherTok, 'DELETE', `/computers/vault/${e.id}`)).status, 404);
-    // a paired phone may not manage the vault, but may watch the bot's browser
+    // the owner's paired phone may manage the vault too (since 4.4.3 it can do all but pairing) and watch the browser
     const owner = t.app.ctx.auth.owner()!;
     const phone = t.app.ctx.auth.createSession(owner.id, 'device', 'Telefoon', 365).token;
-    assert.equal((await asUser(t, phone, 'GET', '/computers/vault')).status, 403);
-    assert.equal((await asUser(t, phone, 'POST', '/computers/vault', { origins: 'x.nl', password: 'y' })).status, 403);
+    assert.equal((await asUser(t, phone, 'GET', '/computers/vault')).status, 200);
     assert.equal((await asUser(t, phone, 'GET', `/computers/${a.id}`)).status, 200);
     assert.equal((await asUser(t, phone, 'POST', `/computers/${a.id}/takeover`, { visible: true })).status, 403);
     // export: which logins exist, never the credentials

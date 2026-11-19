@@ -21,6 +21,7 @@ import { type ConnectionRegistry, type RegistryItem, type Registry, FEATURED, en
 import { budgetParam, isOffline } from '../skills/webcache.js';
 import { FALLBACK_ICON_SVG, NO_ICON_PNG } from './icons.js';
 import { probeUrl } from './oauth.js';
+import { teambotApp } from './teambot-apps.js';
 import { registerImportRoutes } from './import-routes.js';
 import { actionsByDefault } from './defaults.js';
 
@@ -295,12 +296,16 @@ function callbackPage(ok: boolean, title: string, body: string, link?: string) {
 <body><h1>${esc(title)}</h1><p>${esc(body)}</p>${link ? `<p><a href="${esc(link)}">Terug naar TeamBot</a></p>` : ''}<p>Je kunt dit tabblad sluiten.</p></body></html>`;
 }
 
+/** A catalogue app for which this build brings TeamBot's own login app (GitHub): one click is that login. */
+const loginWithTeambotApp = (e: CatalogEntry) => !!e.teambotApp && !!teambotApp(e.teambotApp);
+
 /**
  * What one click on a catalogue app does: "connect" (nothing is needed: made, tested, on for every bot), "login" (only
  * the service's own login), "form" (a key, an address or an own OAuth app is needed first: the short form).
  */
 export function oneClick(e: CatalogEntry): 'connect' | 'login' | 'form' {
   if (e.id === 'custom') return 'form';
+  if (loginWithTeambotApp(e)) return 'login';
   if ([...(e.env || []), ...(e.headers || [])].some((f) => f.required && !f.default)) return 'form';
   if (e.argsPrompt && !e.argsPrompt.defaultWorkFolders) return 'form';
   if (e.auth === 'oauth') return e.oauthClient === 'own-app' ? 'form' : 'login';
@@ -325,9 +330,11 @@ function lockToTemplate(b: any, entry: CatalogEntry) {
     b.args = [...(entry.args || []), ...extra];
     delete b.cwd;
   } else {
-    if (differs(b.url, entry.url) || differs(b.auth, entry.auth) || b.allow_private === true) throw forbiddenErr(LOCKED_MSG);
+    // The login with TeamBot's own app is the template's other published way in, not an own setting.
+    const auth = b.auth === 'oauth' && loginWithTeambotApp(entry) ? 'oauth' : entry.auth;
+    if (differs(b.url, entry.url) || differs(b.auth, auth) || b.allow_private === true) throw forbiddenErr(LOCKED_MSG);
     b.url = entry.url;
-    b.auth = entry.auth;
+    b.auth = auth;
   }
 }
 
@@ -852,7 +859,8 @@ export function registerRoutes(ctx: Ctx, mgr: McpManager, registry?: Registry) {
         entry = catalogEntry(b.catalog_id);
         if (!entry) throw bad('Onbekend catalogus-item');
         if (oneClick(entry) === 'form') return { needs: 'form' };
-        create = { catalog_id: entry.id, agentIds: bots, ...(entry.transport === 'stdio' ? { trust_command: true } : {}) };
+        if (loginWithTeambotApp(entry)) entry = { ...entry, auth: 'oauth' };
+        create = { catalog_id: entry.id, agentIds: bots, ...(entry.transport === 'stdio' ? { trust_command: true } : {}), ...(entry.auth === 'oauth' ? { auth: 'oauth' } : {}) };
       }
       if (entry.transport === 'stdio') {
         const need = toolchainOf(entry.command || '');

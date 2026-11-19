@@ -3,15 +3,15 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
-import os from 'node:os';
 import path from 'node:path';
 import AdmZip from 'adm-zip';
 import { startTestApp } from './helpers.js';
 import { unpackZip, ZIP_LIMITS } from '../server/agent/attachments.js';
 import { cliPrompt } from '../server/agent/prompt.js';
 import { registerAttachment } from '../server/tools/builtin/files.js';
+import { tmpDir } from './tmp.js';
 
-const tmp = () => fs.mkdtempSync(path.join(os.tmpdir(), 'tb-att-'));
+const tmp = () => tmpDir('tb-att-');
 const until = async (fn: () => any, ms = 8000) => {
   const end = Date.now() + ms;
   for (;;) {

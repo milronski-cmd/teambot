@@ -164,7 +164,8 @@ export function MainPage() {
   // Google is one card of its own (Google.tsx); its connection is not listed a second time.
   const mine = (list || []).filter((c) => c.catalog_id !== 'google');
   const shown = useMemo(() => {
-    const rank = (e: CatalogEntry) => (FIRST.indexOf(e.id) + 1 || 99) as number;
+    // One click or only a login first; an app that needs a key or an own app of the service after those.
+    const rank = (e: CatalogEntry) => (e.oneClick === 'form' ? 100 : 0) + (FIRST.indexOf(e.id) + 1 || 99);
     const l = (catalog || []).filter((e) => e.id !== 'custom' && (q ? `${e.name} ${e.description} ${e.publisher}`.toLowerCase().includes(q.toLowerCase()) : !e.advanced));
     return l.sort((a, b) => rank(a) - rank(b) || a.name.localeCompare(b.name));
   }, [catalog, q]);

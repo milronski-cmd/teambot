@@ -243,14 +243,11 @@ test('vault import API: preview without passwords, duplicates marked, chosen row
     // nothing stored yet
     assert.equal((await t.api('GET', '/computers/vault')).length, 1);
 
-    // another user cannot use this preview; a paired phone cannot import at all
+    // another user cannot use this preview (the owner's paired phone may import: since 4.4.3 it can do all but pairing)
     const other = t.app.ctx.auth.createUser({ name: 'Lid', email: 'lid@example.nl', password: 'wachtwoord123', role: 'member' });
     const otherTok = t.app.ctx.auth.createSession(other.id, 'web').token;
     assert.equal((await raw(t, otherTok, 'POST', '/computers/vault/import', { handle: pv.handle, rows: [4] })).status, 404);
     const owner = t.app.ctx.auth.owner()!;
-    const phone = t.app.ctx.auth.createSession(owner.id, 'device', 'Telefoon', 365).token;
-    assert.equal((await raw(t, phone, 'POST', '/computers/vault/import/preview', { csv: BITWARDEN })).status, 403);
-    assert.equal((await raw(t, phone, 'POST', '/computers/vault/import', { handle: pv.handle, rows: [4] })).status, 403);
 
     // choosing a duplicate or a skipped row does not import it
     const res = await t.api('POST', '/computers/vault/import', { handle: pv.handle, rows: [0, 1, 4] });

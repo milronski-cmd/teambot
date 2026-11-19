@@ -80,6 +80,11 @@ export interface CatalogEntry {
   auth: 'none' | 'headers' | 'oauth';
   /** OAuth client: dynamic registration works, or the user must register an app at the service. */
   oauthClient?: 'dynamic' | 'own-app';
+  /**
+   * TeamBot brings its own app for this service (teambot-apps.ts): when the build has it, "Koppelen" is the service's
+   * login (auth "oauth") instead of the form; the token in `headers` stays possible under "Alle instellingen".
+   */
+  teambotApp?: string;
   oauthAppHelp?: string;
   /** Step-by-step setup of the own OAuth client, with the exact console settings. */
   oauthAppGuide?: OAuthAppGuide;
@@ -199,6 +204,14 @@ export const BEHIND_GOOGLE = new Set(['google-gmail', 'google-drive', 'google-ca
 /** Google's own MCP servers (Developer Preview, own Google Cloud client): the Google card gives Gmail, Agenda and Drive without them. */
 export const GOOGLE_PREVIEW = new Set(['google-gmail', 'google-drive', 'google-calendar', 'google-sheets']);
 
+const GITHUB_APP_HELP = 'GitHub laat apps zich niet zelf aanmelden. TeamBot heeft daarvoor een eigen GitHub-app; zonder die app (een eigen build) maak je één keer een GitHub OAuth App met de redirect-URL hieronder, of gebruik je een token.';
+/** OAuth Apps know no read-only scope for private repositories: "repo" it is; the read-only endpoint only offers read tools. */
+const GITHUB_SCOPES: CatalogScope[] = [
+  { name: 'repo', description: 'Je repositories, ook de privé (lezen, en schrijven als de bot dat mag)', default: true },
+  { name: 'read:org', description: 'Organisaties en teams lezen', default: true },
+  { name: 'read:packages', description: 'Packages lezen' },
+];
+
 export const CATALOG: CatalogEntry[] = [
   {
     // Read-only by default (research 2026-11-09: least privilege). The /readonly endpoint only offers read tools; the
@@ -224,6 +237,10 @@ export const CATALOG: CatalogEntry[] = [
       },
       { name: 'X-MCP-Toolsets', label: 'Onderdelen', help: 'Welke onderdelen de bot ziet, met komma’s. Leeg = de standaardset van GitHub.', default: 'repos,issues,pull_requests' },
     ],
+    oauthClient: 'own-app',
+    teambotApp: 'github',
+    oauthAppHelp: GITHUB_APP_HELP,
+    scopes: GITHUB_SCOPES,
     dataFlow: 'Verzoeken van de bot en de token gaan naar api.githubcopilot.com (GitHub). Resultaten (code, issues) komen terug in het gesprek en naar je AI-provider. Schrijven kan via dit eindpunt niet.',
     license: 'MIT (github/github-mcp-server); gehoste dienst van GitHub',
     source: 'https://github.com/github/github-mcp-server',
@@ -231,7 +248,7 @@ export const CATALOG: CatalogEntry[] = [
     verification: 'geverifieerd',
     verifiedAt: PINNED,
     testStatus: 'Eindpunt en kopteksten gecontroleerd in de documentatie van GitHub op 2026-11-09. Met een echte token niet getest.',
-    revokeHelp: 'Trek tokens in via github.com › Settings › Developer settings › Personal access tokens.',
+    revokeHelp: 'Ontkoppelen trekt het inloggen ook bij GitHub in. Zelf kan het via github.com › Settings › Applications › Authorized OAuth Apps; een token trek je in via Settings › Developer settings › Personal access tokens.',
     alternatives: 'Ook schrijven nodig: kies “GitHub” (volledig) en zet acties pas aan als dat moet.',
   },
   {
@@ -257,12 +274,9 @@ export const CATALOG: CatalogEntry[] = [
       { name: 'X-MCP-Readonly', label: 'Alleen lezen (optioneel: "true")', help: 'Met "true" biedt de server alleen leestools aan.', placeholder: 'true' },
     ],
     oauthClient: 'own-app',
-    oauthAppHelp: 'GitHub ondersteunt geen automatische registratie (DCR). Wil je OAuth in plaats van een token, registreer dan een eigen GitHub OAuth App met de redirect-URL hieronder.',
-    scopes: [
-      { name: 'repo', description: 'Repositories lezen en schrijven (klassieke token)' },
-      { name: 'read:org', description: 'Organisaties en teams lezen', default: true },
-      { name: 'read:packages', description: 'Packages lezen' },
-    ],
+    teambotApp: 'github',
+    oauthAppHelp: GITHUB_APP_HELP,
+    scopes: GITHUB_SCOPES,
     dataFlow: 'Verzoeken van de bot en de token gaan naar api.githubcopilot.com (GitHub). Resultaten (code, issues) komen terug in het gesprek en naar je AI-provider.',
     license: 'MIT (github/github-mcp-server); gehoste dienst van GitHub',
     source: 'https://github.com/github/github-mcp-server',
@@ -270,7 +284,7 @@ export const CATALOG: CatalogEntry[] = [
     verification: 'geverifieerd',
     verifiedAt: VERIFIED,
     testStatus: 'Live gecontroleerd op 2026-11-06: server bereikbaar en weigert verzoeken zonder token (zoals verwacht). Met token niet getest.',
-    revokeHelp: 'Trek tokens in via github.com › Settings › Developer settings › Personal access tokens.',
+    revokeHelp: 'Ontkoppelen trekt het inloggen ook bij GitHub in. Zelf kan het via github.com › Settings › Applications › Authorized OAuth Apps; een token trek je in via Settings › Developer settings › Personal access tokens.',
     riskOverrides: { create_pull_request: 'danger', create_issue: 'danger', add_issue_comment: 'danger', create_repository: 'danger', fork_repository: 'danger' },
     alternatives: 'Lokaal: docker run -i --rm -e GITHUB_PERSONAL_ACCESS_TOKEN ghcr.io/github/github-mcp-server',
   },

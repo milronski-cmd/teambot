@@ -5,6 +5,33 @@ import fs from 'node:fs';
 
 const pkg = JSON.parse(fs.readFileSync('package.json', 'utf8'));
 const external = [...Object.keys(pkg.dependencies || {}), 'electron', '@anthropic-ai/sdk'];
+
+/**
+ * TeamBot's own login apps (server/modules/mcp/teambot-apps.ts), never in the source: TEAMBOT_<NAME>_CLIENT_FILE (the
+ * downloaded JSON, or {client_id, client_secret}) or TEAMBOT_<NAME>_CLIENT_ID and _SECRET.
+ */
+const APP_ID = { google: /^[0-9]+-[a-z0-9]+\.apps\.googleusercontent\.com$/, github: /^(Ov23|Iv1\.)[A-Za-z0-9]{8,}$/ };
+function teambotApps() {
+  const apps = {};
+  for (const [name, idPattern] of Object.entries(APP_ID)) {
+    const env = `TEAMBOT_${name.toUpperCase()}_CLIENT`;
+    let clientId = process.env[`${env}_ID`] || '';
+    let clientSecret = process.env[`${env}_SECRET`] || '';
+    const file = process.env[`${env}_FILE`];
+    if (file) {
+      const j = JSON.parse(fs.readFileSync(file, 'utf8'));
+      const c = j.installed || j.web || j;
+      clientId = c.client_id || clientId;
+      clientSecret = c.client_secret || clientSecret;
+    }
+    if (clientId && !idPattern.test(clientId)) throw new Error(`${env}: geen geldige client-ID voor ${name}`);
+    if (clientId) apps[name] = { clientId, clientSecret };
+    console.log(`Inloggen met ${name}: ${clientId ? 'TeamBot-app ingebouwd' : 'geen TeamBot-app (gebruikers maken zelf een app)'}`);
+  }
+  return apps;
+}
+const apps = teambotApps();
+
 const common = {
   bundle: true,
   platform: 'node',
@@ -14,6 +41,7 @@ const common = {
   external,
   banner: { js: "import { createRequire as __cr } from 'node:module'; const require = __cr(import.meta.url);" },
   logLevel: 'info',
+  define: { __TEAMBOT_APPS__: JSON.stringify(apps) },
 };
 await build({ ...common, entryPoints: ['server/main.ts'], outfile: 'dist/server/main.js' });
 // Dictionaries for texts the server translates itself (phone pushes, desktop notifications, chat apps): server/core/i18n.ts.

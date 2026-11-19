@@ -38,6 +38,11 @@ jobs:
           AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
           AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
           AZURE_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
+          # TeamBot's own login apps for Google and GitHub (scripts/build.mjs builds them in; never in the source).
+          TEAMBOT_GOOGLE_CLIENT_ID: ${{ secrets.TEAMBOT_GOOGLE_CLIENT_ID }}
+          TEAMBOT_GOOGLE_CLIENT_SECRET: ${{ secrets.TEAMBOT_GOOGLE_CLIENT_SECRET }}
+          TEAMBOT_GITHUB_CLIENT_ID: ${{ secrets.TEAMBOT_GITHUB_CLIENT_ID }}
+          TEAMBOT_GITHUB_CLIENT_SECRET: ${{ secrets.TEAMBOT_GITHUB_CLIENT_SECRET }}
       # Route C: SignPath signs the finished installer (off until the variable SIGNPATH_ORGANIZATION_ID is set).
       - name: Unsigned installer for SignPath
         id: unsigned

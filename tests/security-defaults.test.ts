@@ -425,16 +425,17 @@ test('the privacy label shows per bot: local bot vs cloud bot, reserves included
     assert.ok(ex.findings.some((f: any) => f.code === 'gateway-lan' && f.level === 'warn'));
     assert.equal(ex.gateway.running, true);
     m.gateway.state = { running: false, address: null, port: null, error: null };
-    // A paired phone sees the labels too, but no server details.
+    // A paired phone sees the labels and, since 4.4.3, the same server details as the computer.
     const pc1 = await t.api('POST', '/pairing');
     const dev = await call(t.app.url, null, 'POST', '/api/public/pair', { code: pc1.code, deviceName: 'Telefoon' });
     assert.equal(dev.status, 200, dev.text);
     assert.equal((await call(t.app.url, dev.body.token, 'GET', `/api/privacy/agents/${local.id}`)).body.main.level, 'local');
     const po = await call(t.app.url, dev.body.token, 'GET', '/api/privacy/overview');
     assert.equal(po.status, 200);
-    assert.equal(po.body.exposure, null);
-    assert.equal(po.body.dataDir, null);
-    assert.equal((await call(t.app.url, dev.body.token, 'GET', '/api/secrets')).status, 403);
+    assert.ok(po.body.exposure);
+    assert.ok(po.body.dataDir);
+    // The key list (names, never values) is the owner's on the phone too.
+    assert.equal((await call(t.app.url, dev.body.token, 'GET', '/api/secrets')).status, 200);
     // Someone else's bot: not found.
     const other = t.app.ctx.auth.createUser({ name: 'Ander', email: 'ander@test.local', role: 'member' });
     const otok = t.app.ctx.auth.createSession(other.id).token;

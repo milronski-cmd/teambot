@@ -102,7 +102,7 @@ test('GET /search/all finds channels, skills, apps, routines, memory, files and 
     assert.ok(pMem.hits.some((h: any) => h.kind === 'memory'), 'memory is searchable on the phone (the Geheugen page works there)');
     const policy = t.app.ctx.services.mobile.instance.policy;
     assert.equal(policy.allows('GET', '/memory/items'), true);
-    assert.equal(policy.allows('GET', '/secrets'), false, 'a computer-only route stays out of a search on the phone');
+    assert.equal(policy.allows('GET', '/mobile/devices'), false, 'a computer-only route stays out of a search on the phone');
     const pMsg = await fetch(`${t.app.url}/api/search/all?q=basispakket`, { headers: { authorization: `Bearer ${tokP}` } }).then((r) => r.json() as Promise<any>);
     assert.ok(pMsg.hits.some((h: any) => h.kind === 'message'), 'messages are searchable on the phone');
   } finally {
