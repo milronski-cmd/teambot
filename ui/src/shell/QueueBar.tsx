@@ -178,8 +178,10 @@ function Item({ q, it, index, count, onDragStart, onDrop }: { q: MessageQueue; i
               onChange={(e) => setDraft(e.target.value)}
               onKeyDown={(e) => {
                 if (e.key === 'Escape') (setEditing(false), setDraft(it.content));
-                if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
+                // As in the composer: on a phone Enter is a new line; an empty message is not saved.
+                if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing && !window.matchMedia('(pointer: coarse)').matches) {
                   e.preventDefault();
+                  if (!draft.trim() && !it.attachments.length) return;
                   act(async () => (await q.edit(it.id, draft), setEditing(false)));
                 }
               }}

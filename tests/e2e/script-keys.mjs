@@ -140,19 +140,20 @@ try {
   const phone = await phoneCtx.newPage();
   const phoneFails = [];
   phone.on('pageerror', (e) => phoneFails.push(e.message));
-  phone.on('response', (r) => r.url().includes('/api/script-keys') && phoneFails.push(`verzoek ${r.url()} → ${r.status()}`));
+  phone.on('response', (r) => r.url().includes('/api/script-keys') && r.status() >= 400 && phoneFails.push(`verzoek ${r.url()} → ${r.status()}`));
   await phone.goto(`${app.url}/#/agents/${bot.id}/edit`);
   await openKeys(phone);
-  await phone.getByText('Sleutels voor scripts beheer je op je computer.').waitFor({ timeout: 8000 });
+  // The phone may do what the computer may (except pairing): the section works here too.
+  await phone.waitForTimeout(1500);
+  if (await phone.getByText('Sleutels voor scripts beheer je op je computer.').count()) fail('telefoon: de sectie zegt nog "beheer je op je computer"');
   if (phoneFails.length) fail(`telefoon: ${phoneFails.join('; ')}`);
-  const deny = await fetch(`${app.url}/api/script-keys`, { headers: { authorization: `Bearer ${claimed.token}` } });
-  if (deny.status !== 403) fail(`telefoon mocht /script-keys openen (${deny.status})`);
-  step('gekoppelde telefoon: de sectie zegt rustig “beheer je op je computer”, geen mislukte verzoeken; de API geeft 403');
+  const allow = await fetch(`${app.url}/api/script-keys`, { headers: { authorization: `Bearer ${claimed.token}` } });
+  if (allow.status !== 200) fail(`telefoon mocht /script-keys niet openen (${allow.status})`);
+  step('gekoppelde telefoon: de sectie werkt, geen mislukte verzoeken');
   await phone.goto(`${app.url}/#/m/browser/kluis`);
-  await phone.getByText('De kluis met wachtwoorden open je alleen op je computer.').waitFor({ timeout: 8000 });
-  if (await phone.locator('[data-testid="script-keys-overview"]').count()) fail('telefoon: het sleuteloverzicht staat in de Kluis');
+  await phone.locator('[data-testid="script-keys-overview"]').first().waitFor({ timeout: 8000 });
   if (phoneFails.length) fail(`telefoon (Kluis): ${phoneFails.join('; ')}`);
-  step('gekoppelde telefoon › Kluis: geen sleuteloverzicht en geen verzoeken naar /script-keys');
+  step('gekoppelde telefoon › Kluis: het sleuteloverzicht staat er, zonder mislukte verzoeken');
   if (errors.length) fail(`paginafouten: ${errors.join(' | ')}`);
 } catch (e) {
   fail(String(e?.stack || e));

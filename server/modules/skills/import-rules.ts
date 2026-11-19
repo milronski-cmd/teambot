@@ -18,10 +18,10 @@ import { LIMITS } from './files.js';
 
 export const CURATED_LIMITS = {
   /**
-   * Files in one skill (including licence and source files). 150 refused a skill with its own script library (15 nov)
-   * that its link would have let in; the size limits below still bound what comes in.
+   * Files in one skill (including licence and source files): the same as everywhere else, so what the preview lets in
+   * also installs.
    */
-  maxFiles: 1000,
+  maxFiles: LIMITS.maxFiles,
   /**
    * Bytes per file and per skill: the same as for a skill added by its address (files.ts LIMITS), so one skill is not
    * refused by its id and accepted by its link (15 nov: a skill with a 1.1 MB data file was refused at 512 kB).
@@ -215,6 +215,7 @@ export const KNOWN_PUBLISHERS = [
   'browser-use', 'paperclipai', 'jina-ai', 'nickclyde', 'taylorwilsdon', 'k-dense-ai', 'playwright', 'puppeteer', 'zubair-trabzada', 'alirezarezvani',
   'obsidianmd', 'phuryn', 'sawyerhood', 'czlonkowski', 'sergebulaev', 'lackeyjb', 'wondelai', 'kappaemme-git', 'jezweb', 'growthenginenowoslawski', '40rty-ai',
   'leonxlnx', 'mvanhorn', 'nicobailon', 'nidhinjs', 'juliusbrussee',
+  'affaan-m', 'dietrichgebert', 'nextlevelbuilder', 'ayghri', 'emilkowalski', 'jimliu',
 ];
 
 /** Distinctive repository names: the same name under another owner is a copy or a fake. */
@@ -227,6 +228,10 @@ export const KNOWN_REPOS: Record<string, string> = {
   'claude-seo': 'agricidaniel',
   humanizer: 'blader',
   caveman: 'juliusbrussee',
+  ponytail: 'dietrichgebert',
+  'ui-ux-pro-max-skill': 'nextlevelbuilder',
+  'i-have-adhd': 'ayghri',
+  'baoyu-skills': 'jimliu',
   'planning-with-files': 'othmanadi',
   'browser-use': 'browser-use',
   'playwright-mcp': 'microsoft',

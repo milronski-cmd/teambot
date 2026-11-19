@@ -160,6 +160,7 @@ export function copyTeamKnowledge(svc: MemoryService, userId: string, fromTeamId
         title: d.title,
         kind: d.kind,
         summary: d.summary,
+        body: d.body || '',
         status: d.status,
         agent_ids: mapAgents(d.agent_ids),
         retention_days: d.retention_days ?? null,

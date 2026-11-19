@@ -23,6 +23,12 @@ const cap = (s: string | null | undefined, n: number) => {
  * separately tracked runs, ownership handoff and direct bot messages. Every hop is checked for cycles,
  * depth, turn budget and spend; results return to the owner as a tool result (wait) or follow-up turn.
  */
+/**
+ * Has the giver already had the answers of this broadcast? A request it withdrew itself counts as told at once, so that
+ * one alone does not make the rest of the broadcast "told".
+ */
+const groupTold = (rows: Delegation[]) => rows.every((r) => r.delivered) || rows.some((r) => r.delivered && r.status !== 'cancelled');
+
 export class Orchestrator {
   private waiters = new Map<string, () => void>();
 
@@ -125,6 +131,15 @@ export class Orchestrator {
     const d = this.get(id)!;
     this.emit(d);
     return d;
+  }
+
+  /**
+   * A bot that is deleted while it works on a request: the request ends as failed and the giver is told, as for any
+   * other failure (its turn is gone with the bot, so no end of a turn reports it).
+   */
+  agentGone(agentId: string) {
+    const rows = this.ctx.store.all<any>("SELECT * FROM room_delegations WHERE to_agent_id = ? AND status NOT IN ('done','error','cancelled','timeout')", agentId);
+    for (const r of rows) this.handBack(this.close(r.id, 'error', { error: 'De bot bestaat niet meer.' }));
   }
 
   /** The giver has the outcome, or will not be told (it withdrew the request, it was stopped itself, it is gone). */
@@ -1076,7 +1091,7 @@ export class Orchestrator {
     }
     for (const gid of groups) {
       const rows = this.ctx.store.find<Delegation>('room_delegations', { group_id: gid }, { order: 'created_at' });
-      if (!rows.length || rows.some((r) => !TERMINAL_DELEGATION.has(r.status)) || rows.some((r) => r.delivered)) continue;
+      if (!rows.length || rows.some((r) => !TERMINAL_DELEGATION.has(r.status)) || groupTold(rows)) continue;
       // A broadcast is complete when its last answer is in. Was that last one a stop by the owner, then his stop
       // completed it: a note, no turn.
       const last = rows.reduce((a, b) => ((b.finished_at || '') > (a.finished_at || '') ? b : a));
@@ -1157,7 +1172,7 @@ export class Orchestrator {
   /** `by`: the answer that completed the broadcast (a stop by the owner completes it without waking anyone). */
   private groupDone(groupId: string, by?: Delegation) {
     const rows = this.ctx.store.find<Delegation>('room_delegations', { group_id: groupId }, { order: 'created_at' });
-    if (!rows.length || rows.some((r) => !TERMINAL_DELEGATION.has(r.status)) || rows.some((r) => r.delivered)) return;
+    if (!rows.length || rows.some((r) => !TERMINAL_DELEGATION.has(r.status)) || groupTold(rows)) return;
     if (!rows[0].follow_up) return rows.forEach((r) => this.told(r.id));
     this.deliver(by || rows[0]);
   }

@@ -395,11 +395,16 @@ function BotPage({ id }: { id: string }) {
     setModelsErr('');
     setModels([]);
     setModelsLoading(true);
+    // Another AI chosen meanwhile: the list of the previous one (it can take half a minute) is not shown any more.
+    let alive = true;
     api
       .get<ModelInfo[]>(`/providers/${d.provider_id}/models`)
-      .then(setModels)
-      .catch((e) => (setModels([]), setModelsErr(e.message)))
-      .finally(() => setModelsLoading(false));
+      .then((m) => alive && setModels(m))
+      .catch((e) => alive && (setModels([]), setModelsErr(e.message)))
+      .finally(() => alive && setModelsLoading(false));
+    return () => {
+      alive = false;
+    };
   }, [d?.provider_id]);
 
   // A model typed by hand ("Ander model"), or the model of a CLI engine while its list still loads (Claude Code asks
@@ -499,6 +504,8 @@ function BotPage({ id }: { id: string }) {
       const secs = [...regs.current.values()].filter((s) => all || !s.typed?.());
       const payload: Draft = await prepareSections(secs, { ...d });
       if (!payload.workspace?.trim()) delete payload.workspace;
+      // Not set on this page (archive, pin and order change elsewhere while it is open): never written back.
+      for (const k of ['archived', 'pinned', 'sort', 'id', 'user_id', 'created_at', 'updated_at']) delete (payload as any)[k];
       let a = await api.patch<Agent>(`/agents/${id}`, payload).catch((e) => {
         setSaveFailed(true);
         throw e;

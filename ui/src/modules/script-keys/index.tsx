@@ -5,7 +5,6 @@ import { t } from '../../lib/i18n';
 import type { Agent } from '../../lib/types';
 import { Badge, Button, Field, Input, Spinner, askConfirm, toast, toastError, useAsync } from '../../components/ui';
 import { SelectBox as Select } from '../../components/Listbox';
-import { ComputerOnly, useIsPhoneSession } from '../../shell/computerOnly';
 import type { UIModule } from '../types';
 
 interface AgentKey {
@@ -26,10 +25,9 @@ interface AgentKeys {
 
 /**
  * Bot editor: "Sleutels voor scripts". Give this bot (or every bot of its team) a stored secret as an environment
- * variable for its scripts; the bot only learns the name. Saved immediately. Computer-only: on a paired phone the reason.
+ * variable for its scripts; the bot only learns the name. Saved immediately.
  */
 function AgentScriptKeys({ agent }: { agent: Agent; onChange(p: Partial<Agent>): void }) {
-  const phone = useIsPhoneSession();
   const [data, setData] = useState<AgentKeys | null>(null);
   const [err, setErr] = useState('');
   const [adding, setAdding] = useState(false);
@@ -44,12 +42,11 @@ function AgentScriptKeys({ agent }: { agent: Agent; onChange(p: Partial<Agent>):
       .then((d) => (setData(d), setErr('')))
       .catch((e) => setErr(e?.message || String(e)));
   useEffect(() => {
-    if (!agent.id || phone) return;
+    if (!agent.id) return;
     load();
     return on('scriptKeys.updated', () => load());
-  }, [agent.id, phone]);
+  }, [agent.id]);
 
-  if (phone) return <ComputerOnly>Sleutels voor scripts beheer je op je computer.</ComputerOnly>;
   if (!agent.id) return <p className="text-sm text-muted">Sla de bot eerst op; daarna kun je hier sleutels voor scripts geven.</p>;
   if (err)
     return (

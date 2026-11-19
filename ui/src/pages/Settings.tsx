@@ -324,11 +324,10 @@ function Security() {
   const [secrets, setSecrets] = useState<any[] | null>(null);
   // What a stored key is for: the app it belongs to, or the name the owner gave a script key (the raw id says nothing).
   const [keyInfo, setKeyInfo] = useState<{ apps: Record<string, string>; scripts: Record<string, { name: string; label: string }> }>({ apps: {}, scripts: {} });
-  // A paired phone does not manage sessions or see stored secrets (server/modules/mobile/policy.ts): say so calmly.
+  // A paired phone does not manage sessions (server/modules/mobile/policy.ts): say so calmly. Stored keys it does see.
   const phone = useIsPhoneSession();
   const load = () => {
-    if (phone) return;
-    api.get('/sessions').then(setSessions).catch(toastError);
+    if (!phone) api.get('/sessions').then(setSessions).catch(toastError);
     api.get('/secrets').then(setSecrets).catch(toastError);
     Promise.all([api.get<any[]>('/mcp/connections').catch(() => []), api.get<any[]>('/script-keys').catch(() => [])]).then(([apps, keys]) =>
       setKeyInfo({
@@ -377,9 +376,7 @@ function Security() {
             </>
           }
         />
-        {phone ? (
-          <ComputerOnly>Opgeslagen sleutels bekijken kan alleen op je computer.</ComputerOnly>
-        ) : !secrets ? (
+        {!secrets ? (
           <Spinner className="my-3" />
         ) : secrets.length === 0 ? (
           <p className="py-3 text-sm text-muted">Nog geen sleutels opgeslagen.</p>
@@ -708,15 +705,11 @@ function Backups({ simple }: { simple?: boolean }) {
             }
           />
         </div>
-        {phone ? (
-          <ComputerOnly>Al je gegevens exporteren kan alleen op je computer.</ComputerOnly>
-        ) : (
-          // One button, not a button inside a link (a11y); the signed link is made at the click, so it never expires on
-          // a page that stayed open.
-          <Button icon={<Download className="h-4 w-4" />} onClick={() => downloadLink(authUrl('/export'))}>
-            Exporteren
-          </Button>
-        )}
+        {/* One button, not a button inside a link (a11y); the signed link is made at the click, so it never expires on
+            a page that stayed open. */}
+        <Button icon={<Download className="h-4 w-4" />} onClick={() => downloadLink(authUrl('/export'))}>
+          Exporteren
+        </Button>
       </Card>}
     </>
   );

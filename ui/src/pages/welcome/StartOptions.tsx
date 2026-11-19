@@ -129,9 +129,10 @@ function SubscriptionRow({ it, primary, mode, onChanged }: { it: SubscriptionIte
     if (!waiting) return;
     const end = Date.now() + LOGIN_WAIT_MS;
     let timer: ReturnType<typeof setTimeout>;
+    let stopped = false;
     const tick = async () => {
       const v = await onChanged(it.id);
-      if (!alive.current) return;
+      if (!alive.current || stopped) return;
       const now = v?.items.find((x) => x.id === it.id);
       if (now && now.installed && now.loggedIn === true) {
         setWaiting(false);
@@ -143,7 +144,10 @@ function SubscriptionRow({ it, primary, mode, onChanged }: { it: SubscriptionIte
       timer = setTimeout(tick, 4000);
     };
     timer = setTimeout(tick, 4000);
-    return () => clearTimeout(timer);
+    return () => {
+      stopped = true;
+      clearTimeout(timer);
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [waiting]);
 

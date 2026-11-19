@@ -1,7 +1,7 @@
 {
   "name": "teambot",
   "productName": "TeamBot",
-  "version": "4.8.1",
+  "version": "4.9.0",
   "description": "Open-source AI-agentteam: eigen bots, eigen modellen, lokaal of in de cloud.",
   "license": "Apache-2.0",
   "author": "TeamBot contributors",
@@ -332,6 +332,6 @@
         }
       ]
     },
-    "buildVersion": "4.8.1"
+    "buildVersion": "4.9.0"
   }
 }

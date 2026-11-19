@@ -696,7 +696,8 @@ export class RoutineEngine {
       runIn: o.runIn === 'main' ? 'main' : 'thread',
       limitPolicy: ['wait', 'skip', 'fail'].includes(o.limitPolicy) ? o.limitPolicy : DEFAULT_OPTIONS.limitPolicy,
       maxLimitWaitHours: Math.round(clamp(o.maxLimitWaitHours, 1, 168, DEFAULT_OPTIONS.maxLimitWaitHours)),
-      then: this.validateThen(userId, o.then, existing?.id ?? null, name, agent),
+      // A next routine that was deleted meanwhile and that this change does not touch: the chain simply ends.
+      then: body?.options?.then === undefined && o.then?.routineId && !this.routine(String(o.then.routineId)) ? null : this.validateThen(userId, o.then, existing?.id ?? null, name, agent),
       important: o.important === true,
       // Only TeamBot sets a waitpoint (wait_for); an edit keeps it.
       ...(existing?.options.waitpoint ? { waitpoint: existing.options.waitpoint } : {}),
@@ -995,9 +996,10 @@ export class RoutineEngine {
     return this.routine(copy.id)!;
   }
 
-  remove(r: Routine, opts: { deleteThread?: boolean } = {}) {
+  /** `keepRunning`: a bot removes the routine (often the routine itself, when its job is done): the turn that runs finishes. */
+  remove(r: Routine, opts: { deleteThread?: boolean; keepRunning?: boolean } = {}) {
     for (const row of this.ctx.store.all<any>("SELECT * FROM routine_runs WHERE routine_id = ? AND status IN ('pending','running','retrying')", r.id)) {
-      if (row.status === 'running' && row.run_id) this.ctx.runs.cancel(row.run_id, 'Routine verwijderd');
+      if (row.status === 'running' && row.run_id && !opts.keepRunning) this.ctx.runs.cancel(row.run_id, 'Routine verwijderd');
     }
     for (const t of this.triggersOf(r.id)) this.deleteTrigger(t);
     this.ctx.store.tx(() => {
@@ -1005,7 +1007,7 @@ export class RoutineEngine {
       this.ctx.store.exec('DELETE FROM routine_events WHERE routine_id = ?', r.id);
       this.ctx.store.remove('routines', r.id);
     });
-    if (opts.deleteThread && r.thread_id) {
+    if (opts.deleteThread && !opts.keepRunning && r.thread_id) {
       const t = this.ctx.store.thread(r.thread_id);
       // Only the routine's own thread, never the bot's main chat.
       if (t && t.user_id === r.user_id && t.kind === 'routine') {
@@ -1081,6 +1083,12 @@ export class RoutineEngine {
     }
   }
 
+  /** Is this run still to be started? Not when the owner stopped it, paused or removed the routine meanwhile. */
+  private stillOpen(rrId: string): boolean {
+    const cur = this.getRun(rrId);
+    return !!cur && ['pending', 'retrying'].includes(cur.status);
+  }
+
   /** Claim the due occurrence (idempotent via run_key) and advance next_run_at — one transaction. */
   private handleDue(r: Routine, now: number) {
     const due = Date.parse(r.next_run_at!);
@@ -1115,7 +1123,10 @@ export class RoutineEngine {
             });
           }
         } else {
-          claimed = this.claim({ routine: r, key: `${r.id}@${iso(due)}`, trigger: 'schedule', scheduledFor: due });
+          // A few minutes late (the pc slept a moment) with more than one occurrence in between: this one run stands for
+          // all of them, so the watchdog does not report the others as "niet gedraaid".
+          const occ = now - due > 60_000 ? S.occurrencesBetween(r.schedule, r.timezone, due, now) : null;
+          claimed = this.claim({ routine: r, key: `${r.id}@${iso(due)}`, trigger: 'schedule', scheduledFor: due, ...(occ && occ.count > 1 && occ.last ? { meta: { missedFrom: iso(due), missedTo: iso(occ.last) } } : {}) });
           // The watchdog already said "niet gedraaid" for this one: it started after all, later.
           if (claimed) this.ctx.store.exec("UPDATE routine_runs SET summary = summary || ' Later toch gestart.', meta = json_set(meta, '$.startedLate', ?) WHERE routine_id = ? AND run_key = ?", claimed.id, r.id, `${r.id}@notrun@${iso(due)}`);
         }
@@ -1418,6 +1429,9 @@ export class RoutineEngine {
       // Vaste taken and reminders: measure first; in order (or a reminder) ends here without a model call.
       const special = this.duties ? await this.duties.before(r, rr, agent) : null;
       if (this.stopped) return;
+      // Stopped by the owner while it measured: it does not start after all. (A duty that ends its own run here, also
+      // by parking itself, still gets its receipt.)
+      if (!special?.finish && !this.stillOpen(rr.id)) return;
       if (special?.meta) rr = this.updateRun(rr.id, { meta: { ...(this.getRun(rr.id)?.meta || rr.meta || {}), ...special.meta } });
       if (special?.finish) return void this.finishSpecial(rr, r, special.finish);
       dutyInput = special?.input ?? null;
@@ -1447,7 +1461,7 @@ export class RoutineEngine {
         parts: { routine: { id: r.id, runId: rr.id, trigger: rr.trigger } },
         route: false,
       });
-      if (this.stopped) return;
+      if (this.stopped || !this.stillOpen(rr.id)) return;
       messageId = m.id;
       // Each run in its own thread starts with a fresh context: history from this message on, and a new CLI session.
       // In the main chat the bot keeps its context.

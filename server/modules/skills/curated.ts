@@ -24,6 +24,17 @@
  *    sickn33/agentic-awesome-skills (CC BY 4.0 texts), trailofbits/skills (CC-BY-SA), hesreallyhim/awesome-claude-code
  *    (CC BY-NC-ND);
  *  - do not work as a loose skill folder: garrytan/gstack, Panniantong/Agent-Reach, nowork-studio/notfair-plugin.
+ *
+ * Added on 2026-11-19 (GitHub search: 20,000 stars or more, pushed since August 2026; each entry installed with one
+ * click in a test app, no bot run): affaan-m/ECC, DietrichGebert/ponytail, nextlevelbuilder/ui-ux-pro-max-skill,
+ * ayghri/i-have-adhd, emilkowalski/skills, wshobson/agents, JimLiu/baoyu-skills. Left out that day:
+ *  - refused by the import rules (a data file with one very long line, or too many files): pbakaus/impeccable,
+ *    Nutlope/hallmark, cathrynlavery/diagram-design, Vincentwei1021/video-shotcraft;
+ *  - serious findings in the safety scan: virgiliojr94/book-to-skill;
+ *  - a company's own skill: cloudflare/security-audit-skill, heygen-com/hyperframes;
+ *  - licence: Imbad0202/academic-research-skills (CC BY-NC), OpenMontageInc/OpenMontage and op7418/guizang-ppt-skill
+ *    (AGPL);
+ *  - copies of other collections: davila7/claude-code-templates.
  */
 
 export interface WindowsNote {
@@ -133,6 +144,65 @@ export const CURATED_SOURCES: CuratedSource[] = [
     ],
   },
   {
+    id: 'ecc',
+    repo: 'affaan-m/ECC',
+    stars: 307036,
+    commit: '3f14a103a8694e51c1df9a806217a6d0b5f7a6f7',
+    commitDate: '2026-11-17',
+    owner: 'affaan-m',
+    publisher: 'Affaan Mustafa',
+    license: 'MIT',
+    verifiedAt: '2026-11-19',
+    note: 'Zeer grote verzameling; de onderdelen voor onderzoek, content, mail en geldzaken zijn ook buiten programmeerwerk bruikbaar.',
+    skills: [
+      { path: 'skills/deep-research', pack: 'Onderzoek', category: 'Onderzoek', note: 'Maakt een onderzoeksrapport uit meerdere webbronnen, met bronvermelding en hoe zeker elke uitkomst is.', needs: 'Werkt het best met een zoek-app zoals Firecrawl of Exa; zonder gebruikt de bot zijn gewone zoekfunctie.' },
+      { path: 'skills/market-research', pack: 'Onderzoek', category: 'Onderzoek', note: 'Onderzoekt een markt, concurrenten of een bedrijf en sluit af met een advies waar je op kunt beslissen.' },
+      { path: 'skills/article-writing', pack: 'Schrijven', category: 'Schrijven', note: 'Schrijft lange stukken zoals artikelen, handleidingen en nieuwsbrieven in jouw eigen stijl.' },
+      { path: 'skills/brand-voice', pack: 'Schrijven', category: 'Schrijven', note: 'Leidt je schrijfstijl af uit bestaande teksten en bewaart die als profiel voor al het volgende schrijfwerk.' },
+      { path: 'skills/content-engine', pack: 'Content', category: 'Content', note: 'Maakt van één onderwerp berichten, draadjes en scripts die passen bij elk kanaal.' },
+      { path: 'skills/lead-intelligence', pack: 'Verkoop', category: 'Verkoop', note: 'Zoekt mogelijke klanten, beoordeelt ze op signalen en schrijft per kanaal een eerste bericht.', needs: 'Zoek-apps en toegang tot LinkedIn of X maken het resultaat beter (optioneel).' },
+      { path: 'skills/email-ops', pack: 'Communicatie', category: 'Communicatie', note: 'Ruimt een mailbox op, schrijft concepten en controleert of een mail echt verstuurd is.', needs: 'Een gekoppelde mailbox, bijvoorbeeld Gmail.' },
+      { path: 'skills/customer-billing-ops', pack: 'Klantenservice', category: 'Klantenservice', note: 'Zoekt bij een klant het abonnement op en regelt terugbetaling of herstel van een betaling.', needs: 'Een gekoppeld betaalsysteem zoals Stripe.' },
+      { path: 'skills/finance-billing-ops', pack: 'Financiën', category: 'Financiën', note: 'Geeft een overzicht van omzet, prijzen en terugbetalingen en spoort dubbele afschrijvingen op.', needs: 'Een gekoppeld betaalsysteem zoals Stripe.' },
+      { path: 'skills/video-editing', pack: 'Video', category: 'Video', note: 'Monteert bestaande opnames: knippen, opbouw, ondertitels en afwerking.', needs: 'FFmpeg op de pc; andere programma’s die de skill noemt zijn optioneel.' },
+      { path: 'skills/investor-materials', pack: 'Financiën', category: 'Financiën', note: 'Maakt een pitchdeck, een samenvatting op één pagina en een financieel model die onderling kloppen.' },
+    ],
+  },
+  {
+    id: 'ponytail',
+    repo: 'DietrichGebert/ponytail',
+    stars: 194661,
+    commit: '96608e078b2d5ea607c5c3b8b5a54d1c1fba6846',
+    commitDate: '2026-10-29',
+    owner: 'DietrichGebert',
+    publisher: 'Dietrich Gebert',
+    license: 'MIT',
+    verifiedAt: '2026-11-19',
+    note: 'Laat een bot werken als een ervaren ontwikkelaar die alleen bouwt wat nodig is.',
+    skills: [
+      { path: 'skills/ponytail', pack: 'Ontwikkeling', category: 'Ontwikkeling', note: 'Kiest de kleinste wijziging die de taak helemaal oplost en legt die in gewone taal uit.' },
+      { path: 'skills/ponytail-review', pack: 'Ontwikkeling', category: 'Ontwikkeling', note: 'Beoordeelt een wijziging op fouten, veiligheid, snelheid en overbodige code.' },
+    ],
+  },
+  {
+    id: 'ui-ux-pro-max',
+    repo: 'nextlevelbuilder/ui-ux-pro-max-skill',
+    stars: 151644,
+    commit: '2de1134dc4d1cfe112934611ae5803ae17a1bd7e',
+    commitDate: '2026-11-19',
+    owner: 'nextlevelbuilder',
+    publisher: 'Next Level Builder',
+    license: 'MIT',
+    verifiedAt: '2026-11-19',
+    note: 'De meest gebruikte design-set: stijlen, kleuren, lettertypen en regels voor schermen, banners en presentaties.',
+    skills: [
+      { path: '.claude/skills/ui-ux-pro-max', pack: 'Design', category: 'Design', note: 'Kiest stijl, kleuren en lettertypen voor een site of app en controleert het ontwerp op bruikbaarheid.', scripts: true, windows: SCRIPTS_OFF, needs: 'Python op de pc voor het doorzoeken van de stijlgegevens (optioneel).' },
+      { path: '.claude/skills/brand', pack: 'Design', category: 'Design', note: 'Legt een huisstijl vast: toon, logo, kleuren en hoe je die overal hetzelfde houdt.', scripts: true, windows: SCRIPTS_OFF },
+      { path: '.claude/skills/banner-design', pack: 'Design', category: 'Design', note: 'Ontwerpt banners voor sociale media, advertenties en de bovenkant van een website, in meerdere stijlen.' },
+      { path: '.claude/skills/slides', pack: 'Presentaties', category: 'Presentaties', note: 'Maakt een presentatie als webpagina, met grafieken en een doordachte opbouw.' },
+    ],
+  },
+  {
     id: 'caveman',
     repo: 'JuliusBrussee/caveman',
     stars: 121458,
@@ -182,6 +252,21 @@ export const CURATED_SOURCES: CuratedSource[] = [
     ],
   },
   {
+    id: 'i-have-adhd',
+    repo: 'ayghri/i-have-adhd',
+    stars: 61692,
+    commit: '1ecea1993b7fce257ffbd686c070948b5e07eda6',
+    commitDate: '2026-10-11',
+    owner: 'ayghri',
+    publisher: 'ayghri',
+    license: 'MIT',
+    verifiedAt: '2026-11-19',
+    note: 'Antwoorden die je in één keer kunt volgen: eerst wat je moet doen, daarna de rest.',
+    skills: [
+      { path: 'skills/i-have-adhd', pack: 'Werkwijze', category: 'Werkwijze', note: 'Zet de volgende stap bovenaan, nummert het werk en laat zijpaden weg.', needs: 'Zet je zelf aan met de naam van de skill; blijft aan tot je hem uitzet.' },
+    ],
+  },
+  {
     id: 'marketingskills',
     repo: 'coreyhaines31/marketingskills',
     stars: 59778,
@@ -210,6 +295,24 @@ export const CURATED_SOURCES: CuratedSource[] = [
       { path: 'skills/social', pack: 'Marketing', category: 'Marketing', note: 'Maakt en plant berichten voor LinkedIn, Instagram, TikTok en andere kanalen.' },
       { path: 'skills/copy-editing', pack: 'Schrijven', category: 'Schrijven', note: 'Redigeert bestaande marketingtekst: helderder, korter en overtuigender.' },
       { path: 'skills/pricing', pack: 'Verkoop', category: 'Verkoop', note: 'Denkt mee over prijzen, pakketten en een proefperiode.' },
+    ],
+  },
+  {
+    id: 'emilkowalski-skills',
+    repo: 'emilkowalski/skills',
+    stars: 58129,
+    commit: '64eb3deb9a5fbfa041faf783e0bc3fd635872e9c',
+    commitDate: '2026-11-15',
+    owner: 'emilkowalski',
+    publisher: 'Emil Kowalski',
+    license: 'MIT',
+    verifiedAt: '2026-11-19',
+    note: 'Afwerking en beweging van schermen, van een bekende ontwerper van webinterfaces.',
+    skills: [
+      { path: 'skills/emil-design-eng', pack: 'Design', category: 'Design', note: 'Verzorgt de details van een scherm: knoppen, overgangen en kleine reacties op wat je doet.' },
+      { path: 'skills/animate', pack: 'Design', category: 'Design', note: 'Bouwt een animatie en beslist eerst of beweging hier wel iets toevoegt.' },
+      { path: 'skills/apple-design', pack: 'Design', category: 'Design', note: 'Past de ontwerpregels van Apple toe op een website: vloeiende beweging, diepte en rust.' },
+      { path: 'skills/prototype', pack: 'Design', category: 'Design', note: 'Bouwt meerdere echt verschillende versies van een scherm waar je doorheen kunt bladeren.', needs: 'Zet je zelf aan met de naam van de skill.' },
     ],
   },
   {
@@ -242,6 +345,30 @@ export const CURATED_SOURCES: CuratedSource[] = [
     skills: [
       { path: 'plugins/obsidian/skills/obsidian-markdown', pack: 'Productiviteit', category: 'Productiviteit', note: 'Schrijft notities in de juiste Obsidian-opmaak, met links en eigenschappen.', needs: 'Alleen nuttig als je Obsidian gebruikt.' },
       { path: 'plugins/obsidian/skills/defuddle', pack: 'Onderzoek', category: 'Onderzoek', note: 'Haalt de schone tekst uit een webpagina, zonder menu’s en reclame.', needs: 'Het gratis programma defuddle (npm install -g defuddle).' },
+    ],
+  },
+  {
+    id: 'wshobson-agents',
+    repo: 'wshobson/agents',
+    stars: 42694,
+    commit: '42203085cfc5736204bf0f6d436dff7e1da0bf3f',
+    commitDate: '2026-11-18',
+    owner: 'wshobson',
+    publisher: 'Seth Hobson',
+    license: 'MIT',
+    verifiedAt: '2026-11-19',
+    note: 'Brede verzameling per vakgebied: personeel, privacy, cijfers, financiën en ontwikkeling.',
+    skills: [
+      { path: 'plugins/hr-legal-compliance/skills/employment-contract-templates', pack: 'Personeel', category: 'Personeel', note: 'Stelt een arbeidscontract, aanbiedingsbrief of personeelsregeling op.', needs: 'Niet afgestemd op Nederlands arbeidsrecht; laat een contract nakijken.' },
+      { path: 'plugins/hr-legal-compliance/skills/gdpr-data-handling', pack: 'Juridisch', category: 'Juridisch', note: 'Regelt de omgang met persoonsgegevens volgens de AVG: toestemming, inzage en verwijderen.' },
+      { path: 'plugins/business-analytics/skills/data-storytelling', pack: 'Data & analyse', category: 'Data & analyse', note: 'Maakt van cijfers een verhaal dat een beslissing oplevert.' },
+      { path: 'plugins/business-analytics/skills/kpi-dashboard-design', pack: 'Data & analyse', category: 'Data & analyse', note: 'Kiest de kengetallen voor een dashboard en hoe je ze toont.' },
+      { path: 'plugins/startup-business-analyst/skills/startup-financial-modeling', pack: 'Financiën', category: 'Financiën', note: 'Bouwt een financieel model over drie tot vijf jaar: omzet, kosten, kasstroom en scenario’s.' },
+      { path: 'plugins/startup-business-analyst/skills/startup-metrics-framework', pack: 'Financiën', category: 'Financiën', note: 'Rekent uit wat een klant kost en oplevert en hoe gezond het bedrijf groeit.' },
+      { path: 'plugins/incident-response/skills/postmortem-writing', pack: 'Werkwijze', category: 'Werkwijze', note: 'Schrijft na een storing op wat er gebeurde, wat de oorzaak was en wat er verandert, zonder schuldvraag.' },
+      { path: 'plugins/developer-essentials/skills/code-review-excellence', pack: 'Ontwikkeling', category: 'Ontwikkeling', note: 'Beoordeelt code op fouten en geeft opmerkingen waar de maker iets mee kan.' },
+      { path: 'plugins/payment-processing/skills/stripe-integration', pack: 'Ontwikkeling', category: 'Ontwikkeling', note: 'Bouwt betalen met Stripe in: afrekenen, abonnementen en meldingen van betalingen.', needs: 'Een Stripe-account.' },
+      { path: 'plugins/file-conversion/skills/file-conversion', pack: 'Productiviteit', category: 'Productiviteit', note: 'Zet een bestand om naar een ander formaat op je eigen pc en controleert het resultaat.', needs: 'Gebruikt programma’s die op de pc staan, zoals FFmpeg of Pandoc.' },
     ],
   },
   {
@@ -298,6 +425,24 @@ export const CURATED_SOURCES: CuratedSource[] = [
       { path: 'pm-market-research/skills/competitor-analysis', pack: 'Onderzoek', category: 'Onderzoek', note: 'Brengt vijf directe concurrenten in kaart met sterke en zwakke punten.' },
       { path: 'pm-market-research/skills/market-sizing', pack: 'Onderzoek', category: 'Onderzoek', note: 'Schat hoe groot de markt voor een product of dienst is.' },
       { path: 'pm-product-strategy/skills/pricing-strategy', pack: 'Verkoop', category: 'Verkoop', note: 'Helpt een prijs en prijsmodel kiezen.' },
+    ],
+  },
+  {
+    id: 'baoyu-skills',
+    repo: 'JimLiu/baoyu-skills',
+    stars: 27706,
+    commit: 'ca703c2d7c2c4399a1dc0cf82224f8551e05a96d',
+    commitDate: '2026-11-06',
+    owner: 'JimLiu',
+    publisher: 'Jim Liu',
+    license: 'MIT',
+    verifiedAt: '2026-11-19',
+    note: 'Vertalen, transcripten en beeld maken; de uitleg in de skills is deels Chinees.',
+    skills: [
+      { path: 'skills/baoyu-translate', pack: 'Schrijven', category: 'Schrijven', note: 'Vertaalt een tekst of artikel in drie niveaus, met een eigen woordenlijst.', scripts: true, windows: SCRIPTS_OFF, needs: 'Bun of Node.js voor de hulpscripts (optioneel).' },
+      { path: 'skills/baoyu-youtube-transcript', pack: 'Onderzoek', category: 'Onderzoek', note: 'Haalt de ondertiteling van een YouTube-video op, met hoofdstukken en sprekers.', scripts: true, windows: SCRIPTS_OFF, needs: 'Bun of Node.js voor het ophaalscript.' },
+      { path: 'skills/baoyu-infographic', pack: 'Design', category: 'Design', note: 'Maakt van een tekst een infographic en stelt eerst een indeling en stijl voor.', needs: 'Een bot of app die afbeeldingen kan maken.' },
+      { path: 'skills/baoyu-image-gen', pack: 'Design', category: 'Design', note: 'Maakt afbeeldingen via de dienst die je zelf kiest, ook meerdere tegelijk.', scripts: true, windows: SCRIPTS_OFF, needs: 'Bun of Node.js en een sleutel van een beelddienst, zoals OpenAI of Google.' },
     ],
   },
   {

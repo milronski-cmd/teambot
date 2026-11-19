@@ -16,7 +16,7 @@ import type { VaultEntryView } from '../../../../shared/vault.js';
 import { openDock } from './BrowserDock';
 import { hostOf, SiteMark } from './SiteMark';
 import { VaultImportDialog } from './VaultImport';
-import { ComputerOnly, useIsPhoneSession } from '../../shell/computerOnly';
+import { useIsPhoneSession } from '../../shell/computerOnly';
 import { useDecide } from '../../shell/approvalDecide';
 import { ApprovalMeta } from '../../shell/ApprovalMeta';
 import { ScriptKeysOverview } from '../script-keys/Overview';
@@ -269,30 +269,15 @@ function VaultEditor({ entry, onClose, onSaved }: { entry: VaultEntryView | null
   );
 }
 
-/** #/m/browser/kluis: the site logins, and below them every "Sleutel voor scripts" (computer only, like the vault). */
+/** #/m/browser/kluis: the site logins, and below them every "Sleutel voor scripts". Also on a paired phone. */
 export function VaultPage() {
-  // The vault opens on the computer only (server/modules/mobile/policy.ts): a paired phone gets the reason, not a list
-  // that cannot load or buttons that can only fail.
-  const phone = useIsPhoneSession();
   return (
     <Page>
-      {phone ? (
-        <>
-          <PageHeader title="Kluis" subtitle="Logins waarmee je bots mogen inloggen. Een bot ziet je wachtwoord nooit." back={{ href: '#/m/browser', label: 'Computers' }} />
-          <div className="mx-auto max-w-4xl space-y-3 px-4 pb-8 pt-3 sm:px-6">
-            <ComputerOnly>De kluis met wachtwoorden open je alleen op je computer.</ComputerOnly>
-            <MoreInfo block label="Hoe de kluis werkt">
-              {HOW}
-            </MoreInfo>
-          </div>
-        </>
-      ) : (
-        <VaultList>
-          <div className="pt-4">
-            <ScriptKeysOverview />
-          </div>
-        </VaultList>
-      )}
+      <VaultList>
+        <div className="pt-4">
+          <ScriptKeysOverview />
+        </div>
+      </VaultList>
     </Page>
   );
 }

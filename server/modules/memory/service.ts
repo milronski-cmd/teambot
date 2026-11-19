@@ -429,9 +429,20 @@ export class MemoryService {
 
   /** Why a bot may not write in this dossier (team walls; a dossier another person shared is decided by its ACL). */
   dossierWriteRefusal(agent: Agent, dossierId: string | null | undefined): string | null {
-    const d = dossierId ? this.store.one<any>('SELECT user_id, team_id FROM memory_dossiers WHERE id = ?', dossierId) : null;
+    const d = dossierId ? this.store.one<any>('SELECT user_id, team_id, agent_ids FROM memory_dossiers WHERE id = ?', dossierId) : null;
     if (!d || d.user_id !== agent.user_id) return null;
-    return this.teamWriteRefusal(agent, d.team_id);
+    // A dossier the owner limited to some bots: only those write it (the same list that decides who reads it).
+    let ids: any = d.agent_ids;
+    if (typeof ids === 'string') {
+      try {
+        ids = JSON.parse(ids);
+      } catch {
+        ids = null;
+      }
+    }
+    const wall = this.teamWriteRefusal(agent, d.team_id);
+    if (wall) return wall;
+    return Array.isArray(ids) && !ids.includes(agent.id) ? 'Geweigerd door TeamBot: dit dossier is van andere bots; de eigenaar bepaalt welke bots erbij mogen. Kies een andere naam voor je eigen dossier.' : null;
   }
 
   /** Why a bot may not change or forget this item (team walls), or null. "Over jou" stays a proposal as before. */

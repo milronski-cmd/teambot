@@ -398,7 +398,7 @@ export function routineRoutes(ctx: Ctx, engine: RoutineEngine) {
     '/routines/:id',
     ah(async (req) => {
       const r = ownRoutine(req, req.params.id as string);
-      engine.remove(r, { deleteThread: req.query.deleteThread === '1' });
+      engine.remove(r, { deleteThread: req.query.deleteThread === '1', keepRunning: (req as any).session?.id === 'bot' });
       return { ok: true };
     }),
   );

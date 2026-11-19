@@ -402,7 +402,8 @@ export class FreeModelsService {
       s.auth = null;
       s.unreachable = null;
       s.limitHits = 0;
-      s.cooldown = null;
+      // A wait with a known end (the free day limit) is not over because a paid model of the same account answered.
+      if (!(s.cooldown?.known && s.cooldown.until > now && !def.isFree({ id: model } as any))) s.cooldown = null;
       if (s.remaining && s.remaining.source === 'key' && s.remaining.remaining !== null && /:free$/i.test(model)) {
         s.remaining = { ...s.remaining, remaining: Math.max(0, s.remaining.remaining - 1), used: s.remaining.used !== null ? s.remaining.used + 1 : null };
       }

@@ -34,6 +34,19 @@ function names(line: string): Set<string> {
   return out;
 }
 
+const ARTICLE = new Set(['de', 'het', 'een', 'the', 'an']);
+/** The small words the word list leaves out ("NL", "na", "voor", "A"), without articles. */
+const smallWords = (s: string) => normalize(s).split(' ').filter((w) => w && !ARTICLE.has(w) && !tokens(w).length);
+/**
+ * Each line has a small word the other lacks ("Klant in NL …" / "Klant in BE …", "bel voor …" / "bel na …"): the
+ * word list cannot see that difference, so the lines count as two things and both stay.
+ */
+function smallWordSwap(neu: string, old: string): boolean {
+  const a = smallWords(neu);
+  const b = smallWords(old);
+  return a.some((w) => !b.includes(w)) && b.some((w) => !a.includes(w));
+}
+
 /** What a new line does to an old one. `keys`: the subject of either line when the writer knows it. */
 export function compare(neu: string, old: string, keys: { neu?: string | null; old?: string | null } = {}): Verdict {
   const a = lineKey(neu);
@@ -45,7 +58,8 @@ export function compare(neu: string, old: string, keys: { neu?: string | null; o
   const ta = words(neu);
   const tb = words(old);
   const yesNo = NEGATION.test(a) === NEGATION.test(b);
-  if (ta.length >= 2 && containment(ta, tb) === 1 && yesNo) return 'same';
+  const swap = smallWordSwap(neu, old);
+  if (ta.length >= 2 && containment(ta, tb) === 1 && yesNo) return swap ? 'other' : 'same';
   const subject = subjectOf(neu, keys.neu);
   if (subject && subject === subjectOf(old, keys.old)) return 'replaces';
   const [small, big] = ta.length <= tb.length ? [ta, tb] : [tb, ta];
@@ -56,7 +70,7 @@ export function compare(neu: string, old: string, keys: { neu?: string | null; o
   const na = [...names(neu)].filter((n) => !tb.includes(n));
   const nb = [...names(old)].filter((n) => !ta.includes(n));
   if (na.length && nb.length) return 'other';
-  return 'replaces';
+  return swap ? 'other' : 'replaces';
 }
 
 /** The line of `lines` a new line says the same as, else the one it takes the place of (the closest), else nothing. */

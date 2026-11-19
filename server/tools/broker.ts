@@ -209,7 +209,9 @@ export class Broker {
       });
     } finally {
       clearTimeout(parkTimer);
-      if (o.run && ctx.store.run(o.run.id)?.status === 'waiting') {
+      // Another card of this run still waits for the owner (two steps asked at once): the run keeps waiting.
+      const others = o.run ? ctx.store.all<{ id: string }>("SELECT id FROM approvals WHERE run_id = ? AND status = 'pending' AND id != ?", o.run.id, id).some((r) => this.pending.has(r.id)) : false;
+      if (o.run && !others && ctx.store.run(o.run.id)?.status === 'waiting') {
         ctx.store.updateRun(o.run.id, { status: 'running' });
         ctx.events.emit(o.userId, 'run.updated', { ...ctx.store.run(o.run.id) });
       }

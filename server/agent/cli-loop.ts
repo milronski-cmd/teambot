@@ -66,7 +66,9 @@ export async function cliLoop(ctx: Ctx, run: Run, agent: Agent, thread: Thread, 
     if (stepTimer) clearTimeout(stepTimer);
     stepTimer = null;
     lastSave = Date.now();
-    const cur = ctx.store.message(msg.id)!;
+    // The chat was deleted while the engine still runs: nothing left to write to.
+    const cur = ctx.store.message(msg.id);
+    if (!cur) return;
     const upd = ctx.store.updateMessage(msg.id, { ...patch, parts: { ...cur.parts, activity: activity.slice(-MAX_STEPS), attachments: files.length ? [...files] : undefined, ...(plan ? { plan } : {}), ...parts } });
     ctx.chat.emitMessage(thread, upd, 'message.updated');
   };
@@ -76,9 +78,11 @@ export async function cliLoop(ctx: Ctx, run: Run, agent: Agent, thread: Thread, 
   // Loop guard (agent/loops.ts): the same step again and again stops the CLI; what it did stays, as a finished answer.
   const watch = new CliLoopWatch(loopLimits(agent));
   const loopStop = new AbortController();
-  const endLoop = (usage?: Message['usage']) => {
+  const endLoop = async (usage?: Message['usage']) => {
     save({ content: stream.text, status: 'done', ...(usage ? { usage } : {}) }, answerPart(stream.text));
     reportLoopStop(ctx, run, agent, thread, watch.stopped!);
+    // A finished answer like any other: it goes out to the channel, into memory, and the browser is tidied up.
+    await afterRun(ctx, agent, thread, run, stream.text);
     return null;
   };
   try {

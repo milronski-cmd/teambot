@@ -70,6 +70,7 @@ const mod: Module = {
     ctx.hooks.turnContext.push(({ agent, thread, input }) => turnContextFor(s, agent, thread, input));
     ctx.hooks.turnContext.push(({ agent, thread, input }) => routeReminder(s, agent, thread, input));
     ctx.hooks.agentDeleted.push(({ agentId }) => {
+      s.orch.agentGone(agentId);
       for (const r of ctx.store.all<any>("SELECT room_id FROM room_members WHERE kind = 'agent' AND ref_id = ?", agentId)) {
         const room = s.room(r.room_id);
         if (room) s.removeBot(room, agentId, 'verwijderd (bot bestaat niet meer)');

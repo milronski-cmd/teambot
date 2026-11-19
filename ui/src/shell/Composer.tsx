@@ -130,6 +130,8 @@ export function Composer({ threadId, agentId, busy, disabled, replyTo, onCancelR
   const send = async (override?: string, opts: { voice?: boolean; attachments?: string[] } = {}) => {
     const content = (override ?? text).trim();
     const atts = opts.attachments ?? files.filter((f) => !f.uploading).map((f) => f.id);
+    // A file still on its way up goes with the message: wait for it (the send button is off for the same reason).
+    if (!opts.attachments && files.some((x) => x.uploading)) return;
     if ((!content && !atts.length) || sending || disabled) return;
     // Phone: the keyboard stays as it was. Up when the user was typing, and not popping up after a spoken message.
     const hadFocus = document.activeElement === ta.current;

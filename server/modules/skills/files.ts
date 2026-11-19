@@ -13,8 +13,8 @@ import { bytesText } from '../../core/i18n.js';
 export type FileMap = Map<string, Buffer>;
 
 export const LIMITS = {
-  /** Files per skill. */
-  maxFiles: 200,
+  /** Files per skill (a skill with its own script library has hundreds; the size limits below bound what comes in). */
+  maxFiles: 1000,
   /** Total bytes per skill. */
   maxSkillBytes: 10 * 1024 * 1024,
   /** Bytes per file. */
@@ -200,7 +200,7 @@ export function filesFromZip(buf: Buffer, o: ZipOptions = {}): FileMap {
 }
 
 /** Read a local folder (never follows symlinks; skips junk). */
-export function filesFromDir(dir: string, maxFiles = LIMITS.maxFiles * 5): FileMap {
+export function filesFromDir(dir: string, maxFiles = LIMITS.maxZipEntries): FileMap {
   const root = path.resolve(dir);
   const st = fs.lstatSync(root, { throwIfNoEntry: false });
   if (!st || !st.isDirectory()) throw new Error(`Map niet gevonden: ${dir}`);
@@ -232,7 +232,7 @@ export function filesFromDir(dir: string, maxFiles = LIMITS.maxFiles * 5): FileM
 /** Files posted by the browser (folder picker): [{ path, base64 | text }]. */
 export function filesFromUpload(list: any[]): FileMap {
   if (!Array.isArray(list) || !list.length) throw new Error('Geen bestanden ontvangen.');
-  if (list.length > LIMITS.maxFiles * 5) throw new Error('Te veel bestanden.');
+  if (list.length > LIMITS.maxZipEntries) throw new Error('Te veel bestanden.');
   const out: FileMap = new Map();
   let total = 0;
   for (const f of list) {

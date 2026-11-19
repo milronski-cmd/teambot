@@ -123,9 +123,8 @@ export function RuleRow({ r, mode, device, onRemoved }: { r: OwnRule; mode?: Age
           </span>
         </div>
         <RuleExplain r={r} mode={mode} />
-        {onRemoved && loosens && device && <p className="text-xs text-muted">Weghalen doe je op je computer: dan mag de bot meer.</p>}
       </div>
-      {onRemoved && !(loosens && device) && (
+      {onRemoved && (
         <Button size="sm" variant="ghost" loading={busy} icon={<Trash2 className="h-4 w-4" />} onClick={remove} aria-label={t('Regel weghalen: {0}', text)}>
           <span className="sr-only sm:not-sr-only">Weghalen</span>
         </Button>
@@ -247,7 +246,7 @@ export function OwnRules({ agentId, teamId, mode }: { agentId?: string; teamId?:
             maxLength={300}
             onChange={(e) => setText(e.target.value)}
             onKeyDown={(e) => {
-              if (e.key === 'Enter' && rule && !(loosens && device)) {
+              if (e.key === 'Enter' && rule) {
                 e.preventDefault();
                 add();
               }
@@ -255,7 +254,7 @@ export function OwnRules({ agentId, teamId, mode }: { agentId?: string; teamId?:
             placeholder="Bijvoorbeeld: Mail nooit naar klanten zonder mij te vragen"
             className="min-w-0 flex-1"
           />
-          <Button variant="primary" icon={<Plus className="h-4 w-4" />} disabled={!rule || checking || (loosens && device)} loading={adding} onClick={add}>
+          <Button variant="primary" icon={<Plus className="h-4 w-4" />} disabled={!rule || checking} loading={adding} onClick={add}>
             Toevoegen
           </Button>
         </div>
@@ -272,7 +271,6 @@ export function OwnRules({ agentId, teamId, mode }: { agentId?: string; teamId?:
                   <Badge tone={EFFECT[rule.effect].tone}>{EFFECT[rule.effect].label}</Badge>
                 </div>
                 <RuleExplain r={rule} mode={mode} />
-                {loosens && device && <p className="text-xs text-muted">Een regel die de bot meer laat doen, voeg je toe op je computer.</p>}
               </div>
             ) : null}
           </div>

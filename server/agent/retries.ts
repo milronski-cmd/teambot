@@ -41,7 +41,8 @@ export class Retries {
     const t0 = Date.now();
     const cands: { at: number; known: boolean }[] = [];
     if (o.resetAt && o.resetAt > t0) cands.push({ at: o.resetAt, known: true });
-    if (o.kind === 'outage' || !o.resetAt) cands.push({ at: t0 + DEFAULT_LIMIT_WAIT_MS, known: false });
+    // (Also when the reset the engine gave has passed by now: "try again in 2 seconds".)
+    if (o.kind === 'outage' || !o.resetAt || o.resetAt <= t0) cands.push({ at: t0 + DEFAULT_LIMIT_WAIT_MS, known: false });
     for (const x of o.chain) {
       if (!this.engines.allowed(x, o.flags, o.chain[0])) continue;
       const l = this.engines.limited.get(x.cfg.id);

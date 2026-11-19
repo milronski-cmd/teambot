@@ -75,10 +75,17 @@ interface Engine {
   cfg: ProviderConfig;
 }
 
+/** The AI this bot runs on: its own, else the owner's default (as the runner does, agent/engines.ts). */
+function providerOf(ctx: Ctx, agent: Agent): string | null {
+  return agent.provider_id || ctx.store.getSetting<string | null>(agent.user_id, 'defaultProvider', null) || null;
+}
+const modelOf = (ctx: Ctx, agent: Agent): string => agent.model || (agent.provider_id ? '' : ctx.store.getSetting<string>(agent.user_id, 'defaultModel', '')) || '';
+
 function engineOf(ctx: Ctx, agent: Agent): Engine | { error: string } {
-  if (!agent.provider_id) return { error: 'geen provider' };
+  const id = providerOf(ctx, agent);
+  if (!id) return { error: 'geen provider' };
   try {
-    return ctx.providers.adapter(agent.provider_id);
+    return ctx.providers.adapter(id);
   } catch (e: any) {
     return { error: e.message };
   }
@@ -111,7 +118,7 @@ export function cliCompactionDue(ctx: Ctx, agent: Agent, thread: Thread, cfg: Pr
 export async function compactThread(ctx: Ctx, agent: Agent, threadId: string, opts: { force?: boolean; inRun?: boolean } = {}): Promise<{ compacted: boolean; reason?: string }> {
   if (busy.has(threadId)) return { compacted: false, reason: 'het gesprek wordt al samengevat' };
   const thread = ctx.store.thread(threadId);
-  if (!thread || !agent.provider_id) return { compacted: false, reason: 'geen provider' };
+  if (!thread || !providerOf(ctx, agent)) return { compacted: false, reason: 'geen provider' };
   const a = engineOf(ctx, agent);
   if ('error' in a) return { compacted: false, reason: a.error };
   if (!a.adapter.chat) {
@@ -133,7 +140,7 @@ export async function compactThread(ctx: Ctx, agent: Agent, threadId: string, op
     if (!part) return { compacted: false, reason: 'het gesprek is nog te kort om samen te vatten' };
     // The bot's model, or its engine's own when the bot uses the engine's default (as the runner does).
     const kind = ctx.providers.kind(a.cfg.kind);
-    const model = agent.model || a.cfg.config?.defaultModel || kind?.defaultModel || kind?.models?.[0] || '';
+    const model = modelOf(ctx, agent) || a.cfg.config?.defaultModel || kind?.defaultModel || kind?.models?.[0] || '';
     const ask = (maxTokens: number, reasoning?: string) =>
       a.adapter.chat!({ model, system: SUMMARY_SYSTEM, messages: [{ role: 'user', content: part.prompt }], tools: [], maxTokens, ...(reasoning ? { reasoning } : {}) }, AbortSignal.timeout(180_000), () => {});
     let r = await ask(1200);
@@ -212,7 +219,7 @@ async function compactCli(ctx: Ctx, agent: Agent, thread: Thread, a: Engine, opt
   if (!a.adapter.complete) return { compacted: false, reason: `${a.cfg.name} kan geen samenvatting maken` };
   // The CLIs take this prompt as a command-line argument (Windows: max. ~32k characters): keep the start and the end.
   const prompt = part.prompt.length > 24_000 ? part.prompt.slice(0, 6_000) + '\n[…]\n' + part.prompt.slice(-18_000) : part.prompt;
-  const text = await a.adapter.complete({ model: agent.model, system: SUMMARY_SYSTEM, prompt });
+  const text = await a.adapter.complete({ model: modelOf(ctx, agent), system: SUMMARY_SYSTEM, prompt });
   if (text === null) return { compacted: false, reason: `${a.cfg.name} kan geen losse samenvatting maken. Start eventueel een nieuwe sessie via het zijpaneel.` };
   const summary = text.trim();
   if (!summary) return { compacted: false, reason: 'lege samenvatting' };
@@ -232,7 +239,7 @@ export async function beforeCliRun(ctx: Ctx, o: { agentId: string; threadId: str
     const base = ctx.store.agent(o.agentId);
     const thread = ctx.store.thread(o.threadId);
     const cfg = ctx.providers.config(o.providerId);
-    if (!base || !thread || !cfg || base.provider_id !== cfg.id) return;
+    if (!base || !thread || !cfg || providerOf(ctx, base) !== cfg.id) return;
     // A shared bot in a member's conversation compacts as its narrowed copy for that member (agent/shared.ts).
     const agent = agentForThread(ctx, base, thread);
     const d = cliCompactionDue(ctx, agent, thread, cfg);
@@ -249,7 +256,8 @@ export function registerCompaction(ctx: Ctx) {
   ctx.services.compaction = { beforeCliRun: (o: Parameters<typeof beforeCliRun>[1]) => beforeCliRun(ctx, o) };
   ctx.hooks.afterRun.push(({ agent, thread }) => {
     // CLI engines compact at the start of their next turn (beforeCliRun), never alongside the session.
-    const cfg = agent.provider_id ? ctx.providers.config(agent.provider_id) : null;
+    const pid = providerOf(ctx, agent);
+    const cfg = pid ? ctx.providers.config(pid) : null;
     if (!cfg || ctx.providers.kind(cfg.kind)?.type === 'cli') return;
     if (shouldCompact(ctx, agent, ctx.store.thread(thread.id) || thread)) void compactThread(ctx, agent, thread.id);
   });

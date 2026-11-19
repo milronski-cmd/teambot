@@ -733,16 +733,18 @@ try {
   await tap(addRule);
   await ownRules.getByTestId('own-rule').filter({ hasText: 'Mail nooit naar klanten' }).waitFor({ timeout: 8000 }).catch(() => fail('regel op de telefoon: strengere regel niet toegevoegd'));
   if (!app.ctx.store.all('SELECT id FROM bot_rules WHERE agent_id = ? AND effect = ?', mila.id, 'ask').length) fail('regel op de telefoon: niet opgeslagen');
-  if (!(await ownRules.getByText('Weghalen doe je op je computer', { exact: false }).count())) fail('regel op de telefoon: niet gezegd dat weghalen op de computer gebeurt');
+  // The phone may do what the computer may (except pairing): removing a rule and a looser rule work here too.
+  if (await ownRules.getByText('op je computer', { exact: false }).count()) fail('regel op de telefoon: zegt nog "op je computer"');
+  if (!(await ownRules.getByTestId('own-rule').filter({ hasText: 'Mail nooit naar klanten' }).getByRole('button', { name: /Regel weghalen/ }).count())) fail('regel op de telefoon: geen knop om de regel weg te halen');
   await ruleInput.fill('Mag altijd bestanden maken in de map Offertes');
-  await ownRules.getByText('Een regel die de bot meer laat doen, voeg je toe op je computer.').waitFor({ timeout: 8000 }).catch(() => fail('regel op de telefoon: geen uitleg dat een lossere regel op de computer gaat'));
-  if (!(await addRule.isDisabled())) fail('regel op de telefoon: Toevoegen staat aan voor een regel die de bot meer laat doen');
+  await ownRules.getByTestId('rule-preview').getByText('Zo legt TeamBot het vast:').waitFor({ timeout: 8000 }).catch(() => fail('regel op de telefoon: geen voorbeeld bij een lossere regel'));
+  if (await addRule.isDisabled()) fail('regel op de telefoon: Toevoegen staat uit voor een regel die de bot meer laat doen');
   await screen('eigen-regels');
   await ruleInput.fill('');
-  step('eigen regels op de telefoon: strenger toevoegen kan, losser maken en weghalen zegt rustig "op je computer"');
+  step('eigen regels op de telefoon: strenger en losser toevoegen kan, weghalen ook');
 
   // ================================================================ 9. computer-only: the reason, calmly
-  expected = [/^403 GET \/api\/(sessions|secrets)$/];
+  expected = [/^403 GET \/api\/sessions$/];
   // 0.4.4 P8: the desktop app says the owner sits at the pc (checked on this page below).
   app.ctx.services.mobile.reportPresence(owner.id, { idleSeconds: 2, locked: false });
   await go('#/settings/mobile-telefoon');
@@ -764,11 +766,10 @@ try {
   step('meldingen op de goede plek: achter de pc alleen Windows, Altijd ook op de telefoon aan en weer uit');
   await go('#/settings/security');
   await main.getByText('Inlogsessies beheer je op je computer.').waitFor({ timeout: 8000 }).catch(() => fail('Beveiliging: geen uitleg bij de sessies'));
-  await main.getByText('Opgeslagen sleutels bekijken kan alleen op je computer.').waitFor({ timeout: 8000 }).catch(() => fail('Beveiliging: geen uitleg bij de opgeslagen geheimen'));
+  if (await main.getByText('Opgeslagen sleutels bekijken kan alleen op je computer.').count()) fail('Beveiliging: opgeslagen sleutels zijn op de telefoon nog dicht');
   await screen('instellingen-beveiliging');
   await go('#/settings/backups');
-  await main.getByText('Al je gegevens exporteren kan alleen op je computer.').waitFor({ timeout: 8000 }).catch(() => fail('Back-ups: geen uitleg bij exporteren'));
-  if (await main.getByRole('link', { name: 'Exporteren' }).count()) fail('Back-ups: knop Exporteren op de telefoon (geeft 403)');
+  await main.getByRole('button', { name: 'Exporteren' }).first().waitFor({ timeout: 8000 }).catch(() => fail('Back-ups: geen knop Exporteren op de telefoon'));
   // Updates of TeamBot (0.4.4): the status on the phone, calm without a channel, and Automatisch bijwerken works here.
   const upd = main.getByTestId('app-update');
   await upd.getByText('Nieuwe versies van TeamBot krijg je met de volgende installer.').waitFor({ timeout: 8000 }).catch(() => fail('Back-ups: de updatestatus staat niet op de telefoon'));
@@ -786,11 +787,10 @@ try {
   if (await main.getByText('· Node', { exact: false }).count()) fail('Gegevens: lege regel Platform op de telefoon');
   await screen('instellingen-gegevens');
   await go('#/m/browser/kluis');
-  await main.getByText('De kluis met wachtwoorden open je alleen op je computer.').waitFor({ timeout: 8000 }).catch(() => fail('Kluis: geen uitleg'));
-  if (await main.getByRole('button', { name: 'Login toevoegen' }).count()) fail('Kluis: knop "Login toevoegen" op de telefoon (kan alleen op de computer)');
+  await main.getByRole('button', { name: 'Login toevoegen' }).first().waitFor({ timeout: 8000 }).catch(() => fail('Kluis: geen knop "Login toevoegen" op de telefoon'));
   await screen('kluis');
   expected = [];
-  step('alleen-op-de-computer: Telefoon, Beveiliging, Back-ups en Kluis zeggen rustig waarom, zonder rode fouten of knoppen die niet werken; de updatestatus en Automatisch bijwerken werken op de telefoon, het updatekanaal niet');
+  step('alleen-op-de-computer: koppelen en inlogsessies zeggen rustig waarom; opgeslagen sleutels, exporteren en de kluis werken op de telefoon; de updatestatus en Automatisch bijwerken werken op de telefoon, het updatekanaal niet');
 
   // ================================================================ 9b. overstappen uit Hermes Agent (0.4.4, PARITEIT 1.7)
   // From the phone, the owner reads a (fake) Hermes folder on his computer, imports it and undoes it again; Grok Bot
@@ -900,7 +900,7 @@ try {
         danger: [...(m?.querySelectorAll('[class*="bg-danger-soft"], [role="alert"]') || [])].filter(visible).map((e) => e.textContent.trim()).filter((x) => x && x !== 'Met gevolgen'),
         // ("Met gevolgen" is the badge of a logbook line, e.g. a new bot that started on Volledige toegang: not an error.)
         // A download or link the server refuses for a phone (policy.ts COMPUTER_ONLY) is a dead button.
-        deadLinks: [...(m?.querySelectorAll('a[href*="/api/"]') || [])].filter(visible).map((a) => new URL(a.href).pathname).filter((p) => /^\/api\/(admin|export|memory\/export|secrets|computers\/vault|sessions)(\/|$)/.test(p)),
+        deadLinks: [...(m?.querySelectorAll('a[href*="/api/"]') || [])].filter(visible).map((a) => new URL(a.href).pathname).filter((p) => /^\/api\/(admin|sessions)(\/|$)/.test(p)),
       };
     });
     const where = `elke pagina ${h}`;

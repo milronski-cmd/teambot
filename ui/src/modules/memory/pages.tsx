@@ -13,7 +13,6 @@ import { ErrorBox, ItemCard, ItemDetail, ItemEditor, ItemList } from './parts';
 import { ALL_TEAMS, type MemItem, defaultTeamFor, fmtDate, memPath, RECORD_LABEL, teamQuery, useMem, useMemTeams, useTeamFilter } from './lib';
 import { ProfileView, RecentLearned } from './learned';
 import { DossierText } from './dossiers';
-import { ComputerOnly, useIsPhoneSession } from '../../shell/computerOnly';
 import { MoreInfo } from '../../components/MoreInfo';
 import { Words } from '../../components/Words';
 
@@ -490,8 +489,6 @@ export function ItemPage({ params }: { params: string[] }) {
 }
 
 export function ExportButtons() {
-  // A full export stays on the computer (server/modules/mobile/policy.ts).
-  if (useIsPhoneSession()) return <ComputerOnly>Al je gegevens exporteren kan alleen op je computer.</ComputerOnly>;
   const link = 'inline-flex h-9 items-center gap-2 rounded-control border border-line bg-surface px-4 text-sm font-semibold hover:bg-surface-2 coarse:h-11';
   return (
     <div className="flex flex-wrap gap-2">

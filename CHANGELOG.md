@@ -1,5 +1,56 @@
 # Changelog
 
+## [4.9.0] — 2026-11-19
+
+Fouten gezocht in de code en gerepareerd, en de telefoon kan nu wat de computer kan.
+
+### Telefoon
+- **De kluis, opgeslagen sleutels, exporteren, sleutels voor scripts en eigen regels werken op de telefoon.** Het scherm
+  zei daar nog "kan alleen op je computer", terwijl de telefoon dat sinds 4.4.3 mag. Op de computer blijven alleen:
+  een apparaat koppelen, inlogsessies beheren, "Altijd toestaan" en het updatekanaal.
+
+### Samenwerken
+- Een bot die een bericht aan meerdere bots stuurt en één verzoek intrekt, krijgt de andere antwoorden nu wel terug.
+  Eerder kwamen die nooit aan en kon een doorgegeven klus blijven hangen.
+- Verwijder je een bot die aan een doorgegeven klus werkt, dan hoort de bot die de klus gaf meteen dat het niet doorgaat,
+  in plaats van te blijven wachten tot TeamBot opnieuw start.
+- Twee vragen tegelijk open in één beurt: na je eerste antwoord blijft de beurt wachten op het tweede.
+
+### Routines
+- Een routine die zichzelf verwijdert als het werk klaar is, maakt haar beurt nu af.
+- Een run die je stopt terwijl hij nog aan het meten is, start niet alsnog.
+- Geen onterechte melding "niet gedraaid" meer nadat de pc een paar minuten sliep.
+- Een routine met "daarna starten" naar een routine die niet meer bestaat, kun je weer aanpassen.
+
+### Geheugen
+- **Een dossier dat je tot bepaalde bots beperkt, is nu ook voor schrijven dicht.** Een andere bot van hetzelfde team
+  kon het herschrijven en kreeg soms de tekst te zien.
+- "Vakkennis meenemen" naar een ander team neemt de tekst van een dossier mee; die kwam leeg aan.
+- Twee regels die alleen in een klein woord verschillen ("klant in NL" en "klant in BE", "voor" en "na") blijven
+  allebei staan. De tweede werd weggelaten als "stond er al".
+
+### Bots en AI
+- Een gesprek verwijderen terwijl een bot op Claude Code, Codex of OpenCode bezig is, kon TeamBot laten stoppen.
+- Belangrijk werk dat tegen een limiet aanloopt die al bijna voorbij is, pauzeert nu netjes in plaats van te mislukken.
+- Was de hoofd-AI gespaard voor de weeklimiet en valt de reserve uit, dan doet de hoofd-AI het werk alsnog.
+- Bots op je standaard-AI (zonder eigen keuze) vatten lange gesprekken nu ook samen.
+- Stopt TeamBot een bot die in een lus zit, dan gaat het antwoord tot dan toe nog naar het kanaal en het geheugen.
+- Een antwoord van een betaald model wist de wachttijd van de gratis daglimiet niet meer.
+- GitHub ontkoppelen trekt alleen die ene koppeling in, niet al je GitHub-koppelingen.
+
+### Marktplaats
+- **36 nieuwe skills** uit 7 bronnen met elk meer dan 20.000 sterren: onderzoek, schrijven en content, verkoop en
+  mail, financiën, video, design, personeel en AVG, vertalen en beeld.
+- Een skill met meer dan 200 bestanden werd in het voorbeeld goedgekeurd en daarna bij installeren geweigerd. De grens
+  is nu overal 1000.
+
+### Schermen
+- De botpagina zet een bot niet meer terug in het archief of op zijn oude plek als je daarna iets wijzigt.
+- Enter tijdens het uploaden van een bestand verstuurt het bericht niet meer zonder het bestand.
+- Wissel je op de botpagina van AI, dan zie je niet meer de modellen van de vorige.
+- "Stoppen" bij inloggen in het welkomstscherm stopt het wachten echt; twee keer Enter maakt geen twee teams; een leeg
+  bericht in de wachtrij wordt niet opgeslagen.
+
 ## [4.8.1] — 2026-11-19
 
 OmniRoute als gratis bron, en Caveman in de Marktplaats.

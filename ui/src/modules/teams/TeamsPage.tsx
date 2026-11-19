@@ -181,7 +181,7 @@ export function NewTeamModal({ open, count, onClose, onCreated }: { open: boolea
     >
       <div className="space-y-3">
         <Field label="Naam" hint="Een team begint zonder bots. Je hoofdbot kan er meteen werk geven; andere bots alleen als je ze toegang geeft.">
-          <Input value={name} onChange={(e) => setName(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && name.trim() && create()} autoFocus maxLength={60} placeholder="Bijvoorbeeld een bedrijf of afdeling" />
+          <Input value={name} onChange={(e) => setName(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && name.trim() && !save.busy && create()} autoFocus maxLength={60} placeholder="Bijvoorbeeld een bedrijf of afdeling" />
         </Field>
       </div>
     </Modal>

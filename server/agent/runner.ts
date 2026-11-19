@@ -127,7 +127,8 @@ export class Runner {
     this.retries.resumedPause(run, thread, agent.id);
     const chain = this.engines.engineChain(agent, run.user_id, flags);
     const policy = limitPolicy(agent);
-    const start = await this.startEngine(chain, thread, tz, policy, { run, agent, flags });
+    const held = { weekly: false };
+    const start = await this.startEngine(chain, thread, tz, policy, { run, agent, flags, held });
     if (!start) return;
     let active = start;
     this.engines.markEngine(run, thread, active, chain[0]);
@@ -154,6 +155,9 @@ export class Runner {
       if (!(kind === 'limit' && policy !== 'fallback')) {
         await this.engines.extendChain(chain, agent, run.user_id, flags);
         next = this.engines.nextEngine(chain, active, flags);
+        // The main engine was only passed over to spare its week: with no reserve left it does the work after all.
+        if (!next && held.weekly && active !== chain[0] && !this.engines.isLimited(chain[0])) next = chain[0];
+        held.weekly = false;
       }
       // Important work never goes below its minimum level: with nothing in it available it pauses until the reset and
       // then goes on by itself (a limit or an outage; a login or a missing program needs the owner, as before).
@@ -202,7 +206,7 @@ export class Runner {
    * Also: private work leaves a main engine it may not use; important work with nothing within its level pauses at
    * once (null: the run ended as paused); above the weekly reserve normal work starts on another engine.
    */
-  private async startEngine(chain: Chain, thread: Thread, tz: string, policy: ReturnType<typeof limitPolicy>, w: { run: Run; agent: Agent; flags: WorkFlags }): Promise<Active | null> {
+  private async startEngine(chain: Chain, thread: Thread, tz: string, policy: ReturnType<typeof limitPolicy>, w: { run: Run; agent: Agent; flags: WorkFlags; held?: { weekly: boolean } }): Promise<Active | null> {
     const ctx = this.getCtx();
     const first = chain[0];
     const f = w.flags;
@@ -251,6 +255,7 @@ export class Runner {
       if (alt) {
         ctx.chat.addEvent(thread, `Overgeschakeld naar ${engineName(alt)}, omdat ${engineName(first)} al ${wk.percent}% van de weeklimiet heeft gebruikt (grens ${f.weeklyReserve}%); zo blijft er genoeg over voor belangrijk werk.`, { kind: 'fallback' });
         ctx.audit(w.run.user_id, 'agent.weekly_reserve', { from: first.cfg.id, to: alt.cfg.id, percent: wk.percent, threshold: f.weeklyReserve }, w.agent.id);
+        if (w.held) w.held.weekly = true;
         return alt;
       }
     }

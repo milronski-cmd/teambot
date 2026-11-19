@@ -46,14 +46,14 @@ export function teambotAppFor(authorizationServer: string | undefined | null): T
 
 /**
  * Withdraw the owner's permission at the service, for a login server without a revocation address where TeamBot owns
- * the app (GitHub: the app removes its own grant). null: not possible here; true/false: whether the service agreed.
+ * the app (GitHub: the app withdraws this one token; other connections on the same account keep working). null: not possible here; true/false: whether the service agreed.
  */
 export async function revokeWithTeambotApp(authorizationServer: string | undefined | null, accessToken: string, fetchFn: (url: string, init: RequestInit) => Promise<Response>): Promise<boolean | null> {
   const name = nameFor(authorizationServer);
   const app = name ? teambotApp(name) : null;
   if (name !== 'github' || !app?.clientSecret || !accessToken) return null;
   const auth = 'Basic ' + Buffer.from(`${app.clientId}:${app.clientSecret}`).toString('base64');
-  const res = await fetchFn(`https://api.github.com/applications/${encodeURIComponent(app.clientId)}/grant`, {
+  const res = await fetchFn(`https://api.github.com/applications/${encodeURIComponent(app.clientId)}/token`, {
     method: 'DELETE',
     headers: { authorization: auth, accept: 'application/vnd.github+json', 'content-type': 'application/json' },
     body: JSON.stringify({ access_token: accessToken }),

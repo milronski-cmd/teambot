@@ -257,6 +257,8 @@ export function startProc(o: ProcOptions): Proc {
   let buf = '';
   let errTail = '';
   let held = false;
+  // Several things can wait for the owner at once (a permission card and a TeamBot tool): held until all are answered.
+  let holds = 0;
   let lastOut = Date.now();
   // Windows: its own Job Object, so stopping ends every process it started, also orphans (jobs.ts).
   const jobKey = isWin && o.job !== false && child.pid ? `p${child.pid}_${++jobSeq}` : null;
@@ -277,7 +279,8 @@ export function startProc(o: ProcOptions): Proc {
       }
     },
     hold(on) {
-      held = on;
+      holds = Math.max(0, holds + (on ? 1 : -1));
+      held = holds > 0;
       lastOut = Date.now();
     },
     stderrTail: () => redact(errTail.trim()).slice(-1500),
