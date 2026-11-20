@@ -3,6 +3,8 @@
  * - Bots wait in FIFO order; a human may pre-empt a bot (the bot pauses and gets it back afterwards).
  * - A lease only ends when its holder is really gone: after the TTL it expires only if `alive()` says so
  *   (or there is no liveness check). Timers alone never take control away from a live process.
+ * - A bot that holds the computer but has not touched it for `yieldAfterMs` gives it to a bot that waits (a run of
+ *   hours that used the screen once does not keep it all that time); when it acts again it waits for its turn.
  */
 
 export interface Holder {
@@ -20,6 +22,9 @@ export interface Lease {
   expiresAt: number;
   ttlMs: number;
   alive?: () => boolean;
+  /** last time the holder used the resource (took or renewed the lease) */
+  usedAt: number;
+  yieldAfterMs?: number;
   /** holder that was pre-empted by a human and gets control back on release */
   suspended?: Lease | null;
 }
@@ -29,6 +34,8 @@ export interface AcquireOpts {
   alive?: () => boolean;
   /** humans may take control from a bot */
   preempt?: boolean;
+  /** an unused lease of this long goes to whoever waits for the resource */
+  yieldAfterMs?: number;
 }
 
 type Waiter = { holder: Holder; opts: AcquireOpts; resolve: (l: Lease) => void; reject: (e: Error) => void };
@@ -59,10 +66,11 @@ export class LeaseManager {
     if (this.clock() < l.expiresAt) return false;
     if (!l.alive) return true;
     try {
-      return !l.alive();
+      if (!l.alive()) return true;
     } catch {
       return true;
     }
+    return !!l.yieldAfterMs && l.holder.kind === 'bot' && this.clock() - l.usedAt >= l.yieldAfterMs && !!this.waiters.get(l.resource)?.length;
   }
 
   /** Current holder (drops expired leases first). */
@@ -79,7 +87,7 @@ export class LeaseManager {
 
   private make(resource: string, holder: Holder, opts: AcquireOpts, suspended: Lease | null = null): Lease {
     const ttl = opts.ttlMs ?? 60_000;
-    return { resource, holder, since: this.clock(), expiresAt: this.clock() + ttl, ttlMs: ttl, alive: opts.alive, suspended };
+    return { resource, holder, since: this.clock(), expiresAt: this.clock() + ttl, ttlMs: ttl, alive: opts.alive, usedAt: this.clock(), yieldAfterMs: opts.yieldAfterMs, suspended };
   }
 
   private same(a: Holder, b: Holder) {
@@ -96,6 +104,7 @@ export class LeaseManager {
     }
     if (this.same(cur.holder, holder)) {
       cur.expiresAt = this.clock() + (opts.ttlMs ?? cur.ttlMs);
+      cur.usedAt = this.clock();
       if (opts.alive) cur.alive = opts.alive;
       return { ok: true, lease: cur };
     }
@@ -112,6 +121,7 @@ export class LeaseManager {
     const l = this.current(resource);
     if (!l || l.holder.id !== holderId) return false;
     l.expiresAt = this.clock() + (ttlMs ?? l.ttlMs);
+    l.usedAt = this.clock();
     return true;
   }
 
@@ -157,6 +167,7 @@ export class LeaseManager {
     const s = old.suspended;
     if (s && !(s.alive && !safe(s.alive))) {
       s.expiresAt = this.clock() + s.ttlMs;
+      s.usedAt = this.clock();
       this.leases.set(resource, s);
       this.changed(resource);
       return;
@@ -216,7 +227,8 @@ export class LeaseManager {
       poll.unref?.();
       const timer = setTimeout(() => {
         remove();
-        w.reject(new Error('Wachten op de computer duurde te lang'));
+        const by = this.current(resource)?.holder;
+        w.reject(new Error(by && !this.same(by, holder) ? `Wachten op de computer duurde te lang: ${by.kind === 'user' ? 'de gebruiker bedient hem' : `${by.name} gebruikt hem`} nog. Doe eerst ander werk en probeer het later opnieuw.` : 'Wachten op de computer duurde te lang'));
       }, o.timeoutMs ?? 10 * 60_000);
       timer.unref?.();
       o.signal?.addEventListener(

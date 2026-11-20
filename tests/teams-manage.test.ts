@@ -293,6 +293,9 @@ test('the route list comes from the registered routes and finds a call by a word
     // A query goes along; an unknown id says so; other lines for the log.
     const q = planCall(e.ctx, e.userId, { method: 'GET', path: '/rooms/tasks?status=todo', query: { limit: 5 } });
     assert.ok('url' in q && q.url === '/rooms/tasks?status=todo&limit=5');
+    // A guessed path names the actions that look like it, so the next call is the right one.
+    const guess = planCall(e.ctx, e.userId, { method: 'GET', path: '/tasks/task_5eb13c61' });
+    assert.ok('error' in guess && /kent geen actie GET \/tasks\/task_5eb13c61\. Wat erop lijkt: .*GET \/rooms\/tasks/.test(guess.error), JSON.stringify(guess));
     const gone = await e.run(e.main.id, MANAGE_DO, { method: 'POST', path: '/routines/rt_bestaatniet/pause' });
     assert.equal(gone.isError, true);
     assert.match(gone.text, /^Niet gelukt \(Routine pauzeren\): /);

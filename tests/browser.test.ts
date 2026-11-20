@@ -171,6 +171,8 @@ test('tool risks are honest and submit-like actions are classified as danger', a
   assert.equal(classifyAction({ tag: 'a', name: 'Volgende pagina' }).risk, 'write');
   assert.equal(classifyAction({ tag: 'button', name: 'Postcode controleren' }).risk, 'write');
   assert.deepEqual(parseKeys('ctrl+s'), [0x11, 0x53]);
+  // Every name the screen driver knows works in a window too (zooming out is ctrl and the minus key).
+  assert.deepEqual([parseKeys('ctrl+minus'), parseKeys('ctrl+-'), parseKeys('pgdn')], [[0x11, 0xbd], [0x11, 0xbd], [0x22]]);
   for (const k of ['win+r', 'alt+tab', 'alt+f4', 'ctrl+alt+delete', 'ctrl+esc']) assert.throws(() => parseKeys(k));
   assert.equal(windowAllowed({ process: 'notepad', title: 'Naamloos' }, ['notepad']), true);
   assert.equal(windowAllowed({ process: 'chrome', title: 'TeamBot' }, ['chrome']), false);
@@ -186,6 +188,34 @@ test('tool risks are honest and submit-like actions are classified as danger', a
 });
 
 // ---------------- unit: lease mutex ----------------
+
+test('lease: a bot that holds the computer without using it gives it to a bot that waits', async () => {
+  let now = 1_000_000;
+  const lm = new LeaseManager(() => now);
+  const A = { kind: 'bot' as const, id: 'run_a', name: 'Bouwer', agentId: 'ag_a' };
+  const B = { kind: 'bot' as const, id: 'run_b', name: 'B', agentId: 'ag_b' };
+  const o = { ttlMs: 120_000, alive: () => true, yieldAfterMs: 5 * 60_000 };
+  assert.equal(lm.acquire('pc', A, o).ok, true);
+  // Nobody waits: a run of hours keeps the computer.
+  now += 60 * 60_000;
+  assert.equal(lm.current('pc')?.holder.id, 'run_a');
+  assert.equal(lm.acquire('pc', A, o).ok, true); // A uses it again
+  let got = '';
+  const pb = lm.waitFor('pc', B, { ...o, timeoutMs: 60 * 60_000 }).then((l) => (got = l.holder.id));
+  // Used a minute ago: B waits.
+  now += 60_000;
+  assert.equal(lm.current('pc')?.holder.id, 'run_a');
+  // Not used for five minutes while B waits: B gets it; A waits for its turn when it acts again.
+  now += 5 * 60_000;
+  assert.equal(lm.current('pc')?.holder.id, 'run_b');
+  await pb;
+  assert.equal(got, 'run_b');
+  assert.equal(lm.acquire('pc', A, o).ok, false);
+  // The one that waits too long hears who has it.
+  const lm2 = new LeaseManager();
+  lm2.acquire('pc', A, { ttlMs: 120_000, alive: () => true });
+  await assert.rejects(lm2.waitFor('pc', B, { timeoutMs: 20 }), /Bouwer gebruikt hem nog/);
+});
 
 test('lease: one controller, humans pre-empt, FIFO waiters, expiry only when holder is gone', async () => {
   let now = 1_000_000;

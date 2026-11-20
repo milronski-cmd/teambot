@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { HOST_PS1 } from './host.ps1.js';
 import { safeEnv } from '../../tools/builtin/shell.js';
-import { blockedReason, normApp } from './screen-policy.js';
+import { VK, blockedReason, forbiddenCombo, keyNames, normApp } from './screen-policy.js';
 
 /**
  * Windows host control ("Mijn bureaublad") via UI Automation (window-scoped tools desktop_inspect/click/type/key).
@@ -82,33 +82,15 @@ export function pruneSnapshots() {
   for (const [k, s] of desktopSnapshots) if (Date.now() - s.at > SNAPSHOT_TTL_MS * 2) desktopSnapshots.delete(k);
 }
 
-const VK: Record<string, number> = {
-  ctrl: 0x11, control: 0x11, shift: 0x10, alt: 0x12, win: 0x5b, enter: 0x0d, return: 0x0d, tab: 0x09, esc: 0x1b, escape: 0x1b,
-  backspace: 0x08, delete: 0x2e, del: 0x2e, insert: 0x2d, home: 0x24, end: 0x23, pageup: 0x21, pagedown: 0x22,
-  up: 0x26, down: 0x28, left: 0x25, right: 0x27, space: 0x20,
-};
-for (let i = 1; i <= 12; i++) VK['f' + i] = 0x6f + i;
-
-/** "ctrl+s" -> [0x11, 0x53]. Refuses system combos that could escape the window (win key, ctrl+alt+del, alt+tab). */
+/**
+ * "ctrl+s" -> [0x11, 0x53], with every key name the screen driver knows ("ctrl+minus", "ctrl+-", "pgdn").
+ * Refuses system combos that could escape the window (win key, ctrl+alt+del, alt+tab).
+ */
 export function parseKeys(combo: string): number[] {
-  const parts = String(combo || '')
-    .toLowerCase()
-    .split('+')
-    .map((s) => s.trim())
-    .filter(Boolean);
-  if (!parts.length || parts.length > 4) throw new Error('Ongeldige toetscombinatie');
-  const out: number[] = [];
-  for (const p of parts) {
-    if (VK[p] !== undefined) out.push(VK[p]);
-    else if (/^[a-z0-9]$/.test(p)) out.push(p.toUpperCase().charCodeAt(0));
-    else throw new Error(`Onbekende toets: ${p}`);
-  }
-  const set = new Set(out);
-  if (set.has(0x5b)) throw new Error('De Windows-toets is niet toegestaan voor bots');
-  if (set.has(0x12) && (set.has(0x09) || set.has(0x73) || set.has(0x1b))) throw new Error('Alt+Tab, Alt+F4 en Alt+Esc zijn niet toegestaan voor bots');
-  if (set.has(0x11) && set.has(0x12) && set.has(0x2e)) throw new Error('Ctrl+Alt+Del is niet toegestaan');
-  if (set.has(0x11) && set.has(0x1b)) throw new Error('Ctrl+Esc is niet toegestaan');
-  return out;
+  const names = keyNames(combo);
+  const no = forbiddenCombo(names);
+  if (no) throw new Error(no);
+  return names.map((n) => VK[n] ?? n.toUpperCase().charCodeAt(0));
 }
 
 export interface HostDriver {

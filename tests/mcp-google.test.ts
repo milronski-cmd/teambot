@@ -411,3 +411,11 @@ test('Tag Manager: what is live in a container, with trigger names and consent p
   ]);
   assert.deepEqual(live.triggers, [{ name: 'Aanvraag verstuurd', type: 'customEvent' }]);
 });
+
+test('an error in the words of Google comes with the next step', async () => {
+  const { nextStep } = await import('../server/modules/mcp/google.js');
+  assert.match(nextStep('merchant_report', 'This method can only be accessed by subaccounts and standalone accounts.'), /subaccount zelf \(merchant_accounts/);
+  assert.match(nextStep('merchant_report', "[query] Error in query: invalid field name 'product_type' in SELECT clause"), /product_type_l1/);
+  assert.match(nextStep('gmail_read', 'Invalid id value'), /letterlijk over uit gmail_search/);
+  assert.equal(nextStep('gsc_query', 'The operation was aborted due to timeout'), '');
+});

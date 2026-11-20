@@ -407,9 +407,26 @@ export class TeamData {
       }
       return { ...r, written, analysis: a, created, dropped };
     } catch (e: any) {
-      const msg = e instanceof WorkerError ? friendlyError(e.message, e.denied) : friendlyError(String(e?.message || e));
+      let msg = e instanceof WorkerError ? friendlyError(e.message, e.denied) : friendlyError(String(e?.message || e));
+      if (/^Kolom \S+ bestaat niet/.test(msg)) msg = msg.replace(/ Bekijk de kolommen met team_tables\.$/, '') + (await this.columnsNamedIn(userId, tk, sql));
       if (run === 'execute') this.audit(userId, tk, actor, a, sql, p, null, msg);
       throw new TeamDataError(msg);
+    }
+  }
+
+  /** " Kolommen van taken: id, titel, …" for every table a statement names: a wrong column name is put right at once. */
+  private async columnsNamedIn(userId: string, tk: string, sql: string): Promise<string> {
+    try {
+      const said = new Set((sql.toLowerCase().match(/[a-z_][a-z0-9_]*/g) || []));
+      const out: string[] = [];
+      for (const t of await this.tablesIn(userId, tk)) {
+        if (!said.has(String(t.name).toLowerCase()) || out.length >= 4) continue;
+        const cols = await this.rowsIn(userId, tk, 'SELECT name FROM pragma_table_info(?)', [t.name], true);
+        if (cols.length) out.push(`Kolommen van ${t.name}: ${cols.map((c) => c.name).join(', ')}.`);
+      }
+      return out.length ? ' ' + out.join(' ') : ' Bekijk de kolommen met team_tables.';
+    } catch {
+      return ' Bekijk de kolommen met team_tables.';
     }
   }
 

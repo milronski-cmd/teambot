@@ -1,5 +1,29 @@
 # Changelog
 
+## [4.9.9] — 2026-11-20
+
+### Computer bedienen
+- **Een bot houdt de computer niet meer urenlang vast.** Een bot die het bureaublad of een browser één keer
+  gebruikte, hield hem tot zijn hele beurt klaar was, ook als die beurt uren duurde. Collega's wachtten een
+  kwartier en kregen dan "wachten duurde te lang". Gebruikt een bot de computer vijf minuten niet terwijl een
+  ander erop wacht, dan gaat hij naar die ander; de eerste sluit weer aan zodra hij verder wil. Wie toch te lang
+  wacht, hoort nu wie hem heeft.
+- **Alle toetsnamen werken ook in een venster.** "ctrl+minus", "ctrl+-", "pgdn" en de andere namen die de
+  schermbediening al kende, werden bij toetsen in een venster geweigerd als onbekend.
+
+### Routines
+- **Een leerronde krijgt niet meer onterecht "zonder resultaat".** Een bot die meldde dat hij iets had
+  opgeslagen en dat in zijn dossier had gezet, kreeg de melding dat TeamBot geen bestand zag. Wat een bot in zijn
+  geheugen opslaat, is opgeslagen.
+
+### Minder misgrijpen
+- **Een verkeerde kolomnaam krijgt meteen de goede kolommen terug.** De teamdatabase noemt bij "kolom bestaat
+  niet" de kolommen van de tabel waar het om ging, zodat de volgende vraag klopt.
+- **Een gegokte actie in TeamBot noemt wat erop lijkt.** Vraagt een bot om een actie die niet bestaat, dan staan
+  de acties die erop lijken in het antwoord.
+- **Fouten van Google komen met de volgende stap.** Bij een hoofdaccount in Merchant Center, een veldnaam die
+  niet bestaat en een mail-id die niet klopt, staat erbij wat de bot dan moet doen.
+
 ## [4.9.8] — 2026-11-20
 
 ### Wacht op jou

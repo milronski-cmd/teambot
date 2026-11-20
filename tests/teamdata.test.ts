@@ -83,6 +83,9 @@ test('team tools: standard tables, read and write, row cap, ownership, isolation
     const run = (agent: any, tool: 'team_query' | 'team_execute', sql: string, params: any[] = []) =>
       svc.run(owner.id, { type: 'agent', id: agent.id, name: agent.name }, sql, params, tool === 'team_query' ? 'query' : 'execute');
 
+    // A wrong column name comes back with the real columns of the table that was named.
+    await assert.rejects(run(baas, 'team_query', 'SELECT keuze FROM beslissingen'), /Kolom keuze bestaat niet\. Kolommen van beslissingen: id, .*status/);
+
     // The standard tables are there from the start, owned by TeamBot.
     const tables = await svc.tables(owner.id);
     assert.deepEqual(tables.slice(0, 5).map((x) => x.name), ['taken', 'beslissingen', 'gebeurtenissen', 'logboek', 'experimenten']);

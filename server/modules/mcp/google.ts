@@ -627,6 +627,16 @@ export function googlePart(tool: string): string | null {
   return s ? (s.id === 'gmail' ? 'Gmail' : s.id === 'ads' ? s.name : `Google ${s.name}`) : null;
 }
 
+/** What to do next after an error Google words in its own terms (one sentence, or nothing). */
+export function nextStep(tool: string, message: string): string {
+  const m = String(message || '');
+  if (/only be accessed by subaccounts and standalone accounts/i.test(m)) return ' Dit is een hoofdaccount met subaccounts: gebruik het account-ID van het subaccount zelf (merchant_accounts toont ze).';
+  if (tool === 'merchant_report' && /invalid field name/i.test(m))
+    return ' Velden van product_view zijn onder meer: id, offer_id, title, brand, gtin, price, availability, condition, category_l1 t/m category_l5, product_type_l1 t/m product_type_l5, feed_label, language_code, aggregated_reporting_context_status, item_issues, click_potential.';
+  if (/^gmail_/.test(tool) && /Invalid id value/i.test(m)) return ' Deze id bestaat niet in deze mailbox: neem de id letterlijk over uit gmail_search (of gmail_drafts voor een concept).';
+  return '';
+}
+
 /** The in-process MCP server of one Google connection: the tools of the services the owner chose. */
 export function googleServer(ctx: Ctx, mgr: McpManager, c: ConnectionRow): McpServer {
   const server = new McpServer({ name: 'Google', version: ctx.config.version }, { capabilities: { tools: {} } });
@@ -644,7 +654,7 @@ export function googleServer(ctx: Ctx, mgr: McpManager, c: ConnectionRow): McpSe
         } catch (e: any) {
           if (e instanceof AuthRequiredError) throw e;
           const fix = e instanceof GoogleError && e.fixUrl ? ` Zet deze API aan in je Google Cloud-project: ${e.fixUrl}` : '';
-          return { content: [{ type: 'text' as const, text: `Google gaf een fout: ${cleanError(e)}${fix}` }], isError: true };
+          return { content: [{ type: 'text' as const, text: `Google gaf een fout: ${cleanError(e)}${fix}${nextStep(t.name, String(e?.message || e))}` }], isError: true };
         }
       },
     );

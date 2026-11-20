@@ -1029,6 +1029,7 @@ export class ComputerService {
       alive: () => isRunActive(this.ctx, t.run.id),
       signal: t.signal,
       timeoutMs: 15 * 60_000,
+      yieldAfterMs: 5 * 60_000,
       onWait: (h) => {
         if (announced) return;
         announced = true;

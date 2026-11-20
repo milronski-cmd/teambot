@@ -102,6 +102,18 @@ export function routesOf(ctx: Ctx): RouteInfo[] {
 
 const matchRoute = (ctx: Ctx, method: string, path: string) => routesOf(ctx).find((r) => r.method === method && r.re.test(path)) || null;
 
+/** Actions that carry a word of a path that does not exist (a guessed "/tasks" -> "/rooms/tasks"), same method first. */
+export function nearRoutes(ctx: Ctx, method: string, path: string, max = 5): string[] {
+  const names = path.split('/').filter((p) => /^[a-z][a-z-]{2,}$/i.test(p)).map((p) => p.toLowerCase());
+  const hits: { line: string; score: number }[] = [];
+  for (const r of routesOf(ctx)) {
+    const parts = r.path.toLowerCase().split('/');
+    const n = names.filter((w) => parts.includes(w)).length;
+    if (n) hits.push({ line: `${r.method} ${r.path}`, score: n * 2 + (r.method === method ? 1 : 0) - parts.length / 100 });
+  }
+  return [...new Set(hits.sort((a, b) => b.score - a.score).map((h) => h.line))].slice(0, max);
+}
+
 // ---------- plain Dutch for a call ----------
 
 /** What a path is about, longest prefix first. */
@@ -520,7 +532,8 @@ export function planCall(ctx: Ctx, userId: string, a: any, o: { parts?: boolean;
   const route = matchRoute(ctx, method, path);
   if (!route) {
     const other = routesOf(ctx).filter((r) => r.re.test(path)).map((r) => r.method);
-    return { error: other.length ? `Dit pad kent ${method} niet; wel: ${[...new Set(other)].join(', ')}.` : `TeamBot kent geen actie ${method} ${path}. Zoek de juiste op met ${MANAGE_FIND}.` };
+    const near = other.length ? [] : nearRoutes(ctx, method, path);
+    return { error: other.length ? `Dit pad kent ${method} niet; wel: ${[...new Set(other)].join(', ')}.` : `TeamBot kent geen actie ${method} ${path}.${near.length ? ` Wat erop lijkt: ${near.join(', ')}.` : ''} Zoek de juiste op met ${MANAGE_FIND}.` };
   }
   // Something that runs as a bot, made by a bot that names none: it is that bot's own (a routine of the bot that asks).
   if (o.self && FOR_A_BOT.has(`${method} ${route.path}`) && isObj(body) && !(body as any).agent_id && !(body as any).agentId) body = { ...body, agent_id: o.self };

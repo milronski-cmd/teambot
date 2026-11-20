@@ -289,6 +289,14 @@ test('proof only counts what this bot did during the run', async () => {
     assert.deepEqual(said('Alle sites zijn groen. Ik heb het rapport naar de klant verstuurd.').claims, ['een verstuurd bericht']);
     const b = await t.agent({ name: 'Ander' });
     const agent = t.app.ctx.store.agent(a.id)!;
+    // "Opgeslagen" after the bot wrote its dossier is true (a round that learns saves in its memory, not in a file).
+    const learned = Date.now();
+    const text = 'Ik heb drie nieuwe inzichten over laadtijden opgeslagen in mijn kennisdossier. De belangrijkste: afbeeldingen boven de vouw vooraf laden scheelt het meest.';
+    assert.equal(gatherProof(t.app.ctx, agent, { fromMs: learned, toMs: Date.now(), text }).result, 'none');
+    t.app.ctx.audit(a.user_id, 'tool.call', { tool: 'dossier_write', summary: 'Dossier aanpassen', error: false, denied: false, risk: 'write' }, a.id);
+    const kept = gatherProof(t.app.ctx, agent, { fromMs: learned, toMs: Date.now(), text });
+    assert.deepEqual([kept.result, kept.claims, kept.items], ['answer', [], []]);
+    await new Promise((r) => setTimeout(r, 1100));
     const from = Date.now();
     t.app.ctx.audit(a.user_id, 'tool.call', { tool: 'channel_send', summary: 'Bericht aan Jan', error: false, denied: false, risk: 'danger' }, b.id);
     t.app.ctx.audit(a.user_id, 'tool.call', { tool: 'channel_send', summary: 'Mislukt bericht', error: true, denied: false, risk: 'danger' }, a.id);

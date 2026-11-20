@@ -37,6 +37,9 @@ const FILE_TOOLS: Record<string, string> = { write_file: 'geschreven', edit_file
 /** Tools that only read, look or keep the bot's own notes: never a result on their own. */
 const NOT_A_RESULT = /^(routine_no_update|read_file|list_files|search_files|web_search|web_fetch|read_document|memory_|dossier_|task_list|task_update|routine_|wait_for|delegat|ask_bot|message_bot|broadcast|handoff|workspace_snapshot|rehearsal_|skill_|team_query|team_tables|site_list|channel_list|run_command|browser_(snapshot|screenshot|tabs|wait|scroll|back|navigate|open|close|click|type|press|select))/;
 
+/** The bot's own memory, written: no result on its own, but it is what "I saved it" was about. */
+const NOTE_TOOLS = /^(dossier_(write|note|add|update)|memory_(remember|update))$/;
+
 const SKIP_DIRS = new Set(['node_modules', 'dist', 'build', '__pycache__', 'venv', '.venv', 'target', 'coverage']);
 
 const norm = (p: string) => (process.platform === 'win32' ? path.resolve(p).toLowerCase() : path.resolve(p));
@@ -144,6 +147,7 @@ export function gatherProof(ctx: Ctx, agent: Agent, o: { fromMs: number; toMs: n
     from,
     to,
   );
+  let noted = false;
   for (const r of rows) {
     let d: any = {};
     try {
@@ -158,6 +162,7 @@ export function gatherProof(ctx: Ctx, agent: Agent, o: { fromMs: number; toMs: n
     else if (r.kind === 'cli.permission' && d.allowed && /:(Write|Edit|MultiEdit|NotebookEdit|edit|bestanden)\b/.test(String(d.tool || ''))) add('file', String(d.summary || 'een bestand bewerkt').slice(0, 120));
     else if (r.kind === 'tool.call' && !d.error && !d.denied) {
       const name = String(d.tool || '');
+      if (NOTE_TOOLS.test(name)) noted = true;
       if (!name || NOT_A_RESULT.test(name)) continue;
       const summary = String(d.summary || name).replace(/\s+/g, ' ').slice(0, 140);
       if (FILE_TOOLS[name]) continue; // its own file.* line above says which file
@@ -173,7 +178,8 @@ export function gatherProof(ctx: Ctx, agent: Agent, o: { fromMs: number; toMs: n
   const text = String(o.text || '');
   const answer = !isBareClaim(text);
   const has = (k: ProofItem['kind']) => items.some((i) => i.kind === k);
-  const claims = CLAIMS.filter((c) => !has(c.kind) && claimed(text, c.re)).map((c) => c.words);
+  // "Opgeslagen" after a dossier was written is true: the bot saved it in its memory, which is no file in a folder.
+  const claims = CLAIMS.filter((c) => !has(c.kind) && !(c.kind === 'file' && noted) && claimed(text, c.re)).map((c) => c.words);
   const result: ProofResult = items.length ? 'proven' : answer && !claims.length ? 'answer' : 'none';
   const reason =
     result !== 'none'
