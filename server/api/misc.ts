@@ -1,4 +1,5 @@
 import path from 'node:path';
+import { answeredRows } from '../tools/answered.js';
 import type { Ctx } from '../core/types.js';
 import { ah, bad, requireRole, str, user } from '../core/http.js';
 import { agentTemplate, pickAgent } from './agents.js';
@@ -47,6 +48,40 @@ export function miscRoutes(ctx: Ctx) {
       const u = user(req);
       const status = (req.query.status as string) || 'pending';
       return ctx.store.all<any>(`SELECT * FROM approvals WHERE user_id = ? ${status === 'all' ? '' : 'AND status = ?'} ORDER BY created_at DESC LIMIT 200`, ...(status === 'all' ? [u.id] : [u.id, status])).map((a) => ctx.broker.view(ctx.store.decode('approvals', a)));
+    }),
+  );
+  // What the owner answered before, per bot: what each bot asked and learned, and what still waits for him.
+  api.get(
+    '/approvals/answers',
+    ah(async (req) => {
+      const u = user(req);
+      const open = new Map<string, number>();
+      for (const r of ctx.store.all<any>("SELECT agent_id, COUNT(*) AS n FROM approvals WHERE user_id = ? AND status = 'pending' GROUP BY agent_id", u.id)) open.set(r.agent_id || '', Number(r.n));
+      const asked = new Map<string, number>();
+      for (const r of ctx.store.all<any>("SELECT agent_id, COUNT(*) AS n FROM approvals WHERE user_id = ? AND created_at >= ? GROUP BY agent_id", u.id, new Date(Date.now() - 7 * 86_400_000).toISOString())) asked.set(r.agent_id || '', Number(r.n));
+      const rows = answeredRows(ctx, u.id);
+      const ids = new Set<string>([...open.keys(), ...asked.keys(), ...rows.map((r) => r.agentId || '')].filter(Boolean));
+      const bots = [...ids]
+        .map((id) => ({ agentId: id, name: ctx.store.agent(id)?.name || 'Bot', open: open.get(id) || 0, askedWeek: asked.get(id) || 0, answers: rows.filter((r) => r.agentId === id).map((r) => ({ id: r.id, question: r.question, answer: r.answer, at: r.at })) }))
+        .sort((a, b) => b.open - a.open || b.askedWeek - a.askedWeek || a.name.localeCompare(b.name));
+      return { bots };
+    }),
+  );
+  /** Correct an answer (what the bots work with from now on) or let it lapse (`forget`: the bots ask again). */
+  api.put(
+    '/approvals/:id/answer',
+    ah(async (req) => {
+      const u = user(req);
+      const a = ctx.store.get<any>('approvals', req.params.id as string);
+      if (!a || a.user_id !== u.id || a.kind !== 'question' || a.status !== 'approved') throw bad('Onbekend antwoord');
+      if (req.body?.forget === true) ctx.store.update('approvals', a.id, { forgotten_at: new Date().toISOString() });
+      else {
+        const text = str(req.body?.answer, 20_000).trim();
+        if (!text) throw bad('Geef het antwoord, of vergeet het.');
+        ctx.store.update('approvals', a.id, { answer: text, forgotten_at: null });
+      }
+      ctx.audit(u.id, req.body?.forget === true ? 'approval.answer_forgotten' : 'approval.answer_corrected', { id: a.id }, a.agent_id);
+      return { ok: true };
     }),
   );
   api.post(

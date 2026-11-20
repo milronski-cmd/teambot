@@ -15,6 +15,7 @@ import { approvalBlocks } from '../../../shared/approvalGroups.js';
 import { groupLabel, groupTitle } from '../shell/approvalGroupText';
 import { stripRefs } from '../lib/preview';
 import { uiModules, useInboxExtraCount } from '../modules';
+import { Learned } from './InboxLearned';
 
 /** A form answer is stored as JSON; show its values ("Sanne, herfst"), never the raw JSON. */
 function answerText(answer: string): string {
@@ -67,7 +68,7 @@ export function InboxPage() {
   const pending = useApp((s) => s.approvals);
   const agents = useApp((s) => s.agents);
   const extra = useInboxExtraCount();
-  const [tab, setTab] = useState<'open' | 'history'>('open');
+  const [tab, setTab] = useState<'open' | 'learned' | 'history'>('open');
   const [history, setHistory] = useState<Approval[] | null>(null);
   useEffect(() => {
     if (tab === 'history') api.get<Approval[]>('/approvals?status=all').then((l) => setHistory(l.filter((a) => a.status !== 'pending'))).catch(() => setHistory([]));
@@ -86,12 +87,13 @@ export function InboxPage() {
         width="3xl"
       />
       <div className="mx-auto max-w-3xl px-4 pb-8 pt-3 sm:px-6">
-        <Segmented<'open' | 'history'>
+        <Segmented<'open' | 'learned' | 'history'>
           label="Wat je ziet"
           value={tab}
           onChange={setTab}
           options={[
             { value: 'open', label: `Open (${pending.length + extra})` },
+            { value: 'learned', label: 'Geleerd' },
             { value: 'history', label: 'Geschiedenis' },
           ]}
         />
@@ -113,6 +115,7 @@ export function InboxPage() {
               const Section = m.inbox?.component;
               return Section ? <Section key={m.id} /> : null;
             })}
+          {tab === 'learned' && <Learned onOpen={() => setTab('open')} />}
           {tab === 'history' &&
             (history === null ? (
               <SkeletonRows n={4} />

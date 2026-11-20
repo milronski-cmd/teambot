@@ -144,4 +144,9 @@ CREATE INDEX IF NOT EXISTS attachments_thread ON attachments(thread_id);`,
     id: 'core-approvals-parked-001',
     sql: `ALTER TABLE approvals ADD COLUMN parked_at TEXT;`,
   },
+  {
+    // An answer the owner gave to a bot's question is reused (tools/answered.ts) until he says it no longer holds.
+    id: 'core-approvals-forgotten-001',
+    sql: `ALTER TABLE approvals ADD COLUMN forgotten_at TEXT;`,
+  },
 ];

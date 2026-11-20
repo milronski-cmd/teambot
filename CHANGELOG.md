@@ -1,5 +1,17 @@
 # Changelog
 
+## [4.9.14] — 2026-11-20
+
+### Je team leert van je antwoorden
+- **Wat je één keer beantwoordt, vraagt je team niet opnieuw.** Stelt een bot je een vraag die jij al eens
+  beantwoordde (ook in andere woorden, ook aan een andere bot), dan krijgt hij jouw eerdere antwoord terug in
+  plaats van een nieuwe vraag aan jou. Gaat een opdracht over iets waar je al antwoord op gaf, dan krijgt de bot
+  dat antwoord er meteen bij. Is de situatie echt anders of twijfelt hij of het antwoord hier geldt, dan vraagt
+  hij het wel opnieuw. Vragen van een bot die op privé staat blijven bij die bot.
+- **"Geleerd" in Wacht op jou.** Een nieuw tabblad met per bot wat hij je vroeg en wat jij antwoordde, hoeveel
+  vragen er nog op je wachten en hoe vaak hij deze week iets vroeg. Klopt een antwoord niet meer, dan verbeter je
+  het daar (je bots werken dan met het nieuwe antwoord) of laat je het vergeten (dan vragen ze het weer).
+
 ## [4.9.13] — 2026-11-20
 
 ### Samenwerken

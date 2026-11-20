@@ -1,4 +1,5 @@
 import type { ActivityItem, Ctx, Module, Run, ToolDef } from '../../core/types.js';
+import { answeredContext } from '../../tools/answered.js';
 import { roomMigrations } from './schema.js';
 import { engineStep, pruneProgress, toolDone } from './progress.js';
 import { RoomService } from './service.js';
@@ -70,6 +71,7 @@ const mod: Module = {
     ctx.hooks.turnContext.push(({ agent, thread, input }) => turnContextFor(s, agent, thread, input));
     ctx.hooks.turnContext.push(({ agent, thread, input }) => routeReminder(s, agent, thread, input));
     ctx.hooks.turnContext.push(({ agent, thread, input }) => busyNow(s, agent, thread, input));
+    ctx.hooks.turnContext.push(({ agent, thread, input }) => answeredContext(ctx, agent, thread, input));
     ctx.hooks.agentDeleted.push(({ agentId }) => {
       s.orch.agentGone(agentId);
       for (const r of ctx.store.all<any>("SELECT room_id FROM room_members WHERE kind = 'agent' AND ref_id = ?", agentId)) {
