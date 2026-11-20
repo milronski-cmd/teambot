@@ -1,5 +1,25 @@
 # Changelog
 
+## [4.9.16] — 2026-11-20
+
+### Je team stuurt op resultaat
+- **Elke bot heeft een eigen cijfer.** Werkt een bot uit zichzelf, dan krijgt hij eerst zijn stand: zijn cijfer op
+  het dashboard en hoe oud het is. Heeft hij er nog geen, dan kiest hij het ene getal dat zegt of zijn vak jou iets
+  oplevert (aanvragen, omzet, beantwoorde klanten, afgehandelde zaken; geen aantal taken of pagina's), meet het en
+  zet het op het dashboard. Kan hij het niet meten, dan zegt hij welke toegang hij mist.
+- **Een verbetering is een experiment.** Wat een bot uit zichzelf verbetert, legt hij vast met wat hij verwacht,
+  hoe hij meet en wanneer. Op de meetdatum beoordeelt hij het: houden of terugdraaien, en wat hij ervan leerde.
+- **De hoofdbot komt met kansen.** Hij ziet welke bots nog geen cijfer hebben en welke experimenten te beoordelen
+  zijn, stuurt daarop, en komt per ronde met hoogstens drie kansen: wat het je oplevert, wat het kost en de
+  kleinste proef die laat zien of het werkt.
+- **Is alles op orde, dan onderhoudt een bot alleen nog.** Is zijn cijfer bij en loopt zijn experiment nog, dan
+  valt er niets te beoordelen: hij herstelt alleen wat kapot is of achterloopt, en doet anders niets.
+
+### Geheugen
+- **Kennis mag groeien.** Een vol kennisdossier werd ingekort om ruimte te maken, waardoor een bot kwijtraakte
+  wat hij had geleerd. Nu splitst hij het: een deelonderwerp krijgt een eigen dossier, met een verwijzing in het
+  oude. Werknotities blijven bewust kort.
+
 ## [4.9.15] — 2026-11-20
 
 ### Je team leert

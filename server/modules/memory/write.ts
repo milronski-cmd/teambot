@@ -19,7 +19,7 @@ import { ALL_TEAMS } from './types.js';
 import { clean, excerpt } from './text.js';
 import { findIn, lineKey } from './same.js';
 import { createDossier, findDossier } from './dossiers.js';
-import { DossierFull, NEARLY_FULL, WriteRefused, addToBody, archiveLines, coreDossiers, limitOf, linesRefusal, makeRoom, notesDossier, ownerDossier, replaceInBody, teamDossier, tidyBody, writeBody, writeRefusal, type CoreKind, type WriteActor } from './living.js';
+import { growAdvice, DossierFull, NEARLY_FULL, WriteRefused, addToBody, archiveLines, coreDossiers, limitOf, linesRefusal, makeRoom, notesDossier, ownerDossier, replaceInBody, teamDossier, tidyBody, writeBody, writeRefusal, type CoreKind, type WriteActor } from './living.js';
 
 export interface NoteIn {
   /** The dossier the text goes into (its row). */
@@ -241,7 +241,7 @@ export function dossierWrite(svc: MemoryService, agent: Agent, reader: Reader, a
       if (out.action === 'same') return { text: `Dat stond al in dossier “${d.title}” [d:${d.ref}]; er is niets gewijzigd.`, action: 'same' };
       if (out.action === 'refused') {
         const cur = out.reason === 'full' && !d.core && d.body ? `\nDe tekst nu:\n${d.body}` : '';
-        return { text: out.reason === 'full' ? `${out.message} Gebruik mode rewrite met de hele, kortere tekst waar het nieuwe al in staat.${cur}` : out.message, isError: true, action: 'refused' };
+        return { text: out.reason === 'full' ? `${out.message} ${d.core ? 'Gebruik mode rewrite met de hele, kortere tekst waar het nieuwe al in staat.' : `Dit dossier is vol: ${growAdvice(d)}.`}${cur}` : out.message, isError: true, action: 'refused' };
       }
       if (out.action === 'archived') return { text: out.message, action: 'archived', changeId: out.changeId };
       w = out;
@@ -260,7 +260,7 @@ export function dossierWrite(svc: MemoryService, agent: Agent, reader: Reader, a
     if (w.dossier.core === 'notes') bits[0] = `Je werknotities zijn bijgewerkt [d:${w.dossier.ref}] (${size}/${limit} tekens).`;
     if (removed.length) bits.push(roomText(removed));
     else if (w.archived) bits.push(`Wat eruit ging (${nlCount(w.archived, 'regel', 'regels')}) staat in het archief van het dossier.`);
-    if (size >= limit * NEARLY_FULL) bits.push('Het dossier is bijna vol: herschrijf het bij je volgende wijziging korter (mode rewrite).');
+    if (size >= limit * NEARLY_FULL) bits.push(`Het dossier is bijna vol: ${growAdvice(w.dossier)}.`);
     if (made && !w.dossier.core) bits.push('Zet ook één regel over dit dossier in “Overzicht”.');
     return { text: bits.join(' '), data: { dossier: `d:${w.dossier.ref}`, size, limit }, action, changeId: w.changeId };
   } catch (e: any) {

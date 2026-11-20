@@ -29,6 +29,18 @@ import { PLACE } from '../../../shared/places.js';
 export type CoreKind = 'owner' | 'overview' | 'lessons' | 'notes';
 
 /** Size limits in characters (about 3,5 characters per token): all four core dossiers full is about 5000 tokens. */
+/**
+ * What a bot does with a dossier that is (nearly) full. Its own notes, the lessons and the overview are short on
+ * purpose: they are rewritten shorter. A dossier about a subject holds knowledge, and knowledge may grow: it is split
+ * by sub-subject into a dossier of its own, with one line here that points to it. Told to "make it shorter", bots cut
+ * what they had learned to make room (live, 20 Nov 2026: twelve knowledge dossiers at the limit, notes trimmed every
+ * round), so a team never knew more than fitted in one dossier.
+ */
+export const growAdvice = (d: { core?: string | null }): string =>
+  d.core
+    ? 'herschrijf het korter (mode rewrite): voeg regels samen en haal weg wat niet meer geldt'
+    : 'splits het: zet een deelonderwerp in een eigen dossier (dossier_write met een nieuwe titel), verhuis die regels daarheen en laat hier één regel staan die ernaar verwijst. Haal alleen weg wat niet meer klopt; wat je weet kort je niet in';
+
 export const BODY_LIMITS: Record<CoreKind | 'subject', number> = { owner: 5000, overview: 6000, lessons: 3000, notes: 3000, subject: 8000 };
 /** From this share of the limit the bot is told to make the dossier shorter with its next change. */
 export const NEARLY_FULL = 0.8;
@@ -283,7 +295,7 @@ export function writeBody(svc: MemoryService, dossierId: string, next: string, a
   const limit = limitOf(d);
   if (body.length > limit)
     throw new DossierFull(
-      `Niet opgeslagen: dossier “${d.title}” wordt zo ${body.length} tekens en er passen er ${limit} in. Maak het ${body.length - limit} tekens korter: voeg regels samen, haal weg wat niet meer geldt, en zet detail over één klant of project in een eigen dossier. Wat je weghaalt, blijft vindbaar met memory_search.`,
+      `Niet opgeslagen: dossier “${d.title}” wordt zo ${body.length} tekens en er passen er ${limit} in. Er moeten ${body.length - limit} tekens uit: ${growAdvice(d)}. Wat je weghaalt, blijft vindbaar met memory_search.`,
       body.length,
       limit,
     );
@@ -537,7 +549,7 @@ export function dossierBlock(d: any, o: { about?: string; maxChars?: number } = 
   const body = String(d.body || '');
   const size = body.length;
   const cut = o.maxChars && size > o.maxChars ? `${body.slice(0, o.maxChars).trimEnd()}\n… (ingekort; lees het hele dossier met dossier_get)` : body;
-  const full = size >= limit * NEARLY_FULL ? ' vol="bijna: maak het korter bij je volgende wijziging"' : '';
+  const full = size >= limit * NEARLY_FULL ? d.core ? ' vol="bijna: maak het korter bij je volgende wijziging"' : ' vol="bijna: splits een deelonderwerp af naar een eigen dossier bij je volgende wijziging"' : '';
   return [`<dossier id="d:${d.ref}" naam="${String(d.title).replace(/"/g, '”')}" tekens="${size}/${limit}"${full} bijgewerkt="${shortDay(d.updated_at)}">`, o.about ? `(${o.about})` : '', cut || '(nog leeg)', '</dossier>'].filter(Boolean).join('\n');
 }
 

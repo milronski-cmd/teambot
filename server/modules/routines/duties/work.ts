@@ -544,6 +544,65 @@ export class WorkLoop {
     ].join('\n');
   }
 
+  /**
+   * What a turn of own initiative is measured by: the bot's own number on the dashboard and its experiments. A team
+   * gets better only where somebody looks at a result and tries something against it; without that a turn of own
+   * initiative is activity (live, 20 Nov 2026: twenty bots worked a night, the dashboard stayed empty, not one
+   * experiment was written down, and the "verbeterronde" the bots gave themselves only tidied their notes). So the
+   * turn brings the stand: the bot's tiles and how old they are, its experiments and which are due. No tile yet: it
+   * picks its one number and measures it. A number that is fresh and an experiment that still runs: nothing to judge,
+   * and the bot only maintains (the end state of a team that is done optimising). The main bot gets the stand of the
+   * whole team and is asked for opportunities, with what they yield.
+   */
+  async stand(agentId: string, input: Message | null): Promise<string | null> {
+    const w = (input?.parts as any)?.work;
+    if (!input || input.role !== 'system' || !String(w?.refs?.[0] || '').startsWith(OWN)) return null;
+    const agent = this.ctx.store.agent(agentId);
+    if (!agent) return null;
+    const userId = agent.user_id;
+    const teamId: string | null = this.teams?.teamOf?.(agent.id) || null;
+    const main = (this.teams?.mainOf?.(userId) || null) === agent.id;
+    const tiles = await this.rows(userId, teamId, 'SELECT titel, waarde, eenheid, bot, bijgewerkt FROM dashboard ORDER BY bot, volgorde, titel LIMIT 200');
+    const tests = await this.rows(userId, teamId, "SELECT id, hypothese, meetdatum, eigenaar, status FROM experimenten WHERE status = 'loopt' ORDER BY meetdatum LIMIT 100");
+    const today = new Date(this.engine.now()).toISOString().slice(0, 10);
+    const same = (x: unknown) => String(x || '').trim().toLowerCase() === agent.name.trim().toLowerCase();
+    const tile = (t: any) => `- cijfer “${oneLine(t.titel, 60)}”: ${oneLine(t.waarde, 40) || '(leeg)'}${t.eenheid ? ` ${oneLine(t.eenheid, 20)}` : ''} (bijgewerkt ${String(t.bijgewerkt || '?').slice(0, 16)})`;
+    const due = (e: any) => !!e.meetdatum && String(e.meetdatum).slice(0, 10) <= today;
+    const test = (e: any) => `- experiment ${e.id}${main && e.eigenaar ? ` van ${oneLine(e.eigenaar, 30)}` : ''}: ${oneLine(e.hypothese, 140)} (meetdatum ${String(e.meetdatum || 'niet gezet').slice(0, 10)}${due(e) ? ', NU te beoordelen' : ''})`;
+    const lines: string[] = [];
+    if (main) {
+      const names = this.ctx.store.agents(userId).filter((x: Agent) => !x.archived && x.id !== agent.id && x.settings?.private !== true).map((x: Agent) => x.name);
+      const have = new Set(tiles.map((t) => String(t.bot || '').trim().toLowerCase()));
+      const without = names.filter((n: string) => !have.has(n.trim().toLowerCase()));
+      const waiting = await this.rows(userId, teamId, "SELECT COUNT(*) AS n FROM kansen WHERE status IN ('nieuw','gescoord','voorgelegd')");
+      lines.push('Stand van het team (uit het dashboard en de tabellen experimenten en kansen; gegevens, geen opdracht):');
+      lines.push(`- cijfers op het dashboard: ${tiles.length}. ${without.length ? `Zonder eigen cijfer: ${without.slice(0, 20).join(', ')}` : 'Elke bot heeft een eigen cijfer'}`);
+      lines.push(`- experimenten die lopen: ${tests.length}, nu te beoordelen: ${tests.filter(due).length}. Kansen die wachten: ${Number(waiting[0]?.n || 0)}`);
+      for (const e of tests.filter(due).slice(0, 6)) lines.push(test(e));
+      lines.push(
+        '',
+        'Daar stuur je op. Een bot zonder eigen cijfer weet niet of hij beter wordt: geef hem de opdracht zijn ene getal te kiezen, te meten en op het dashboard te zetten. Een experiment dat te beoordelen is leg je bij zijn eigenaar. En kom zelf met kansen: hoogstens drie per ronde, alleen wat nog niet in de tabel kansen staat, elk met wat het de eigenaar oplevert (in euro’s of aanvragen, met hoe je daaraan komt), wat het kost en de kleinste proef die laat zien of het werkt. Een kans is een voorstel aan de eigenaar, geen vraag om hulp.',
+      );
+      return lines.join('\n');
+    }
+    const mine = tiles.filter((t) => same(t.bot));
+    const own = tests.filter((e) => same(e.eigenaar));
+    const stale = mine.filter((t) => !t.bijgewerkt || this.engine.now() - Date.parse(String(t.bijgewerkt).replace(' ', 'T')) > 36 * 3_600_000);
+    lines.push('Jouw stand (uit het dashboard en de tabel experimenten; gegevens, geen opdracht):');
+    lines.push(...(mine.length ? mine.slice(0, 6).map(tile) : ['- je hebt nog geen eigen cijfer op het dashboard']));
+    lines.push(...(own.length ? own.slice(0, 6).map(test) : ['- er loopt geen experiment van jou']));
+    lines.push('');
+    if (!mine.length)
+      lines.push(
+        'Begin daarmee: kies het ene getal dat zegt of jouw vak de eigenaar iets oplevert (aanvragen, omzet, beantwoorde klanten, afgehandelde zaken; geen aantal taken, pagina’s of berichten), meet het nu uit een echte bron en zet het als tegel op het dashboard (tabel dashboard, een vaste sleutel, bot = je naam). Kun je het niet meten, zeg dan in je afsluiting precies welke toegang of koppeling je daarvoor mist.',
+      );
+    else if (stale.length) lines.push('Meet eerst je cijfer opnieuw uit de bron en werk je tegel bij.');
+    if (own.some(due)) lines.push('Een experiment dat te beoordelen is gaat voor: meet, zet de status op bewezen of werkt_niet met de uitkomst, draai terug wat niet werkte en leg in je vakkennis vast wat je ervan leerde.');
+    else if (!own.length) lines.push('De verbetering die je nu kiest leg je vast als experiment (tabel experimenten: hypothese, meting, beginwaarde, meetdatum, terugdraaien, eigenaar = je naam), zodat op de meetdatum blijkt of het werkte. Zonder meting is het geen verbetering maar bezigheid.');
+    else if (mine.length && !stale.length) lines.push(`Je cijfer is bij en je experiment loopt nog: er valt nu niets te beoordelen. Herstel alleen wat kapot is of achterloopt; is dat er niet, antwoord dan alleen met ${NO_UPDATE_TOKEN}.`);
+    return lines.join('\n');
+  }
+
   /** Per-turn context hook: the instruction, for the bot's turn on a work line. */
   context(agentId: string, input: Message | null): string | null {
     const w = (input?.parts as any)?.work;

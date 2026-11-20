@@ -25,6 +25,7 @@ test('a bot with nothing on its name looks for work itself after standing still,
     const asked = JSON.stringify(t.requests.at(-1)!.messages);
     assert.match(asked, /er ligt geen werk op je naam\. Dan zoek je het zelf, binnen je eigen vak/);
     assert.match(asked, /task_create/, 'bigger work goes on the board, where the loop picks it up');
+    assert.match(asked, /Jouw stand .*je hebt nog geen eigen cijfer op het dashboard.*er loopt geen experiment van jou.*kies het ene getal/s, 'the turn is measured by a number of its own');
     assert.match(asked, /geld uitgeven, een eerste bericht aan een nieuw contact/, 'the owner’s yes where his rules ask for it');
 
     // It just worked: not again right away.
@@ -73,6 +74,60 @@ test('real work goes first: a bot with a task on its name gets that task, not a 
     assert.doesNotMatch(asked, /Dan zoek je het zelf/);
   } finally {
     work.initiative = false;
+    await t.close();
+  }
+});
+
+test('a turn of own initiative brings the stand: own number, experiments that are due, and nothing to judge is maintenance', async () => {
+  const env = await setup();
+  const { t, work } = env;
+  try {
+    const ctx = t.app.ctx;
+    const userId = ctx.auth.owner()!.id;
+    const sem = await t.agent({ name: 'Sem', role: 'Technische SEO', tool_groups: ['team'] });
+    const baas = await t.agent({ name: 'Baas', role: 'Leiding' });
+    await t.agent({ name: 'Pen', role: 'Schrijver' });
+    const td = ctx.services.teamdata;
+    await td.ensure(userId);
+    const own = { role: 'system', parts: { work: { refs: ['own:1'] } } } as any;
+    const day = (n: number) => new Date(env.clock.now + n * 86_400_000).toISOString().slice(0, 10);
+    const fresh = new Date(env.clock.now - 3_600_000).toISOString().slice(0, 16).replace('T', ' ');
+    const old = new Date(env.clock.now - 4 * 86_400_000).toISOString().slice(0, 16).replace('T', ' ');
+
+    // Not a turn of own initiative: nothing.
+    assert.equal(await work.stand(sem.id, { role: 'system', parts: { work: { refs: ['tk::1'] } } } as any), null);
+    assert.equal(await work.stand(sem.id, { role: 'user', content: 'hoi' } as any), null);
+
+    // A number that is old: measure first. An experiment that is due goes before everything.
+    await td.write(userId, [
+      { sql: "INSERT INTO dashboard (sleutel, groep, titel, waarde, eenheid, bot, bijgewerkt) VALUES ('seo-aanvragen', 'SEO', 'Aanvragen uit zoekverkeer', '12', 'per week', 'Sem', ?)", params: [old] },
+      { sql: "INSERT INTO experimenten (hypothese, meting, beginwaarde, meetdatum, eigenaar, status) VALUES ('Een kortere titel geeft meer klikken', 'klikken per week', '40', ?, 'Sem', 'loopt')", params: [day(-1)] },
+    ]);
+    let said = (await work.stand(sem.id, own))!;
+    assert.match(said, /cijfer “Aanvragen uit zoekverkeer”: 12 per week/);
+    assert.match(said, /experiment 1: Een kortere titel geeft meer klikken \(meetdatum \d{4}-\d\d-\d\d, NU te beoordelen\)/);
+    assert.match(said, /Meet eerst je cijfer opnieuw/);
+    assert.match(said, /Een experiment dat te beoordelen is gaat voor: .*bewezen of werkt_niet/);
+
+    // Number fresh, experiment still running: nothing to judge, the bot only maintains.
+    await td.write(userId, [
+      { sql: "UPDATE dashboard SET bijgewerkt = ? WHERE sleutel = 'seo-aanvragen'", params: [fresh] },
+      { sql: 'UPDATE experimenten SET meetdatum = ? WHERE id = 1', params: [day(5)] },
+    ]);
+    said = (await work.stand(sem.id, own))!;
+    assert.match(said, /Je cijfer is bij en je experiment loopt nog: er valt nu niets te beoordelen\. Herstel alleen wat kapot is of achterloopt/);
+    assert.doesNotMatch(said, /Meet eerst|kies het ene getal/);
+
+    // The main bot gets the team: who has no number, what is due, and the request for opportunities with their yield.
+    await td.write(userId, [{ sql: 'UPDATE experimenten SET meetdatum = ? WHERE id = 1', params: [day(-2)] }]);
+    ctx.services.teams.setMain?.(userId, baas.id);
+    const lead = (await work.stand(baas.id, own))!;
+    assert.match(lead, /^Stand van het team/);
+    assert.match(lead, /cijfers op het dashboard: 1\. Zonder eigen cijfer: Pen/);
+    assert.match(lead, /experimenten die lopen: 1, nu te beoordelen: 1\. Kansen die wachten: 0/);
+    assert.match(lead, /experiment 1 van Sem/);
+    assert.match(lead, /kom zelf met kansen: hoogstens drie per ronde.*wat het de eigenaar oplevert/s);
+  } finally {
     await t.close();
   }
 });

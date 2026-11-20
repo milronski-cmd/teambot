@@ -30,6 +30,7 @@ export function createRoutinesModule(opts: EngineOptions = {}): Module {
       duties.work = work;
       loops.set(ctx, work);
       ctx.hooks.turnContext.push(({ agent, input }) => work.context(agent.id, input));
+      ctx.hooks.turnContext.push(({ agent, input }) => work.stand(agent.id, input));
       ctx.services.routines = {
         engine,
         /** Vaste taken (standing duties), reminders and the owner's budget for proactive work. */
