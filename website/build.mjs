@@ -939,6 +939,12 @@ export function build() {
     }
   uidN = 0;
   fs.writeFileSync(path.join(dist, '404.html'), stamp(render('nl', 'notfound')));
+  // The bank sends the owner back to an https address (Enable Banking takes no http:// address for a production
+  // application); this page hands the answer on to TeamBot on the owner's own computer. Nothing is read or kept here.
+  fs.writeFileSync(
+    path.join(dist, 'bank.html'),
+    '<!doctype html><html lang="nl"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="robots" content="noindex"><meta name="referrer" content="no-referrer"><title>Terug naar TeamBot</title><link rel="stylesheet" href="assets/site.css"><script src="assets/bank.js" defer></script></head><body><main class="wrap"><h1>Terug naar TeamBot</h1><p>Je wordt teruggestuurd naar TeamBot op je eigen computer.</p><p>Gebeurt er niets? Kopieer dan het adres van deze pagina en plak het in TeamBot bij Apps › Bank.</p><p>You are being sent back to TeamBot on your own computer. Nothing happening? Copy the address of this page and paste it in TeamBot under Apps › Bank.</p></main></body></html>',
+  );
   // assets: css, js, self-hosted Inter (SIL OFL 1.1, licence copied along), icons, images
   // light minifying: drop comments and line breaks (the source keeps one property per line for readable diffs)
   const css = fs
@@ -953,6 +959,7 @@ export function build() {
   for (const f of ['inter-latin-wght-normal.woff2', 'inter-latin-ext-wght-normal.woff2']) copy(path.join(fontDir, 'files', f), path.join(dist, 'assets/fonts', f));
   copy(path.join(fontDir, 'LICENSE'), path.join(dist, 'assets/fonts/OFL.txt'));
   fs.writeFileSync(path.join(dist, 'assets/favicon.svg'), iconSvg());
+  fs.writeFileSync(path.join(dist, 'assets/bank.js'), "if (/[?&]state=/.test(location.search)) location.replace('http://127.0.0.1:4747/api/public/mcp/bank/callback' + location.search);");
   // only what a page uses: the social preview images and the files of the screenshot slots
   const used = new Set([...LANGS.map((l) => `og-${l}.png`), ...Object.keys(SHOTS).filter((k) => !k.startsWith('_')).map(slotFile).filter(Boolean)]);
   for (const f of used) if (hasImg(f)) copy(path.join(imgDir, f), path.join(dist, 'img', f));

@@ -94,7 +94,7 @@ function AppForm({ s, onSaved }: { s: BankState; onSaved(next: BankState): void 
       <Field label="Sleutel (de inhoud van het .pem-bestand)">
         <Textarea rows={3} value={key} onChange={(e) => setKey(e.target.value)} className="font-mono text-xs" placeholder="-----BEGIN PRIVATE KEY-----" aria-label="Sleutel van de applicatie" />
       </Field>
-      <Field label="Ander terugkeeradres (alleen als je applicatie al een ander adres heeft)" hint="Laat leeg om het adres hierboven te gebruiken. Met een ander adres plak je na het inloggen bij de bank het adres waar je uitkwam.">
+      <Field label="Ander terugkeeradres (alleen als je applicatie al een ander adres heeft)" hint="Laat leeg om het adres hierboven te gebruiken. Een applicatie voor echte rekeningen (Production) neemt bij Enable Banking alleen een adres aan dat met https:// begint: vul dan hier het https-adres in dat bij je applicatie staat. Kom je na het inloggen bij de bank niet vanzelf in TeamBot uit, plak dan hieronder het adres waar je uitkwam.">
         <Input value={other} onChange={(e) => setOther(e.target.value)} placeholder="https://…" autoComplete="off" />
       </Field>
       <div className="flex flex-wrap items-center gap-2">

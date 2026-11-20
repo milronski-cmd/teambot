@@ -113,6 +113,35 @@ try {
   await form.getByRole('button', { name: 'Annuleren' }).click();
   check('Inbox en Verzonden staan naast elkaar, met zoeken', (await page.getByTestId('dashboard-mail').getByText('Verzonden').count()) > 0 && (await page.getByTestId('dashboard-mail-search').count()) === 1);
 
+  // Another mailbox of his own: connected with its address and password, then read and written from that address.
+  let boxSent = null;
+  let boxMade = null;
+  await page.route('**/api/mcp/mailboxes', (r) => (r.request().method() === 'POST' ? ((boxMade = r.request().postDataJSON()), r.fulfill({ json: { boxes: [{ id: 'mb_1', address: 'info@zaak.test' }] } })) : r.fulfill({ json: { boxes: [] } })));
+  await page.route('**/api/mcp/mailboxes/mb_1/mail?*', (r) => r.fulfill({ json: { messages: [{ id: 'inbox:5', thread: '', from: 'Piet Bos <piet@leverancier.test>', to: 'info@zaak.test', subject: 'Levertijd van de banden', date: new Date(Date.now() - 3600_000).toISOString(), unread: true, snippet: 'De levering komt dinsdag.' }] } }));
+  await page.route('**/api/mcp/mailboxes/mb_1/mail/send', (r) => ((boxSent = r.request().postDataJSON()), r.fulfill({ json: { ok: true, id: 's2' } })));
+  await page.getByTestId('dashboard-mail-add').click();
+  const connect = page.getByTestId('dashboard-mail-connect');
+  await connect.waitFor({ timeout: 10000 });
+  await connect.getByRole('textbox').first().fill('info@zaak.test');
+  await connect.locator('input[type=password]').fill('proef-wachtwoord');
+  await page.getByTestId('dashboard-mail-connect-save').click();
+  await page.getByText('Levertijd van de banden').waitFor({ timeout: 10000 });
+  check('een eigen postvak koppelen: adres en wachtwoord, daarna staat zijn post er', boxMade?.address === 'info@zaak.test' && (await page.getByTestId('dashboard-mail-account').inputValue()) === 'mb_1');
+  await page.getByTestId('dashboard-mail-new').click();
+  const from = page.getByTestId('dashboard-mail-compose');
+  await from.waitFor({ timeout: 10000 });
+  check('een nieuwe mail zegt vanaf welk adres hij gaat', /Vanaf info@zaak\.test/.test(await from.innerText()));
+  const fields = from.getByRole('textbox');
+  await fields.nth(0).fill('piet@leverancier.test');
+  await fields.nth(1).fill('Dinsdag is goed');
+  await fields.nth(2).fill('Prima, tot dinsdag.');
+  await page.getByTestId('dashboard-mail-send-new').click();
+  await page.getByText('Levertijd van de banden').waitFor({ timeout: 10000 });
+  check('en gaat vanaf dat postvak de deur uit', boxSent?.to === 'piet@leverancier.test' && boxSent?.body === 'Prima, tot dinsdag.');
+  await page.getByTestId('dashboard-mail').scrollIntoViewIfNeeded();
+  await page.screenshot({ path: path.join(SHOTS, 'dashboard-6-postvak.png') });
+  await page.unroute('**/api/mcp/mailboxes');
+
   // A number that changed shows its course as a line.
   const td = app.ctx.services.teamdata;
   const uid = app.ctx.auth.owner().id;

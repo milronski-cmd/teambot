@@ -791,6 +791,12 @@ POST   /mcp/google/start                                       shared
 POST   /mcp/google/test                                        shared
 PUT    /mcp/google/ads                                         shared
 PUT    /mcp/google/mail-rule                                   shared
+GET    /mcp/mailboxes                                          shared
+POST   /mcp/mailboxes                                          shared
+DELETE /mcp/mailboxes/:id                                      shared
+GET    /mcp/mailboxes/:id/mail                                 shared
+GET    /mcp/mailboxes/:id/mail/:mid                            shared
+POST   /mcp/mailboxes/:id/mail/send                            shared
 GET    /mcp/bank                                               shared
 PUT    /mcp/bank/app                                           shared
 GET    /mcp/bank/banks                                         shared

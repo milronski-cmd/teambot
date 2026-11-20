@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { ArrowLeft, Mail as MailIcon, PenLine, RefreshCw, Search, Send } from 'lucide-react';
+import { ArrowLeft, Mail as MailIcon, PenLine, Plus, RefreshCw, Search, Send } from 'lucide-react';
 import { api } from '../../lib/api';
 import { useApp } from '../../lib/store';
 import { navigate } from '../../lib/router';
@@ -20,6 +20,7 @@ interface Row {
 interface Full extends Row {
   cc?: string;
   messageId?: string;
+  references?: string;
   attachments: string[];
   body: string;
 }
@@ -40,9 +41,14 @@ const plain = (s: string) => {
 };
 
 /**
- * The owner's own mail on the dashboard (Gmail through the Google app): read, answer himself, or hand a mail to a bot.
- * A bot's own way to the same mailbox is its Gmail tools; this is the owner's screen.
+ * The owner's own mail on the dashboard: the mailbox of his Google account and every other mailbox he connected
+ * (any address, over IMAP and SMTP). Read, answer himself from that address, or hand a mail to a bot.
  */
+interface Box {
+  id: string;
+  address: string;
+}
+const GOOGLE = 'google';
 export function MailSection() {
   const agents = useApp((s) => s.agents);
   const [rows, setRows] = useState<Row[] | null>(null);
@@ -56,22 +62,59 @@ export function MailSection() {
   const [query, setQuery] = useState('');
   const [asked, setAsked] = useState('');
   const [fresh, setFresh] = useState<{ to: string; subject: string; body: string } | null>(null);
+  // Which mailbox: the one of his Google account, or one he connected himself. And the form to connect one.
+  const [boxes, setBoxes] = useState<Box[]>([]);
+  const [acct, setAcct] = useState(GOOGLE);
+  const [adding, setAdding] = useState<{ address: string; password: string } | null>(null);
+  const base = acct === GOOGLE ? '/mcp/google/mail' : `/mcp/mailboxes/${acct}/mail`;
+  const address = boxes.find((b) => b.id === acct)?.address || '';
+
+  useEffect(() => {
+    api.get<{ boxes: Box[] }>('/mcp/mailboxes').then(
+      (r) => setBoxes(r.boxes),
+      () => {},
+    );
+  }, []);
 
   const load = () =>
-    api.get<{ messages: Row[] }>(`/mcp/google/mail?limit=12&q=${encodeURIComponent(`${box === 'sent' ? 'in:sent' : 'in:inbox'}${asked ? ` ${asked}` : ''}`)}`).then(
-      (r) => (setRows(r.messages), setOff('')),
-      (e) => (setRows([]), setOff(String(e?.message || e))),
-    );
+    api
+      .get<{ messages: Row[] }>(acct === GOOGLE ? `${base}?limit=12&q=${encodeURIComponent(`${box === 'sent' ? 'in:sent' : 'in:inbox'}${asked ? ` ${asked}` : ''}`)}` : `${base}?limit=12&box=${box}&q=${encodeURIComponent(asked)}`)
+      .then(
+        (r) => (setRows(r.messages), setOff('')),
+        (e) => (setRows([]), setOff(String(e?.message || e))),
+      );
   useEffect(() => {
     setRows(null);
+    setOpen(null);
     void load();
-  }, [box, asked]);
+  }, [box, asked, acct]);
+  // Google is not connected but another mailbox is: show that one.
+  useEffect(() => {
+    if (off && acct === GOOGLE && boxes.length) setAcct(boxes[0].id);
+  }, [off, boxes]);
+
+  const connect = async () => {
+    if (!adding) return;
+    setBusy(true);
+    try {
+      const r = await api.post<{ boxes: Box[] }>('/mcp/mailboxes', { address: adding.address.trim(), password: adding.password });
+      setBoxes(r.boxes);
+      const mine = r.boxes.find((b) => b.address === adding.address.trim().toLowerCase());
+      if (mine) setAcct(mine.id);
+      setAdding(null);
+      toast('Het postvak is gekoppeld', 'ok');
+    } catch (e) {
+      toastError(e);
+    } finally {
+      setBusy(false);
+    }
+  };
 
   const sendFresh = async () => {
     if (!fresh) return;
     setBusy(true);
     try {
-      await api.post('/mcp/google/mail/send', { to: fresh.to.trim(), subject: fresh.subject.trim(), body: fresh.body });
+      await api.post(`${base}/send`, { to: fresh.to.trim(), subject: fresh.subject.trim(), body: fresh.body });
       toast('Je mail is verstuurd', 'ok');
       setFresh(null);
       if (box === 'sent') void load();
@@ -85,7 +128,7 @@ export function MailSection() {
   const read = async (id: string) => {
     setLoading(id);
     try {
-      setOpen(await api.get<Full>(`/mcp/google/mail/${encodeURIComponent(id)}`));
+      setOpen(await api.get<Full>(`${base}/${encodeURIComponent(id)}`));
       setReply('');
       setRows((l) => (l || []).map((r) => (r.id === id ? { ...r, unread: false } : r)));
     } catch (e) {
@@ -99,7 +142,7 @@ export function MailSection() {
     if (!open) return;
     setBusy(true);
     try {
-      await api.post('/mcp/google/mail/send', { to: senderAddress(open.from), subject: /^re:/i.test(open.subject) ? open.subject : `Re: ${open.subject}`, body: reply, thread: open.thread, inReplyTo: open.messageId });
+      await api.post(`${base}/send`, { to: senderAddress(open.from), subject: /^re:/i.test(open.subject) ? open.subject : `Re: ${open.subject}`, body: reply, thread: open.thread || undefined, inReplyTo: open.messageId, references: open.references });
       toast('Je antwoord is verstuurd', 'ok');
       setOpen(null);
       setReply('');
@@ -116,7 +159,9 @@ export function MailSection() {
     setBusy(true);
     try {
       const th = await api.post<{ id: string }>('/threads', { agentId });
-      await api.post(`/threads/${th.id}/messages`, { content: t('Lees deze mail in Gmail en stel een antwoord voor: “{0}” van {1} (id {2}).', open.subject, senderName(open.from), open.id) });
+      const inGmail = t('Lees deze mail in Gmail en stel een antwoord voor: “{0}” van {1} (id {2}).', open.subject, senderName(open.from), open.id);
+      const inBox = t('Lees deze mail in het postvak {0} en stel een antwoord voor: “{1}” van {2} (id {3}).', address, open.subject, senderName(open.from), open.id);
+      await api.post(`/threads/${th.id}/messages`, { content: acct === GOOGLE ? inGmail : inBox });
       navigate(`/t/${th.id}`);
     } catch (e) {
       toastError(e);
@@ -131,21 +176,36 @@ export function MailSection() {
         icon={MailIcon}
         tone="blue"
         action={
-          !off && (
-            <span className="flex items-center gap-1">
-              <Button size="sm" variant="ghost" icon={<PenLine className="h-4 w-4" />} onClick={() => (setOpen(null), setFresh({ to: '', subject: '', body: '' }))} data-testid="dashboard-mail-new">
-                Nieuwe mail
-              </Button>
-              <Button size="sm" variant="ghost" icon={<RefreshCw className="h-4 w-4" />} onClick={() => (setRows(null), void load())}>
-                Verversen
-              </Button>
-            </span>
-          )
+          <span className="flex flex-wrap items-center gap-1">
+            {!off && (
+              <>
+                <Button size="sm" variant="ghost" icon={<PenLine className="h-4 w-4" />} onClick={() => (setOpen(null), setAdding(null), setFresh({ to: '', subject: '', body: '' }))} data-testid="dashboard-mail-new">
+                  Nieuwe mail
+                </Button>
+                <Button size="sm" variant="ghost" icon={<RefreshCw className="h-4 w-4" />} onClick={() => (setRows(null), void load())}>
+                  Verversen
+                </Button>
+              </>
+            )}
+            <Button size="sm" variant="ghost" icon={<Plus className="h-4 w-4" />} onClick={() => (setFresh(null), setAdding({ address: '', password: '' }))} data-testid="dashboard-mail-add">
+              Postvak koppelen
+            </Button>
+          </span>
         }
       >
         Post
       </SectionTitle>
-      {!off && !open && !fresh && (
+      {boxes.length > 0 && !adding && (
+        <select className="h-9 w-full rounded-lg border border-line bg-surface px-2 text-sm text-fg" value={acct} onChange={(e) => (setFresh(null), setAcct(e.target.value))} aria-label={t('Welk postvak')} data-testid="dashboard-mail-account" translate="no">
+          <option value={GOOGLE}>{t('Google-account')}</option>
+          {boxes.map((b) => (
+            <option key={b.id} value={b.id}>
+              {b.address}
+            </option>
+          ))}
+        </select>
+      )}
+      {!off && !open && !fresh && !adding && (
         <div className="flex flex-wrap items-center gap-2">
           <Segmented<'inbox' | 'sent'>
             label="Welke post"
@@ -169,8 +229,27 @@ export function MailSection() {
         </div>
       )}
       <Card className="p-0">
-        {fresh ? (
+        {adding ? (
+          <div className="space-y-3 p-4" data-testid="dashboard-mail-connect">
+            <p className="text-sm text-muted">Koppel elk mailadres dat je zelf leest: je leest en verstuurt er hier mee, en je bots kunnen erin meelezen. Er wordt niets doorgestuurd.</p>
+            <Field label="E-mailadres">
+              <Input value={adding.address} onChange={(e) => setAdding({ ...adding, address: e.target.value })} placeholder="naam@voorbeeld.nl" inputMode="email" autoComplete="off" />
+            </Field>
+            <Field label="Wachtwoord of app-wachtwoord" hint="Gmail en de meeste grote aanbieders vragen een app-wachtwoord: dat maak je aan bij de beveiliging van je account. Het wordt versleuteld op deze computer bewaard.">
+              <Input type="password" value={adding.password} onChange={(e) => setAdding({ ...adding, password: e.target.value })} autoComplete="new-password" />
+            </Field>
+            <div className="flex flex-wrap gap-2">
+              <Button variant="primary" loading={busy} disabled={!adding.address.trim() || !adding.password} onClick={connect} data-testid="dashboard-mail-connect-save">
+                Koppelen
+              </Button>
+              <Button variant="secondary" onClick={() => setAdding(null)}>
+                Annuleren
+              </Button>
+            </div>
+          </div>
+        ) : fresh ? (
           <div className="space-y-3 p-4" data-testid="dashboard-mail-compose">
+            {address && <p className="text-xs text-muted">{t('Vanaf {0}', address)}</p>}
             <Field label="Aan">
               <Input value={fresh.to} onChange={(e) => setFresh({ ...fresh, to: e.target.value })} placeholder="naam@voorbeeld.nl" inputMode="email" />
             </Field>

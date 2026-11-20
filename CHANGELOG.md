@@ -1,5 +1,19 @@
 # Changelog
 
+## [4.12.1] — 2026-11-21
+
+### Post
+- **Elk mailadres op je dashboard.** Naast het postvak van je Google-account koppel je elk ander mailadres
+  (een tweede Gmail, een adres op je eigen domein): alleen het adres en het (app-)wachtwoord, de servers zoekt
+  TeamBot zelf. Je leest wat binnenkwam en wat verstuurd is, zoekt, en antwoordt of schrijft een nieuwe mail vanaf
+  dat adres. Er wordt niets doorgestuurd of gekopieerd. Je bots lezen in die postvakken mee; versturen gaat op jouw
+  woord, en een postvak koppelen doe je zelf.
+
+### Bank
+- **Een https-adres voor Enable Banking.** Een applicatie voor echte rekeningen neemt daar geen http://-adres aan.
+  De TeamBot-website heeft daarvoor een doorstuurpagina (bank.html) die het antwoord van de bank doorgeeft aan
+  TeamBot op je eigen computer; bij Apps › Bank staat nu hoe je dat adres invult.
+
 ## [4.12.0] — 2026-11-21
 
 ### Samenwerken
