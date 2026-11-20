@@ -1,14 +1,15 @@
 import { useEffect, useState } from 'react';
-import { ArrowUpRight, BarChart3, Inbox } from 'lucide-react';
-import { Card, EmptyState, Page, PageHeader, SectionTitle, timeAgo } from '../components/ui';
+import { ArrowUpRight, BarChart3, Blocks, Inbox, Users } from 'lucide-react';
+import { Card, EmptyState, IconTile, Page, PageHeader, SectionTitle, timeAgo } from '../components/ui';
 import { t } from '../lib/i18n';
 import { useApp } from '../lib/store';
 import { teamApi, useTeamChanged } from '../modules/teamdata/api';
 import { BotName } from '../modules/teamdata/parts';
 import { TeamFilterNote } from '../modules/teams/FilterNote';
 import { useTeamView } from '../modules/teams/scope';
-import { uiModules, useInboxExtraCount } from '../modules';
-import { ApprovalCard } from '../shell/ApprovalCard';
+import { useInboxExtraCount } from '../modules';
+import { AppsSection, appState, useApps, type AppRow } from './dashboard/Apps';
+import { appsWorking, botsBusy } from './dashboard/text';
 import { MailSection } from './dashboard/Mail';
 import { MoneySection } from './dashboard/Money';
 import { TeamSection } from './dashboard/Team';
@@ -16,56 +17,55 @@ import { TeamSection } from './dashboard/Team';
 type Tile = { id: number; sleutel: string; groep?: string | null; titel: string; waarde?: string | null; eenheid?: string | null; toelichting?: string | null; link?: string | null; bot?: string | null; bijgewerkt?: string | null; team?: string };
 
 /**
- * What waits for the owner, right on the dashboard: the same cards as the page "Wacht op jou" (approvals, questions,
- * decisions, held customer answers), answered here.
+ * The state of everything at a glance: what waits (a number and the way there, never the cards themselves: those are
+ * the page "Wacht op jou"), who is at work, and how the connected apps stand.
  */
-function WaitingSection() {
+function StatusRow({ apps }: { apps: AppRow[] | null }) {
   const pending = useApp((s) => s.approvals);
+  const agents = useApp((s) => s.agents);
+  const runs = useApp((s) => s.runs);
   const extra = useInboxExtraCount();
-  const n = pending.length + extra;
+  const waiting = pending.length + extra;
+  const busy = agents.filter((a) => runs.some((r) => r.agent_id === a.id && (r.status === 'running' || r.status === 'queued'))).length;
+  const ok = (apps || []).filter((a) => appState(a).tone === 'ok').length;
+  const stats: { key: string; icon: typeof Inbox; tone: 'orange' | 'violet' | 'blue'; title: string; value: string; note: string; href: string }[] = [
+    { key: 'waiting', icon: Inbox, tone: 'orange', title: t('Wacht op jou'), value: String(waiting), note: waiting ? t('Bekijken en beslissen') : t('Niets dat op je wacht'), href: '#/inbox' },
+    { key: 'team', icon: Users, tone: 'violet', title: t('Team'), value: String(busy), note: botsBusy(busy, agents.length), href: '#/' },
+    { key: 'apps', icon: Blocks, tone: 'blue', title: t('Apps'), value: apps === null ? '…' : String(apps.length), note: apps === null ? '' : appsWorking(ok, apps.length), href: '#/m/mcp' },
+  ];
   return (
-    <section className="space-y-2" data-testid="dashboard-waiting">
-      <SectionTitle
-        icon={Inbox}
-        tone="orange"
-        action={
-          n > 0 && (
-            <a href="#/inbox" className="text-sm text-muted hover:text-fg hover:underline">
-              {t('Alles bekijken ({0})', n)}
-            </a>
-          )
-        }
-      >
-        Wacht op jou
-      </SectionTitle>
-      {n === 0 ? (
-        <Card className="p-4 text-sm text-muted">Niets dat op je wacht.</Card>
-      ) : (
-        <div className="space-y-3">
-          {pending.slice(0, 5).map((a) => (
-            <ApprovalCard key={a.id} a={a} showThreadLink />
-          ))}
-          {uiModules.map((m) => {
-            const Section = m.inbox?.component;
-            return Section ? <Section key={m.id} /> : null;
-          })}
-        </div>
-      )}
-    </section>
+    <div className="grid grid-cols-1 gap-3 sm:grid-cols-3" data-testid="dashboard-status">
+      {stats.map((x) => (
+        <a key={x.key} href={x.href} className="group block rounded-card transition-transform hover:-translate-y-0.5" data-testid={`dashboard-stat-${x.key}`}>
+          <Card className="flex h-full items-center gap-3 p-4 transition-colors group-hover:border-fg/30">
+            <IconTile icon={x.icon} tone={x.tone} />
+            <div className="min-w-0 flex-1">
+              <div className="text-[13px] font-medium text-muted">{x.title}</div>
+              <div className="text-2xl font-bold leading-tight tracking-tight tabular-nums">{x.value}</div>
+              <div className="truncate text-xs text-muted">{x.note}</div>
+            </div>
+            <ArrowUpRight className="h-4 w-4 shrink-0 text-muted transition-colors group-hover:text-fg" aria-hidden />
+          </Card>
+        </a>
+      ))}
+    </div>
   );
 }
 
 /**
- * Dashboard: the owner's own workplace (20 nov 2026: "Ik heb geen inbox en zo erin. Ik moet er zelf ook in kunnen
- * werken"). From top to bottom: what waits for him (answered here), his mail (read, answer, or hand to a bot), his
- * money (the bank app), the team right now, and the numbers the bots keep (the tiles: rows of the standard team table
- * "dashboard", server/modules/teamdata/schema.ts). A part that is not connected yet says how to connect it.
+ * Dashboard: the owner's overview of his whole business, like the home screen of an operating system (20 nov 2026:
+ * "bij dashboard moet ik gewoon een overzicht hebben van mijn financiële status en bestellingen … gekoppelde apps en
+ * alles zien. Een soort OS"). What waits for him is one number with the way to "Wacht op jou": the cards themselves
+ * are there and nowhere else. Then his money (the bank app), the numbers the bots keep (turnover, orders, leads: the
+ * tiles, rows of the standard team table "dashboard", server/modules/teamdata/schema.ts), every connected app and how
+ * it stands, the team right now, and his mail. A part that is not connected yet says how to connect it.
  */
 export function DashboardPage() {
   // The team chosen in the sidebar, or every team (each tile then names its team).
   const { activeId, multi } = useTeamView();
   const [rows, setRows] = useState<Tile[] | null>(null);
   const [err, setErr] = useState('');
+  const apps = useApps();
   const load = () =>
     teamApi.dashboard(activeId).then(
       (r) => (setRows(r as Tile[]), setErr('')),
@@ -83,23 +83,17 @@ export function DashboardPage() {
   }
   return (
     <Page>
-      <PageHeader width="5xl" title="Dashboard" subtitle="Je werkplek: wat op je wacht, je post, je geld, je team en de cijfers die je bots bijhouden." />
+      <PageHeader width="5xl" title="Dashboard" subtitle="Je hele zaak in één overzicht: je geld, je cijfers, je apps en je team." />
       <div className="mx-auto max-w-5xl space-y-6 px-4 pb-10 sm:px-6">
         <TeamFilterNote />
-        <WaitingSection />
-        <div className="grid items-start gap-6 lg:grid-cols-2">
-          <MailSection />
-          <div className="space-y-6">
-            <MoneySection />
-            <TeamSection />
-          </div>
-        </div>
+        <StatusRow apps={apps} />
+        <MoneySection />
         <section className="space-y-3" data-testid="dashboard-numbers">
           <SectionTitle icon={BarChart3} tone="amber">
             Cijfers
           </SectionTitle>
           {err && <EmptyState title="De cijfers laden niet">{err}</EmptyState>}
-          {rows && !rows.length && !err && <Card className="p-4 text-sm text-muted">Vraag een bot om zijn cijfers hier bij te houden, bijvoorbeeld: “houd op het dashboard bij hoeveel klantmails er openstaan”.</Card>}
+          {rows && !rows.length && !err && <Card className="p-4 text-sm text-muted">Hier komen je omzet, je bestellingen en je aanvragen te staan zodra een bot ze bijhoudt. Vraag het een bot, bijvoorbeeld: “houd op het dashboard bij hoeveel bestellingen en hoeveel omzet er vandaag en deze week zijn”.</Card>}
           {[...groups].map(([g, list]) => (
             <div key={g} className="space-y-2" data-testid="dashboard-group">
               <h3 className="px-1 text-[13px] font-semibold uppercase tracking-wide text-muted" translate="no">
@@ -113,6 +107,11 @@ export function DashboardPage() {
             </div>
           ))}
         </section>
+        <AppsSection apps={apps} />
+        <div className="grid items-start gap-6 lg:grid-cols-2">
+          <TeamSection />
+          <MailSection />
+        </div>
       </div>
     </Page>
   );

@@ -1,5 +1,16 @@
 # Changelog
 
+## [4.9.18] — 2026-11-20
+
+### Dashboard
+- **Het dashboard is je overzicht, niet nog een Wacht op jou.** De kaarten die op je wachten stonden op twee
+  plekken. Op het dashboard staat nu alleen een teller met een link; beslissen doe je in Wacht op jou.
+- **Je hele zaak op één scherm.** Bovenaan drie tellers: wat op je wacht, hoeveel bots er werken en hoe je apps
+  ervoor staan. Daaronder je geld (saldo en mutaties van je bank), je cijfers (omzet, bestellingen, aanvragen: wat
+  je bots bijhouden), je team en je post.
+- **Al je gekoppelde apps als tegels.** Elke app met zijn naam en zijn stand (verbonden, klaar voor gebruik, werkt
+  niet, opnieuw inloggen, uit). Eén klik opent de app.
+
 ## [4.9.17] — 2026-11-20
 
 ### Werk dat af is

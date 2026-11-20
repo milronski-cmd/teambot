@@ -77,6 +77,8 @@ try {
   check('zonder koppelingen: Post wijst naar Apps', /Gmail is niet gekoppeld/.test(empty));
   check('zonder koppelingen: Geld zegt hoe je de bank koppelt', /Koppel je bank/.test(empty) && /Alleen lezen, nooit betalen/.test(empty));
   check('Wacht op jou, Team en Cijfers staan er', /Wacht op jou/.test(empty) && /Niets dat op je wacht/.test(empty) && /Staat stil:/.test(empty) && /Cijfers/.test(empty));
+  check('Wacht op jou is alleen een teller met een link, geen kaarten', (await page.getByTestId('dashboard-stat-waiting').getAttribute('href')) === '#/inbox' && (await page.getByRole('group', { name: 'Goedkeuring nodig' }).count()) === 0);
+  check('Gekoppelde apps staat erop en zegt hoe je koppelt', /Gekoppelde apps/.test(empty) && /Nog geen apps gekoppeld/.test(empty));
   await shot('1-leeg');
 
   // With mail and a bank (stand-ins at the page).
@@ -102,6 +104,28 @@ try {
   await page.getByText('Je antwoord is verstuurd').waitFor({ timeout: 10000 });
   check('het antwoord gaat naar de afzender, in hetzelfde gesprek', sent && sent.to === 'jan@klant.test' && sent.subject === 'Re: Levering van bestelling 2041' && sent.thread === 't1' && sent.inReplyTo === '<abc@klant.test>', JSON.stringify(sent || {}).slice(0, 160));
   check('daarna staat de lijst er weer', (await page.getByTestId('dashboard-mail-row').count()) === 3);
+
+  // Connected apps as a board: the name, how it stands, one click to open it (the list as the server gives it).
+  await page.route('**/api/mcp/connections', (r) =>
+    r.fulfill({ json: [
+      { id: 'mcp_a', name: 'Google', label: '', enabled: true, status: 'connected', last_error: null, transport: 'builtin' },
+      { id: 'mcp_b', name: 'Lighthouse (snelheid en SEO meten)', label: '', enabled: true, status: 'stopped', last_error: null, transport: 'stdio' },
+      { id: 'mcp_c', name: 'Boekhouding', label: '', enabled: true, status: 'error', last_error: 'time-out', transport: 'http' },
+      { id: 'mcp_d', name: 'Oude koppeling', label: '', enabled: false, status: 'stopped', last_error: null, transport: 'stdio' },
+    ] }),
+  );
+  await page.reload();
+  await page.getByTestId('dashboard-app').first().waitFor({ timeout: 15000 });
+  const apps = await page.getByTestId('dashboard-apps').innerText();
+  check('apps staan er als tegels met hun stand', /Google\s+Verbonden/.test(apps) && /Lighthouse\s+Klaar voor gebruik/.test(apps) && /Boekhouding\s+Werkt niet/.test(apps) && /Oude koppeling\s+Uit/.test(apps) && /Apps die werken: 2 van 4/.test(apps), apps.split('\n').join(' | ').slice(0, 200));
+  check('de teller bovenaan telt ze', /4\s+2 van 4 werken/.test(await page.getByTestId('dashboard-stat-apps').innerText()));
+  check('een tegel opent de app', (await page.getByTestId('dashboard-app').first().getAttribute('href')) === '#/m/mcp/c/mcp_a');
+  await page.getByTestId('dashboard-apps').scrollIntoViewIfNeeded();
+  await page.screenshot({ path: path.join(SHOTS, 'dashboard-4-apps.png') });
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.waitForTimeout(400);
+  const wide = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
+  check('op telefoonbreedte schuift niets opzij', wide <= 1, `overschot ${wide}px`);
 } catch (e) {
   check('de schermronde liep door', false, String(e?.message || e).split('\n')[0]);
 } finally {
