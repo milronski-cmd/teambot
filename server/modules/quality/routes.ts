@@ -1,6 +1,7 @@
 import type { Ctx } from '../../core/types.js';
 import { ah, bad, notFound, user } from '../../core/http.js';
 import type { QualityService } from './service.js';
+import { setCheckEngineForAll } from './engine.js';
 import { decideSuggestion, suggestions } from './skills.js';
 import type { TaskKind } from './types.js';
 
@@ -68,6 +69,19 @@ export function qualityRoutes(ctx: Ctx, svc: QualityService) {
     }),
   );
 
+  /** One engine for the second look of every bot (another model than the one that did the work), or back to default. */
+  api.put(
+    '/quality/check-engine',
+    ah(async (req) => {
+      const u = user(req);
+      const providerId = typeof req.body?.providerId === 'string' && req.body.providerId ? req.body.providerId : null;
+      if (providerId && !ctx.providers.list(u.id).some((p) => p.id === providerId && p.enabled)) throw bad('Deze AI-dienst is niet gekoppeld of staat uit.');
+      const model = typeof req.body?.model === 'string' && req.body.model.trim() ? req.body.model.trim().slice(0, 120) : null;
+      const bots = setCheckEngineForAll(ctx, u.id, providerId, model);
+      ctx.audit(u.id, 'quality.check_engine_all', { providerId, model, bots });
+      return { ok: true, bots };
+    }),
+  );
   api.get('/quality/suggestions', ah(async (req) => suggestions(svc, user(req).id, String(req.query.status || 'open'))));
   api.post(
     '/quality/suggestions/:id',

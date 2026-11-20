@@ -1,5 +1,15 @@
 # Changelog
 
+## [4.9.17] — 2026-11-20
+
+### Werk dat af is
+- **De tweede blik komt van een ander model.** De controle vóór "klaar" liep op hetzelfde model dat het werk
+  deed, en een model is mild over zijn eigen werk. Heb je een model van een andere maker gekoppeld dat niets extra
+  kost (een abonnement, een gratis of een lokaal model), dan kijkt dat nu vanzelf na. Een betaald model wordt
+  alleen gebruikt als jij het kiest.
+- **Eén keuze voor al je bots.** Bij een bot onder Werk dat af is kies je de controle-engine en het model, en met
+  "Voor al mijn bots zo instellen" geldt dat voor je hele team.
+
 ## [4.9.16] — 2026-11-20
 
 ### Je team stuurt op resultaat

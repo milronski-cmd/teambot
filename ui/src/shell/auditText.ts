@@ -542,6 +542,7 @@ const EXACT: Record<string, Fn> = {
     sys(tpl`{h} het werk van ${x.bot} na de limiet alsnog nagekeken${d.state === 'passed' ? ' (klaar)' : d.state === 'cant' ? ' (kon niet)' : ' (te controleren)'}${colon(clean(d.task, 80))}`, { tone: d.state === 'passed' ? undefined : 'warn' }),
   'quality.lesson': (_d, x) => sys(tpl`{h} uit jouw correctie een les voor ${x.bot} onthouden`),
   'quality.skill_accepted': (d, x) => you(tpl`{h} ${x.bot} gevraagd een skill voor te stellen${colon(clean(d.title, 80))}`),
+  'quality.check_engine_all': (d) => (d.providerId ? you(tpl`{h} de tweede blik van al je bots op één engine gezet`) : you(tpl`{h} de tweede blik van al je bots teruggezet naar de standaard`)),
   'quality.skill_dismissed': (d) => you(tpl`{h} een voorstel voor een skill weggelegd${colon(clean(d.title, 80))}`),
   'agent.loop_stop': (_d, x) => sys(tpl`{h} ${x.bot} laten stoppen: steeds dezelfde stap zonder vooruitgang`, { tone: 'warn' }),
 

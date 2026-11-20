@@ -42,7 +42,56 @@ export function checkEngineOf(ctx: Ctx, agent: Agent): { providerId: string; mod
   const q = agent.settings?.quality || {};
   if (typeof q.checkProviderId === 'string' && q.checkProviderId) return { providerId: q.checkProviderId, model: typeof q.checkModel === 'string' ? q.checkModel : '' };
   const own = ownEngineRef(ctx, agent.user_id, agent);
-  return own && { providerId: own.providerId, model: own.model || '' };
+  // A second look is worth most from another model than the one that did the work: a model is mild about what it made
+  // itself, and another family sees other mistakes. So when the owner has such a model connected at no extra cost
+  // (a subscription, a free or a local engine), the check runs there. A paid engine is only used when he picked it.
+  const other = own ? otherFamily(ctx, agent, own.providerId) : null;
+  return other || (own && { providerId: own.providerId, model: own.model || '' });
+}
+
+/** The maker a kind of engine belongs to: "claude-code" and "anthropic" are one family, "codex" and "openai" another. */
+export function familyOf(kind: string | undefined): string {
+  const k = String(kind || '').toLowerCase();
+  if (/claude|anthropic/.test(k)) return 'anthropic';
+  if (/openai|codex|gpt/.test(k)) return 'openai';
+  if (/gemini|google|vertex/.test(k)) return 'google';
+  return k.replace(/[-_](?:cli|code|api)$/, '');
+}
+
+/** An engine of another family than the bot's own that costs nothing extra and can do a short call (or null). */
+export function otherFamily(ctx: Ctx, agent: Agent, ownProviderId: string): { providerId: string; model: string } | null {
+  try {
+    const own = ctx.providers.config(ownProviderId);
+    if (!own) return null;
+    for (const cfg of ctx.providers.list(agent.user_id)) {
+      if (cfg.id === own.id || !cfg.enabled || familyOf(cfg.kind) === familyOf(own.kind)) continue;
+      const v = judgeEngine(ctx, { userId: agent.user_id, agent, allowPaid: false } as any, { providerId: cfg.id, model: '' }, 'other');
+      if (v.engine && v.engine.billing !== 'paid') return { providerId: cfg.id, model: '' };
+    }
+  } catch {
+    /* no other engine: the bot's own */
+  }
+  return null;
+}
+
+/** The owner's choice for all his bots at once: the check of every bot runs on this engine (empty: each bot's default). */
+export function setCheckEngineForAll(ctx: Ctx, userId: string, providerId: string | null, model: string | null): number {
+  let n = 0;
+  for (const a of ctx.store.agents(userId)) {
+    if (a.archived) continue;
+    const q = { ...(a.settings?.quality || {}) };
+    if (providerId) {
+      q.checkProviderId = providerId;
+      if (model) q.checkModel = model;
+      else delete q.checkModel;
+    } else {
+      delete q.checkProviderId;
+      delete q.checkModel;
+    }
+    ctx.store.updateAgent(a.id, { settings: { ...a.settings, quality: q } });
+    n++;
+  }
+  return n;
 }
 
 const WHY: Record<Exclude<EngineProblem, 'unsupported'>, string> = {

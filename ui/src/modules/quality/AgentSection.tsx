@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import type { Agent } from '../../lib/types';
 import { api } from '../../lib/api';
 import { useApp } from '../../lib/store';
-import { Field, Input, Toggle } from '../../components/ui';
+import { Button, Field, Input, Toggle } from '../../components/ui';
 import { SelectBox as Select } from '../../components/Listbox';
 import { t } from '../../lib/i18n';
 import { rowWorks } from '../../pages/agentRows';
@@ -20,6 +20,7 @@ export function QualityAgentSection({ agent, onChange }: { agent: Agent; onChang
   const set = (p: Record<string, any>) => onChange({ settings: { ...(agent.settings || {}), quality: { ...q, ...p } } });
   const setLoop = (p: Record<string, any>) => set({ loopGuard: { on: loopOn, repeat: loop.repeat ?? LD.repeat, idle: loop.idle ?? LD.idle, ...p } });
   const [lessons, setLessons] = useState<number | null>(null);
+  const [allState, setAllState] = useState<'' | 'busy' | 'done' | 'error'>('');
   useEffect(() => {
     if (!agent.id) return;
     api
@@ -41,9 +42,9 @@ export function QualityAgentSection({ agent, onChange }: { agent: Agent; onChang
           Meldt deze bot een taak af, dan kijkt een aparte, korte controle (zonder het gesprek) zijn bewijs na tegen “klaar als”. Klopt het niet of ontbreekt bewijs, dan staat de taak op “te controleren”. Zonder bewijs is een taak nooit klaar, ook als dit uit staat.
         </p>
         {q.check !== false && (
-          <Field label="Controle-engine" hint="Standaard de engine van de bot zelf. Kies een goedkopere of lokale als je wilt.">
+          <Field label="Controle-engine" hint="Een ander model dan dat van de bot ziet andere fouten. Standaard: een ander model dat niets extra kost als je dat gekoppeld hebt, anders de engine van de bot zelf.">
             <Select value={q.checkProviderId || ''} onChange={(e) => set({ checkProviderId: e.target.value || undefined, checkModel: undefined })} aria-label="Controle-engine">
-              <option value="">Zelfde als de bot</option>
+              <option value="">Standaard</option>
               {usable.map((p) => (
                 <option key={p.id} value={p.id}>
                   {p.name}
@@ -51,6 +52,28 @@ export function QualityAgentSection({ agent, onChange }: { agent: Agent; onChang
               ))}
             </Select>
           </Field>
+        )}
+        {q.check !== false && (
+          <div className="flex flex-wrap items-center gap-2">
+            <Button
+              size="sm"
+              variant="secondary"
+              disabled={allState === 'busy'}
+              onClick={async () => {
+                setAllState('busy');
+                try {
+                  await api.put('/quality/check-engine', { providerId: q.checkProviderId || null, model: q.checkModel || null });
+                  setAllState('done');
+                } catch {
+                  setAllState('error');
+                }
+              }}
+            >
+              Voor al mijn bots zo instellen
+            </Button>
+            {allState === 'done' && <span className="text-xs text-muted">Ingesteld voor al je bots.</span>}
+            {allState === 'error' && <span className="text-xs text-danger">Instellen lukte niet.</span>}
+          </div>
         )}
         {q.check !== false && q.checkProviderId && (
           <Field label="Model voor de controle" hint="Leeg = het standaardmodel van die engine.">
