@@ -1,5 +1,12 @@
 # Changelog
 
+## [4.9.19] — 2026-11-20
+
+### Je team leert
+- **Skills worden ook genoemd bij werk dat een bot zelf oppakt.** De aanwijzing "dit zijn je skills voor dit werk"
+  ging alleen mee bij een bericht van jou of een collega. Het meeste werk van een team komt van de takenlijst en
+  uit eigen beweging, en daar ontbrak hij. Nu krijgt een bot hem bij elk werk.
+
 ## [4.9.18] — 2026-11-20
 
 ### Dashboard

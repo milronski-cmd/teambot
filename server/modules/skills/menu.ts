@@ -58,9 +58,14 @@ const FIT_DESCRIBED = 3;
  * bot's skills are named in their own order (a bot has the handful that belong to its role).
  */
 export function skillFitContext(ctx: Ctx, lib: SkillLibrary, agent: Agent, input: Message | null): string | null {
-  if (!input || input.role !== 'user' || agent.access_mode === 'chat') return null;
+  if (!input || agent.access_mode === 'chat') return null;
+  // Work a bot takes up by itself arrives as a line of TeamBot ("er ligt werk voor je klaar"), not as a message of a
+  // person: most of a team's turns are such turns, and they are work by definition (live, 20 Nov 2026: with the
+  // pointer only on messages, 594 steps of own work still loaded no skill).
+  const work = input.role === 'system' && !!(input.parts as any)?.work;
+  if (input.role !== 'user' && !work) return null;
   const text = String(input.content || '');
-  if (text.replace(/\s+/g, ' ').trim().length < 40) return null;
+  if (!work && text.replace(/\s+/g, ' ').trim().length < 40) return null;
   const mine = lib.enabledFor(agent);
   if (!mine.length || pickedSkills(lib, agent, text).length) return null;
   const task = new Set(tokens(text, 400));

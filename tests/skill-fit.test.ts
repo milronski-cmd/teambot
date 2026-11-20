@@ -30,4 +30,8 @@ test('work names the skills of the bot, best fit first; small talk, a picked ski
   assert.equal(skillFitContext({} as any, lib([]), bot(), msg(task)), null);
   assert.equal(skillFitContext({} as any, lib(mine), bot({ access_mode: 'chat' }), msg(task)), null);
   assert.equal(skillFitContext({} as any, lib(mine), bot(), msg(task, 'assistant')), null);
+  // Work the bot takes up by itself (a line of TeamBot) is work too: its skills are named, in their own order.
+  const own = skillFitContext({} as any, lib(mine), bot(), { role: 'system', content: 'Er ligt werk voor je klaar: 1 punt.', parts: { work: { refs: ['tk::1'] } } } as any)!;
+  assert.match(own, /^Je skills voor dit werk: humanizer \(/);
+  assert.equal(skillFitContext({} as any, lib(mine), bot(), { role: 'system', content: 'Een melding van het systeem over iets anders dan werk.' } as any), null);
 });
