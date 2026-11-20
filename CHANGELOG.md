@@ -1,5 +1,16 @@
 # Changelog
 
+## [4.9.15] — 2026-11-20
+
+### Je team leert
+- **Een bot wordt bij elk werk op zijn eigen skills gewezen.** Een bot had zijn skills wel, maar pakte ze er nooit
+  bij: bij een team van twintig bots met 49 skills werd in een hele nacht werk geen enkele skill geladen. Bij elke
+  opdracht krijgt de bot nu te horen welke van zijn skills bij dat werk horen (de best passende eerst), dat hij
+  daarmee begint en dat hij in zijn antwoord zegt welke hij gebruikte.
+- **Je ergernis wordt een les.** Een correctie werd alleen herkend aan zinnen als "zo doen we dat niet". Zeg je
+  "waarom krijg ik alles dubbel", "je negeert me", "dat heb ik al gezegd" of "niet steeds vragen", dan wordt dat nu
+  ook een les voor die bot, zodat het de volgende keer anders gaat.
+
 ## [4.9.14] — 2026-11-20
 
 ### Je team leert van je antwoorden

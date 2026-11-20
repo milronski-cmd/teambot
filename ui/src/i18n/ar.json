@@ -7526,6 +7526,7 @@
  "Je schrijft per kanaal meerdere varianten: voor Google koppen van hoogstens 30 en beschrijvingen van hoogstens 90 tekens, voor Meta een korte hoofdtekst met een kop.": "تكتب لكل قناة عدة نسخ: في Google عناوين لا تزيد عن 30 حرفًا وأوصاف لا تزيد عن 90 حرفًا، وفي Meta نصًا رئيسيًا قصيرًا مع عنوان.",
  "Je schrijft per product een titel, een korte tekst, een lange tekst, 3 tot 5 kenmerken en een meta-omschrijving.": "تكتب لكل منتج عنوانًا، ونصًا قصيرًا، ونصًا طويلًا، و3 إلى 5 خصائص، ووصفًا meta.",
  "Je schrijft productteksten voor de webshop.": "تكتب نصوص المنتجات للمتجر الإلكتروني.",
+ "Je skills voor dit werk: {0}{1}. Hoort deze opdracht bij een van deze skills, pak die er dan eerst bij (je eigen skill-tool als je die hebt, anders skill_load) en werk volgens zijn stappen; zeg in je antwoord welke skill je gebruikte. Past er geen, werk dan zonder.": "مهاراتك لهذا العمل: {0}{1}. إذا كانت هذه المهمة تنتمي إلى إحدى هذه المهارات فابدأ بها أولًا (بأداة المهارات الخاصة بك إن وُجدت، وإلا فباستخدام skill_load) واعمل وفق خطواتها؛ واذكر في إجابتك أي مهارة استخدمت. وإن لم تناسب أي منها فاعمل بدونها.",
  "Je sleutel op deze telefoon wordt meteen ongeldig. Opnieuw gebruiken kan door opnieuw te koppelen.": "سيصبح مفتاحك على هذا الهاتف غير صالح فورًا. يمكنك استخدامه مرة أخرى عبر إعادة الاقتران.",
  "Je sleutel wordt versleuteld opgeslagen en nooit getoond of gelogd. De controle is gratis: alleen de modellenlijst of het tegoed.": "يُحفظ مفتاحك مشفّرًا ولا يُعرض أو يُسجَّل أبدًا. الفحص مجاني: قائمة النماذج أو الرصيد فقط.",
  "Je sleutels": "مفاتيحك",

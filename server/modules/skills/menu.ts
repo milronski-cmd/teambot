@@ -2,6 +2,7 @@ import type { Agent, Ctx, Message } from '../../core/types.js';
 import { ah, notFound, str, user } from '../../core/http.js';
 import { canSeeThread } from '../../api/threads.js';
 import type { SkillLibrary, SkillRow } from './library.js';
+import { tokens } from '../memory/text.js';
 
 /**
  * The "/" and "$" menu in the composer. The app lists the skills of the conversation's bot(s); a picked skill stays in
@@ -42,6 +43,34 @@ export function skillChoiceContext(ctx: Ctx, lib: SkillLibrary, agent: Agent, in
   return toolsOk
     ? `De gebruiker koos voor dit bericht de skill ${names} (met / of $ in het bericht). Laad ${picked.length > 1 ? 'die' : 'hem'} eerst (met je eigen skill-tool als je die hebt, anders met skill_load) en volg de instructies bij dit verzoek.`
     : `De gebruiker koos voor dit bericht de skill ${names} (met / of $ in het bericht). Volg de instructies van die skill uit je instructies hierboven.`;
+}
+
+/** At most this many skills are named for a turn; the best fits first. */
+const FIT_MAX = 6;
+const FIT_DESCRIBED = 3;
+
+/**
+ * The bot's own skills, named with the work they are for, on every turn that brings work. A bot has its skills (the
+ * engine lists them, or TeamBot's instructions do) and may load one whenever it likes; live (20 Nov 2026) twenty bots
+ * with 49 skills between them did some 7,000 steps in a night and did not load a skill once. Being allowed to is not
+ * the same as being pointed to it at the moment the work arrives, so the turn says which of its skills fit this
+ * work and that it starts with one. Words the task shares with a skill put that skill first; with none shared the
+ * bot's skills are named in their own order (a bot has the handful that belong to its role).
+ */
+export function skillFitContext(ctx: Ctx, lib: SkillLibrary, agent: Agent, input: Message | null): string | null {
+  if (!input || input.role !== 'user' || agent.access_mode === 'chat') return null;
+  const text = String(input.content || '');
+  if (text.replace(/\s+/g, ' ').trim().length < 40) return null;
+  const mine = lib.enabledFor(agent);
+  if (!mine.length || pickedSkills(lib, agent, text).length) return null;
+  const task = new Set(tokens(text, 400));
+  const ranked = mine
+    .map((s, n) => ({ s, n, hit: tokens(`${s.name.replace(/[-_]+/g, ' ')} ${s.description || ''}`, 200).filter((w) => task.has(w)).length }))
+    .sort((x, y) => y.hit - x.hit || x.n - y.n)
+    .slice(0, FIT_MAX);
+  const names = ranked.map((r, i) => (i < FIT_DESCRIBED && r.s.description ? `${r.s.name} (${String(r.s.description).replace(/\s+/g, ' ').trim().slice(0, 110)})` : r.s.name));
+  const more = mine.length - ranked.length;
+  return `Je skills voor dit werk: ${names.join('; ')}${more > 0 ? `; en nog ${more}` : ''}. Hoort deze opdracht bij een van deze skills, pak die er dan eerst bij (je eigen skill-tool als je die hebt, anders skill_load) en werk volgens zijn stappen; zeg in je antwoord welke skill je gebruikte. Past er geen, werk dan zonder.`;
 }
 
 export function skillMenuRoutes(ctx: Ctx, lib: SkillLibrary) {

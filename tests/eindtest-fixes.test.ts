@@ -53,6 +53,11 @@ test('a bot gives itself a new name and instructions with my_settings; a twin na
     assert.equal(isCorrection('voortaan antwoord je altijd in drie zinnen en heet je Max'), false);
     assert.equal(isCorrection('Volgende keer eerst even bellen voordat je iets verstuurt.'), true);
     assert.equal(isCorrection('Nee, zo doen we dat niet.'), true);
+    // Plain annoyance is a correction; a plain question or request is not.
+    for (const said of ['Waarom krijg ik alles dubbel?', 'Je negeert me, dit vroeg ik niet.', 'Hoezo een script, we hebben toch de API?', 'Dat heb ik al drie keer gezegd.', 'Niet steeds vragen, gewoon doen.', 'Dat was niet de bedoeling.'])
+      assert.equal(isCorrection(said), true, said);
+    for (const said of ['Waarom daalt het verkeer op de site?', 'Hoezo?', 'Kun je de mailronde weer aanzetten?', 'Stuur de offerte opnieuw naar Jan.'])
+      assert.equal(isCorrection(said), false, said);
   } finally {
     await e.t.close();
   }

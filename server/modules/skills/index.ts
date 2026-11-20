@@ -9,7 +9,7 @@ import { Catalogs, mapToFiles } from './catalog.js';
 import { type Fetcher, defaultFetcher } from './fetch.js';
 import { skillRoutes } from './routes.js';
 import { nativeSkillsPrompt, skillTools, systemPromptFor } from './tools.js';
-import { skillChoiceContext, skillMenuRoutes } from './menu.js';
+import { skillChoiceContext, skillFitContext, skillMenuRoutes } from './menu.js';
 import { exportTemplate, installTemplate, normalizeTemplate, previewTemplate } from './templates.js';
 import { enforcePolicy, publisherRoutes, publisherSettings, unsignedView } from './publishers.js';
 import { CuratedCatalog, curatedRoutes } from './curated-routes.js';
@@ -62,6 +62,7 @@ const mod: Module = {
     ctx.hooks.systemPrompt.push(({ agent }) => systemPromptFor(ctx, lib, agent));
     // A skill picked in the composer ("/name" or "$name"): this turn the bot loads and follows it.
     ctx.hooks.turnContext.push(({ agent, input }) => skillChoiceContext(ctx, lib, agent, input));
+    ctx.hooks.turnContext.push(({ agent, input }) => skillFitContext(ctx, lib, agent, input));
 
     // Every bot has its team's active skills without anyone switching them on: they are on its list (defaults.ts) and
     // stand as folders in its work folder (workspace.ts). Brought up to date where that answer changes: a skill
