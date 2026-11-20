@@ -1,5 +1,26 @@
 # Changelog
 
+## [4.12.0] — 2026-11-21
+
+### Samenwerken
+- **Eén bot tegelijk zet een site live.** Zette een collega dezelfde site in de laatste twintig minuten live, dan
+  hoort de tweede dat vóór zijn eigen deploy, met wie het was en dat hij eerst de laatste stand ophaalt. Zo haalt
+  de een het werk van de ander niet meer van de site.
+- **Eén bot schrijft met één persoon.** Schreef een collega iemand in de laatste twee dagen (een concept of een
+  verstuurde mail), dan hoort een tweede bot dat vóór hij zelf een mail aan diezelfde persoon maakt.
+- **Een bot wacht niet meer in een beurt.** Een opdracht die alleen maar wacht (lang slapen, of elke halve minuut
+  kijken tot iets klaar is) hield de hele beurt vast: het andere werk van die bot, collega's die op hem wachtten en
+  een update van de app. Zo'n opdracht wordt geweigerd met wat wel werkt: een eenmalige vaste taak op dat moment.
+  Een korte wachttijd en een lus die elke paar seconden kijkt blijven gewoon werken.
+- **Twee bots samenvoegen.** Doen twee bots hetzelfde werk, dan kun je ze samenvoegen: open taken, vaste taken,
+  werknotities, apps en skills gaan mee naar de bot die blijft, de andere gaat naar het archief. Er wordt niets
+  gewist en er wordt geen lopende beurt afgebroken.
+
+### Dashboard
+- **Overzichtelijker ingedeeld.** Links je zaak (je cijfers met hun verloop en je geld), rechts het werk van de
+  dag (je post en je team), je apps eronder. Het scherm gebruikt meer breedte, en groepen met dezelfde naam in
+  andere hoofdletters staan bij elkaar.
+
 ## [4.11.0] — 2026-11-20
 
 ### Dashboard

@@ -441,6 +441,7 @@ const NEVER: { re: RegExp; write?: boolean; key?: boolean; why: string }[] = [
   { re: /^\/approvals(\/|$)/i, write: true, why: 'een vraag om toestemming beantwoordt alleen de eigenaar' },
   { re: /^\/bot-rules(?!\/preview(\/|$))(\/|$)/i, write: true, why: 'een regel van de eigenaar gaat via bot_rules (de hoofdbot) of propose_rule (een voorstel aan de eigenaar)' },
   { re: /^\/network(\/|$)/i, write: true, why: 'wie de computer via het netwerk kan bereiken stelt de eigenaar zelf in' },
+  { re: /^\/agents\/[^/]+\/merge(\/|$)/i, write: true, why: 'bots samenvoegen doet de eigenaar zelf' },
   { re: /^\/mcp\/google\/mail-rule(\/|$)/i, write: true, why: 'of gewone mail zonder toestemming de deur uit mag, bepaalt de eigenaar zelf' },
   { re: /^\/mcp\/(google\/mail|bank\/overview)(\/|$)/i, why: 'de post en het geld op het dashboard zijn het scherm van de eigenaar; een bot gebruikt daarvoor zijn eigen Gmail- en bankgereedschap' },
 ];

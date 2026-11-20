@@ -543,6 +543,7 @@ const EXACT: Record<string, Fn> = {
   'quality.lesson': (_d, x) => sys(tpl`{h} uit jouw correctie een les voor ${x.bot} onthouden`),
   'quality.skill_accepted': (d, x) => you(tpl`{h} ${x.bot} gevraagd een skill voor te stellen${colon(clean(d.title, 80))}`),
   'mcp.google.mail_rule': (d) => (d.plainReplies ? you(tpl`{h} ingesteld dat gewone antwoorden zonder toestemming verstuurd mogen worden`) : you(tpl`{h} ingesteld dat elke mail weer eerst om toestemming vraagt`)),
+  'agent.merged': (d) => you(tpl`{h} ${clean(d.from, 60) || 'een bot'} samengevoegd met ${clean(d.into, 60) || 'een andere bot'}`),
   'quality.check_engine_all': (d) => (d.providerId ? you(tpl`{h} de tweede blik van al je bots op één engine gezet`) : you(tpl`{h} de tweede blik van al je bots teruggezet naar de standaard`)),
   'quality.skill_dismissed': (d) => you(tpl`{h} een voorstel voor een skill weggelegd${colon(clean(d.title, 80))}`),
   'agent.loop_stop': (_d, x) => sys(tpl`{h} ${x.bot} laten stoppen: steeds dezelfde stap zonder vooruitgang`, { tone: 'warn' }),

@@ -1224,6 +1224,7 @@ PUT    /providers/:id/context-window                           shared
 POST   /providers/free-reserve                                 shared
 POST   /providers/autodetect                                   shared
 GET    /approvals                                              team
+POST   /agents/:id/merge                                       shared
 GET    /approvals/answers                                      team
 GET    /runs                                                   team
 POST   /runs/:id/cancel                                        team

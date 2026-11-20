@@ -1,4 +1,5 @@
 import fs from 'node:fs';
+import { MergeRefused, mergeBots } from '../modules/teams/merge.js';
 import type { Agent, Ctx } from '../core/types.js';
 import { ah, bad, forbidden, HttpError, own, str, user } from '../core/http.js';
 import { recordAgentVersion } from './agent-versions.js';
@@ -120,6 +121,18 @@ export function agentRoutes(ctx: Ctx) {
   const api = ctx.api;
 
   api.get('/agents', ah(async (req) => ctx.store.agents(user(req).id, { archived: req.query.archived === '1' })));
+  /** Two bots with the same work become one: what is still to do moves to `into`, this bot goes to the archive. */
+  api.post(
+    '/agents/:id/merge',
+    ah(async (req) => {
+      try {
+        return await mergeBots(ctx, user(req).id, req.params.id as string, String(req.body?.into || ''));
+      } catch (e: any) {
+        if (e instanceof MergeRefused) throw bad(e.message);
+        throw e;
+      }
+    }),
+  );
 
   /**
    * Bots that others share with the team (server mode): what a member needs to talk to them, with the owner's name.

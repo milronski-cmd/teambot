@@ -6,6 +6,8 @@ import { agentRoots, fullAccess, resolveInWorkspace, wholeComputer } from './bui
 import { commandPaths, isHardline } from './builtin/command-risk.js';
 import { assertPublicUrl } from './builtin/web.js';
 import { sharedCheckout } from './shared-repo.js';
+import { waitsInTurn } from './no-wait.js';
+import { deployClash, mailClash } from './one-at-a-time.js';
 
 /**
  * The one permission gate. Every step a bot wants to take passes here, whichever way it arrives: a tool call of a model
@@ -182,6 +184,12 @@ export async function passGate(turn: GateTurn, step: GateStep, o: { onWait?(wait
     const v = await judgeStep(turn, step);
     summary = v.summary;
     if (v.decision === 'refuse') return { allow: false, asked: false, reason: v.reason, blocked: v.blocked, summary };
+    // A command that only waits holds the whole turn: refused with the way that does work (tools/no-wait.ts).
+    const waits = waitsInTurn(step.command);
+    if (waits) return { allow: false, asked: false, reason: waits, blocked: false, summary };
+    // One bot at a time on what cannot be shared: putting a site live, writing to a person (tools/one-at-a-time.ts).
+    const clash = deployClash(agent, turn.run, step.command, step.cwd) || mailClash(ctx, agent, turn.run, step.name, step.input);
+    if (clash) return { allow: false, asked: false, reason: clash, blocked: false, summary };
     // A write into a checkout of a repository where a colleague's turn is writing: said once, before anything is asked.
     if (step.risk === 'write' || step.risk === 'danger') {
       const shared = sharedCheckout(ctx, agent, turn.run, step.paths);
