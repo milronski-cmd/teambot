@@ -358,7 +358,7 @@ test('limits: nothing that stops real work; a silent CLI with a step still runni
   const full = { id: 'a', user_id: 'u', access_mode: 'full', settings: {}, tool_groups: [] } as any as Agent;
   const auto = { ...full, access_mode: 'auto' } as Agent;
   const o = cliOptions(full);
-  assert.deepEqual([o.maxTurns, o.idleMin, o.busyIdleMin, o.timeoutMin], [10_000, 30, 720, 4320]);
+  assert.deepEqual([o.maxTurns, o.idleMin, o.busyIdleMin, o.timeoutMin], [10_000, 30, 120, 4320]);
   assert.deepEqual([o.loadUserSettings, o.useUserMcp, o.ownerMemory], [true, true, false], "the owner's Claude settings, skills and apps; not his own CLAUDE.md");
   assert.deepEqual([cliOptions(auto).loadUserSettings, cliOptions(auto).useUserMcp, cliOptions(auto).maxTurns], [false, false, 40]);
   const off = cliOptions({ ...full, settings: { cli: { loadUserSettings: false, useUserMcp: false, maxTurns: 25 } } } as Agent);

@@ -41,6 +41,35 @@ export const PARKED_TEXT =
 export const CARRY_OVER_MS = 15 * 60_000;
 
 /** JSON with sorted keys and without undefined values: two equal inputs give the same text. */
+/**
+ * What a request is about, apart from its long texts: every short field as it is, every long text (over 200
+ * characters) only by its name. Two requests with the same key are one request of which the text was rewritten.
+ * Null when there is no long text or no short field to tell requests apart (then only an identical request counts).
+ */
+export function revisedKey(input: any): string | null {
+  if (!input || typeof input !== 'object' || Array.isArray(input)) return null;
+  let long = 0;
+  let short = 0;
+  const walk = (v: any, depth: number): any => {
+    if (typeof v === 'string') {
+      if (v.length > 200) {
+        long++;
+        return '…';
+      }
+      if (v) short++;
+      return v;
+    }
+    if (!v || typeof v !== 'object' || depth > 6) {
+      if (v !== null && v !== undefined && typeof v !== 'object') short++;
+      return v;
+    }
+    if (Array.isArray(v)) return v.map((x) => walk(x, depth + 1));
+    return Object.fromEntries(Object.entries(v).map(([k, x]) => [k, walk(x, depth + 1)]));
+  };
+  const key = canonicalJson(walk(input, 0));
+  return long && short ? key : null;
+}
+
 export function canonicalJson(v: any): string {
   const norm = (x: any): any => {
     if (Array.isArray(x)) return x.map(norm);
@@ -151,6 +180,9 @@ export class Broker {
     if (carried) return carried;
     // The very same request already waits for him, parked: no second card and no second wait.
     if (o.park && o.agent && this.parkedSame(o)) return { approved: false, parked: true };
+    // The same request with its text rewritten (the same mail to the same person, a new version of the same file):
+    // the newer one takes the place of the card that still waits, so the owner reads and decides it once.
+    if (o.park && o.agent) this.supersedeRevised(o);
     const id = newId('apr_');
     const row = {
       id,
@@ -255,6 +287,22 @@ export class Broker {
     return store
       .all<any>("SELECT * FROM approvals WHERE user_id = ? AND agent_id = ? AND tool = ? AND kind = ? AND status = 'pending' AND parked_at IS NOT NULL ORDER BY created_at DESC LIMIT 20", o.userId, o.agent!.id, o.tool, o.kind)
       .some((r) => canonicalJson(store.decode<any>('approvals', r).input ?? {}) === want);
+  }
+
+  /** Parked requests of this bot that are this request with only a long text changed lapse: the new one replaces them. */
+  private supersedeRevised(o: { userId: string; agent: Agent | null; kind: string; tool: string; input: any }): number {
+    const ctx = this.getCtx();
+    const want = revisedKey(o.input);
+    if (!want) return 0;
+    let n = 0;
+    for (const r of ctx.store.all<any>("SELECT * FROM approvals WHERE user_id = ? AND agent_id = ? AND tool = ? AND kind = ? AND status = 'pending' AND parked_at IS NOT NULL ORDER BY created_at DESC LIMIT 20", o.userId, o.agent!.id, o.tool, o.kind)) {
+      if (revisedKey(ctx.store.decode<any>('approvals', r).input) !== want) continue;
+      ctx.store.update('approvals', r.id, { status: 'expired', decided_at: now() });
+      ctx.events.emit(r.user_id, 'approval.updated', this.view(ctx.store.get('approvals', r.id)));
+      ctx.audit(o.userId, 'approval.superseded', { id: r.id, tool: o.tool }, o.agent!.id);
+      n++;
+    }
+    return n;
   }
 
   /** Called by the HTTP API when a human decides. */

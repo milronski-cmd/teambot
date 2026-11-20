@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 import { startTestApp } from './helpers.js';
-import { PARKED_TEXT } from '../server/tools/broker.js';
+import { PARKED_TEXT, revisedKey } from '../server/tools/broker.js';
 
 /**
  * A bot does not stand still for its owner. A request he has not answered after a short while is parked: the card
@@ -123,6 +123,40 @@ test('several decisions in a row while the bot is busy: one turn hears them all,
     assert.equal((second.content.match(/gaf toestemming voor wat je eerder vroeg/g) || []).length, 2, 'both decisions in one message');
     assert.equal((second.parts as any).resumedFrom.approvalIds.length, 2);
     assert.equal((await t.api('GET', '/approvals')).length, 0);
+  } finally {
+    await t.close();
+  }
+});
+
+test('the same request with its text rewritten replaces the card that waits: one card, the newest version', async () => {
+  const mail = (body: string, to = 'jan@example.com') => ({ to, subject: 'Re: Offerte', thread: 't1', body });
+  const a = 'Beste Jan, '.padEnd(400, 'a');
+  const b = 'Beste Jan, '.padEnd(380, 'b');
+  assert.equal(revisedKey(mail(a)), revisedKey(mail(b)));
+  assert.notEqual(revisedKey(mail(a)), revisedKey(mail(a, 'piet@example.com')));
+  assert.equal(revisedKey({ path: 'a.txt', content: 'kort' }), null, 'no long text: only an identical request is the same');
+  assert.equal(revisedKey({ body: a }), null, 'nothing to tell requests apart');
+
+  const t = await startTestApp();
+  try {
+    const ctx = t.app.ctx;
+    ctx.broker.parkMs = 60;
+    const bot = await t.agent({ name: 'Klusser', access_mode: 'ask', tool_groups: ['files'] });
+    const th = await t.api('POST', '/threads', { agentId: bot.id });
+    fs.mkdirSync(ctx.store.agent(bot.id)!.workspace, { recursive: true });
+    const write = (content: string, file = 'brief.txt') => ({ name: 'write_file', args: { path: file, content } });
+    t.script.push({ toolCalls: [write(a)] }, { text: 'Ik ga door.' });
+    await t.say(th.id, 'Schrijf de brief');
+    await t.waitIdle(th.id);
+    t.script.push({ toolCalls: [write(b)] }, { text: 'Ik ga door.' });
+    await t.say(th.id, 'Maak hem iets korter');
+    await t.waitIdle(th.id);
+    t.script.push({ toolCalls: [write(a, 'andere.txt')] }, { text: 'Ik ga door.' });
+    await t.say(th.id, 'En nog een andere brief');
+    await t.waitIdle(th.id);
+    const open = (await t.api('GET', '/approvals')).filter((x: any) => x.tool === 'write_file');
+    assert.deepEqual(open.map((x: any) => [x.input.path, x.input.content.length]).sort(), [['andere.txt', 400], ['brief.txt', 380]]);
+    assert.equal(ctx.store.all<any>("SELECT id FROM approvals WHERE status = 'expired'").length, 1, 'the older version lapsed');
   } finally {
     await t.close();
   }

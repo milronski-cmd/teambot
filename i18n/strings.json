@@ -3854,6 +3854,7 @@
  "Dit leerdoel stond er al: “{0}”.",
  "Dit leest als een opdracht aan een bot. Keur alleen goed als dit echt jouw wens is.",
  "Dit lezen je bots. Ze houden het zelf bij; jij kunt het hier aanpassen.",
+ "Dit ligt aan het developer token (dat heeft alleen testtoegang), niet aan het account of de query: opnieuw proberen of een ander account geeft dezelfde fout. De eigenaar vraagt in het API-centrum van Google Ads Basic access aan; meld het hem één keer en ga door met ander werk.",
  "Dit lijkt JSON, maar het is niet geldig: {0}",
  "Dit lijkt een Windows-server (OpenSSH voor Windows) of een server zonder POSIX-loginshell. TeamBot ondersteunt alleen Linux- en macOS-servers waar de SSH-gebruiker sh, bash of zsh als shell heeft.",
  "Dit lijkt een opdracht en geen feit; een kennisbank bewaart alleen feiten.",

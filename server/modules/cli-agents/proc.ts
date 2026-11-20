@@ -197,7 +197,7 @@ export interface ProcOptions {
   idleMs: number;
   /**
    * True while a step of the CLI is still running (it started a tool and its result is not in yet): a long build or
-   * test gives no output, but the CLI is not dead. Then `busyIdleMs` counts instead of `idleMs` (default: 12 hours).
+   * test gives no output, but the CLI is not dead. Then `busyIdleMs` counts instead of `idleMs` (default: 2 hours; a command that waits for input nobody gives held a run for 8 hours, live 20 Nov 2026).
    */
   busy?(): boolean;
   busyIdleMs?: number;
@@ -335,7 +335,7 @@ export function startProc(o: ProcOptions): Proc {
     } catch {
       working = false;
     }
-    const limit = working ? Math.max(o.idleMs, o.busyIdleMs ?? 12 * 3600_000) : o.idleMs;
+    const limit = working ? Math.max(o.idleMs, o.busyIdleMs ?? 2 * 3600_000) : o.idleMs;
     if (Date.now() - lastOut > limit) p.kill(working ? `Time-out: een stap van de CLI gaf ${dur(limit)} geen uitvoer en is gestopt` : `Time-out: de CLI gaf ${dur(limit)} geen uitvoer en is gestopt`);
   }, Math.min(5000, Math.max(200, Math.floor(o.idleMs / 4))));
   p.done = new Promise((resolve) => {

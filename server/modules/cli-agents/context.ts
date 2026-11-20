@@ -41,7 +41,7 @@ export interface CliOptions {
  * hung: stopped after `IDLE_MIN`. Silent while a step runs (a build, a test run, a download): alive, until
  * `BUSY_IDLE_MIN`. `TIMEOUT_MIN` is the ceiling for one turn. All three per bot adjustable (settings.cli).
  */
-export const CLI_LIMITS = { idleMin: 30, busyIdleMin: 12 * 60, timeoutMin: 72 * 60, maxTurns: 40, maxTurnsFull: 10_000 };
+export const CLI_LIMITS = { idleMin: 30, busyIdleMin: 120, timeoutMin: 72 * 60, maxTurns: 40, maxTurnsFull: 10_000 };
 
 /**
  * After the owner pressed Stop, the CLI session still holds the unfinished turn, and Claude Code picked the stopped task

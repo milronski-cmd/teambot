@@ -1,5 +1,22 @@
 # Changelog
 
+## [4.9.11] — 2026-11-20
+
+### Doorwerken
+- **Een opdracht die blijft hangen houdt een bot geen halve dag meer vast.** Een opdracht van een bot die op
+  invoer wachtte die niemand gaf, hield zijn beurt acht uur bezet; TeamBot wachtte daar tot twaalf uur op. In die
+  tijd kon ook een update er niet op. Geeft een stap twee uur lang geen uitvoer, dan stopt TeamBot hem en gaat de
+  bot verder.
+
+### Wacht op jou
+- **Een herschreven verzoek vervangt de kaart die al wacht.** Vroeg een bot opnieuw toestemming voor dezelfde
+  mail aan dezelfde persoon, met alleen de tekst iets anders, dan kreeg je een tweede kaart ernaast. Nu vervalt
+  de oude en lees en beslis je alleen de nieuwste versie.
+
+### Minder misgrijpen
+- **Google Ads met alleen testtoegang: de bot probeert het niet bij elk account opnieuw.** De fout zegt er nu
+  bij dat het aan het developer token ligt, dat een ander account dezelfde fout geeft en wat jij ervoor aanvraagt.
+
 ## [4.9.10] — 2026-11-20
 
 ### Samenwerken

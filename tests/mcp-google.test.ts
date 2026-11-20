@@ -417,5 +417,6 @@ test('an error in the words of Google comes with the next step', async () => {
   assert.match(nextStep('merchant_report', 'This method can only be accessed by subaccounts and standalone accounts.'), /subaccount zelf \(merchant_accounts/);
   assert.match(nextStep('merchant_report', "[query] Error in query: invalid field name 'product_type' in SELECT clause"), /product_type_l1/);
   assert.match(nextStep('gmail_read', 'Invalid id value'), /letterlijk over uit gmail_search/);
+  assert.match(nextStep('ads_query', 'The Google Cloud project is only approved for use with test accounts. To access non-test accounts, apply for Basic or Standard access.'), /developer token .* ander account geeft dezelfde fout/);
   assert.equal(nextStep('gsc_query', 'The operation was aborted due to timeout'), '');
 });

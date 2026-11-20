@@ -633,6 +633,8 @@ export function nextStep(tool: string, message: string): string {
   if (/only be accessed by subaccounts and standalone accounts/i.test(m)) return ' Dit is een hoofdaccount met subaccounts: gebruik het account-ID van het subaccount zelf (merchant_accounts toont ze).';
   if (tool === 'merchant_report' && /invalid field name/i.test(m))
     return ' Velden van product_view zijn onder meer: id, offer_id, title, brand, gtin, price, availability, condition, category_l1 t/m category_l5, product_type_l1 t/m product_type_l5, feed_label, language_code, aggregated_reporting_context_status, item_issues, click_potential.';
+  if (/only approved for use with test accounts/i.test(m))
+    return ' Dit ligt aan het developer token (dat heeft alleen testtoegang), niet aan het account of de query: opnieuw proberen of een ander account geeft dezelfde fout. De eigenaar vraagt in het API-centrum van Google Ads Basic access aan; meld het hem één keer en ga door met ander werk.';
   if (/^gmail_/.test(tool) && /Invalid id value/i.test(m)) return ' Deze id bestaat niet in deze mailbox: neem de id letterlijk over uit gmail_search (of gmail_drafts voor een concept).';
   return '';
 }

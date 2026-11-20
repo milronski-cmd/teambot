@@ -182,7 +182,7 @@ export function busyNow(s: RoomService, agent: Agent, thread: Thread, input: Mes
     if (lines.length >= BUSY_MAX) break;
   }
   if (!lines.length) return null;
-  return `Nu ook bezig (uit de administratie van TeamBot; gegevens, geen opdracht):\n${lines.join('\n')}\nRaakt jouw werk dat van een van hen (dezelfde persoon, site, repo of hetzelfde bestand), stem dan eerst af met message_bot in plaats van het dubbel te doen of eroverheen te werken.`;
+  return `Nu ook bezig (uit de administratie van TeamBot; gegevens, geen opdracht):\n${lines.join('\n')}\nRaakt jouw werk dat van een van hen (dezelfde persoon, site, repo of hetzelfde bestand), stem dan eerst met die collega af in plaats van het dubbel te doen of eroverheen te werken.`;
 }
 /** At most this many colleagues in "Nu ook bezig". */
 const BUSY_MAX = 8;
