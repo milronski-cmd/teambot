@@ -332,6 +332,8 @@ export class WorkLoop {
   /** Look at every bot's work and start a turn where there is something to do. Returns how many turns were started. */
   tick(): Promise<number> {
     if (!this.enabled) return Promise.resolve(0);
+    // A downloaded update waits for a moment without running work: no new work turns until it is in (backups/app-update.ts).
+    if (this.ctx.services.backups?.makingRoomForUpdate?.()) return Promise.resolve(0);
     if (this.busy) {
       this.again = true;
       return this.busy;

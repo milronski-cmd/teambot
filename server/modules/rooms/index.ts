@@ -6,7 +6,7 @@ import { Orchestrator } from './orchestration.js';
 import { Board } from './board.js';
 import { roomTools, teamTools } from './tools.js';
 import { roomRoutes } from './routes.js';
-import { routeReminder, systemPromptFor, turnContextFor } from './prompt.js';
+import { busyNow, routeReminder, systemPromptFor, turnContextFor } from './prompt.js';
 import { installTeam, normalizeTeam } from './packages.js';
 import { backfillRooms, memberRefusal, roomTeam } from './walls.js';
 
@@ -69,6 +69,7 @@ const mod: Module = {
     ctx.hooks.systemPrompt.push(({ agent, thread }) => systemPromptFor(s, board, agent, thread));
     ctx.hooks.turnContext.push(({ agent, thread, input }) => turnContextFor(s, agent, thread, input));
     ctx.hooks.turnContext.push(({ agent, thread, input }) => routeReminder(s, agent, thread, input));
+    ctx.hooks.turnContext.push(({ agent, thread, input }) => busyNow(s, agent, thread, input));
     ctx.hooks.agentDeleted.push(({ agentId }) => {
       s.orch.agentGone(agentId);
       for (const r of ctx.store.all<any>("SELECT room_id FROM room_members WHERE kind = 'agent' AND ref_id = ?", agentId)) {

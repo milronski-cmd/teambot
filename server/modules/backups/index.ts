@@ -7,7 +7,7 @@ import { PENDING_MARKER, restorable } from './files.js';
 import { whatsNew } from './changelog.js';
 import { Offsite } from './offsite.js';
 import { patchUpdateState, readUpdateState, recordStart, rollbackInfo, type UpdateEntry } from './updates.js';
-import { registerAppUpdate } from './app-update.js';
+import { makingRoomForUpdate, registerAppUpdate } from './app-update.js';
 import { plannerOf } from '../routines/planner.js';
 
 /**
@@ -233,6 +233,8 @@ const mod: Module = {
 
     ctx.services.backups = {
       service: svc,
+      /** An update is ready and only running work is in its way: start no new work of its own for a while (app-update.ts). */
+      makingRoomForUpdate: () => makingRoomForUpdate(ctx),
       list: () => svc.list(),
       make: (o: Parameters<BackupService['make']>[0]) => svc.make(o),
       /** Right before a TeamBot update (desktop/main.ts): database, team databases and key; fast. */

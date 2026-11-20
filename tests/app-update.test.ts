@@ -208,12 +208,18 @@ test('once a day: the hourly tick only looks when a day has passed (after a fail
     fs.writeFileSync(f, JSON.stringify({ ...JSON.parse(fs.readFileSync(f, 'utf8')), lastCheckAt: day, lastTryAt: day }));
     await w.flow.tick();
     assert.equal(w.fake.checks, 2, 'a day later');
+    // Another version of the app looked last (this one was just installed): it looks at once, not a day later.
+    fs.writeFileSync(f, JSON.stringify({ ...JSON.parse(fs.readFileSync(f, 'utf8')), checkedBy: '0.0.1' }));
+    await w.flow.tick();
+    assert.equal(w.fake.checks, 3, 'just updated: looks again at once');
+    await w.flow.tick();
+    assert.equal(w.fake.checks, 3, 'and then once a day again');
     await t.api('PUT', '/app-update/settings', { auto: 'off' });
     fs.writeFileSync(f, JSON.stringify({ ...JSON.parse(fs.readFileSync(f, 'utf8')), lastCheckAt: day, lastTryAt: day }));
     await w.flow.tick();
-    assert.equal(w.fake.checks, 2, 'uit: never by itself');
+    assert.equal(w.fake.checks, 3, 'uit: never by itself');
     assert.equal((await t.api('POST', '/app-update/check')).state.phase, 'idle', 'Nu controleren still works');
-    assert.equal(w.fake.checks, 3);
+    assert.equal(w.fake.checks, 4);
   } finally {
     w.done();
     await t.close();

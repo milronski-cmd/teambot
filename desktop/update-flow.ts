@@ -57,6 +57,8 @@ interface Saved {
   /** The last check that got an answer, and the last try (also a failed one): once a day, after a failure an hour. */
   lastCheckAt?: string;
   lastTryAt?: string;
+  /** The version of the app that looked last. Another one runs now (it was just updated): look again at once. */
+  checkedBy?: string;
 }
 
 /** Where the channel in use comes from (the page says it; only `saved` is changed in Settings). */
@@ -255,7 +257,7 @@ export class UpdateFlow {
   }
 
   /** Check times survive a restart (once a day means once a day, also when TeamBot is restarted often). */
-  private remember(patch: Pick<Saved, 'lastCheckAt' | 'lastTryAt'>) {
+  private remember(patch: Pick<Saved, 'lastCheckAt' | 'lastTryAt' | 'checkedBy'>) {
     try {
       this.write({ ...this.saved(), ...patch });
     } catch (e: any) {
@@ -347,7 +349,12 @@ export class UpdateFlow {
   /** The daily look: only when it is due (desktop/update-idle.ts checkDue). */
   async tick() {
     const s = this.saved();
-    if (this.config().auto === 'off' || (this.env.TEAMBOT_UPDATE_TEST !== '1' && !checkDue({ lastCheckAt: s.lastCheckAt, lastTryAt: s.lastTryAt }))) return this.state;
+    if (this.config().auto === 'off') return this.state;
+    // Just updated: several versions may have come out since the one that was downloaded. Without this look the app
+    // stayed a day behind after every update (live, 20 Nov 2026: 4.9.3 was installed while 4.9.6 was out).
+    const fresh = !!this.deps.version && s.checkedBy !== this.deps.version;
+    if (!fresh && this.env.TEAMBOT_UPDATE_TEST !== '1' && !checkDue({ lastCheckAt: s.lastCheckAt, lastTryAt: s.lastTryAt })) return this.state;
+    if (fresh) this.remember({ checkedBy: this.deps.version });
     return this.check();
   }
 

@@ -99,6 +99,47 @@ export function appUpdateView(ctx: Ctx): AppUpdateView {
   };
 }
 
+/** How long TeamBot starts no new work of its own so a downloaded update can install, and how long before it tries again. */
+export const ROOM_FOR_UPDATE_MS = 45 * 60_000;
+export const ROOM_AGAIN_MS = 3 * 3600_000;
+let roomSince = 0;
+
+/**
+ * A downloaded update installs only when no task runs. A team that works day and night never has such a moment: live
+ * (20 Nov 2026) an update waited a whole night behind bots that kept finding work. So while an update is ready and
+ * only work is in its way (the owner asked for "Nu bijwerken", or bijwerken is automatic and nobody is using TeamBot),
+ * TeamBot starts no new work of its own for a while: what runs finishes, the update installs, and the work goes on
+ * after the restart. Bounded: after ROOM_FOR_UPDATE_MS without success the work goes on and it tries again later.
+ * What the owner asks, planned routines and work bots give each other are never held.
+ */
+export function makingRoomForUpdate(ctx: Ctx, now = Date.now()): boolean {
+  const svc: AppUpdateService | undefined = ctx.services.appUpdate;
+  let i: ReturnType<AppUpdateService['info']>;
+  try {
+    if (!svc) return false;
+    i = svc.info();
+  } catch {
+    return false;
+  }
+  const wanted = i.state.phase === 'ready' && (i.soon || i.config.auto === 'on');
+  const waits = i.waitingFor || [];
+  // (Without "Nu bijwerken" the owner must be away: someone at the computer or just chatting is not interrupted.)
+  const onlyWork = waits.length > 0 && waits.every((w) => w.kind === 'runs' || w.kind === 'routines' || w.kind === 'routine-soon' || (i.soon && w.kind === 'chatting'));
+  if (!wanted || !onlyWork) {
+    if (roomSince && now - roomSince > ROOM_FOR_UPDATE_MS + ROOM_AGAIN_MS) roomSince = 0;
+    return false;
+  }
+  if (!roomSince || now - roomSince > ROOM_FOR_UPDATE_MS + ROOM_AGAIN_MS) {
+    roomSince = now;
+    ctx.log.info('[app-update] update staat klaar en alleen lopend werk houdt hem tegen: even geen nieuw eigen werk starten');
+  }
+  return now - roomSince <= ROOM_FOR_UPDATE_MS;
+}
+/** For tests. */
+export function resetRoomForUpdate() {
+  roomSince = 0;
+}
+
 const MODES: AutoMode[] = ['on', 'notify', 'off'];
 
 /** The routes; called from the backups module's init. */

@@ -1,5 +1,22 @@
 # Changelog
 
+## [4.9.7] — 2026-11-20
+
+### Samenwerken
+- **Een bot ziet wie er nu met wat bezig is.** Bij elke beurt krijgt een bot erbij welke collega's op dat moment
+  werken en waaraan (één regel per bot). Raakt zijn werk dat van een ander (dezelfde persoon, site, repo of hetzelfde
+  bestand), dan stemt hij eerst af in plaats van het dubbel te doen of eroverheen te werken. Het werk van een bot op
+  privé wordt nooit getoond.
+
+### Bijwerken
+- **Een update komt er ook op bij een team dat nooit stilzit.** Een gedownloade update wacht tot er geen taak loopt.
+  Bij een team dat dag en nacht doorwerkt kwam dat moment niet. Staat een update klaar en houdt alleen lopend werk
+  hem tegen (jij koos "Nu bijwerken", of bijwerken staat op automatisch en niemand gebruikt TeamBot), dan start
+  TeamBot hoogstens drie kwartier geen nieuw eigen werk: wat loopt maakt af, de update gaat erop, en daarna gaat het
+  werk verder. Wat jij vraagt, geplande routines en werk dat bots elkaar geven worden niet tegengehouden.
+- **Na een update kijkt TeamBot meteen of er nog een nieuwere is.** Dat gebeurde pas een dag later, waardoor je bij
+  meerdere updates kort na elkaar een dag achterliep.
+
 ## [4.9.6] — 2026-11-20
 
 ### Toestemming
