@@ -170,3 +170,14 @@ test('notification centre: history, coalescing, read, levels per bot, runs, appr
     await t.close();
   }
 });
+
+test('“X is klaar” shows what the bot concluded, not how its turn began', async () => {
+  const { conclusion } = await import('../server/modules/notifications/index.js');
+  const turn = 'Ik begin met de inventaris: eerst kijken wat er staat.\n\nInventaris staat. Nu leg ik de afspraken vast.\n\n## Klaar\nDe **inventaris** staat in `Overzicht.md`; twee sites wachten op jou.';
+  const answer = '## Klaar\nDe **inventaris** staat in `Overzicht.md`; twee sites wachten op jou.';
+  assert.equal(conclusion({ content: turn, parts: JSON.stringify({ answer }) }), 'Klaar De inventaris staat in Overzicht.md; twee sites wachten op jou.');
+  assert.equal(conclusion({ content: turn, parts: { answer } }), 'Klaar De inventaris staat in Overzicht.md; twee sites wachten op jou.');
+  // An engine that gives one answer (no text between steps): the whole answer.
+  assert.equal(conclusion({ content: 'Gedaan: de pagina staat live.', parts: '{}' }), 'Gedaan: de pagina staat live.');
+  assert.equal(conclusion(null), '');
+});

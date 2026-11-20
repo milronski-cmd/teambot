@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import http from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { startTestApp } from './helpers.js';
-import { GOOGLE_SERVICES, GOOGLE_TOOLS, setGoogleRetryWaits, tooFast } from '../server/modules/mcp/google.js';
+import { GOOGLE_SERVICES, GOOGLE_TOOLS, setGoogleRetryWaits, tooFast, watchGmail } from '../server/modules/mcp/google.js';
 
 /**
  * Google in one go, against a local stand-in for Google (TEAMBOT_GOOGLE_BASE): the login (authorization code + PKCE),
@@ -20,7 +20,7 @@ interface Seen {
 
 async function fakeGoogle() {
   const seen: Seen[] = [];
-  const state = { access: 1, grantScope: '' as string, refreshOk: true, merchantRegistered: false, tooFast: 0, daily: false, mail: false };
+  const state = { access: 1, grantScope: '' as string, refreshOk: true, merchantRegistered: false, tooFast: 0, daily: false, mail: false, inbox: [] as string[] };
   const server = http.createServer((req, res) => {
     let body = '';
     req.on('data', (c) => (body += c));
@@ -56,10 +56,11 @@ async function fakeGoogle() {
       if (p === '/gmail.googleapis.com/gmail/v1/users/me/messages') {
         if (state.daily) return json(403, { error: { code: 403, message: "Quota exceeded for quota metric 'Queries' and limit 'Queries per day' of service 'gmail.googleapis.com'." } });
         if (state.tooFast-- > 0) return json(403, { error: { code: 403, message: "Quota exceeded for quota metric 'Total Query Cost' and limit 'Units per minute per user' of service 'gmail.googleapis.com'." } });
-        return json(200, { messages: state.mail ? [{ id: 'm1', threadId: 't1' }] : [] });
+        return json(200, { messages: state.inbox.length ? state.inbox.map((id) => ({ id, threadId: 't1' })) : state.mail ? [{ id: 'm1', threadId: 't1' }] : [] });
       }
-      if (p === '/gmail.googleapis.com/gmail/v1/users/me/messages/m1')
-        return json(200, { id: 'm1', threadId: 't1', labelIds: ['INBOX', 'UNREAD'], snippet: 'Kunnen jullie morgen leveren?', payload: { mimeType: 'text/plain', headers: [{ name: 'From', value: 'Jan de Vries <jan@klant.test>' }, { name: 'To', value: 'eigenaar@voorbeeld.nl' }, { name: 'Subject', value: 'Levering' }, { name: 'Date', value: 'Fri, 20 Nov 2026 01:00:00 +0100' }, { name: 'Message-ID', value: '<abc@klant.test>' }], body: { data: Buffer.from('Kunnen jullie morgen leveren?').toString('base64url') } } });
+      const one = /^\/gmail\.googleapis\.com\/gmail\/v1\/users\/me\/messages\/(m\d+|own\d+)$/.exec(p);
+      if (one)
+        return json(200, { id: one[1], threadId: 't1', labelIds: one[1].startsWith('own') ? ['SENT', 'INBOX'] : ['INBOX', 'UNREAD'], snippet: 'Kunnen jullie morgen leveren?', payload: { mimeType: 'text/plain', headers: [{ name: 'From', value: 'Jan de Vries <jan@klant.test>' }, { name: 'To', value: 'eigenaar@voorbeeld.nl' }, { name: 'Subject', value: 'Levering' }, { name: 'Date', value: 'Fri, 20 Nov 2026 01:00:00 +0100' }, { name: 'Message-ID', value: one[1] === 'm1' ? '<abc@klant.test>' : `<${one[1]}@klant.test>` }], body: { data: Buffer.from('Kunnen jullie morgen leveren?').toString('base64url') } } });
       if (p.startsWith('/www.googleapis.com/calendar/v3/')) return json(200, { items: [] });
       if (p === '/www.googleapis.com/drive/v3/about') return json(200, { user: { emailAddress: 'eigenaar@voorbeeld.nl' } });
       json(404, { error: { code: 404, message: `geen nep-antwoord voor ${p}` } });
@@ -255,6 +256,26 @@ test("Google: with TeamBot's own client there is nothing to set up, and sending 
     assert.match(raw, /To: jan@klant\.test/);
     assert.match(raw, /In-Reply-To: <abc@klant\.test>/);
     assert.ok(t.app.ctx.store.all<any>("SELECT data FROM audit WHERE kind = 'mcp.google.mail_sent'").length === 1, 'in the log, without the text');
+
+    // New mail in Gmail starts the routines that wait for mail; the mail that was already there starts nothing.
+    const ctx = t.app.ctx;
+    const mgr = ctx.services.mcp._manager;
+    const owner = ctx.auth.owner()!;
+    g.state.inbox = ['m1'];
+    assert.equal(await watchGmail(ctx, mgr, owner.id), 0, 'nobody waits for mail: Google is not even asked');
+    const before = searches();
+    const bot = await t.agent({ name: 'Postbode' });
+    const routine = await t.api('POST', '/routines', { name: 'Nieuwe mail indelen', agent_id: bot.id, prompt: 'Deel deze mail in en zeg of er actie nodig is.', schedule: { kind: 'none' } });
+    const trg = (await t.api('POST', `/routines/${routine.id}/triggers`, { kind: 'email', config: { accountId: 'gmail' } })).trigger;
+    const events = () => ctx.store.all<any>('SELECT status, summary FROM routine_events WHERE trigger_id = ?', trg.id);
+    assert.equal(await watchGmail(ctx, mgr, owner.id), 0, 'the first look: what is there is old mail');
+    assert.ok(searches() > before, 'now Google is asked');
+    assert.equal(events().length, 0);
+    g.state.inbox = ['m2', 'own3', 'm1'];
+    assert.equal(await watchGmail(ctx, mgr, owner.id), 1, 'one new mail from someone else; the owner’s own sent mail is not incoming mail');
+    assert.equal(events().filter((e) => e.status === 'accepted').length, 1);
+    assert.match(events()[0].summary, /Jan de Vries <jan@klant\.test>/);
+    assert.equal(await watchGmail(ctx, mgr, owner.id), 0, 'the same mail never twice');
     assert.ok(tooFast(429, '') && tooFast(403, 'rateLimitExceeded') && !tooFast(403, 'Queries per day') && !tooFast(403, 'insufficient permission') && !tooFast(500, 'per minute'));
   } finally {
     setGoogleRetryWaits(null);

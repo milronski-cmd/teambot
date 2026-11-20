@@ -42,6 +42,7 @@ export const GOOGLE_SERVICES: GoogleService[] = [
   { id: 'merchant', name: 'Merchant Center', line: 'Producten, afkeuringen en prestaties', scopes: [S + 'content'], apis: ['merchantapi.googleapis.com'] },
   { id: 'ads', name: 'Google Ads', line: 'Campagnes, zoekwoorden en kosten', scopes: [S + 'adwords'], apis: ['googleads.googleapis.com'] },
   { id: 'analytics', name: 'Analytics', line: 'Bezoekers en conversies', scopes: [S + 'analytics.readonly'], apis: ['analyticsdata.googleapis.com', 'analyticsadmin.googleapis.com'] },
+  { id: 'tagmanager', name: 'Tag Manager', line: 'Tags, triggers en variabelen van je containers', scopes: [S + 'tagmanager.readonly'], apis: ['tagmanager.googleapis.com'] },
   { id: 'gmail', name: 'Gmail', line: 'Mail lezen, concepten maken en versturen', scopes: [S + 'gmail.readonly', S + 'gmail.compose'], apis: ['gmail.googleapis.com'] },
   { id: 'calendar', name: 'Agenda', line: 'Afspraken lezen en maken', scopes: [S + 'calendar.events'], apis: ['calendar-json.googleapis.com'] },
   { id: 'drive', name: 'Drive', line: 'Bestanden zoeken en lezen', scopes: [S + 'drive.readonly'], apis: ['drive.googleapis.com'] },
@@ -289,6 +290,7 @@ const DRIVE = 'https://www.googleapis.com/drive/v3';
 const GSC = 'https://www.googleapis.com/webmasters/v3';
 const MERCHANT = 'https://merchantapi.googleapis.com';
 const ADS_URL = `https://googleads.googleapis.com/${ADS}`;
+const GTM = 'https://tagmanager.googleapis.com/tagmanager/v2';
 const site = z.string().describe('De site zoals in Search Console, bijv. "https://www.voorbeeld.nl/" of "sc-domain:voorbeeld.nl" (zie gsc_sites)');
 const account = z.string().regex(/^\d+$/).describe('Merchant Center-account-ID, alleen cijfers (zie merchant_accounts)');
 
@@ -384,6 +386,50 @@ export const GOOGLE_TOOLS: GTool[] = [
       g('POST', `https://analyticsdata.googleapis.com/v1beta/properties/${a.property}:runReport`, {
         body: { dateRanges: [{ startDate: a.start || '28daysAgo', endDate: a.end || 'yesterday' }], metrics: a.metrics.map((name: string) => ({ name })), dimensions: (a.dimensions || []).map((name: string) => ({ name })), limit: a.limit || 100 },
       }),
+  },
+  // ---- Tag Manager (reading: what is published, so a bot can check tags and consent without a browser)
+  { name: 'gtm_accounts', service: 'tagmanager', title: 'Tag Manager-accounts', kind: 'read', description: 'Toon de Google Tag Manager-accounts waar dit Google-account bij kan.', input: {}, run: async (_a, g) => ((await g('GET', `${GTM}/accounts`)).account || []).map((x: any) => ({ account: x.accountId, name: x.name })) },
+  {
+    name: 'gtm_containers',
+    service: 'tagmanager',
+    title: 'Tag Manager-containers',
+    kind: 'read',
+    description: 'De containers van een Tag Manager-account, met hun openbare id (GTM-XXXX) en de sites waar ze voor zijn.',
+    input: { account: z.string().regex(/^\d+$/).describe('Account-ID, alleen cijfers (zie gtm_accounts)') },
+    run: async (a, g) => ((await g('GET', `${GTM}/accounts/${a.account}/containers`)).container || []).map((x: any) => ({ container: x.containerId, name: x.name, publicId: x.publicId, domains: x.domainName || [], usage: x.usageContext || [] })),
+  },
+  {
+    name: 'gtm_published',
+    service: 'tagmanager',
+    title: 'Gepubliceerde container',
+    kind: 'read',
+    description: 'Wat er nu live staat in een Tag Manager-container: elke tag met zijn soort, of hij op pauze staat, op welke triggers hij afgaat en welke toestemming hij vraagt; en de triggers en variabelen.',
+    input: { account: z.string().regex(/^\d+$/).describe('Account-ID (zie gtm_accounts)'), container: z.string().regex(/^\d+$/).describe('Container-ID, alleen cijfers (zie gtm_containers)') },
+    run: async (a, g) => {
+      const v = await g('GET', `${GTM}/accounts/${a.account}/containers/${a.container}/versions:live`);
+      const trig = new Map<string, string>(((v.trigger || []) as any[]).map((x) => [String(x.triggerId), String(x.name)]));
+      // Built-in triggers have fixed ids that are not in the list.
+      const BUILT_IN: Record<string, string> = { '2147479553': 'All Pages', '2147479572': 'Consent Initialization - All Pages', '2147479573': 'Initialization - All Pages' };
+      const names = (ids: any) => (Array.isArray(ids) ? ids.map((id) => trig.get(String(id)) || BUILT_IN[String(id)] || `trigger ${id}`) : []);
+      const param = (x: any, key: string) => ((x.parameter || []) as any[]).find((q) => q.key === key)?.value;
+      return {
+        version: v.containerVersionId,
+        name: v.name || '',
+        published: v.fingerprint ? new Date(Number(v.fingerprint)).toISOString() : null,
+        tags: ((v.tag || []) as any[]).map((x) => ({
+          name: x.name,
+          type: x.type,
+          paused: !!x.paused,
+          fires_on: names(x.firingTriggerId),
+          blocked_by: names(x.blockingTriggerId),
+          consent: x.consentSettings?.consentStatus || 'notSet',
+          consent_types: ((x.consentSettings?.consentType?.list || []) as any[]).map((q) => q.value),
+          id: param(x, 'measurementIdOverride') || param(x, 'tagId') || param(x, 'conversionId') || undefined,
+        })),
+        triggers: ((v.trigger || []) as any[]).map((x) => ({ name: x.name, type: x.type })),
+        variables: ((v.variable || []) as any[]).map((x) => ({ name: x.name, type: x.type })),
+      };
+    },
   },
   // ---- Gmail
   {
@@ -541,6 +587,7 @@ const PROBES: Record<string, (g: Call, x: { ctx: Ctx; conn: ConnectionRow }) => 
   merchant: (g) => g('GET', `${MERCHANT}/accounts/v1/accounts`, { query: { pageSize: 1 } }),
   ads: (g, x) => g('GET', `${ADS_URL}/customers:listAccessibleCustomers`, { headers: adsHeaders(x) }),
   analytics: (g) => g('GET', 'https://analyticsadmin.googleapis.com/v1beta/accountSummaries', { query: { pageSize: 1 } }),
+  tagmanager: (g) => g('GET', `${GTM}/accounts`),
   gmail: (g) => g('GET', `${GMAIL}/profile`),
   calendar: (g) => g('GET', `${CAL}/calendars/primary/events`, { query: { maxResults: 1, timeMin: new Date().toISOString() } }),
   drive: (g) => g('GET', `${DRIVE}/about`, { query: { fields: 'user(emailAddress)' } }),
@@ -783,6 +830,12 @@ export function registerGoogle(ctx: Ctx, mgr: McpManager, h: GoogleHelpers) {
     }
   };
 
+  // New mail in Gmail starts the routines that wait for mail (trigger "E-mail"), like a mailbox connected as a channel.
+  if (!process.env.NODE_TEST_CONTEXT) {
+    const timer = setInterval(() => void watchGmail(ctx, mgr).catch((e) => ctx.log.warn('[mcp] gmail kijken', cleanError(e))), GMAIL_WATCH_MS);
+    timer.unref?.();
+  }
+
   /** The inbox (or a Gmail search): the newest messages, with who, what and whether it is unread. */
   api.get(
     '/mcp/google/mail',
@@ -807,6 +860,61 @@ export function registerGoogle(ctx: Ctx, mgr: McpManager, h: GoogleHelpers) {
       return { ok: true, id: r?.id || null };
     }),
   );
+}
+
+// ---------------------------------------------------------------- new mail in Gmail → routines that wait for mail
+
+/** How often TeamBot looks for new mail (only for an owner who has a routine waiting for mail). */
+const GMAIL_WATCH_MS = 2 * 60_000;
+const GMAIL_SEEN = 'google.gmail.seen';
+
+/**
+ * New mail in the inbox of a connected Gmail goes to the routines that wait for mail (routines' trigger "E-mail", the
+ * same one a mailbox connected as a channel feeds): the bot of such a routine gets a turn per mail, with sender,
+ * subject and text. Nothing is asked of Google for an owner without such a routine. The mail that is already there
+ * when TeamBot first looks starts nothing: only what comes in after it. Returns how many mails were handed over.
+ */
+export async function watchGmail(ctx: Ctx, mgr: McpManager, onlyUser?: string): Promise<number> {
+  const engine = ctx.services.routines?.engine;
+  if (typeof engine?.handleEmail !== 'function') return 0;
+  let handed = 0;
+  const conns = ctx.store.find<ConnectionRow>('mcp_connections', { catalog_id: GOOGLE_ID }).filter((c) => c.enabled && (!onlyUser || c.user_id === onlyUser));
+  for (const c of conns) {
+    const o: any = c.oauth || {};
+    if (o.status !== 'connected' || !serviceIds(o.services).includes('gmail')) continue;
+    if (!ctx.store.one("SELECT 1 AS x FROM routine_triggers WHERE user_id = ? AND kind = 'email' AND enabled = 1 LIMIT 1", c.user_id)) continue;
+    const g = caller(ctx, mgr, c.id);
+    try {
+      const list = await g('GET', `${GMAIL}/messages`, { query: { q: 'in:inbox newer_than:2d', maxResults: 25 } });
+      const ids: string[] = ((list.messages || []) as any[]).map((m) => String(m.id));
+      const state = ctx.store.getSetting<{ ids: string[] } | null>(c.user_id, GMAIL_SEEN, null);
+      const seen = new Set(state?.ids || []);
+      // The first look: what is there now is old mail.
+      const fresh = state ? ids.filter((id) => !seen.has(id)).reverse() : [];
+      ctx.store.setSetting(c.user_id, GMAIL_SEEN, { ids: [...new Set([...ids, ...(state?.ids || [])])].slice(0, 400) });
+      for (const id of fresh.slice(0, 10)) {
+        const m = await g('GET', `${GMAIL}/messages/${encodeURIComponent(id)}`, { query: { format: 'full' } });
+        // Only what really came in: not the owner's own sent mail that Gmail also labels with the conversation.
+        if (!(m.labelIds || []).includes('INBOX') || (m.labelIds || []).includes('SENT')) continue;
+        engine.handleEmail({
+          userId: c.user_id,
+          accountId: 'gmail',
+          bindingName: String(o.email || 'Gmail'),
+          from: header(m, 'from'),
+          to: header(m, 'to'),
+          subject: header(m, 'subject'),
+          date: header(m, 'date'),
+          text: mailBody(m.payload).slice(0, 20_000),
+          messageId: header(m, 'message-id') || `gmail:${m.id}`,
+          id: m.id,
+        });
+        handed++;
+      }
+    } catch (e: any) {
+      if (!(e instanceof AuthRequiredError)) ctx.log.warn('[mcp] gmail kijken', cleanError(e).slice(0, 200));
+    }
+  }
+  return handed;
 }
 
 /** Disconnecting: also take the access away at Google itself. */

@@ -18,6 +18,27 @@ import { redact } from '../../core/secrets.js';
  * item) and `notifications.read` { ids | all, unread }.
  */
 
+/**
+ * The answer of a finished turn in one line, for a notification: the text after the turn's last step (`parts.answer`,
+ * agent/cli-loop.ts) when the engine wrote between its steps, else the whole text. Markdown marks go.
+ */
+export function conclusion(m: { content?: string | null; parts?: any } | null | undefined): string {
+  let parts: any = m?.parts;
+  if (typeof parts === 'string') {
+    try {
+      parts = JSON.parse(parts);
+    } catch {
+      parts = null;
+    }
+  }
+  const text = String((typeof parts?.answer === 'string' && parts.answer.trim()) || m?.content || '');
+  return text
+    .replace(/^#+\s*/gm, '')
+    .replace(/\*\*|`/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
 export interface NotificationRow {
   id: string;
   user_id: string;
@@ -255,7 +276,7 @@ export class NotificationService {
     }
     const agent = this.ctx.store.agent(r.agent_id);
     const name = agent?.name || 'Je bot';
-    const last = r.status === 'done' ? this.ctx.store.one<any>("SELECT content FROM messages WHERE run_id = ? AND role = 'assistant' AND deleted = 0 ORDER BY seq DESC LIMIT 1", r.id) : null;
+    const last = r.status === 'done' ? this.ctx.store.one<any>("SELECT content, parts FROM messages WHERE run_id = ? AND role = 'assistant' AND deleted = 0 ORDER BY seq DESC LIMIT 1", r.id) : null;
     // The engine's own (English) error text stays in the run row; people get the same plain sentence as in the chat.
     const engine = agent?.provider_id ? this.ctx.providers.config(agent.provider_id)?.name : undefined;
     const failed = r.status === 'error' && r.error ? redact(plainEngineError(r.error, { engine })) : '';
@@ -264,7 +285,8 @@ export class NotificationService {
       {
         // Stopped by the daily budget (agent/budget.ts): a limit, not "liep vast"; the body says when and where to raise it.
         title: r.status === 'done' ? `${name} is klaar` : r.meta?.budget?.cap ? `${name} heeft zijn eigen limiet bereikt` : r.meta?.budget ? `${name} heeft de daglimiet bereikt` : `${name} liep vast`,
-        body: r.status === 'done' ? str(last?.content, 200).replace(/\s+/g, ' ') || `Na ${Math.round(took / 60_000)} min.` : str(failed, 200) || 'Er ging iets mis.',
+        // What the bot concluded, not how it began: a long turn on a CLI engine opens with "Ik begin met …".
+        body: r.status === 'done' ? conclusion(last).slice(0, 200) || `Na ${Math.round(took / 60_000)} min.` : str(failed, 200) || 'Er ging iets mis.',
         link: `#/t/${r.thread_id}`,
         kind: 'run',
         level: r.status === 'error' ? (r.meta?.budget ? 'limit' : 'error') : undefined,

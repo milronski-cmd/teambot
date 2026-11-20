@@ -1,3 +1,4 @@
+import { conclusion } from '../notifications/index.js';
 import { sha256 as sha } from '../../core/util.js';
 import type { Ctx, Run } from '../../core/types.js';
 import type { TBEvent } from '../../core/events.js';
@@ -341,12 +342,12 @@ export class PushService {
     if (nt && !nt.shouldAlert(userId, { kind: 'run', agentId: r.agent_id, level: r.status === 'error' ? 'error' : undefined })) return null;
     const agent = this.ctx.store.agent(r.agent_id);
     const name = agent?.name || 'Bot';
-    const last = this.ctx.store.one<any>("SELECT content FROM messages WHERE run_id = ? AND role = 'assistant' AND deleted = 0 ORDER BY seq DESC LIMIT 1", r.id);
+    const last = this.ctx.store.one<any>("SELECT content, parts FROM messages WHERE run_id = ? AND role = 'assistant' AND deleted = 0 ORDER BY seq DESC LIMIT 1", r.id);
     const lang = userLanguage(this.ctx.store, userId);
     const msg: PushMessage = {
       title: p.preview ? (r.status === 'done' ? tr(lang, '{0} is klaar', name) : r.meta?.budget?.cap ? tr(lang, '{0} heeft zijn eigen limiet bereikt', name) : r.meta?.budget ? tr(lang, '{0} heeft de daglimiet bereikt', name) : tr(lang, '{0}: er ging iets mis', name)) : 'TeamBot',
       body: p.preview
-        ? (r.status === 'error' ? trUserText(this.ctx.store, userId, str(r.error, 160)) : str(last?.content, 160)) || (r.status === 'done' ? tr(lang, 'Taak afgerond') : tr(lang, 'Taak mislukt'))
+        ? (r.status === 'error' ? trUserText(this.ctx.store, userId, str(r.error, 160)) : conclusion(last).slice(0, 160)) || (r.status === 'done' ? tr(lang, 'Taak afgerond') : tr(lang, 'Taak mislukt'))
         : r.status === 'done'
           ? tr(lang, 'Een taak is klaar')
           : tr(lang, 'Een taak is mislukt'),

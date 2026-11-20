@@ -1,5 +1,24 @@
 # Changelog
 
+## [4.9.4] — 2026-11-20
+
+### Apps
+- **Een nieuwe mail in Gmail geeft een bot meteen een beurt.** Een vaste taak met de aanleiding *E-mail* ging alleen
+  af voor een mailbox die als kanaal gekoppeld was. Nu ook voor Gmail via de Google-koppeling: TeamBot kijkt elke twee
+  minuten naar je inbox en geeft elke nieuwe mail (afzender, onderwerp, tekst) aan de bot van die vaste taak, die hem
+  kan indelen en oppakken. Mail die er al stond start niets, en je eigen verstuurde mail ook niet. Zonder zo'n vaste
+  taak wordt er niets opgevraagd. Kies bij de aanleiding als account `gmail`, of laat het leeg voor alle mail.
+- **Tag Manager in de Google-koppeling.** Een bot ziet je accounts en containers en wat er nu live staat: elke tag met
+  zijn soort, of hij op pauze staat, op welke triggers hij afgaat en welke toestemming hij vraagt, plus de triggers en
+  variabelen. Alleen lezen. Vink *Tag Manager* aan bij Apps › Google en log opnieuw in.
+
+### Meldingen
+- **“… is klaar” toont wat de bot concludeerde.** De melding nam de eerste regels van de beurt, en bij een lange
+  beurt was dat “Ik begin met …”. Nu het eindantwoord.
+- **“… is gepauzeerd” brengt je bij de knop.** Bewoog je de muis terwijl een bot je scherm bediende, dan wees de
+  melding naar de pagina Computers in het algemeen. Nu opent hij het scherm van die bot, waar *Geef terug aan bot*
+  staat.
+
 ## [4.9.3] — 2026-11-20
 
 ### Dashboard

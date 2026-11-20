@@ -348,7 +348,7 @@ export class ScreenControl {
       /* someone else already holds it */
     }
     this.svc.logAction(owner.id, agent.id, { actor: 'user', actorName: owner.name, tool: 'takeover', summary: why, status: 'done' });
-    this.ctx.events.emit(owner.id, 'notification', { title: `${agent.name} is gepauzeerd`, body: `${why} Geef de bediening terug in TeamBot (Computer) als de bot verder mag.`, link: '#/m/browser', kind: 'computer' });
+    this.ctx.events.emit(owner.id, 'notification', { title: `${agent.name} is gepauzeerd`, body: `${why} Geef de bediening terug als de bot verder mag: open deze melding en klik op “Geef terug aan bot”.`, link: `#/m/browser/live/${agent.id}`, kind: 'computer', agentId: agent.id });
     this.emitState();
   }
 
