@@ -419,6 +419,9 @@ export function teamTools(s: RoomService, board: Board): ToolDef[] {
   function otherHolder(t: ToolContext, task: Task): string | null {
     const h = board.quality?.holder(task.user_id, 'room', task.id);
     if (!h || h === t.agent.id) return null;
+    // The main bot leads the team: it checks what a colleague did and may close or reopen that task itself (the second
+    // look still reads the evidence). Live (20 Nov 2026) it checked a task on the live site and then could not set it.
+    if (s.ctx.services.teams?.isMain?.(t.agent.id)) return null;
     const who = s.agentName(h);
     return `Dat kan niet: ${who} werkt aan “${task.title}”, dus de status en het resultaat zet alleen ${who} (of de eigenaar). Wat wel kan: task_update met alleen id en owner om de taak aan een andere bot te geven, of ask_bot om ${who} iets te laten weten.`;
   }

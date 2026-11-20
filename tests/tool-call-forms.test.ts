@@ -134,6 +134,19 @@ test('task_update on a task another bot is working on: the answer says what does
     const after = await task(t, tk.id);
     assert.equal(after.ownerName, 'Cy');
     assert.notEqual(after.status, 'blocked', 'the refused change did not happen');
+
+    // The main bot leads the team: it may set a colleague's task itself.
+    m.script('Cy', { toolCalls: [{ name: 'task_claim', args: { id: tk.id } }] }, { text: 'Cy: bezig.' });
+    const cyChat = await t.api('POST', '/threads', { agentId: (await t.api('GET', '/agents')).find((x: any) => x.name === 'Cy').id });
+    await t.api('POST', `/threads/${cyChat.id}/messages`, { content: 'Pak de planning op.' });
+    await settle(t);
+    await t.api('PUT', `/teams/main/${ada.id}`);
+    m.script('Ada', { toolCalls: [{ name: 'task_update', args: { id: tk.id, status: 'blocked', result: 'Wacht op de nieuwe datum.' } }] }, { text: 'Ada: gezet.' });
+    await t.api('POST', `/threads/${th.id}/messages`, { content: 'Zet de planning nu op geblokkeerd.' });
+    await settle(t);
+    const last = toolResults(t, th.id, 'task_update').at(-1)!;
+    assert.equal(last.isError, false, last.content);
+    assert.equal((await task(t, tk.id)).status, 'blocked');
   } finally {
     await t.close();
   }

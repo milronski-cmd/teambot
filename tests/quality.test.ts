@@ -637,7 +637,7 @@ test('the checker always reads the last steps of a long turn (they deliver the w
   const steps = [...research, { tool: 'tool', summary: 'Schreef Schrijver/Schrijfwijzer.md', ok: true }, { tool: 'tool_result', summary: 'TeamBot · Dossier “Vakkennis Schrijver” herschrijven', ok: true, out: 'Dossier “Vakkennis Schrijver” [d:ab12cd] aangemaakt' }];
   const evidence = [{ type: 'text' as const, value: long, ok: true, note: 'het geleverde resultaat zelf', excerpt: long }];
   const body = checkPrompt({ userId: 'u', agent: null, title: long, description: long, doneWhen: long, result: long, evidence, steps });
-  assert.ok(body.length <= 16_000, `bounded (${body.length})`);
+  assert.ok(body.length <= 24_000, `bounded (${body.length})`);
   assert.ok(body.includes('Schreef Schrijver/Schrijfwijzer.md'), 'the file that was written');
   assert.ok(body.includes('[d:ab12cd] aangemaakt'), 'the dossier that was saved, with its output');
   assert.ok(body.trimEnd().endsWith('aangemaakt'), 'nothing is cut off after the last step');

@@ -1,5 +1,25 @@
 # Changelog
 
+## [4.9.20] — 2026-11-20
+
+### Skills
+- **Skills zijn verplicht waar ze het werk raken.** De aanwijzing was vrijblijvend ("past er geen, werk dan
+  zonder"), en bots zeiden op de naam alleen al dat er geen paste, of dat ze een skill "als werkwijze" gebruikten
+  zonder hem te laden. Nu geldt, zoals bij andere agentsystemen waar skills wel gebruikt worden: eerst de skill
+  laden die het werk raakt, dan pas oordelen of hij past, en alleen een geladen skill telt als gebruikt.
+
+### Werk dat af is
+- **De hoofdbot mag een taak van een collega afmelden of terugzetten.** Hij controleerde werk op de live site en
+  mocht daarna de status niet zetten.
+- **De controle oordeelt op inhoud, niet op vorm.** Goed werk werd afgekeurd op een ingekorte bewijstekst, de
+  lengte van het antwoord, een exitcode of een tijdstip dat een paar minuten afweek. De controleur krijgt nu meer
+  van het bewijs te zien en keurt daar niet meer op af.
+- **Is het andere model dat nakijkt aan zijn limiet, dan kijkt het eigen model van de bot meteen na.**
+
+### Je team stuurt op resultaat
+- **De hoofdbot krijgt de stand van het team bij elk werk**, met de vraag om kansen. Die kreeg hij alleen als hij
+  zelf niets te doen had, en dat gebeurt bij een hoofdbot bijna nooit.
+
 ## [4.9.19] — 2026-11-20
 
 ### Je team leert

@@ -57,6 +57,9 @@ const FIT_DESCRIBED = 3;
  * work and that it starts with one. Words the task shares with a skill put that skill first; with none shared the
  * bot's skills are named in their own order (a bot has the handful that belong to its role).
  */
+// The wording is a duty, as in the agent systems where skills do get used (scan the skills before the work, read the
+// one that applies, then follow it): told "use one if it fits", bots answered "none fitted" on the name alone, or said
+// they used a skill "as a way of working" without loading it (live, 20 Nov 2026: 80 answers, no skill loaded).
 export function skillFitContext(ctx: Ctx, lib: SkillLibrary, agent: Agent, input: Message | null): string | null {
   if (!input || agent.access_mode === 'chat') return null;
   // Work a bot takes up by itself arrives as a line of TeamBot ("er ligt werk voor je klaar"), not as a message of a
@@ -75,7 +78,7 @@ export function skillFitContext(ctx: Ctx, lib: SkillLibrary, agent: Agent, input
     .slice(0, FIT_MAX);
   const names = ranked.map((r, i) => (i < FIT_DESCRIBED && r.s.description ? `${r.s.name} (${String(r.s.description).replace(/\s+/g, ' ').trim().slice(0, 110)})` : r.s.name));
   const more = mine.length - ranked.length;
-  return `Je skills voor dit werk: ${names.join('; ')}${more > 0 ? `; en nog ${more}` : ''}. Hoort deze opdracht bij een van deze skills, pak die er dan eerst bij (je eigen skill-tool als je die hebt, anders skill_load) en werk volgens zijn stappen; zeg in je antwoord welke skill je gebruikte. Past er geen, werk dan zonder.`;
+  return `Je skills voor dit werk: ${names.join('; ')}${more > 0 ? `; en nog ${more}` : ''}. Laad eerst de skill die dit werk raakt (je eigen skill-tool als je die hebt, anders skill_load) en werk volgens zijn stappen; twijfel je tussen twee, laad de meest specifieke. Oordelen dat er geen past mag pas nadat je de best passende hebt gelezen. Zeg in je antwoord welke skill je laadde; een skill die je niet laadde heb je niet gebruikt.`;
 }
 
 export function skillMenuRoutes(ctx: Ctx, lib: SkillLibrary) {

@@ -556,12 +556,16 @@ export class WorkLoop {
    */
   async stand(agentId: string, input: Message | null): Promise<string | null> {
     const w = (input?.parts as any)?.work;
-    if (!input || input.role !== 'system' || !String(w?.refs?.[0] || '').startsWith(OWN)) return null;
+    if (!input || input.role !== 'system' || !w) return null;
     const agent = this.ctx.store.agent(agentId);
     if (!agent) return null;
     const userId = agent.user_id;
     const teamId: string | null = this.teams?.teamOf?.(agent.id) || null;
     const main = (this.teams?.mainOf?.(userId) || null) === agent.id;
+    // A bot with work on its name does that work; only a turn of own initiative is measured by its own number. The
+    // main bot always has work (it leads), so it gets the stand of the team on every work turn: with it only on turns
+    // of own initiative it never came with an opportunity (live, 20 Nov 2026: 47 turns, none).
+    if (!main && !String(w?.refs?.[0] || '').startsWith(OWN)) return null;
     const tiles = await this.rows(userId, teamId, 'SELECT titel, waarde, eenheid, bot, bijgewerkt FROM dashboard ORDER BY bot, volgorde, titel LIMIT 200');
     const tests = await this.rows(userId, teamId, "SELECT id, hypothese, meetdatum, eigenaar, status FROM experimenten WHERE status = 'loopt' ORDER BY meetdatum LIMIT 100");
     const today = new Date(this.engine.now()).toISOString().slice(0, 10);

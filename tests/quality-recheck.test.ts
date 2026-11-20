@@ -98,7 +98,7 @@ test('the check waits for the limit: "te controleren" with the time, then TeamBo
   }
 });
 
-test('the check at the limit goes to the next free option at once (a model on this computer), and says so', async () => {
+test('the other model that checks by default is at its limit: the own engine checks at once, and says so', async () => {
   const t = await startTestApp();
   try {
     t.app.ctx.providers.registerKind({ id: 'mocklocal', label: 'Lokaal', type: 'api', billing: 'local', needsKey: false, description: 'test', models: ['qwen3:4b'], defaultModel: 'qwen3:4b', create: () => mockAdapter(t.script, t.requests) });
@@ -115,9 +115,11 @@ test('the check at the limit goes to the next free option at once (a model on th
     const done = await task(t, tk.id);
     assert.equal(done.status, 'done', JSON.stringify(done.quality));
     assert.equal(done.quality.check.state, 'passed');
-    assert.match(done.quality.check.reason, /\(Gecontroleerd met Lokaal \(test\) · qwen3:4b, omdat de gratis limiet van .+ bereikt is\.\)$/);
-    assert.match(done.quality.check.engine, /Lokaal \(test\)/);
-    assert.equal(t.requests.at(-2)!.model, 'qwen3:4b', 'the check ran on the local model');
+    // The second look goes to the other model first (the local one, at no extra cost); that one is at its limit, so the
+    // bot's own engine checks at once and the reason says so.
+    assert.match(done.quality.check.reason, /\(Gecontroleerd met Mock · mock-1, omdat de gratis limiet van Lokaal \(test\) bereikt is\.\)$/);
+    assert.match(done.quality.check.engine, /Mock/);
+    assert.equal(t.requests.at(-3)!.model, 'qwen3:4b', 'the other model was asked first');
     assert.equal(row(t, tk.id).recheck_at, null);
     void local;
   } finally {

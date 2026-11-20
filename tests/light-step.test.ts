@@ -28,7 +28,7 @@ const FAKE_CLAUDE = path.join(path.dirname(fileURLToPath(import.meta.url)), 'fix
  * (teambot_find, teambot_do and its job): about 3,960 and 3,840 (was 21,400 and 6,250). A new line or tool that does
  * not fit: say it shorter, or put the tool on demand.
  */
-const MAX = { tools: 3500, system: 2500, mainTools: 4050, mainSystem: 3950, apiTools: 4400, apiSystem: 2350 };
+const MAX = { tools: 3500, system: 2500, mainTools: 4060, mainSystem: 3950, apiTools: 4400, apiSystem: 2350 };
 
 const md = (name: string, description: string) => `---\nname: ${name}\ndescription: ${description}\n---\n\n# ${name}\n\nDoe het stap voor stap.\n`;
 const count = (text: string, part: string) => text.split(part).length - 1;

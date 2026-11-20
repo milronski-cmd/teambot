@@ -127,6 +127,8 @@ test('a turn of own initiative brings the stand: own number, experiments that ar
     assert.match(lead, /experimenten die lopen: 1, nu te beoordelen: 1\. Kansen die wachten: 0/);
     assert.match(lead, /experiment 1 van Sem/);
     assert.match(lead, /kom zelf met kansen: hoogstens drie per ronde.*wat het de eigenaar oplevert/s);
+    // The main bot gets it on every work turn; another bot only on a turn of own initiative.
+    assert.match((await work.stand(baas.id, { role: 'system', parts: { work: { refs: ['tk::1'] } } } as any)) || '', /^Stand van het team/);
   } finally {
     await t.close();
   }

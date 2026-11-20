@@ -19,7 +19,7 @@ test('work names the skills of the bot, best fit first; small talk, a picked ski
   const said = skillFitContext({} as any, lib(mine), bot(), msg(task))!;
   assert.match(said, /^Je skills voor dit werk: seo-content-brief \(Maakt een briefing voor een pagina/);
   for (const s of mine) assert.ok(said.includes(s.name), s.name);
-  assert.match(said, /pak die er dan eerst bij .* zeg in je antwoord welke skill je gebruikte\. Past er geen, werk dan zonder\.$/);
+  assert.match(said, /Laad eerst de skill die dit werk raakt .* Oordelen dat er geen past mag pas nadat je de best passende hebt gelezen\. .* een skill die je niet laadde heb je niet gebruikt\.$/);
 
   // More skills than fit: the rest is counted, never listed.
   const many = [...mine, ...['a', 'b', 'c', 'd', 'e'].map((x) => skill('extra-' + x, 'Iets anders.'))];

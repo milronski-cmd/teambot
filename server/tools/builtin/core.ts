@@ -17,7 +17,7 @@ export function coreTools(): ToolDef[] {
       group: 'core',
       risk: 'read',
       description:
-        'Stel de gebruiker een vraag en wacht op het antwoord (bijv. bij onduidelijkheid of een keuze). Geef optioneel antwoordopties. Gebruik spaarzaam. Wat hij eerder al beantwoordde krijg je terug in plaats van een nieuwe vraag; again: true vraagt het toch opnieuw (de situatie is echt anders, of je weet niet zeker of het antwoord hier geldt).',
+        'Stel de gebruiker een vraag en wacht op het antwoord (bijv. bij onduidelijkheid of een keuze). Geef optioneel antwoordopties. Gebruik spaarzaam.',
       parameters: {
         type: 'object',
         properties: { question: { type: 'string' }, options: { type: 'array', items: { type: 'string' } }, again: { type: 'boolean' } },
