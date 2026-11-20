@@ -145,7 +145,7 @@ try {
   // A number that changed shows its course as a line.
   const td = app.ctx.services.teamdata;
   const uid = app.ctx.auth.owner().id;
-  const put = (v) => td.write(uid, [{ sql: "INSERT INTO dashboard (sleutel, groep, titel, waarde, eenheid, bot) VALUES ('aanvragen', 'Leads', 'Aanvragen deze week', ?, 'aanvragen', 'Ada') ON CONFLICT(sleutel) DO UPDATE SET waarde = excluded.waarde", params: [v] }]);
+  const put = (v) => td.write(uid, [{ sql: "INSERT INTO dashboard (sleutel, groep, titel, waarde, eenheid, bot, toelichting) VALUES ('aanvragen', 'Leads', 'Aanvragen deze week', ?, 'aanvragen', 'Ada', 'Geteld uit het formulier van de site, zonder proefaanvragen. Vorige week waren het er vier; de stijging komt van de nieuwe knop bovenaan de pagina en van twee advertenties die sinds maandag lopen.') ON CONFLICT(sleutel) DO UPDATE SET waarde = excluded.waarde", params: [v] }]);
   for (const v of ['4', '6', '5', '9', '12']) {
     await put(v);
     await td.dashboard(uid);
@@ -154,6 +154,22 @@ try {
   await page.getByTestId('dashboard-course').first().waitFor({ timeout: 15000 });
   const tile = await page.getByTestId('dashboard-tile').first().innerText();
   check('een cijfer dat veranderde toont zijn verloop', /Aanvragen deze week/.test(tile) && /\+8 sinds/.test(tile), tile.replace(/\s+/g, ' ').slice(0, 160));
+  // A long explanation stays two lines until he asks for all of it.
+  const note = page.getByTestId('dashboard-tile-note').first();
+  const short = (await note.boundingBox()).height;
+  await page.getByTestId('dashboard-tile-more').first().click();
+  check('een lange toelichting staat ingeklapt en klapt uit met Meer lezen', (await note.boundingBox()).height > short + 10, `${short}`);
+  await page.getByTestId('dashboard-tile-more').first().click();
+  // The money per day as one line, and a day read from it.
+  const course = page.getByTestId('dashboard-money-course');
+  await course.waitFor({ timeout: 10000 });
+  const svg = course.locator('svg');
+  const box = await svg.boundingBox();
+  await page.mouse.move(box.x + box.width - 3, box.y + box.height / 2);
+  const tip = await page.getByTestId('dashboard-money-tip').innerText();
+  check('het saldo per dag staat als lijn, en een dag is af te lezen', /21\.480,55|21,480\.55/.test(tip.replace(/\s/g, '')), tip.replace(/\s+/g, ' '));
+  check('met wat erbij kwam en eraf ging in de periode', /Bijgeschreven[\s\S]*250[\s\S]*Afgeschreven[\s\S]*471,30|Afgeschreven[\s\S]*471\.30/.test(await course.innerText()), (await course.innerText()).replace(/\s+/g, ' ').slice(-120));
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
   await page.getByTestId('dashboard-numbers').scrollIntoViewIfNeeded();
   await page.screenshot({ path: path.join(SHOTS, 'dashboard-5-verloop.png') });
 

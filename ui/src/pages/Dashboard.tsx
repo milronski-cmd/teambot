@@ -157,12 +157,15 @@ function Course({ points }: { points: { v: number; at: string }[] }) {
 
 function TileCard({ r, team }: { r: Tile; team?: string }) {
   const at = when(r.bijgewerkt);
+  // The number is what the tile is for: the explanation stays two lines until the owner asks for all of it.
+  const [more, setMore] = useState(false);
+  const long = String(r.toelichting || '').length > 110;
   const link = String(r.link || '');
   const linked = /^https?:\/\//i.test(link) || link.startsWith('#/');
   const card = (
     <Card className={`flex h-full flex-col gap-1 p-4${linked ? ' transition-colors group-hover:border-fg/30' : ''}`} data-testid="dashboard-tile">
       <div className="flex items-start justify-between gap-2 text-[13px] font-medium text-muted">
-        <span translate="no">
+        <span className="line-clamp-2" translate="no" title={r.titel}>
           {r.titel}
           {team ? <span className="font-normal"> · {team}</span> : null}
         </span>
@@ -174,8 +177,24 @@ function TileCard({ r, team }: { r: Tile; team?: string }) {
       </div>
       <Course points={r.history || []} />
       {r.toelichting && (
-        <div className="text-[13px] text-muted" translate="no">
-          {r.toelichting}
+        <div className="text-[13px] text-muted">
+          <span className={more ? 'block [overflow-wrap:anywhere]' : 'line-clamp-2 [overflow-wrap:anywhere]'} translate="no" data-testid="dashboard-tile-note">
+            {r.toelichting}
+          </span>
+          {long && (
+            <button
+              type="button"
+              className="mt-0.5 font-medium text-fg underline-offset-2 hover:underline"
+              onClick={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                setMore(!more);
+              }}
+              data-testid="dashboard-tile-more"
+            >
+              {more ? t('Minder') : t('Meer lezen')}
+            </button>
+          )}
         </div>
       )}
       <div className="mt-auto flex items-center justify-between gap-2 pt-2 text-[12px] text-muted">

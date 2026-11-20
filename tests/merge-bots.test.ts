@@ -10,7 +10,7 @@ test('merging two bots: open tasks, routines, notes, apps and the team database 
     const ctx = t.app.ctx;
     const userId = ctx.auth.owner()!.id;
     const one = await t.agent({ name: 'Bouwer' });
-    const two = await t.agent({ name: 'Bouwer 2' });
+    const two = await t.agent({ name: 'Bouwer 2', role: 'Apps bouwen', instructions: 'Bouw alleen in een eigen werkmap.' });
     const open = await t.api('POST', '/rooms/tasks', { title: 'Formulier bouwen', ownerType: 'agent', ownerId: two.id, start: false });
     const done = await t.api('POST', '/rooms/tasks', { title: 'Al klaar', ownerType: 'agent', ownerId: two.id, start: false });
     ctx.store.exec("UPDATE room_tasks SET status = 'done' WHERE id = ?", done.id);
@@ -45,6 +45,10 @@ test('merging two bots: open tasks, routines, notes, apps and the team database 
     const gone = ctx.store.agent(two.id)!;
     assert.equal(!!gone.archived, true, 'archived, not deleted');
     assert.equal(gone.settings?.mergedInto, one.id);
+    // The bot that stays knows it does the other's work now.
+    const stays = ctx.store.agent(one.id)!;
+    assert.match(String(stays.instructions), /Je doet sinds het samenvoegen ook het werk van Bouwer 2 \(Apps bouwen\)\.[\s\S]*Bouw alleen in een eigen werkmap\./);
+    assert.match(String(stays.role), /Apps bouwen/);
     assert.equal((await t.api('GET', '/agents')).some((a: any) => a.id === two.id), false, 'no longer in the list');
     void notes;
   } finally {

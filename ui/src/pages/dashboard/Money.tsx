@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Landmark, RefreshCw } from 'lucide-react';
 import { api } from '../../lib/api';
 import { navigate } from '../../lib/router';
@@ -22,12 +22,134 @@ export const money = (n: number, currency = 'EUR') => {
   }
 };
 
-/** The owner's money on the dashboard: balances and the latest transactions, straight from the bank app. */
+type Tx = Overview['transactions'][number];
+const PER_ACCOUNT = 50;
+
+/**
+ * The balance per day over the period, worked back from what is on the accounts now with what came in and went out.
+ * An account the bank gave its full page of transactions for (more may exist) shortens the period to what is known
+ * of it, so the line never shows a day it has no numbers for.
+ */
+export function balanceCourse(total: number, txs: Tx[], from: string, to: string): { day: string; balance: number; in: number; out: number }[] {
+  const dated = txs.filter((x) => x.date && x.amount !== null && x.status !== 'in behandeling');
+  let start = from;
+  const perAccount = new Map<string, string[]>();
+  for (const x of dated) perAccount.set(x.account, [...(perAccount.get(x.account) || []), String(x.date).slice(0, 10)]);
+  for (const days of perAccount.values()) if (days.length >= PER_ACCOUNT) start = [start, [...days].sort()[0]].sort()[1];
+  const days: string[] = [];
+  for (let d = new Date(`${start}T12:00:00Z`); days.length < 120 && d.toISOString().slice(0, 10) <= to; d = new Date(d.getTime() + 86400_000)) days.push(d.toISOString().slice(0, 10));
+  if (days.length < 2) return [];
+  const sum = new Map<string, { in: number; out: number }>();
+  for (const x of dated) {
+    const k = String(x.date).slice(0, 10);
+    const v = sum.get(k) || { in: 0, out: 0 };
+    if ((x.amount as number) >= 0) v.in += x.amount as number;
+    else v.out += x.amount as number;
+    sum.set(k, v);
+  }
+  const out: { day: string; balance: number; in: number; out: number }[] = [];
+  let balance = total;
+  for (let i = days.length - 1; i >= 0; i--) {
+    const v = sum.get(days[i]) || { in: 0, out: 0 };
+    out.unshift({ day: days[i], balance, in: v.in, out: v.out });
+    balance -= v.in + v.out;
+  }
+  return out;
+}
+
+const dayLabel = (day: string) => new Date(`${day}T12:00:00Z`).toLocaleDateString(undefined, { day: 'numeric', month: 'short' });
+
+/** One line: the money on the accounts per day. Hover (or the arrow keys) reads a day: its balance, what came in and went out. */
+function MoneyCourse({ points, currency }: { points: ReturnType<typeof balanceCourse>; currency: string }) {
+  const [at, setAt] = useState<number | null>(null);
+  const W = 600;
+  const H = 120;
+  const vs = points.map((p) => p.balance);
+  const lo = Math.min(...vs);
+  const hi = Math.max(...vs);
+  const x = (i: number) => (i / (points.length - 1)) * (W - 8) + 4;
+  const y = (v: number) => (hi === lo ? H / 2 : H - 8 - ((v - lo) / (hi - lo)) * (H - 20));
+  const r1 = (n: number) => Math.round(n * 10) / 10;
+  const line = points.map((p, i) => `${i ? 'L' : 'M'}${r1(x(i))},${r1(y(p.balance))}`).join(' ');
+  const pick = (clientX: number, box: DOMRect) => setAt(Math.max(0, Math.min(points.length - 1, Math.round(((clientX - box.left) / box.width) * (points.length - 1)))));
+  const p = at === null ? null : points[at];
+  const totalIn = points.reduce((n, q) => n + q.in, 0);
+  const totalOut = points.reduce((n, q) => n + q.out, 0);
+  const diff = vs[vs.length - 1] - vs[0];
+  return (
+    <div className="space-y-3 p-4" data-testid="dashboard-money-course">
+      <div className="flex flex-wrap items-baseline justify-between gap-2">
+        <div className="text-[13px] font-medium text-muted">{t('Saldo per dag, {0} tot {1}', dayLabel(points[0].day), dayLabel(points[points.length - 1].day))}</div>
+        <div className="text-[13px] tabular-nums text-muted">{diff === 0 ? t('gelijk gebleven') : t('{0} in deze periode', `${diff > 0 ? '+' : ''}${money(diff, currency)}`)}</div>
+      </div>
+      <div className="relative">
+        <svg
+          viewBox={`0 0 ${W} ${H}`}
+          className="h-32 w-full touch-none text-accent outline-none focus-visible:ring-2 focus-visible:ring-accent"
+          preserveAspectRatio="none"
+          role="img"
+          tabIndex={0}
+          aria-label={t('Het saldo per dag als lijn. Met de pijltjestoetsen lees je een dag.')}
+          onPointerMove={(e) => pick(e.clientX, e.currentTarget.getBoundingClientRect())}
+          onPointerDown={(e) => pick(e.clientX, e.currentTarget.getBoundingClientRect())}
+          onPointerLeave={() => setAt(null)}
+          onBlur={() => setAt(null)}
+          onKeyDown={(e) => {
+            if (e.key === 'ArrowLeft') setAt((i) => Math.max(0, (i ?? points.length - 1) - 1));
+            else if (e.key === 'ArrowRight') setAt((i) => Math.min(points.length - 1, (i ?? 0) + 1));
+            else if (e.key === 'Escape') setAt(null);
+          }}
+        >
+          <path d={`${line} L${r1(x(points.length - 1))},${H} L${r1(x(0))},${H} Z`} fill="currentColor" opacity="0.12" />
+          <path d={line} fill="none" stroke="currentColor" strokeWidth="2" strokeLinejoin="round" strokeLinecap="round" vectorEffect="non-scaling-stroke" />
+          {at !== null && <line x1={x(at)} x2={x(at)} y1={0} y2={H} stroke="currentColor" strokeWidth="1" opacity="0.5" vectorEffect="non-scaling-stroke" />}
+        </svg>
+        {p && at !== null && (
+          <div
+            className="pointer-events-none absolute top-0 z-10 w-44 rounded-lg border border-line bg-surface p-2 text-xs shadow-lg"
+            style={{ left: `${(at / (points.length - 1)) * 100}%`, transform: `translateX(${at > points.length / 2 ? '-104%' : '4%'})` }}
+            data-testid="dashboard-money-tip"
+          >
+            <div className="font-semibold">{dayLabel(p.day)}</div>
+            <div className="flex justify-between gap-2 tabular-nums">
+              <span className="text-muted">{t('Saldo')}</span>
+              <span className="font-semibold">{money(p.balance, currency)}</span>
+            </div>
+            {p.in !== 0 && (
+              <div className="flex justify-between gap-2 tabular-nums">
+                <span className="text-muted">{t('Bij')}</span>
+                <span>+{money(p.in, currency)}</span>
+              </div>
+            )}
+            {p.out !== 0 && (
+              <div className="flex justify-between gap-2 tabular-nums">
+                <span className="text-muted">{t('Af')}</span>
+                <span>{money(p.out, currency)}</span>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+      <div className="grid grid-cols-2 gap-3">
+        <div className="rounded-lg bg-surface-2 p-3">
+          <div className="text-[13px] font-medium text-muted">{t('Bijgeschreven')}</div>
+          <div className="text-lg font-bold tracking-tight tabular-nums">+{money(totalIn, currency)}</div>
+        </div>
+        <div className="rounded-lg bg-surface-2 p-3">
+          <div className="text-[13px] font-medium text-muted">{t('Afgeschreven')}</div>
+          <div className="text-lg font-bold tracking-tight tabular-nums">{money(totalOut, currency)}</div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/** The owner's money on the dashboard: balances, their course per day and the latest transactions, straight from the bank app. */
 export function MoneySection() {
   const [o, setO] = useState<Overview | null>(null);
   const [err, setErr] = useState('');
   const load = () =>
-    api.get<Overview>('/mcp/bank/overview').then(
+    api.get<Overview>('/mcp/bank/overview?days=30').then(
       (r) => (setO(r), setErr('')),
       (e) => (setO({ status: 'off', accounts: [], transactions: [] }), setErr(String(e?.message || e))),
     );
@@ -37,6 +159,8 @@ export function MoneySection() {
 
   const total = (o?.accounts || []).reduce((s, a) => s + (a.balances?.[0]?.amount ?? 0), 0);
   const mixed = new Set((o?.accounts || []).map((a) => a.balances?.[0]?.currency).filter(Boolean)).size > 1;
+  const known = (o?.accounts || []).length > 0 && (o?.accounts || []).every((a) => a.balances?.length);
+  const course = useMemo(() => (o && known && !mixed && o.from && o.to ? balanceCourse(total, o.transactions, o.from, o.to) : []), [o]);
 
   return (
     <section className="space-y-2" data-testid="dashboard-money">
@@ -88,6 +212,7 @@ export function MoneySection() {
                 </div>
               ))}
             </div>
+            {course.length > 1 && <MoneyCourse points={course} currency={o.accounts[0].balances?.[0]?.currency || 'EUR'} />}
             {o.transactions.length > 0 ? (
               <ul className="divide-y divide-line" data-testid="dashboard-transactions">
                 {o.transactions.slice(0, 12).map((x, i) => (

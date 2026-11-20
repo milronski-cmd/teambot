@@ -102,6 +102,14 @@ export async function mergeBots(ctx: Ctx, userId: string, fromId: string, intoId
     ctx.log.warn('[merge] teamdata', e);
   }
 
+  // The bot that stays takes over the work itself: the other's role joins its role, and what the other was told to do
+  // joins its instructions (under its name, so the owner sees where it came from and can tidy it).
+  const role = [into.role, from.role].map((x) => String(x || '').trim()).filter((x, i, l) => x && l.indexOf(x) === i).join(' ').slice(0, 300);
+  const theirs = String(from.instructions || '').trim();
+  const mine = String(into.instructions || '').trim();
+  const taken = `Je doet sinds het samenvoegen ook het werk van ${from.name}${from.role ? ` (${String(from.role).trim()})` : ''}.${theirs ? ` Wat ${from.name} was opgedragen geldt nu voor jou:\n${theirs.slice(0, 12_000)}` : ''}`;
+  store.updateAgent(into.id, { role, instructions: [mine, taken].filter(Boolean).join('\n\n') } as any);
+
   store.updateAgent(from.id, { archived: true, settings: { ...(from.settings || {}), mergedInto: into.id, mergedAt: ts } } as any);
   ctx.audit(userId, 'agent.merged', { ...out }, into.id);
   ctx.events.emit(userId, 'agent.updated', store.agent(from.id));

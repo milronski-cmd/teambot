@@ -1,5 +1,18 @@
 # Changelog
 
+## [4.12.2] — 2026-11-21
+
+### Dashboard
+- **Cijfers in één oogopslag.** Een tegel toont het cijfer groot, met een korte titel en hoogstens twee regels
+  uitleg; de rest lees je met "Meer lezen". Bots horen nu ook dat een tegel kort hoort te zijn: bronnen en
+  meetmethode horen in hun dossier, niet op het dashboard.
+- **Je saldo per dag als lijn.** Onder je rekeningen staat het verloop van je geld over de laatste dertig dagen,
+  met wat erbij kwam en eraf ging. Ga met de muis (of de pijltjestoetsen) over de lijn om een dag af te lezen.
+
+### Team
+- **Samenvoegen neemt het werk mee.** De bot die blijft krijgt de rol en de opdracht van de bot die opgaat erbij,
+  zodat het werk van de ander niet verdwijnt.
+
 ## [4.12.1] — 2026-11-21
 
 ### Post
