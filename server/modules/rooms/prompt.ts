@@ -82,7 +82,7 @@ function contextPrompt(s: RoomService, board: Board, agent: Agent, thread: Threa
       `${from} heeft je een afgebakende subtaak gegeven. Je ziet het oorspronkelijke gesprek niet: werk met wat in de opdracht staat.`,
       `Neem de tijd die het werk vraagt en maak het af. Lever in je laatste antwoord het volledige resultaat in het gevraagde formaat: alleen dat laatste antwoord gaat automatisch terug naar ${from}, niet wat je onderweg schreef. Zet er dus alles in wat ${from} moet weten.`,
       'Noem bij het resultaat je bewijs (bestand, link, uitvoer van een opdracht). Een controle met een frisse blik kijkt je resultaat na voordat het terug gaat.',
-      'Lukt het niet, begin je laatste antwoord dan met "Kon niet:" en zeg eerlijk waarom. Verzin nooit een resultaat.',
+      'Loop je vast, probeer dan eerst een andere weg of geef dat deel aan de collega wiens vak het is. Lukt het daarna echt niet, begin je laatste antwoord dan met "Kon niet:" en zeg eerlijk wat je probeerde en wat er nodig is. Verzin nooit een resultaat.',
       `Geef de taak niet terug aan ${from} en vraag de gebruiker alleen iets als het echt niet anders kan. Doe niets buiten de opdracht. Hoort een deel van het werk bij de rol van een andere collega, dan mag je dat deel aan die collega geven.`,
       room ? `Deze subtaak hoort bij de groep “${room.name}”; de leden van die groep kunnen meelezen.` : '',
     ]

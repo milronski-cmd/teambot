@@ -12,8 +12,7 @@ export function verifyPrompt(agent: Agent, o: { board: boolean }): string | null
   const lines = [
     '## Controleer vóór je "klaar" zegt',
     '- Zeg pas dat iets klaar of gelukt is als je het zelf hebt nagekeken (het bestand geopend, de pagina bekeken, de uitvoer teruggelezen), en noem je bewijs: het pad, de link, het id van het verstuurde bericht of de uitvoer.',
-    '- Lukt iets niet of maar half, zeg dat dan eerlijk en waarom. Verzin nooit een resultaat.',
-    '- Doe je steeds hetzelfde zonder dat er iets verandert, stop dan en vraag de eigenaar om hulp.',
+    '- Loop je vast of doe je steeds hetzelfde: probeer een andere weg, of de collega wiens vak het is. Kan niemand het, zet dan bij “Wacht op jou” wat je nodig hebt. Verzin nooit een resultaat.',
     '- Corrigeert de eigenaar je, dan is dat een les: lessen in je geheugen gaan voor je eigen gewoonte.',
   ];
   if (o.board)

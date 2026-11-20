@@ -1,5 +1,13 @@
 # Changelog
 
+## [4.9.2] — 2026-11-20
+
+### Samenwerken
+- **Een bot die vastloopt, lost het eerst zelf op.** De standaardregel was alleen "lukt het niet, zeg dat eerlijk",
+  en een team constateerde dan veel en loste weinig op. Nu: eerst een andere weg, dan de collega wiens vak het is, en
+  pas als niemand in het team het kan, komt het bij *Wacht op jou* met wat er nodig is. De regel over steeds hetzelfde
+  doen zonder resultaat is daarin opgegaan.
+
 ## [4.9.1] — 2026-11-20
 
 ### Samenwerken
