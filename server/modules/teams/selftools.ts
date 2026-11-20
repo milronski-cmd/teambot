@@ -143,6 +143,7 @@ export const askedByOwner = (ctx: Ctx, t: { run: any; thread: Thread; approved?:
 /** The card for a change nobody asked for in this turn. Resolves to an error sentence for the bot, or null after a Ja. */
 export async function proposeToOwner(t: Parameters<typeof askYesNo>[0], tool: string, input: any, who: string, what: string[]): Promise<string | null> {
   const r = await askYesNo(t, tool, input, `${who} wil dit veranderen zonder dat jij er in dit gesprek om vroeg: ${what.join('; ')}. Goed?`);
+  if (r.no) return r.no;
   return r.yes ? null : 'Niet veranderd. Dit was geen vraag van je eigenaar zelf in dit gesprek, dus TeamBot heeft het hem als voorstel op een kaart gevraagd en hij zei geen ja. Ga verder met je werk; probeer het niet opnieuw.';
 }
 
@@ -214,7 +215,10 @@ export function selfTools(ctx: Ctx): ToolDef[] {
         if (!owner || owner.disabled) return toolError('De eigenaar van deze bot is niet gevonden.');
         if (p.widen.length) {
           if ((p.patch.access_mode === 'full' || p.patch.settings?.fullAccessExternal === true) && owner.role !== 'owner') return toolError('Alleen de eigenaar van deze TeamBot-installatie kan een bot volledige toegang geven.');
-          if (!t.approved && !(await askYesNo(t, SELF_SETTINGS, a, `${me.name} wil zelf meer toegang: ${listText(p.widen)}. Goed?`)).yes) return toolError('Je eigenaar wil je niet meer toegang geven. Er is niets veranderd.');
+          if (!t.approved) {
+            const r = await askYesNo(t, SELF_SETTINGS, a, `${me.name} wil zelf meer toegang: ${listText(p.widen)}. Goed?`);
+            if (!r.yes) return toolError(r.no || 'Je eigenaar wil je niet meer toegang geven. Er is niets veranderd.');
+          }
         }
         // Not asked by the owner in this turn: one card (the same one, when more access was already asked above).
         else if (!askedByOwner(ctx, t)) {

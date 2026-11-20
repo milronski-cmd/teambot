@@ -1,6 +1,7 @@
 import type { Agent, Ctx, ToolContext, ToolDef, ToolGroup } from '../../core/types.js';
 import { inputLine } from '../../core/util.js';
 import { toolError } from '../registry.js';
+import { PARKED_TEXT } from '../broker.js';
 import { isParseError } from '../../modules/botrules/parse.js';
 import { fullAccess } from './files.js';
 import { EFFECT_LABEL, MONEY_REFUSAL, aboutMoney } from '../../modules/botrules/money.js';
@@ -26,9 +27,13 @@ const YES = /^\s*(?:ja|yes|ok|oke|oké|okay|prima|goed|doe maar|akkoord|aanzette
 export const saidYes = (r: { approved: boolean; answer?: string }) => r.approved && YES.test(r.answer ?? '');
 
 /** Ask the bot's owner a yes/no question on a card in the chat. Only in the owner's own conversation. */
-export async function askYesNo(t: ToolContext, tool: string, input: any, summary: string): Promise<{ yes: boolean; answer?: string }> {
+export async function askYesNo(t: ToolContext, tool: string, input: any, summary: string): Promise<{ yes: boolean; answer?: string; no?: string }> {
   if (t.thread.user_id !== t.agent.user_id) return { yes: false };
-  const r = await t.ctx.broker.request({ userId: t.thread.user_id, agent: t.agent, thread: t.thread, run: t.run, kind: 'question', tool, input, summary, risk: 'write', options: ['Ja', 'Nee'], signal: t.signal });
+  // Parked like every other request: a bot's turn (a routine, work for a colleague) does not stand still for hours on
+  // a card its owner has not seen yet (live, 20 Nov 2026). His later answer reaches the bot, which then asks again
+  // and gets that answer at once. `no`: what the bot hears instead of "the owner does not want this".
+  const r = await t.ctx.broker.request({ userId: t.thread.user_id, agent: t.agent, thread: t.thread, run: t.run, kind: 'question', tool, input, summary, risk: 'write', options: ['Ja', 'Nee'], signal: t.signal, park: true });
+  if (r.parked) return { yes: false, no: PARKED_TEXT };
   return { yes: saidYes(r), answer: r.approved ? r.answer : undefined };
 }
 
@@ -91,6 +96,7 @@ export function registerSelfServe(ctx: Ctx) {
         const direct = fullAccess(agent);
         if (!why && !direct) return toolError('Zeg in één zin waarom je dit onderdeel nodig hebt (why).');
         const r = direct ? { yes: true, answer: undefined } : await askYesNo(t, PART_TOOL, { part: g.id, why }, `${agent.name} heeft ${g.label} nodig: ${sentence(why)} Aanzetten?`);
+        if (r.no) return r.no;
         if (!r.yes) return `De eigenaar zet ${g.label} niet aan${r.answer && !/^\s*nee\s*$/i.test(r.answer) ? ` (antwoord: “${inputLine(r.answer, 300)}”)` : ''}. Ga verder zonder dit onderdeel en zeg eerlijk wat daardoor niet lukt.`;
         const cur = t.ctx.store.agent(agent.id) || agent;
         const owner = t.ctx.store.user(agent.user_id);
@@ -133,6 +139,7 @@ export function registerSelfServe(ctx: Ctx) {
         if (rules.list(agent.user_id, { agentId: agent.id }).some((r: any) => r.text.toLowerCase() === text.toLowerCase())) return 'Deze regel staat er al. Ga verder met je werk.';
         const why = inputLine(a?.why, 300);
         const r = await askYesNo(t, RULE_TOOL, { rule: text, why }, `${agent.name} stelt een regel voor: “${text}” (${EFFECT_LABEL[p.effect as keyof typeof EFFECT_LABEL]}).${why ? ` ${sentence(why)}` : ''} Instellen?`);
+        if (r.no) return r.no;
         if (!r.yes) return `De eigenaar wil deze regel niet${r.answer && !/^\s*nee\s*$/i.test(r.answer) ? ` (antwoord: “${inputLine(r.answer, 300)}”)` : ''}. Blijf werken zoals nu en stel dit niet opnieuw voor.`;
         try {
           rules.add(agent.user_id, { agentId: agent.id }, text, p);

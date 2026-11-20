@@ -428,8 +428,10 @@ export function mainBotTools(ctx: Ctx, svc: TeamsService): ToolDef[] {
         const who = listText(p.changes.filter((c) => c.widen.length).map((c) => c.bot.name));
         if (p.widen.length) {
           if (owner.role !== 'owner' && p.changes.some((c) => c.patch.access_mode === 'full' || c.patch.settings?.fullAccessExternal === true)) return toolError('Alleen de eigenaar van deze TeamBot-installatie kan een bot volledige toegang geven.');
-          if (!t.approved && !(await askYesNo(t, 'bot_settings', a, `${t.agent.name} wil ${who} meer toegang geven: ${listText(p.widen)}. Goed?`)).yes)
-            return toolError(`De eigenaar wil ${who} niet meer toegang geven. Er is niets veranderd.`);
+          if (!t.approved) {
+            const r = await askYesNo(t, 'bot_settings', a, `${t.agent.name} wil ${who} meer toegang geven: ${listText(p.widen)}. Goed?`);
+            if (!r.yes) return toolError(r.no || `De eigenaar wil ${who} niet meer toegang geven. Er is niets veranderd.`);
+          }
         }
         // Not asked by the owner in this turn (a routine, a webhook, text the bot read): a proposal on one card first.
         else if (!askedByOwner(ctx, t)) {
@@ -527,7 +529,8 @@ export function mainBotTools(ctx: Ctx, svc: TeamsService): ToolDef[] {
               : p.kind === 'remove'
                 ? `${t.agent.name} wil een regel weghalen bij ${p.scope.label}: “${p.rule.text}” (${EFFECT_LABEL[p.rule.effect]}). Goed?`
                 : `${t.agent.name} wil een regel van ${p.scope.label} losser maken: “${p.rule.text}” wordt “${p.text}” (${EFFECT_LABEL[p.parsed.effect]}). Goed?`;
-          if (!(await askYesNo(t, 'bot_rules', a, q)).yes) return toolError('De eigenaar wil dit niet. Er is niets veranderd.');
+          const yn = await askYesNo(t, 'bot_rules', a, q);
+          if (!yn.yes) return toolError(yn.no || 'De eigenaar wil dit niet. Er is niets veranderd.');
         }
         let did: string;
         try {

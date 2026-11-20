@@ -830,8 +830,10 @@ export function manageTools(ctx: Ctx, svc: TeamsService): ToolDef[] {
           return toolError(`Geweigerd door TeamBot: dit gaat over het geheugen als geheel; dat doet ${t.agent.name} alleen als je eigenaar er zelf om vraagt in zijn eigen gesprek. Er is niets veranderd.`);
         if (p.widen.length) {
           if (owner.role !== 'owner') return toolError('Alleen de eigenaar van deze TeamBot-installatie kan een bot meer toegang geven.');
-          if (!t.approved && !(await askYesNo(t, MANAGE_DO, a, `${t.agent.name} wil meer toegang geven: ${listText(p.widen)} (${describe(ctx, p.method, p.route.path, { userId: owner.id, path: p.path, body: p.body })}). Goed?`)).yes)
-            return toolError('De eigenaar wil dit niet. Er is niets veranderd.');
+          if (!t.approved) {
+            const yn = await askYesNo(t, MANAGE_DO, a, `${t.agent.name} wil meer toegang geven: ${listText(p.widen)} (${describe(ctx, p.method, p.route.path, { userId: owner.id, path: p.path, body: p.body })}). Goed?`);
+            if (!yn.yes) return toolError(yn.no || 'De eigenaar wil dit niet. Er is niets veranderd.');
+          }
         }
         // Whose word counts (selftools.ts): this work did not begin with a message the owner typed, so one card for
         // him first. For every bot, the main bot too.

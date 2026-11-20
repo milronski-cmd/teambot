@@ -1,5 +1,13 @@
 # Changelog
 
+## [4.9.12] — 2026-11-20
+
+### Doorwerken
+- **Een ja/nee-vraag van een bot legt zijn beurt niet meer stil.** Stelde een bot zelf iets voor (een routine
+  aanpassen, een beurt stoppen, een regel, een onderdeel aanzetten), dan wachtte zijn hele beurt op jouw antwoord,
+  ook een routine of werk voor een collega. Was jij er niet, dan stond dat werk uren stil. De vraag blijft nu
+  voor je klaarstaan onder "Wacht op jou" en de bot gaat door met de rest; na jouw antwoord maakt hij het af.
+
 ## [4.9.11] — 2026-11-20
 
 ### Doorwerken

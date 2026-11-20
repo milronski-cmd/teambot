@@ -117,6 +117,18 @@ test('propose_rule: Ja stores the rule for that bot; never a looser rule about m
     assert.match((await no).text, /De eigenaar wil deze regel niet/);
     assert.equal((await e.t.api('GET', `/bot-rules?agentId=${a.id}`)).rules.length, 1);
 
+    // Nobody answers: the bot is told to go on (its turn does not stand still on the card), the card stays, and after
+    // his later Ja the same proposal passes without a second card.
+    e.t.app.ctx.broker.parkMs = 60;
+    const later = 'Mag altijd bestanden maken in de map Rapporten';
+    assert.match((await e.run(a.id, e.rule, { rule: later })).text, /Je eigenaar heeft nog niet geantwoord/);
+    const card = (await e.t.api('GET', '/approvals')).find((x: any) => x.tool === e.rule.name);
+    assert.ok(card?.parked_at, 'the card waits for the owner, parked');
+    await e.t.api('POST', `/approvals/${card.id}`, { decision: 'approve', answer: 'Ja' });
+    assert.match((await e.run(a.id, e.rule, { rule: later })).text, /De regel staat er nu/);
+    e.t.app.ctx.broker.parkMs = 0;
+    assert.equal((await e.t.api('GET', `/bot-rules?agentId=${a.id}`)).rules.length, 2);
+
     const money = await e.run(a.id, e.rule, { rule: 'Mag altijd het budget aanpassen in Shopify' });
     assert.equal(money.isError, true);
     assert.match(money.text, /een regel over geld .* Dat doet de eigenaar zelf/);
