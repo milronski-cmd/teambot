@@ -239,7 +239,7 @@ export async function createApp(over: Partial<Config> & { modules?: Module[]; qu
 
   // ---------- WebSocket: live events per user ----------
   const wss = new WebSocketServer({ noServer: true, maxPayload: 1_000_000 });
-  const clients = new Set<{ ws: WebSocket; userId: string; sessionId: string; device?: boolean; alive: boolean }>();
+  const clients = new Set<{ ws: WebSocket; userId: string; sessionId: string; device?: boolean; alive: boolean; missed: number }>();
   // Paired phones get the same live events as the user, except provider configuration (may hold custom auth headers).
   const DEVICE_HIDDEN = new Set(['provider.updated', 'provider.deleted']);
   server.on('upgrade', (req, socket, head) => {
@@ -259,9 +259,9 @@ export async function createApp(over: Partial<Config> & { modules?: Module[]; qu
         ws.on('close', () => offRevoke());
         return extra(ws, r, u);
       }
-      const c = { ws, userId: r.user.id, sessionId: r.session.id, device: (r.session as any).kind === 'device', alive: true };
+      const c = { ws, userId: r.user.id, sessionId: r.session.id, device: (r.session as any).kind === 'device', alive: true, missed: 0 };
       clients.add(c);
-      ws.on('pong', () => (c.alive = true));
+      ws.on('pong', () => ((c.alive = true), (c.missed = 0)));
       ws.on('close', () => clients.delete(c));
       ws.on('message', (data) => {
         try {
@@ -280,7 +280,9 @@ export async function createApp(over: Partial<Config> & { modules?: Module[]; qu
   });
   const ping = setInterval(() => {
     for (const c of clients) {
-      if (!c.alive) {
+      // One missed answer is no dead connection: with twenty bots at work the server itself can be busy for a moment
+      // when the answer comes in, and a window in the background answers late. Cut loose after two in a row.
+      if (!c.alive && ++c.missed >= 2) {
         c.ws.terminate();
         clients.delete(c);
         continue;

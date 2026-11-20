@@ -1,4 +1,5 @@
 import fs from 'node:fs';
+import { MAIL_RULE, plainReply } from './google.js';
 import path from 'node:path';
 import type { Agent, AttachmentRef, Ctx, Thread, ToolContext, ToolDef, ToolOutput, ToolRisk } from '../../core/types.js';
 import { newId, now } from '../../core/db.js';
@@ -212,6 +213,8 @@ function mcpTool(ctx: Ctx, mgr: McpManager, c: ConnectionRow, t: ToolRow, name: 
     // Google is one connection with seven services: each is a part of its own, so a question about "Search Console"
     // or "Gmail" brings just those tools along (tools/selection.ts).
     app: (c.catalog_id === GOOGLE_ID && googlePart(t.name)) || svc,
+    // An ordinary reply, with the owner's switch on, is a step the bot takes itself (google.ts plainReply).
+    ...(c.catalog_id === GOOGLE_ID && t.name === 'gmail_send' ? { riskFor: (a: any, tc: any) => (ctx.store.getSetting<boolean>(tc.userId, MAIL_RULE, false) === true && plainReply(a) ? 'write' : risk) } : {}),
     async run(args: any, tc: ToolContext): Promise<ToolOutput> {
       const fresh = ctx.store.get<ConnectionRow>('mcp_connections', c.id);
       const row = ctx.store.one<any>('SELECT * FROM mcp_tools WHERE connection_id = ? AND name = ?', c.id, t.name);

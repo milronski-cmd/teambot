@@ -18,6 +18,7 @@ interface GoogleState {
   email: string | null;
   status: 'off' | 'on' | 'expired';
   adsToken: boolean;
+  plainReplies?: boolean;
   adsLogin: string;
   connection: Conn | null;
 }
@@ -326,6 +327,23 @@ export function GoogleCard() {
                 }}
                 label="Mag ook concepten en afspraken maken en mail versturen (vraagt je eerst om toestemming)"
               />
+            )}
+            {s.connection?.allow_actions && s.services.find((x) => x.id === 'gmail')?.on && (
+              <div className="space-y-1">
+                <Toggle
+                  checked={s.plainReplies === true}
+                  onChange={async (v) => {
+                    try {
+                      await api.put('/mcp/google/mail-rule', { plainReplies: v });
+                      load();
+                    } catch (e) {
+                      toastError(e);
+                    }
+                  }}
+                  label="Gewone antwoorden mogen zonder mij de deur uit"
+                />
+                <p className="text-xs leading-relaxed text-muted">Een antwoord in een gesprek dat al loopt, aan één persoon, dat niet over geld gaat. Een eerste bericht aan iemand, meer ontvangers en alles over geld vraagt je eerst.</p>
+              </div>
             )}
             {s.services.find((x) => x.id === 'ads')?.on && s.adsToken && <div className="text-xs text-muted">Google Ads: developer token opgeslagen.</div>}
             <div className="flex flex-wrap gap-2">

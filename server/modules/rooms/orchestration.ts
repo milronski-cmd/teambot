@@ -1,4 +1,5 @@
 import type { Agent, Message, Run, Thread, ToolContext, ToolOutput } from '../../core/types.js';
+import { tokens } from '../memory/text.js';
 import { toolError } from '../../tools/registry.js';
 import { newId, now } from '../../core/db.js';
 import { usdText } from '../../core/i18n.js';
@@ -218,7 +219,7 @@ export class Orchestrator {
   }
 
   /** Cycle, depth and permission checks for one new hop from the calling bot to target. */
-  hopError(t: ToolContext, target: Agent, chain: TeamMeta, room: Room | null, kind: 'delegate' | 'message' = 'delegate'): string | null {
+  hopError(t: ToolContext, target: Agent, chain: TeamMeta, room: Room | null, kind: 'delegate' | 'message' = 'delegate', text = ''): string | null {
     if (target.id === t.agent.id) return 'Je kunt geen taak aan jezelf geven.';
     const te = this.teamError(t.agent.id, target.id);
     if (te) return te;
@@ -228,7 +229,11 @@ export class Orchestrator {
     // A bot that was only asked or told something (it got no task) may answer with a task for the one who asked: a
     // report to the lead that comes back as "then do this next" is no loop (live, 20 Nov 2026).
     const seen = chain.path.filter((id) => id === target.id).length;
-    if (kind === 'message' || chain.kind === 'message' ? seen > 1 : seen > 0)
+    // Other work is no handing back: a bot that got one task from a colleague may give that colleague a task about
+    // something else (found while doing the first: "check this other site too"), once. The same work going back, or a
+    // third time, stays a loop (live, 20 Nov 2026: a fact check of another site was refused as a loop).
+    const other = kind === 'delegate' && seen === 1 && !!text && this.otherWork(chain, text);
+    if (kind === 'message' || chain.kind === 'message' || other ? seen > 1 : seen > 0)
       return `Geweigerd om een lus te voorkomen: ${target.name} zit al in deze keten (${this.names(chain.path)} → ${target.name}). Werk het zelf af of leg het voor aan een mens.`;
     const l = this.s.limits(room, t.thread.user_id);
     // Settings of the owner, off unless he set them: -1 = bots may not give each other work, a number = that many hops.
@@ -239,6 +244,22 @@ export class Orchestrator {
       if (m && !this.s.perms(m).delegate) return 'Je hebt in deze groep geen toestemming om werk aan andere bots te geven.';
     }
     return null;
+  }
+
+  /** Is this task about something else than the task the calling bot was given in this chain? */
+  private otherWork(chain: TeamMeta, text: string): boolean {
+    try {
+      const got = chain.delegationId ? String(this.ctx.store.get<any>('room_delegations', chain.delegationId)?.task || '') : '';
+      if (!got) return false;
+      const a = new Set(tokens(got, 400));
+      const b = new Set(tokens(text, 400));
+      if (a.size < 4 || b.size < 4) return false;
+      let both = 0;
+      for (const w of b) if (a.has(w)) both++;
+      return both / Math.min(a.size, b.size) < 0.4;
+    } catch {
+      return false;
+    }
   }
 
   private subAudience(room: Room | null): string[] {
@@ -555,11 +576,11 @@ export class Orchestrator {
     const target = this.resolveBot(userId, a.bot, room);
     if (!target) return toolError(`Onbekende bot: ${a.bot}. Bots die je kunt aanspreken: ${this.botList(userId, room && this.s.humanMembers(room).some((h: any) => h.accepted) ? room : null, t.agent.id)}.`);
     const chain = this.callerChain(t);
-    const he = this.hopError(t, target, chain, room, kind);
+    const task = String((kind === 'message' ? a.message : a.task) ?? '').slice(0, 20_000);
+    const he = this.hopError(t, target, chain, room, kind, task);
     if (he) return toolError(he);
     const g = this.s.gate({ room, userId, agentId: target.id, chain, needMember: false });
     if (g) return toolError(g);
-    const task = String((kind === 'message' ? a.message : a.task) ?? '').slice(0, 20_000);
     if (!task.trim()) return toolError(kind === 'message' ? 'Het bericht is leeg.' : 'De taak is leeg.');
     const lo = this.loopError(t, target, chain, task);
     if (lo) return toolError(lo);

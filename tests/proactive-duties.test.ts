@@ -250,8 +250,10 @@ test('no cap by default: the bot’s own model, any frequency; a limit and "grat
     await env.t.api('PUT', '/proactive/settings', { cheapFirst: true });
     env.site.pages['https://raamwinkel.test'] = { body: page({ noindex: true }) };
     env.free!.script.push({ text: 'Gezien.' });
+    // (The free engine may already have done second looks: another model than the bot's own checks by default.)
+    const freeBefore = env.free!.requests.length;
     await env.at('2026-11-10T05:30:05Z');
-    assert.equal(env.free!.requests.length, 1, 'the free engine did the work');
+    assert.ok(env.free!.requests.length > freeBefore, 'the free engine did the work');
     rr = env.runs(tech.id).at(-1);
     assert.equal(rr.meta.duty.override.provider_id, env.free!.id);
     assert.equal(JSON.parse(env.t.app.ctx.store.one<any>('SELECT meta FROM runs WHERE id = ?', rr.run_id).meta).frugal, true);

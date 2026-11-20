@@ -340,6 +340,17 @@ test('refused in code: another team without aansturen, around a wall via a leade
     assert.doesNotMatch(toolOf(t, 'Kim').at(-1)!, /Geweigerd/);
     assert.equal(deleg(t, c.lea.id).length, 1, 'the question reached Lea');
 
+    // Other work is no handing back: Kim got "check de koppen" from Lea and gives Lea a task about something else.
+    const beforeLea = deleg(t, c.lea.id).length;
+    o.script('Lea', { toolCalls: [{ name: 'delegate_task', args: { bot: 'Kim', task: 'Controleer de koppen van de homepage op lengte en spelling', expected_output: 'lijst met koppen', wait: true } }] }, { text: 'Kim heeft de koppen bekeken.' });
+    o.script('Kim', { toolCalls: [{ name: 'delegate_task', args: { bot: 'Lea', task: 'De prijstabel op de offertepagina noemt een verkeerd btw-tarief: reken de bedragen na', expected_output: 'gecorrigeerde bedragen', wait: true } }] }, { text: 'Koppen gecheckt.' });
+    o.script('Lea', { text: 'Bedragen nagerekend.' });
+    const lth3 = await t.api('POST', '/threads', { agentId: c.lea.id });
+    await t.api('POST', `/threads/${lth3.id}/messages`, { content: 'Controleer de koppen.' });
+    await settle(t);
+    assert.doesNotMatch(toolOf(t, 'Kim').at(-1)!, /Geweigerd/);
+    assert.equal(deleg(t, c.lea.id).length, beforeLea + 1, 'the other work reached Lea');
+
     // A report that comes back as a task: Kim tells Lea something, Lea answers with work for Kim. No loop.
     const before = deleg(t, c.kim.id).length;
     o.script('Kim', { toolCalls: [{ name: 'message_bot', args: { bot: 'Lea', message: 'De meting is klaar: twee paginas zakken.' } }] }, { text: 'Gemeld.' });

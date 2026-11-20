@@ -74,7 +74,7 @@ test('Google: every tool belongs to a service, and reading tools never write', (
   const ids = new Set(GOOGLE_SERVICES.map((s) => s.id));
   for (const t of GOOGLE_TOOLS) assert.ok(ids.has(t.service), t.name);
   for (const s of GOOGLE_SERVICES) assert.ok(GOOGLE_TOOLS.some((t) => t.service === s.id), `${s.id} has tools`);
-  assert.deepEqual(GOOGLE_TOOLS.filter((t) => t.kind !== 'read').map((t) => t.name).sort(), ['calendar_create_event', 'gmail_draft', 'gmail_draft_delete', 'gmail_send']);
+  assert.deepEqual(GOOGLE_TOOLS.filter((t) => t.kind !== 'read').map((t) => t.name).sort(), ['calendar_create_event', 'ga_custom_dimension_create', 'ga_key_event_create', 'gmail_draft', 'gmail_draft_delete', 'gmail_send', 'gsc_sitemap_submit']);
 });
 
 test('Google: one login connects it, the test proves each service, and disconnecting revokes', async () => {
@@ -419,4 +419,38 @@ test('an error in the words of Google comes with the next step', async () => {
   assert.match(nextStep('gmail_read', 'Invalid id value'), /letterlijk over uit gmail_search/);
   assert.match(nextStep('ads_query', 'The Google Cloud project is only approved for use with test accounts. To access non-test accounts, apply for Basic or Standard access.'), /developer token .* ander account geeft dezelfde fout/);
   assert.equal(nextStep('gsc_query', 'The operation was aborted due to timeout'), '');
+});
+
+test('an ordinary reply may go without a card when the owner switched that on; money, a first message and more recipients still ask', async () => {
+  const { plainReply } = await import('../server/modules/mcp/google.js');
+  const reply = { to: 'jan@klant.test', subject: 'Re: Levering', thread: 't1', inReplyTo: '<a@klant.test>', body: 'Ja, morgen voor twaalf uur is hij er.' };
+  assert.equal(plainReply(reply), true);
+  assert.equal(plainReply({ ...reply, thread: '' }), false, 'a first message');
+  assert.equal(plainReply({ ...reply, inReplyTo: '' }), false);
+  assert.equal(plainReply({ ...reply, to: 'jan@klant.test, piet@klant.test' }), false, 'more than one recipient');
+  assert.equal(plainReply({ ...reply, cc: 'baas@klant.test' }), false);
+  assert.equal(plainReply({ ...reply, body: 'We betalen het bedrag van € 51,90 terug.' }), false, 'about money');
+  assert.equal(plainReply({ ...reply, subject: 'Re: korting op je bestelling' }), false);
+});
+
+test('writing in Search Console and Analytics: a sitemap is submitted, an event becomes a goal, each with its own right', async () => {
+  const calls: any[] = [];
+  const g = (async (m: string, url: string, o: any = {}) => {
+    calls.push([m, new URL(url).pathname, o.body || null]);
+    return m === 'GET' ? { keyEvents: [{ eventName: 'purchase' }] } : { name: 'ok' };
+  }) as any;
+  assert.deepEqual(await gtool('gsc_sitemap_submit').run({ site: 'sc-domain:voorbeeld.nl', sitemap: 'https://voorbeeld.nl/sitemap.xml' }, g, {} as any), { ingediend: 'https://voorbeeld.nl/sitemap.xml', site: 'sc-domain:voorbeeld.nl' });
+  await gtool('ga_key_events').run({ property: 'properties/123456789' }, g, {} as any);
+  await gtool('ga_key_event_create').run({ property: '123456789', event: 'generate_lead' }, g, {} as any);
+  await gtool('ga_custom_dimension_create').run({ property: '123456789', parameter: 'lead_bron', name: 'Bron van de aanvraag' }, g, {} as any);
+  assert.deepEqual(calls, [
+    ['PUT', '/webmasters/v3/sites/sc-domain%3Avoorbeeld.nl/sitemaps/https%3A%2F%2Fvoorbeeld.nl%2Fsitemap.xml', null],
+    ['GET', '/v1beta/properties/123456789/keyEvents', null],
+    ['POST', '/v1beta/properties/123456789/keyEvents', { eventName: 'generate_lead', countingMethod: 'ONCE_PER_EVENT' }],
+    ['POST', '/v1beta/properties/123456789/customDimensions', { parameterName: 'lead_bron', displayName: 'Bron van de aanvraag', scope: 'EVENT' }],
+  ]);
+  // The writing tools need the wider right, which the owner grants by logging in again; reading stays as it was.
+  assert.match(gtool('gsc_sitemap_submit').scope || '', /auth\/webmasters$/);
+  assert.match(gtool('ga_key_event_create').scope || '', /auth\/analytics\.edit$/);
+  assert.equal(gtool('ga_key_events').scope, undefined);
 });

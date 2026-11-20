@@ -82,15 +82,27 @@ function Routed({ parts }: { parts: string[] }) {
 function OfflineBar() {
   const online = useApp((s) => s.online);
   // Only when the connection stays away: not at every start or every return to the app, while it is still connecting.
+  // Back in a window that stood in the background counts as a new start: the connection was not kept there on
+  // purpose and comes back within a second, so the bar must not flash "Geen verbinding" at every return.
   const [late, setLate] = useState(false);
+  const [seen, setSeen] = useState(0);
   useEffect(() => {
-    if (online) {
-      setLate(false);
-      return;
-    }
+    const back = () => {
+      if (document.visibilityState === 'visible') setSeen((n) => n + 1);
+    };
+    document.addEventListener('visibilitychange', back);
+    window.addEventListener('focus', back);
+    return () => {
+      document.removeEventListener('visibilitychange', back);
+      window.removeEventListener('focus', back);
+    };
+  }, []);
+  useEffect(() => {
+    setLate(false);
+    if (online) return;
     const t = setTimeout(() => setLate(true), 4000);
     return () => clearTimeout(t);
-  }, [online]);
+  }, [online, seen]);
   if (online || !late) return null;
   return (
     <div className="flex items-center justify-center gap-2 bg-warn-soft px-3 py-1.5 text-xs font-medium text-warn" role="status">

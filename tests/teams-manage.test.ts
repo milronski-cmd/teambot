@@ -294,6 +294,8 @@ test('the route list comes from the registered routes and finds a call by a word
     const q = planCall(e.ctx, e.userId, { method: 'GET', path: '/rooms/tasks?status=todo', query: { limit: 5 } });
     assert.ok('url' in q && q.url === '/rooms/tasks?status=todo&limit=5');
     // A guessed path names the actions that look like it, so the next call is the right one.
+    // A bot never gives itself leave to send mail without the owner.
+    assert.match(refusal('PUT', '/mcp/google/mail-rule', { plainReplies: true }) || '', /bepaalt de eigenaar zelf/);
     const guess = planCall(e.ctx, e.userId, { method: 'GET', path: '/tasks/task_5eb13c61' });
     assert.ok('error' in guess && /kent geen actie GET \/tasks\/task_5eb13c61\. Wat erop lijkt: .*GET \/rooms\/tasks/.test(guess.error), JSON.stringify(guess));
     const gone = await e.run(e.main.id, MANAGE_DO, { method: 'POST', path: '/routines/rt_bestaatniet/pause' });

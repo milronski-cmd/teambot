@@ -41,7 +41,7 @@ export const growAdvice = (d: { core?: string | null }): string =>
     ? 'herschrijf het korter (mode rewrite): voeg regels samen en haal weg wat niet meer geldt'
     : 'splits het: zet een deelonderwerp in een eigen dossier (dossier_write met een nieuwe titel), verhuis die regels daarheen en laat hier één regel staan die ernaar verwijst. Haal alleen weg wat niet meer klopt; wat je weet kort je niet in';
 
-export const BODY_LIMITS: Record<CoreKind | 'subject', number> = { owner: 5000, overview: 6000, lessons: 3000, notes: 3000, subject: 8000 };
+export const BODY_LIMITS: Record<CoreKind | 'subject', number> = { owner: 5000, overview: 6000, lessons: 3000, notes: 6000, subject: 8000 };
 /** From this share of the limit the bot is told to make the dossier shorter with its next change. */
 export const NEARLY_FULL = 0.8;
 /** Titles of other dossiers listed in the prompt. */

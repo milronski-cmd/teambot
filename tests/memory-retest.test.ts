@@ -101,15 +101,17 @@ test('memory full: notes over their quota → said in the chat right there; a fu
     await t.say(th.id, 'Voor de duidelijkheid: offertes gaan altijd via Jan.');
     const res = await t.api('POST', `/memory/thread/${th.id}/learn`, { agentId: a.id });
     assert.equal(res.method, 'model');
-    assert.doesNotMatch(String(t.app.ctx.store.get<any>('memory_dossiers', ov.id).body), /Offertes gaan altijd via Jan/);
-    assert.ok(t.app.ctx.store.all<any>("SELECT body FROM memory_records WHERE dossier_id = ? AND kind = 'event'", ov.id).some((r) => /Offertes gaan altijd via Jan/.test(r.body)), 'kept in the archive');
-    assert.equal(full().length, 1, JSON.stringify(full()));
-    assert.match(full()[0].body, /Dossier “Overzicht” is vol/);
+    // (Since 4.9.5 a full dossier makes room by itself: the new line is in the dossier, the oldest line that may go is
+    // in the archive, where search still finds it.)
+    assert.match(String(t.app.ctx.store.get<any>('memory_dossiers', ov.id).body), /Offertes gaan altijd via Jan/);
+    assert.ok(t.app.ctx.store.all<any>("SELECT body FROM memory_records WHERE dossier_id = ? AND kind = 'event'", ov.id).some((r) => /Regel 1 over een lopend project/.test(r.body)), 'the line that made room is kept in the archive');
+    assert.equal(full().length, 0, 'room was made: nothing for the owner to do, so no notice');
     t.script.push({ text: 'Ok.' });
     await t.say(th.id, 'En de facturen gaan ook altijd via Jan.');
     setShortCallFake((system) => (/Je bent het geheugen van TeamBot/.test(system) ? 'Overzicht: Facturen gaan altijd via Jan' : ''));
     await t.api('POST', `/memory/thread/${th.id}/learn`, { agentId: a.id });
-    assert.equal(full().length, 1, 'not again the same day for the same dossier');
+    assert.equal(full().length, 0);
+    assert.match(String(t.app.ctx.store.get<any>('memory_dossiers', ov.id).body), /Facturen gaan altijd via Jan/);
   } finally {
     setShortCallFake(null);
     await t.close();

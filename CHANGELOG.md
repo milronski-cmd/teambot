@@ -1,5 +1,38 @@
 # Changelog
 
+## [4.10.0] — 2026-11-20
+
+Deze versie sluit een dag van losse reparaties af (4.9.9 t/m 4.9.20): alles is nu samen getest op de hele
+testreeks (1.990 tests).
+
+### Post
+- **Gewone antwoorden mogen zonder jou de deur uit.** Een nieuwe schakelaar bij Apps › Google, standaard uit. Staat
+  hij aan, dan verstuurt een bot een gewoon antwoord zonder je eerst te vragen: een antwoord in een gesprek dat al
+  loopt, aan één persoon, dat niet over geld gaat. Een eerste bericht aan iemand, meer ontvangers, een kopie aan
+  anderen en alles over geld of prijzen vraagt je nog steeds, en je eigen regels blijven gelden. Een bot kan deze
+  schakelaar niet zelf omzetten.
+
+### Google
+- **Bots kunnen schrijven in Search Console en Analytics.** Een bot kan een sitemap (opnieuw) indienen, een
+  gebeurtenis als doel laten tellen (bijvoorbeeld een aanvraag) en een eigen dimensie maken. Daarvoor log je één
+  keer opnieuw in bij Google (Apps › Google) en geef je de twee nieuwe rechten; lezen blijft werken zoals het was.
+  Wat tot nu toe alleen in jouw eigen browser kon, gaat zo via de koppeling.
+
+### App
+- **"Geen verbinding met TeamBot" verschijnt niet meer onterecht.** De balk kwam op bij elke terugkeer naar het
+  venster als de verbinding op de achtergrond even weg was geweest, en de verbinding werd al na één gemist
+  antwoord verbroken, ook als TeamBot het alleen even druk had. Hij verschijnt nu alleen als de verbinding echt
+  wegblijft.
+
+### Geheugen
+- **Twee keer zoveel ruimte voor werknotities** (6.000 tekens). Bots zaten tegen de grens en haalden elke ronde
+  weg wat ze net hadden vastgelegd.
+
+### Samenwerken
+- **Een taak over iets anders mag terug naar een collega.** Kreeg een bot een taak van een collega en vond hij
+  daarbij ander werk voor diezelfde collega, dan werd dat als lus geweigerd. Dat mag nu één keer; hetzelfde werk
+  heen en weer sturen blijft geweigerd.
+
 ## [4.9.20] — 2026-11-20
 
 ### Skills

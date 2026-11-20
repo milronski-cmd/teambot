@@ -790,6 +790,7 @@ PUT    /mcp/google/client                                      shared
 POST   /mcp/google/start                                       shared
 POST   /mcp/google/test                                        shared
 PUT    /mcp/google/ads                                         shared
+PUT    /mcp/google/mail-rule                                   shared
 GET    /mcp/bank                                               shared
 PUT    /mcp/bank/app                                           shared
 GET    /mcp/bank/banks                                         shared
@@ -1132,6 +1133,7 @@ PATCH  /quality/task/teamdata/:ref                             team
 GET    /quality/suggestions                                    team
 POST   /quality/suggestions/:id                                team
 GET    /quality/lessons                                        team
+PUT    /quality/check-engine                                   shared
 GET    /team-templates                                         shared
 GET    /team-templates/profile/:roomId                         team
 GET    /team-templates/:id                                     shared
@@ -1222,6 +1224,7 @@ PUT    /providers/:id/context-window                           shared
 POST   /providers/free-reserve                                 shared
 POST   /providers/autodetect                                   shared
 GET    /approvals                                              team
+GET    /approvals/answers                                      team
 GET    /runs                                                   team
 POST   /runs/:id/cancel                                        team
 GET    /settings                                               shared

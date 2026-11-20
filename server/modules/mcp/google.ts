@@ -1,4 +1,5 @@
 import crypto from 'node:crypto';
+import { aboutMoney } from '../botrules/money.js';
 import type { Request } from 'express';
 import { McpServer } from '@modelcontextprotocol/server';
 import { z } from 'zod';
@@ -38,10 +39,10 @@ export interface GoogleService {
 }
 
 export const GOOGLE_SERVICES: GoogleService[] = [
-  { id: 'searchconsole', name: 'Search Console', line: 'Zoekwoorden, posities en indexering', scopes: [S + 'webmasters.readonly'], apis: ['searchconsole.googleapis.com'] },
+  { id: 'searchconsole', name: 'Search Console', line: 'Zoekwoorden, posities en indexering', scopes: [S + 'webmasters.readonly', S + 'webmasters'], apis: ['searchconsole.googleapis.com'] },
   { id: 'merchant', name: 'Merchant Center', line: 'Producten, afkeuringen en prestaties', scopes: [S + 'content'], apis: ['merchantapi.googleapis.com'] },
   { id: 'ads', name: 'Google Ads', line: 'Campagnes, zoekwoorden en kosten', scopes: [S + 'adwords'], apis: ['googleads.googleapis.com'] },
-  { id: 'analytics', name: 'Analytics', line: 'Bezoekers en conversies', scopes: [S + 'analytics.readonly'], apis: ['analyticsdata.googleapis.com', 'analyticsadmin.googleapis.com'] },
+  { id: 'analytics', name: 'Analytics', line: 'Bezoekers en conversies', scopes: [S + 'analytics.readonly', S + 'analytics.edit'], apis: ['analyticsdata.googleapis.com', 'analyticsadmin.googleapis.com'] },
   { id: 'tagmanager', name: 'Tag Manager', line: 'Tags, triggers en variabelen van je containers', scopes: [S + 'tagmanager.readonly'], apis: ['tagmanager.googleapis.com'] },
   { id: 'gmail', name: 'Gmail', line: 'Mail lezen, concepten maken en versturen', scopes: [S + 'gmail.readonly', S + 'gmail.compose'], apis: ['gmail.googleapis.com'] },
   { id: 'calendar', name: 'Agenda', line: 'Afspraken lezen en maken', scopes: [S + 'calendar.events'], apis: ['calendar-json.googleapis.com'] },
@@ -179,7 +180,7 @@ export function tooFast(status: number, body: string): boolean {
 }
 
 /** `timeoutMs`: for a call Google itself takes long over (inspecting a URL: often 10 s, sometimes over 40 s); default 45 s. */
-type Call = (method: 'GET' | 'POST' | 'DELETE', url: string, opts?: { query?: Record<string, any>; body?: any; headers?: Record<string, string>; raw?: boolean; timeoutMs?: number }) => Promise<any>;
+type Call = (method: 'GET' | 'POST' | 'PUT' | 'DELETE', url: string, opts?: { query?: Record<string, any>; body?: any; headers?: Record<string, string>; raw?: boolean; timeoutMs?: number }) => Promise<any>;
 
 function caller(ctx: Ctx, mgr: McpManager, connId: string): Call {
   return async (method, url, opts = {}) => {
@@ -385,6 +386,19 @@ export const GOOGLE_TOOLS: GTool[] = [
   },
   { name: 'gsc_inspect_url', service: 'searchconsole', title: 'URL inspecteren', kind: 'read', description: 'Hoe Google één pagina ziet: geïndexeerd of niet, laatste crawl, canonieke URL, mobiel en rich results.', input: { site, url: z.string().url() }, run: (a, g) => g('POST', 'https://searchconsole.googleapis.com/v1/urlInspection/index:inspect', { body: { inspectionUrl: a.url, siteUrl: a.site, languageCode: 'nl-NL' }, timeoutMs: 120_000 }) },
   { name: 'gsc_sitemaps', service: 'searchconsole', title: 'Sitemaps', kind: 'read', description: 'De ingediende sitemaps van een site, met fouten en waarschuwingen.', input: { site }, run: (a, g) => g('GET', `${GSC}/sites/${encodeURIComponent(a.site)}/sitemaps`) },
+  {
+    name: 'gsc_sitemap_submit',
+    service: 'searchconsole',
+    title: 'Sitemap indienen',
+    kind: 'write',
+    scope: S + 'webmasters',
+    description: 'Dien een sitemap (opnieuw) in bij Google Search Console, bijvoorbeeld na nieuwe of gewijzigde pagina’s. Geef de site zoals gsc_sites hem noemt en het volledige adres van de sitemap.',
+    input: { site, sitemap: z.string().url() },
+    run: async (a, g) => {
+      await g('PUT', `${GSC}/sites/${encodeURIComponent(a.site)}/sitemaps/${encodeURIComponent(a.sitemap)}`);
+      return { ingediend: a.sitemap, site: a.site };
+    },
+  },
   // ---- Merchant Center
   { name: 'merchant_accounts', service: 'merchant', title: 'Merchant Center-accounts', kind: 'read', description: 'Toon de Merchant Center-accounts waar dit Google-account bij kan.', input: {}, run: (_a, g) => g('GET', `${MERCHANT}/accounts/v1/accounts`) },
   {
@@ -423,6 +437,35 @@ export const GOOGLE_TOOLS: GTool[] = [
   },
   // ---- Analytics
   { name: 'ga_properties', service: 'analytics', title: 'Analytics-properties', kind: 'read', description: 'Toon de Google Analytics 4-accounts en properties waar dit account bij kan.', input: {}, run: (_a, g) => g('GET', 'https://analyticsadmin.googleapis.com/v1beta/accountSummaries', { query: { pageSize: 200 } }) },
+  {
+    name: 'ga_key_events',
+    service: 'analytics',
+    title: 'Doelen (key events)',
+    kind: 'read',
+    description: 'De gebeurtenissen die in een Analytics-property als doel (key event) tellen, zoals een aanvraag of een aankoop.',
+    input: { property: z.string().describe('Property-ID, bijv. 123456789') },
+    run: (a, g) => g('GET', `https://analyticsadmin.googleapis.com/v1beta/properties/${String(a.property).replace(/\D/g, '')}/keyEvents`, { query: { pageSize: 200 } }),
+  },
+  {
+    name: 'ga_key_event_create',
+    service: 'analytics',
+    title: 'Doel instellen (key event)',
+    kind: 'write',
+    scope: S + 'analytics.edit',
+    description: 'Laat een gebeurtenis in een Analytics-property als doel (key event) tellen, bijvoorbeeld generate_lead. Kijk eerst met ga_key_events of hij er al staat.',
+    input: { property: z.string().describe('Property-ID, bijv. 123456789'), event: z.string().regex(/^[A-Za-z][A-Za-z0-9_]{0,39}$/).describe('Naam van de gebeurtenis, bijv. generate_lead'), once: z.boolean().optional().describe('Tel hoogstens één keer per sessie (standaard: elke keer)') },
+    run: (a, g) => g('POST', `https://analyticsadmin.googleapis.com/v1beta/properties/${String(a.property).replace(/\D/g, '')}/keyEvents`, { body: { eventName: a.event, countingMethod: a.once ? 'ONCE_PER_SESSION' : 'ONCE_PER_EVENT' } }),
+  },
+  {
+    name: 'ga_custom_dimension_create',
+    service: 'analytics',
+    title: 'Eigen dimensie maken',
+    kind: 'write',
+    scope: S + 'analytics.edit',
+    description: 'Maak in een Analytics-property een eigen dimensie voor een parameter van een gebeurtenis (bijvoorbeeld lead_bron), zodat hij in rapporten te gebruiken is.',
+    input: { property: z.string().describe('Property-ID, bijv. 123456789'), parameter: z.string().regex(/^[A-Za-z][A-Za-z0-9_]{0,39}$/).describe('Naam van de parameter, bijv. lead_bron'), name: z.string().min(1).max(80).describe('Naam in de rapporten') },
+    run: (a, g) => g('POST', `https://analyticsadmin.googleapis.com/v1beta/properties/${String(a.property).replace(/\D/g, '')}/customDimensions`, { body: { parameterName: a.parameter, displayName: a.name, scope: 'EVENT' } }),
+  },
   {
     name: 'ga_report',
     service: 'analytics',
@@ -639,6 +682,22 @@ export function nextStep(tool: string, message: string): string {
   return '';
 }
 
+/**
+ * "Gewone mail mag zonder mij de deur uit": the owner's switch (off by default) that lets a bot send an ordinary reply
+ * without a card. Ordinary is narrow on purpose: an answer in a conversation that already exists (the thread and the
+ * message it answers), to one person, that is not about money. A first message to someone, more than one recipient, a
+ * copy to others, or anything about money, a price or a payment asks as before; the owner's own rules and the
+ * reviewer still apply. Live (20 Nov 2026): most of what a team asked its owner was leave to send a mail.
+ */
+export const MAIL_RULE = 'mcp.google.plainReplies';
+export function plainReply(args: any): boolean {
+  const a = args || {};
+  const to = String(a.to || '').split(/[,;]/).map((x: string) => x.trim()).filter(Boolean);
+  if (to.length !== 1 || a.cc || a.bcc) return false;
+  if (!String(a.thread || '').trim() || !String(a.inReplyTo || '').trim()) return false;
+  return !aboutMoney(`${a.subject || ''}\n${a.body || ''}`);
+}
+
 /** The in-process MCP server of one Google connection: the tools of the services the owner chose. */
 export function googleServer(ctx: Ctx, mgr: McpManager, c: ConnectionRow): McpServer {
   const server = new McpServer({ name: 'Google', version: ctx.config.version }, { capabilities: { tools: {} } });
@@ -712,7 +771,7 @@ export function registerGoogle(ctx: Ctx, mgr: McpManager, h: GoogleHelpers) {
     const o: any = c?.oauth || {};
     const on = c ? serviceIds(o.services) : [];
     const redirectUri = redirect(req);
-    return {
+    return { plainReplies: ctx.store.getSetting<boolean>(user(req).id, MAIL_RULE, false) === true,
       /** teambot: one click; own: the user's own client is saved; null: make an own client first. */
       client: client?.source ?? null,
       redirectUri,
@@ -729,6 +788,16 @@ export function registerGoogle(ctx: Ctx, mgr: McpManager, h: GoogleHelpers) {
   };
 
   api.get('/mcp/google', ah(async (req) => state(req)));
+  /** The owner's switch: ordinary replies go out without a card (see plainReply). */
+  api.put(
+    '/mcp/google/mail-rule',
+    ah(async (req) => {
+      const u = user(req);
+      ctx.store.setSetting(u.id, MAIL_RULE, req.body?.plainReplies === true);
+      ctx.audit(u.id, 'mcp.google.mail_rule', { plainReplies: req.body?.plainReplies === true });
+      return state(req);
+    }),
+  );
 
   api.put(
     '/mcp/google/client',
