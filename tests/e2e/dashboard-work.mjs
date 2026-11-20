@@ -105,6 +105,29 @@ try {
   check('het antwoord gaat naar de afzender, in hetzelfde gesprek', sent && sent.to === 'jan@klant.test' && sent.subject === 'Re: Levering van bestelling 2041' && sent.thread === 't1' && sent.inReplyTo === '<abc@klant.test>', JSON.stringify(sent || {}).slice(0, 160));
   check('daarna staat de lijst er weer', (await page.getByTestId('dashboard-mail-row').count()) === 3);
 
+  // A new mail of his own, and what went out.
+  await page.getByTestId('dashboard-mail-new').click();
+  const form = page.getByTestId('dashboard-mail-compose');
+  await form.waitFor({ timeout: 10000 });
+  check('een nieuwe mail schrijven: aan, onderwerp, bericht en versturen', (await form.getByRole('textbox').count()) === 3 && (await form.getByTestId('dashboard-mail-send-new').isDisabled()));
+  await form.getByRole('button', { name: 'Annuleren' }).click();
+  check('Inbox en Verzonden staan naast elkaar, met zoeken', (await page.getByTestId('dashboard-mail').getByText('Verzonden').count()) > 0 && (await page.getByTestId('dashboard-mail-search').count()) === 1);
+
+  // A number that changed shows its course as a line.
+  const td = app.ctx.services.teamdata;
+  const uid = app.ctx.auth.owner().id;
+  const put = (v) => td.write(uid, [{ sql: "INSERT INTO dashboard (sleutel, groep, titel, waarde, eenheid, bot) VALUES ('aanvragen', 'Leads', 'Aanvragen deze week', ?, 'aanvragen', 'Ada') ON CONFLICT(sleutel) DO UPDATE SET waarde = excluded.waarde", params: [v] }]);
+  for (const v of ['4', '6', '5', '9', '12']) {
+    await put(v);
+    await td.dashboard(uid);
+  }
+  await page.reload();
+  await page.getByTestId('dashboard-course').first().waitFor({ timeout: 15000 });
+  const tile = await page.getByTestId('dashboard-tile').first().innerText();
+  check('een cijfer dat veranderde toont zijn verloop', /Aanvragen deze week/.test(tile) && /\+8 sinds/.test(tile), tile.replace(/\s+/g, ' ').slice(0, 160));
+  await page.getByTestId('dashboard-numbers').scrollIntoViewIfNeeded();
+  await page.screenshot({ path: path.join(SHOTS, 'dashboard-5-verloop.png') });
+
   // Connected apps as a board: the name, how it stands, one click to open it (the list as the server gives it).
   await page.route('**/api/mcp/connections', (r) =>
     r.fulfill({ json: [

@@ -9,12 +9,12 @@ import { TeamFilterNote } from '../modules/teams/FilterNote';
 import { useTeamView } from '../modules/teams/scope';
 import { useInboxExtraCount } from '../modules';
 import { AppsSection, appState, useApps, type AppRow } from './dashboard/Apps';
-import { appsWorking, botsBusy } from './dashboard/text';
+import { appsWorking, botsBusy, courseChange, courseLabel, courseSame } from './dashboard/text';
 import { MailSection } from './dashboard/Mail';
 import { MoneySection } from './dashboard/Money';
 import { TeamSection } from './dashboard/Team';
 
-type Tile = { id: number; sleutel: string; groep?: string | null; titel: string; waarde?: string | null; eenheid?: string | null; toelichting?: string | null; link?: string | null; bot?: string | null; bijgewerkt?: string | null; team?: string };
+type Tile = { id: number; sleutel: string; groep?: string | null; titel: string; waarde?: string | null; eenheid?: string | null; toelichting?: string | null; link?: string | null; bot?: string | null; history?: { v: number; at: string }[]; bijgewerkt?: string | null; team?: string };
 
 /**
  * The state of everything at a glance: what waits (a number and the way there, never the cards themselves: those are
@@ -123,6 +123,32 @@ function when(s?: string | null): string | null {
   return d && Number.isFinite(d.getTime()) ? d.toISOString() : null;
 }
 
+/** The course of a number as a small line: where it came from and where it stands, with the change since the start. */
+function Course({ points }: { points: { v: number; at: string }[] }) {
+  if (points.length < 2) return null;
+  const vs = points.map((p) => p.v);
+  const lo = Math.min(...vs);
+  const hi = Math.max(...vs);
+  const W = 240;
+  const H = 44;
+  const x = (i: number) => (i / (points.length - 1)) * (W - 4) + 2;
+  const y = (v: number) => (hi === lo ? H / 2 : H - 4 - ((v - lo) / (hi - lo)) * (H - 8));
+  const r1 = (n: number) => Math.round(n * 10) / 10;
+  const line = points.map((p, i) => `${i ? 'L' : 'M'}${r1(x(i))},${r1(y(p.v))}`).join(' ');
+  const diff = vs[vs.length - 1] - vs[0];
+  const fmt = new Intl.NumberFormat(undefined, { maximumFractionDigits: 2 });
+  const since = new Date(points[0].at).toLocaleString(undefined, { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
+  return (
+    <div className="mt-1" data-testid="dashboard-course">
+      <svg viewBox={`0 0 ${W} ${H}`} className="h-11 w-full text-accent" role="img" aria-label={courseLabel(points.length)} preserveAspectRatio="none">
+        <path d={`${line} L${r1(x(points.length - 1))},${H} L${r1(x(0))},${H} Z`} fill="currentColor" opacity="0.12" />
+        <path d={line} fill="none" stroke="currentColor" strokeWidth="2" strokeLinejoin="round" strokeLinecap="round" vectorEffect="non-scaling-stroke" />
+      </svg>
+      <div className="text-[12px] text-muted">{diff === 0 ? courseSame(since) : courseChange(`${diff > 0 ? '+' : ''}${fmt.format(diff)}`, since)}</div>
+    </div>
+  );
+}
+
 function TileCard({ r, team }: { r: Tile; team?: string }) {
   const at = when(r.bijgewerkt);
   const link = String(r.link || '');
@@ -140,6 +166,7 @@ function TileCard({ r, team }: { r: Tile; team?: string }) {
         {r.waarde ?? '–'}
         {r.eenheid ? <span className="ms-1 text-base font-semibold text-muted">{r.eenheid}</span> : null}
       </div>
+      <Course points={r.history || []} />
       {r.toelichting && (
         <div className="text-[13px] text-muted" translate="no">
           {r.toelichting}

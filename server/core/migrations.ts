@@ -149,4 +149,11 @@ CREATE INDEX IF NOT EXISTS attachments_thread ON attachments(thread_id);`,
     id: 'core-approvals-forgotten-001',
     sql: `ALTER TABLE approvals ADD COLUMN forgotten_at TEXT;`,
   },
+  {
+    // The numbers on the dashboard through time: one row each time a tile's number changes, so a tile can show its
+    // course (the table of the bots, "dashboard", only holds the latest value).
+    id: 'core-dashboard-history-001',
+    sql: `CREATE TABLE dashboard_history (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id TEXT NOT NULL, team TEXT NOT NULL DEFAULT '', sleutel TEXT NOT NULL, value REAL NOT NULL, at TEXT NOT NULL);
+CREATE INDEX dashboard_history_key ON dashboard_history(user_id, team, sleutel, id);`,
+  },
 ];

@@ -1,5 +1,15 @@
 # Changelog
 
+## [4.11.0] — 2026-11-20
+
+### Dashboard
+- **Elk cijfer toont zijn verloop.** TeamBot bewaart de waarde van een tegel elke keer dat hij verandert. Onder
+  het cijfer staat een lijn met hoe het liep en hoeveel het veranderde sinds de eerste meting: aanvragen, omzet,
+  klikken, open zaken, wat je bots ook bijhouden. Het verloop begint bij deze versie; van eerder is er geen
+  geschiedenis.
+- **Post is compleet.** Naast je inbox zie je wat je verstuurd hebt, zoek je in je post en schrijf je zelf een
+  nieuwe mail. Lezen, beantwoorden en een mail aan een bot geven kon al.
+
 ## [4.10.0] — 2026-11-20
 
 Deze versie sluit een dag van losse reparaties af (4.9.9 t/m 4.9.20): alles is nu samen getest op de hele

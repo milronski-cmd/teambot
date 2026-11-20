@@ -502,3 +502,31 @@ test('dashboard: a standard table the bots keep by key, read on one screen (GET 
     await t.close();
   }
 });
+
+test('the dashboard keeps the course of a number: a point each time it changes, the last points along with the tile', async () => {
+  const { tileNumber } = await import('../server/modules/teamdata/service.js');
+  assert.deepEqual(['873,20', '5.906', '6 van 9', '10,90', '1.234,5', '-3', 'in orde', '12 %'].map(tileNumber), [873.2, 5906, 6, 10.9, 1234.5, -3, null, 12]);
+  const t = await startTestApp();
+  try {
+    const owner = t.app.ctx.auth.owner()!;
+    const svc = svcOf(t);
+    await svc.ensure(owner.id);
+    const set = (v: string) => svc.write(owner.id, [{ sql: "INSERT INTO dashboard (sleutel, groep, titel, waarde, bot) VALUES ('aanvragen', 'Leads', 'Aanvragen', ?, 'Ada') ON CONFLICT(sleutel) DO UPDATE SET waarde = excluded.waarde", params: [v] }]);
+    await set('9');
+    let tile = (await svc.dashboard(owner.id)).find((r: any) => r.sleutel === 'aanvragen');
+    assert.deepEqual(tile.history.map((p: any) => p.v), [9], 'the first time it is seen');
+    await svc.dashboard(owner.id);
+    await set('12');
+    await svc.dashboard(owner.id);
+    await set('12');
+    await svc.dashboard(owner.id);
+    await set('7 van 20');
+    tile = (await svc.dashboard(owner.id)).find((r: any) => r.sleutel === 'aanvragen');
+    assert.deepEqual(tile.history.map((p: any) => p.v), [9, 12, 7], 'a point per change, none for the same value');
+    await set('nog onbekend');
+    tile = (await svc.dashboard(owner.id)).find((r: any) => r.sleutel === 'aanvragen');
+    assert.deepEqual(tile.history.map((p: any) => p.v), [9, 12, 7], 'a value without a number adds nothing');
+  } finally {
+    await t.close();
+  }
+});

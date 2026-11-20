@@ -30,6 +30,17 @@ export interface Actor {
   runId?: string | null;
 }
 
+/** The number in the value of a tile: "873,20" → 873.2, "5.906" → 5906, "6 van 9" → 6; null without one. */
+export function tileNumber(v: unknown): number | null {
+  const m = /-?\d[\d.]*(?:,\d+)?/.exec(String(v ?? ''));
+  if (!m) return null;
+  let t = m[0];
+  if (t.includes(',')) t = t.replace(/\./g, '').replace(',', '.');
+  else if (/^-?\d{1,3}(\.\d{3})+$/.test(t)) t = t.replace(/\./g, '');
+  const n = Number(t.replace(/\.$/, ''));
+  return Number.isFinite(n) ? n : null;
+}
+
 export class TeamDataError extends Error {}
 
 export const QUERY_MAX_ROWS = 500;
@@ -430,6 +441,27 @@ export class TeamData {
     }
   }
 
+  /**
+   * The course of each tile: the number in its value is kept each time it changes (also the first time it is seen), and
+   * the last points go along with the tile. A value without a number ("in orde") has no course.
+   */
+  private withHistory(userId: string, tk: string, rows: any[]): any[] {
+    const store = this.ctx.store;
+    return rows.map((r) => {
+      const key = String(r.sleutel || '');
+      const v = tileNumber(r.waarde);
+      if (!key) return r;
+      try {
+        const last = store.one<{ value: number }>('SELECT value FROM dashboard_history WHERE user_id = ? AND team = ? AND sleutel = ? ORDER BY id DESC LIMIT 1', userId, tk || '', key);
+        if (v !== null && (!last || last.value !== v)) store.exec('INSERT INTO dashboard_history (user_id, team, sleutel, value, at) VALUES (?, ?, ?, ?, ?)', userId, tk || '', key, v, new Date().toISOString());
+        const points = store.all<{ value: number; at: string }>('SELECT value, at FROM dashboard_history WHERE user_id = ? AND team = ? AND sleutel = ? ORDER BY id DESC LIMIT 60', userId, tk || '', key).reverse();
+        return { ...r, history: points.map((p) => ({ v: p.value, at: p.at })) };
+      } catch {
+        return r;
+      }
+    });
+  }
+
   private async afterWrite(userId: string, tk: string, actor: Actor, r: RunResult, sql: string, params: any) {
     this.audit(userId, tk, actor, r.analysis, sql, params, r, null);
     if (r.analysis.kind === 'ddl') this.ctx.audit(userId, 'teamdata.schema', { by: actor.name, verb: r.analysis.verb, object: r.analysis.object, table: r.analysis.table, created: r.created, dropped: r.dropped, ...(tk ? { teamId: tk } : {}) }, actor.type === 'agent' ? actor.id : null);
@@ -468,6 +500,8 @@ export class TeamData {
   }
 
   private changed(userId: string, tables: string[], actor: Actor | null, tk = '') {
+    // A changed tile gets its point in the course at once, not only when the owner next opens the dashboard.
+    if (tables.includes('dashboard')) void this.rowsIn(userId, tk, 'SELECT sleutel, waarde FROM dashboard LIMIT 500', []).then((rows) => this.withHistory(userId, tk, rows)).catch(() => undefined);
     this.ctx.events.emit(userId, 'teamdata.changed', { tables, by: actor?.name || null, teamId: tk || null });
   }
 
@@ -1014,7 +1048,7 @@ export class TeamData {
   async dashboard(userId: string, teamId?: string | null) {
     const keys = this.keysFor(userId, teamId);
     const lists = await Promise.all(
-      keys.map(async (tk) => (await this.rowsIn(userId, tk, 'SELECT * FROM dashboard ORDER BY groep, volgorde, titel LIMIT 500', [])).map((r) => ({ ...r, id: Number(r.id), teamId: tk || null, team: this.teamName(tk) }))),
+      keys.map(async (tk) => this.withHistory(userId, tk, await this.rowsIn(userId, tk, 'SELECT * FROM dashboard ORDER BY groep, volgorde, titel LIMIT 500', [])).map((r) => ({ ...r, id: Number(r.id), teamId: tk || null, team: this.teamName(tk) }))),
     );
     return lists.flat();
   }

@@ -1,10 +1,11 @@
 import { useEffect, useState } from 'react';
-import { ArrowLeft, Mail as MailIcon, RefreshCw, Send } from 'lucide-react';
+import { ArrowLeft, Mail as MailIcon, PenLine, RefreshCw, Search, Send } from 'lucide-react';
 import { api } from '../../lib/api';
 import { useApp } from '../../lib/store';
 import { navigate } from '../../lib/router';
 import { t } from '../../lib/i18n';
 import { Button, Card, Field, Input, SectionTitle, Spinner, Textarea, timeAgo, toast, toastError } from '../../components/ui';
+import { Segmented } from '../../components/SettingControls';
 
 interface Row {
   id: string;
@@ -50,15 +51,36 @@ export function MailSection() {
   const [loading, setLoading] = useState('');
   const [reply, setReply] = useState('');
   const [busy, setBusy] = useState(false);
+  // Which mail he looks at (what came in, what went out), what he searches for, and a new mail he writes himself.
+  const [box, setBox] = useState<'inbox' | 'sent'>('inbox');
+  const [query, setQuery] = useState('');
+  const [asked, setAsked] = useState('');
+  const [fresh, setFresh] = useState<{ to: string; subject: string; body: string } | null>(null);
 
   const load = () =>
-    api.get<{ messages: Row[] }>('/mcp/google/mail?limit=12').then(
+    api.get<{ messages: Row[] }>(`/mcp/google/mail?limit=12&q=${encodeURIComponent(`${box === 'sent' ? 'in:sent' : 'in:inbox'}${asked ? ` ${asked}` : ''}`)}`).then(
       (r) => (setRows(r.messages), setOff('')),
       (e) => (setRows([]), setOff(String(e?.message || e))),
     );
   useEffect(() => {
+    setRows(null);
     void load();
-  }, []);
+  }, [box, asked]);
+
+  const sendFresh = async () => {
+    if (!fresh) return;
+    setBusy(true);
+    try {
+      await api.post('/mcp/google/mail/send', { to: fresh.to.trim(), subject: fresh.subject.trim(), body: fresh.body });
+      toast('Je mail is verstuurd', 'ok');
+      setFresh(null);
+      if (box === 'sent') void load();
+    } catch (e) {
+      toastError(e);
+    } finally {
+      setBusy(false);
+    }
+  };
 
   const read = async (id: string) => {
     setLoading(id);
@@ -110,16 +132,64 @@ export function MailSection() {
         tone="blue"
         action={
           !off && (
-            <Button size="sm" variant="ghost" icon={<RefreshCw className="h-4 w-4" />} onClick={() => (setRows(null), void load())}>
-              Verversen
-            </Button>
+            <span className="flex items-center gap-1">
+              <Button size="sm" variant="ghost" icon={<PenLine className="h-4 w-4" />} onClick={() => (setOpen(null), setFresh({ to: '', subject: '', body: '' }))} data-testid="dashboard-mail-new">
+                Nieuwe mail
+              </Button>
+              <Button size="sm" variant="ghost" icon={<RefreshCw className="h-4 w-4" />} onClick={() => (setRows(null), void load())}>
+                Verversen
+              </Button>
+            </span>
           )
         }
       >
         Post
       </SectionTitle>
+      {!off && !open && !fresh && (
+        <div className="flex flex-wrap items-center gap-2">
+          <Segmented<'inbox' | 'sent'>
+            label="Welke post"
+            value={box}
+            onChange={setBox}
+            options={[
+              { value: 'inbox', label: 'Inbox' },
+              { value: 'sent', label: 'Verzonden' },
+            ]}
+          />
+          <form
+            className="flex min-w-0 flex-1 basis-48 items-center gap-1"
+            onSubmit={(e) => {
+              e.preventDefault();
+              setAsked(query.trim());
+            }}
+          >
+            <Input value={query} onChange={(e) => setQuery(e.target.value)} placeholder={t('Zoek in je post')} aria-label={t('Zoek in je post')} data-testid="dashboard-mail-search" />
+            <Button size="sm" variant="ghost" type="submit" icon={<Search className="h-4 w-4" />} aria-label={t('Zoeken')} />
+          </form>
+        </div>
+      )}
       <Card className="p-0">
-        {rows === null ? (
+        {fresh ? (
+          <div className="space-y-3 p-4" data-testid="dashboard-mail-compose">
+            <Field label="Aan">
+              <Input value={fresh.to} onChange={(e) => setFresh({ ...fresh, to: e.target.value })} placeholder="naam@voorbeeld.nl" inputMode="email" />
+            </Field>
+            <Field label="Onderwerp">
+              <Input value={fresh.subject} onChange={(e) => setFresh({ ...fresh, subject: e.target.value })} />
+            </Field>
+            <Field label="Bericht">
+              <Textarea rows={7} value={fresh.body} onChange={(e) => setFresh({ ...fresh, body: e.target.value })} />
+            </Field>
+            <div className="flex flex-wrap gap-2">
+              <Button variant="primary" icon={<Send className="h-4 w-4" />} loading={busy} disabled={!fresh.to.trim() || !fresh.body.trim()} onClick={sendFresh} data-testid="dashboard-mail-send-new">
+                Versturen
+              </Button>
+              <Button variant="secondary" onClick={() => setFresh(null)}>
+                Annuleren
+              </Button>
+            </div>
+          </div>
+        ) : rows === null ? (
           <div className="flex justify-center p-6">
             <Spinner />
           </div>
@@ -173,7 +243,7 @@ export function MailSection() {
             </div>
           </div>
         ) : !rows.length ? (
-          <div className="p-4 text-sm text-muted">Je inbox is leeg.</div>
+          <div className="p-4 text-sm text-muted">{asked ? t('Niets gevonden.') : box === 'sent' ? t('Je hebt nog niets verstuurd.') : t('Je inbox is leeg.')}</div>
         ) : (
           <ul className="divide-y divide-line">
             {rows.map((r) => (
@@ -183,7 +253,7 @@ export function MailSection() {
                   <span className="min-w-0 flex-1">
                     <span className="flex items-baseline justify-between gap-2">
                       <span className={`truncate text-sm ${r.unread ? 'font-bold' : 'font-medium'}`} translate="no">
-                        {senderName(r.from)}
+                        {box === 'sent' ? t('Aan {0}', senderName(r.to || '')) : senderName(r.from)}
                       </span>
                       <span className="shrink-0 text-xs text-muted">{loading === r.id ? <Spinner /> : when(r.date)}</span>
                     </span>
