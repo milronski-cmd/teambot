@@ -93,3 +93,37 @@ test('answered in time: nothing is parked', async () => {
     await t.close();
   }
 });
+
+test('several decisions in a row while the bot is busy: one turn hears them all, not a turn per decision', async () => {
+  const t = await startTestApp();
+  try {
+    const ctx = t.app.ctx;
+    ctx.broker.parkMs = 60;
+    const bot = await t.agent({ name: 'Klusser', access_mode: 'ask', tool_groups: ['files'] });
+    const th = await t.api('POST', '/threads', { agentId: bot.id });
+    const ws = ctx.store.agent(bot.id)!.workspace;
+    fs.mkdirSync(ws, { recursive: true });
+    const write = (n: number) => ({ name: 'write_file', args: { path: `brief-${n}.txt`, content: `brief ${n}` } });
+    // Three requests nobody answers: three cards.
+    t.script.push({ toolCalls: [write(1)] }, { toolCalls: [write(2)] }, { toolCalls: [write(3)] }, { text: 'Drie brieven wachten op je.' });
+    await t.say(th.id, 'Schrijf drie brieven');
+    await t.waitIdle(th.id);
+    const open = (await t.api('GET', '/approvals')).filter((a: any) => a.tool === 'write_file');
+    assert.equal(open.length, 3);
+    // The owner says yes to all three, one click after the other. The first starts a turn; the other two arrive while it runs.
+    const [a1, a2, a3] = [1, 2, 3].map((n) => open.find((a: any) => String(a.summary).includes(`brief-${n}.txt`)));
+    t.script.push({ toolCalls: [write(1)] }, { text: 'Brief 1 geschreven.' }, { toolCalls: [write(2), write(3)] }, { text: 'Brief 2 en 3 geschreven.' });
+    const me = ctx.auth.owner()!.id;
+    for (const a of [a1, a2, a3]) ctx.broker.resolve(a.id, me, 'approve');
+    await until(() => [1, 2, 3].every((n) => fs.existsSync(path.join(ws, `brief-${n}.txt`))));
+    await t.waitIdle(th.id);
+    const resumes = ctx.store.all<any>("SELECT * FROM runs WHERE thread_id = ? AND trigger = 'resume' ORDER BY created_at, rowid", th.id);
+    assert.equal(resumes.length, 2, 'one turn for the first decision, one for the two that came while it ran');
+    const second = ctx.store.message(resumes[1].input_message_id)!;
+    assert.equal((second.content.match(/gaf toestemming voor wat je eerder vroeg/g) || []).length, 2, 'both decisions in one message');
+    assert.equal((second.parts as any).resumedFrom.approvalIds.length, 2);
+    assert.equal((await t.api('GET', '/approvals')).length, 0);
+  } finally {
+    await t.close();
+  }
+});

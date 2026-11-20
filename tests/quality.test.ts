@@ -690,3 +690,19 @@ test('a dossier saved halfway a long turn stays in what the checker reads', asyn
   const tight = stepLines(kept, 200);
   assert.ok(tight.includes('Vakkennis Klantenservice') && /andere stappen weggelaten/.test(tight));
 });
+
+test('“done” with the bot’s own words that it did not look goes back to be checked', async () => {
+  const { ruleVerdict, saysUnchecked } = await import('../server/modules/quality/verify.js');
+  const ev = [{ kind: 'file', value: 'rapport.md', ok: true, note: '' }] as any;
+  const base = { userId: 'u', agent: null, title: 'Zeven pagina’s nalopen', evidence: ev, steps: [] };
+  const v = ruleVerdict({ ...base, result: 'Alle zeven staan klaar. Ik heb de bestanden zelf niet gelezen of nagerekend.' });
+  assert.equal(v?.state, 'review');
+  assert.match(v!.reason, /zegt zelf dat het niet is nagekeken: “Ik heb de bestanden zelf niet gelezen of nagerekend\.”/);
+  assert.equal(ruleVerdict({ ...base, result: 'Done. I did not verify the numbers.' })?.state, 'review');
+  // An honest limit, something that was checked, or a task the owner set to skip: not this rule.
+  assert.equal(saysUnchecked('Niet gecontroleerd: de derde site (buiten de opdracht).'), null);
+  assert.equal(saysUnchecked('Ik heb alle zeven pagina’s live nagekeken met curl. Niets gemist.'), null);
+  assert.equal(saysUnchecked('Ik heb het niet verstuurd; het concept staat klaar.'), null);
+  assert.equal(ruleVerdict({ ...base, result: 'Alle zeven live nagekeken.' }), null);
+  assert.equal(ruleVerdict({ ...base, skip: true, result: 'Ik heb het zelf niet nagekeken.' })?.state, 'skipped');
+});

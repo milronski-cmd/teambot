@@ -329,6 +329,16 @@ test('refused in code: another team without aansturen, around a wall via a leade
     await settle(t);
     assert.match(toolOf(t, 'Kim').at(-1)!, /Geweigerd om een lus te voorkomen: Lea zit al in deze keten \(Lea → Kim → Lea\)/);
     assert.equal(deleg(t, c.lea.id).length, 0);
+
+    // A question back is not a task back: Kim may ask Lea, who gave it the work, once.
+    o.script('Lea', { toolCalls: [{ name: 'delegate_task', args: { bot: 'Kim', task: 'Check de koppen', expected_output: 'lijst', wait: true } }] }, { text: 'Kim heeft de koppen bekeken.' });
+    o.script('Kim', { toolCalls: [{ name: 'message_bot', args: { bot: 'Lea', message: 'Welke pagina bedoel je?' } }] }, { text: 'Koppen gecheckt.' });
+    o.script('Lea', { text: 'De homepage.' });
+    const lth2 = await t.api('POST', '/threads', { agentId: c.lea.id });
+    await t.api('POST', `/threads/${lth2.id}/messages`, { content: 'Check de koppen.' });
+    await settle(t);
+    assert.doesNotMatch(toolOf(t, 'Kim').at(-1)!, /Geweigerd/);
+    assert.equal(deleg(t, c.lea.id).length, 1, 'the question reached Lea');
   } finally {
     await t.close();
   }

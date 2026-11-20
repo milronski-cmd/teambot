@@ -74,7 +74,7 @@ test('Google: every tool belongs to a service, and reading tools never write', (
   const ids = new Set(GOOGLE_SERVICES.map((s) => s.id));
   for (const t of GOOGLE_TOOLS) assert.ok(ids.has(t.service), t.name);
   for (const s of GOOGLE_SERVICES) assert.ok(GOOGLE_TOOLS.some((t) => t.service === s.id), `${s.id} has tools`);
-  assert.deepEqual(GOOGLE_TOOLS.filter((t) => t.kind !== 'read').map((t) => t.name).sort(), ['calendar_create_event', 'gmail_draft', 'gmail_send']);
+  assert.deepEqual(GOOGLE_TOOLS.filter((t) => t.kind !== 'read').map((t) => t.name).sort(), ['calendar_create_event', 'gmail_draft', 'gmail_draft_delete', 'gmail_send']);
 });
 
 test('Google: one login connects it, the test proves each service, and disconnecting revokes', async () => {
@@ -223,7 +223,7 @@ test("Google: with TeamBot's own client there is nothing to set up, and sending 
     const s = await t.api('GET', '/mcp/google');
     assert.deepEqual(s.services.filter((x: any) => x.on).map((x: any) => x.id), ['gmail']);
     const r = await t.api('POST', `/mcp/connections/${s.connection.id}/test`, {});
-    assert.deepEqual(r.connection.tools.map((x: any) => x.name).sort(), ['gmail_draft', 'gmail_read', 'gmail_search', 'gmail_send']);
+    assert.deepEqual(r.connection.tools.map((x: any) => x.name).sort(), ['gmail_draft', 'gmail_draft_delete', 'gmail_drafts', 'gmail_read', 'gmail_search', 'gmail_send']);
     await assert.rejects(t.api('POST', `/mcp/connections/${s.connection.id}/test`, { tool: 'gmail_send', args: { to: 'a@b.nl', subject: 'x', body: 'y' } }), /alleen leestools/);
     assert.ok(!g.seen.some((x) => x.path.endsWith('/messages/send')));
     // Too many requests in a minute: TeamBot waits and sends the request again, the bot gets its answer.
@@ -310,4 +310,104 @@ test('Google: only reading mail ticked gives Gmail for reading, without drafts o
     await t.close();
     await g.close();
   }
+});
+
+test('a Merchant report on products always carries the product id Google demands', async () => {
+  const { merchantQuery } = await import('../server/modules/mcp/google.js');
+  assert.equal(merchantQuery("SELECT product_view.offer_id FROM product_view WHERE product_view.aggregated_reporting_context_status = 'NOT_ELIGIBLE_OR_DISAPPROVED'"), "SELECT id, product_view.offer_id FROM product_view WHERE product_view.aggregated_reporting_context_status = 'NOT_ELIGIBLE_OR_DISAPPROVED'");
+  assert.equal(merchantQuery('select offer_id, title\nfrom product_view'), 'select id, offer_id, title\nfrom product_view');
+  // Already there, a count, or another table: untouched.
+  for (const q of ['SELECT id, title FROM product_view', 'SELECT product_view.id, title FROM product_view', 'SELECT title, offer_id, id FROM product_view', 'SELECT PRODUCTS_COUNT FROM product_view', 'SELECT offer_id, clicks FROM product_performance_view', 'SELECT offer_id FROM product_view_extra'])
+    assert.equal(merchantQuery(q), q);
+});
+
+/** A Gmail that answers a tool's calls from a list of messages (newest first) and drafts; `calls` is what was asked. */
+function fakeGmail(messages: { id: string; labels: string[]; subject: string; date: string; to?: string }[], drafts: { id: string; to: string; subject: string }[] = []) {
+  const calls: string[] = [];
+  const msg = (m: (typeof messages)[number]) => ({ id: m.id, threadId: `t-${m.id}`, labelIds: m.labels, snippet: '', payload: { headers: [{ name: 'To', value: m.to || 'pascal@afnemer.test' }, { name: 'Subject', value: m.subject }, { name: 'Date', value: m.date }] } });
+  const g = async (method: string, url: string, _o: any = {}) => {
+    const p = new URL(url).pathname.replace(/^.*\/users\/me/, '');
+    calls.push(`${method} ${p}`);
+    if (method === 'GET' && p === '/messages') return { messages: messages.map((m) => ({ id: m.id })) };
+    if (method === 'GET' && p.startsWith('/messages/')) return msg(messages.find((m) => m.id === p.slice(10))!);
+    if (method === 'POST' && p === '/messages/send') return { id: 'sent-new' };
+    if (method === 'POST' && p === '/drafts') return { id: 'd-new', message: { id: 'dm-new' } };
+    if (method === 'GET' && p === '/drafts') return { drafts: drafts.map((d) => ({ id: d.id })) };
+    if (method === 'GET' && p.startsWith('/drafts/')) {
+      const d = drafts.find((x) => x.id === p.slice(8))!;
+      return { id: d.id, message: { threadId: 't', snippet: '', payload: { headers: [{ name: 'To', value: d.to }, { name: 'Subject', value: d.subject }, { name: 'Date', value: 'Mon, 16 Nov 2026 18:31:00 +0100' }] } } };
+    }
+    if (method === 'DELETE' && p.startsWith('/drafts/')) return {};
+    throw new Error(`geen nep-antwoord voor ${method} ${p}`);
+  };
+  return { g: g as any, calls };
+}
+const gtool = (name: string) => GOOGLE_TOOLS.find((x) => x.name === name)!;
+
+test('a mail or draft comes with what already lies with that person, and the same mail does not go twice', async () => {
+  const minutesAgo = (n: number) => new Date(Date.now() - n * 60_000).toUTCString();
+  // Nothing with this person yet: the mail goes as it always did, with nothing added.
+  const fresh = fakeGmail([]);
+  assert.deepEqual(await gtool('gmail_send').run({ to: 'Pascal <pascal@afnemer.test>', subject: 'Voorstel', body: 'Hoi' }, fresh.g, {} as any), { id: 'sent-new' });
+
+  // A draft from days ago that was never sent, and a mail that came in: the bot that writes a new draft is told.
+  const known = fakeGmail([
+    { id: 'in1', labels: ['INBOX'], subject: 'Re: Tarief per lead', date: minutesAgo(600) },
+    { id: 'dr1', labels: ['DRAFT'], subject: 'Tarief per lead', date: minutesAgo(5000) },
+  ]);
+  const d: any = await gtool('gmail_draft').run({ to: 'pascal@afnemer.test', subject: 'Re: Tarief per lead', body: 'Zoals in mijn voorstel…' }, known.g, {} as any);
+  assert.equal(d.id, 'd-new');
+  assert.deepEqual(d.eerder.map((r: any) => [r.what, r.subject]), [['ontvangen', 'Re: Tarief per lead'], ['concept', 'Tarief per lead']]);
+  assert.match(d.let_op, /verwijs alleen naar wat echt verstuurd is/);
+  assert.match(d.let_op, /1 ouder concept/);
+  assert.ok(known.calls[0].startsWith('GET /messages'), 'looked first, then wrote');
+
+  // The same subject went to this person eight minutes ago (a resumed turn, a second bot): not again, unless meant.
+  const twice = fakeGmail([{ id: 's1', labels: ['SENT'], subject: 'Solvari affiliate programma', date: minutesAgo(8) }]);
+  await assert.rejects(() => gtool('gmail_send').run({ to: 'pascal@afnemer.test', subject: 'Re: Solvari affiliate programma', body: 'Nog een keer' }, twice.g, {} as any), /Niet verstuurd: aan deze ontvanger ging 8 min geleden al een mail met dit onderwerp/);
+  assert.ok(!twice.calls.includes('POST /messages/send'));
+  const meant: any = await gtool('gmail_send').run({ to: 'pascal@afnemer.test', subject: 'Re: Solvari affiliate programma', body: 'Een aanvulling', again: true }, twice.g, {} as any);
+  assert.equal(meant.id, 'sent-new');
+  assert.match(meant.let_op, /Met deze ontvanger is al gemaild/);
+  // Another subject, or the same one a day later, is an ordinary mail.
+  const later = fakeGmail([{ id: 's1', labels: ['SENT'], subject: 'Solvari affiliate programma', date: minutesAgo(1500) }]);
+  assert.equal(((await gtool('gmail_send').run({ to: 'pascal@afnemer.test', subject: 'Solvari affiliate programma', body: 'x' }, later.g, {} as any)) as any).id, 'sent-new');
+
+  // Looking back never stops a mail: Gmail refuses the search, the mail still goes.
+  const broken = { g: (async (m: string, u: string) => { if (m === 'GET') throw new Error('quota'); return { id: 'sent-new' }; }) as any };
+  assert.deepEqual(await gtool('gmail_send').run({ to: 'pascal@afnemer.test', subject: 'x', body: 'y' }, broken.g, {} as any), { id: 'sent-new' });
+
+  // Drafts can be listed and a stale one thrown away.
+  const box = fakeGmail([], [{ id: 'r-1', to: 'pascal@afnemer.test', subject: 'Tarief per lead' }]);
+  assert.deepEqual(((await gtool('gmail_drafts').run({ query: 'to:pascal@afnemer.test' }, box.g, {} as any)) as any[]).map((x) => [x.draft, x.subject]), [['r-1', 'Tarief per lead']]);
+  assert.deepEqual(await gtool('gmail_draft_delete').run({ draft: 'r-1' }, box.g, {} as any), { deleted: 'r-1' });
+  assert.ok(box.calls.includes('DELETE /drafts/r-1'));
+});
+
+test('Tag Manager: what is live in a container, with trigger names and consent per tag', async () => {
+  const g = (async (_m: string, url: string) => {
+    const p = new URL(url).pathname;
+    if (p.endsWith('/accounts')) return { account: [{ accountId: '61', name: 'Leadsites' }] };
+    if (p.endsWith('/containers')) return { container: [{ containerId: '7', name: 'Site', publicId: 'GTM-ABC123', domainName: ['voorbeeld.nl'], usageContext: ['web'] }] };
+    if (p.endsWith('/versions:live'))
+      return {
+        containerVersionId: '12',
+        name: 'v12',
+        trigger: [{ triggerId: '5', name: 'Aanvraag verstuurd', type: 'customEvent' }],
+        variable: [{ name: 'Paginatype', type: 'v' }],
+        tag: [
+          { name: 'GA4', type: 'googtag', firingTriggerId: ['2147479553'], parameter: [{ key: 'tagId', value: 'G-TEST123' }], consentSettings: { consentStatus: 'needed', consentType: { list: [{ value: 'analytics_storage' }] } } },
+          { name: 'Lead', type: 'gaawe', paused: true, firingTriggerId: ['5'], blockingTriggerId: ['99'] },
+        ],
+      };
+    throw new Error(`geen nep-antwoord voor ${p}`);
+  }) as any;
+  assert.deepEqual(await gtool('gtm_accounts').run({}, g, {} as any), [{ account: '61', name: 'Leadsites' }]);
+  assert.deepEqual(((await gtool('gtm_containers').run({ account: '61' }, g, {} as any)) as any[]).map((c) => [c.container, c.publicId]), [['7', 'GTM-ABC123']]);
+  const live: any = await gtool('gtm_published').run({ account: '61', container: '7' }, g, {} as any);
+  assert.deepEqual(live.tags, [
+    { name: 'GA4', type: 'googtag', paused: false, fires_on: ['All Pages'], blocked_by: [], consent: 'needed', consent_types: ['analytics_storage'], id: 'G-TEST123' },
+    { name: 'Lead', type: 'gaawe', paused: true, fires_on: ['Aanvraag verstuurd'], blocked_by: ['trigger 99'], consent: 'notSet', consent_types: [], id: undefined },
+  ]);
+  assert.deepEqual(live.triggers, [{ name: 'Aanvraag verstuurd', type: 'customEvent' }]);
 });

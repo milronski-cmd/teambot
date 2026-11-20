@@ -289,6 +289,9 @@ export class Broker {
    * (like "Hervatten"), telling the bot what was decided. The identical request is then approved/denied once
    * without asking again (carryOver); a different request asks normally.
    */
+  /** Decisions on parked requests that wait for the bot's busy turn to end: per chat and bot, told in one turn. */
+  private parkedDecisions = new Map<string, { said: string[]; ids: string[] }>();
+
   private resumeAfterRestart(a: any, userId: string, approved: boolean, answer?: string) {
     const ctx = this.getCtx();
     try {
@@ -310,19 +313,31 @@ export class Broker {
             : approved
               ? `${owner} gaf toestemming voor wat je eerder vroeg: ${what}\nVoer dit nu uit en maak af wat hierop wachtte. Controleer eerst wat al gedaan is, zodat niets dubbel gebeurt.`
               : `${owner} weigerde wat je eerder vroeg: ${what}\nDoe dit niet. Maak het werk af zonder, of zeg wat er dan niet kan.`;
+        // Several decisions while the bot is busy (the owner approves ten mails in a row): one turn hears them all,
+        // not a turn per decision. Live (20 Nov 2026) ten approvals queued ten turns behind each other.
+        const key = `${own.id}:${agent.id}`;
+        const waiting = this.parkedDecisions.get(key);
+        if (waiting) {
+          waiting.said.push(said);
+          waiting.ids.push(a.id);
+          return;
+        }
+        const batch = { said: [said], ids: [a.id as string] };
         const go = () => {
-          const sys = ctx.store.createMessage({ thread_id: own.id, role: 'system', author_type: 'system', author_name: 'TeamBot', content: said, parts: { resumedFrom: { approvalId: a.id, runId: a.run_id } } });
+          this.parkedDecisions.delete(key);
+          const sys = ctx.store.createMessage({ thread_id: own.id, role: 'system', author_type: 'system', author_name: 'TeamBot', content: batch.said.join('\n\n'), parts: { resumedFrom: { approvalId: a.id, runId: a.run_id, ...(batch.ids.length > 1 ? { approvalIds: batch.ids } : {}) } } });
           ctx.chat.emitMessage(own, sys);
           ctx.chat.startAgent(own, agent.id, sys.id, 'resume', { resumedApproval: a.id });
         };
         const busy = ctx.store.one<{ id: string }>("SELECT id FROM runs WHERE thread_id = ? AND agent_id = ? AND status IN ('queued','running','waiting') ORDER BY created_at DESC LIMIT 1", own.id, agent.id);
-        if (busy)
+        if (busy) {
+          this.parkedDecisions.set(key, batch);
           void ctx.runs
             .waitFor(busy.id)
             .catch(() => null)
             .then(go)
             .catch((e: any) => ctx.log.error('[broker] parked decision', e));
-        else go();
+        } else go();
         return;
       }
       const t = asked;

@@ -218,11 +218,15 @@ export class Orchestrator {
   }
 
   /** Cycle, depth and permission checks for one new hop from the calling bot to target. */
-  hopError(t: ToolContext, target: Agent, chain: TeamMeta, room: Room | null): string | null {
+  hopError(t: ToolContext, target: Agent, chain: TeamMeta, room: Room | null, kind: 'delegate' | 'message' = 'delegate'): string | null {
     if (target.id === t.agent.id) return 'Je kunt geen taak aan jezelf geven.';
     const te = this.teamError(t.agent.id, target.id);
     if (te) return te;
-    if (chain.path.includes(target.id))
+    // A task never goes back into its own chain. A question or a notice may go back once to a bot that is already in
+    // it (the bot that got the work asks the one who gave it; live, 20 Nov 2026, answers got stuck on this); a second
+    // time is a loop, and the same text again is stopped by loopError.
+    const seen = chain.path.filter((id) => id === target.id).length;
+    if (kind === 'message' ? seen > 1 : seen > 0)
       return `Geweigerd om een lus te voorkomen: ${target.name} zit al in deze keten (${this.names(chain.path)} → ${target.name}). Werk het zelf af of leg het voor aan een mens.`;
     const l = this.s.limits(room, t.thread.user_id);
     // Settings of the owner, off unless he set them: -1 = bots may not give each other work, a number = that many hops.
@@ -549,7 +553,7 @@ export class Orchestrator {
     const target = this.resolveBot(userId, a.bot, room);
     if (!target) return toolError(`Onbekende bot: ${a.bot}. Bots die je kunt aanspreken: ${this.botList(userId, room && this.s.humanMembers(room).some((h: any) => h.accepted) ? room : null, t.agent.id)}.`);
     const chain = this.callerChain(t);
-    const he = this.hopError(t, target, chain, room);
+    const he = this.hopError(t, target, chain, room, kind);
     if (he) return toolError(he);
     const g = this.s.gate({ room, userId, agentId: target.id, chain, needMember: false });
     if (g) return toolError(g);

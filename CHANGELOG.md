@@ -1,5 +1,35 @@
 # Changelog
 
+## [4.9.6] — 2026-11-20
+
+### Toestemming
+- **Tien keer ja is één beurt, niet tien.** Gaf je achter elkaar toestemming voor verzoeken die op je wachtten
+  (bijvoorbeeld tien mails), dan kreeg de bot voor elk ja een eigen beurt, de een na de ander. Nu hoort hij alles wat
+  je besliste terwijl hij bezig was in één beurt.
+
+### Kwaliteit
+- **“Zelf niet nagekeken” is niet klaar.** Meldt een bot een taak klaar en schrijft hij er zelf bij dat hij het niet
+  heeft gelezen, nagerekend of getest, dan gaat de taak terug naar “te controleren”, met zijn eigen zin als reden. Een
+  eerlijke grens (“niet gecontroleerd: de derde site, buiten de opdracht”) telt hier niet onder.
+- **De controleur telt na.** Noemt een taak een aantal (tien mails, zeven pagina's) en dekt het bewijs er minder,
+  dan is de taak niet klaar. Wat een bot zelf een aanname, schatting of steekproef noemt, telt niet als nagekeken.
+
+### Samenwerken
+- **Een vraag terug mag.** Een bot die werk kreeg kon de bot die het gaf niets terugvragen ("zit al in deze keten"),
+  waardoor antwoorden bleven hangen. Een vraag of melding terug mag nu één keer; een taak teruggeven blijft geweigerd.
+
+### Apps
+- **Een bot ziet wat er al ligt voordat hij mailt.** Bij een concept of een mail krijgt de bot erbij wat er de
+  laatste twee maanden met die persoon is gemaild en welke concepten er nog staan, zodat hij niet verwijst naar iets
+  dat nooit verstuurd is en geen "eerste bericht" stuurt aan iemand met wie al gemaild wordt. Ging er in het laatste
+  half uur al een mail met hetzelfde onderwerp naar dezelfde persoon, dan gaat hij niet nog een keer, tenzij de bot
+  zegt dat het bewust een tweede is.
+- **Concepten bekijken en weggooien.** Bots konden een concept dat niet meer klopte niet weghalen; die bleven in
+  Gmail staan. Nieuw: *Concepten bekijken* en *Concept weggooien* (alleen concepten, geen verstuurde mail).
+- **Merchant Center-rapport over producten mislukt niet meer op het id.** Google weigert een rapport over producten
+  als het product-id niet wordt meegevraagd; bots vergaten dat en kregen steeds dezelfde fout. TeamBot zet het id er
+  nu zelf bij.
+
 ## [4.9.5] — 2026-11-20
 
 ### Specialisten

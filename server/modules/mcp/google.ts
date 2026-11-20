@@ -179,7 +179,7 @@ export function tooFast(status: number, body: string): boolean {
 }
 
 /** `timeoutMs`: for a call Google itself takes long over (inspecting a URL: often 10 s, sometimes over 40 s); default 45 s. */
-type Call = (method: 'GET' | 'POST', url: string, opts?: { query?: Record<string, any>; body?: any; headers?: Record<string, string>; raw?: boolean; timeoutMs?: number }) => Promise<any>;
+type Call = (method: 'GET' | 'POST' | 'DELETE', url: string, opts?: { query?: Record<string, any>; body?: any; headers?: Record<string, string>; raw?: boolean; timeoutMs?: number }) => Promise<any>;
 
 function caller(ctx: Ctx, mgr: McpManager, connId: string): Call {
   return async (method, url, opts = {}) => {
@@ -291,6 +291,8 @@ const GSC = 'https://www.googleapis.com/webmasters/v3';
 const MERCHANT = 'https://merchantapi.googleapis.com';
 const ADS_URL = `https://googleads.googleapis.com/${ADS}`;
 const GTM = 'https://tagmanager.googleapis.com/tagmanager/v2';
+/** A mail with the same subject to the same person within this time is the same mail (gmail_send). */
+const SAME_MAIL_MS = 30 * 60_000;
 const site = z.string().describe('De site zoals in Search Console, bijv. "https://www.voorbeeld.nl/" of "sc-domain:voorbeeld.nl" (zie gsc_sites)');
 const account = z.string().regex(/^\d+$/).describe('Merchant Center-account-ID, alleen cijfers (zie merchant_accounts)');
 
@@ -310,6 +312,52 @@ async function merchant(g: Call, x: { conn: ConnectionRow }, acc: string, fn: ()
     await g('POST', `${MERCHANT}/accounts/v1/accounts/${acc}/developerRegistration:registerGcp`, { body: { developerEmail: (x.conn.oauth as any)?.email || '' } });
     return fn();
   }
+}
+
+/** What already lies with the person a mail goes to: sent, received and drafts of the last two months, newest first. */
+type Earlier = { what: 'verstuurd' | 'ontvangen' | 'concept'; date: string; subject: string; thread: string; id: string };
+async function earlierWith(g: Call, to: string): Promise<Earlier[]> {
+  const addr = /[\w.+-]+@[\w-]+(?:\.[\w-]+)+/.exec(String(to || ''))?.[0];
+  if (!addr) return [];
+  try {
+    const list = await g('GET', `${GMAIL}/messages`, { query: { q: `(to:${addr} OR from:${addr}) newer_than:60d`, maxResults: 6 } });
+    const rows = await Promise.all(((list.messages || []) as any[]).map((m) => g('GET', `${GMAIL}/messages/${m.id}`, { query: { format: 'metadata', metadataHeaders: ['From', 'To', 'Subject', 'Date'] } })));
+    return rows.map((m) => {
+      const labels: string[] = m.labelIds || [];
+      return { what: labels.includes('DRAFT') ? 'concept' : labels.includes('SENT') ? 'verstuurd' : 'ontvangen', date: header(m, 'date'), subject: header(m, 'subject'), thread: m.threadId, id: m.id } as Earlier;
+    });
+  } catch {
+    // Looking back is a help, never a reason not to write: without it the mail goes as before.
+    return [];
+  }
+}
+
+/** The line a bot reads with what it just wrote: look at what was there, and tidy up what this replaces. */
+function earlierNote(rows: Earlier[], sent: boolean): string | undefined {
+  if (!rows.length) return undefined;
+  const drafts = rows.filter((r) => r.what === 'concept').length;
+  return [
+    `Met deze ontvanger is al gemaild (zie “eerder”, nieuwste eerst).`,
+    sent ? 'Klopt je bericht daar niet mee, zeg dat dan in je antwoord, zodat het rechtgezet kan worden.' : 'Sluit je concept daarop aan: verwijs alleen naar wat echt verstuurd is.',
+    // One whole sentence per form, never a fragment as a value.
+    drafts === 1 ? 'Er staat nog 1 ouder concept aan deze ontvanger: haal het weg als het hierdoor vervalt (gmail_drafts, gmail_draft_delete).' : drafts ? `Er staan nog ${drafts} oudere concepten aan deze ontvanger: haal weg wat hierdoor vervalt (gmail_drafts, gmail_draft_delete).` : '',
+  ]
+    .filter(Boolean)
+    .join(' ');
+}
+
+const norm = (v: string) => String(v || '').replace(/^\s*((re|fw|fwd|aw|antw)\s*:\s*)+/i, '').replace(/\s+/g, ' ').trim().toLowerCase();
+
+/**
+ * A report on product_view must select the product's id (or a count); Google refuses it otherwise ("is expected to
+ * have any of ['product_view.id', PRODUCTS_COUNT] fields"). A bot that asks for titles or issues forgets that, so the
+ * id is added: the rows are the same, with one field more.
+ */
+export function merchantQuery(query: string): string {
+  const q = String(query || '');
+  const m = /^(\s*SELECT\s+)([\s\S]+?)(\s+FROM\s+product_view\b)/i.exec(q);
+  if (!m || /(^|[\s,])(product_view\.)?id\s*(,|$)/i.test(m[2].trim()) || /count/i.test(m[2])) return q;
+  return `${m[1]}id, ${m[2]}${m[3]}${q.slice(m[0].length)}`;
 }
 
 export const GOOGLE_TOOLS: GTool[] = [
@@ -356,7 +404,7 @@ export const GOOGLE_TOOLS: GTool[] = [
     description:
       'Een rapport uit Merchant Center met de querytaal van de Merchant API. Voorbeelden: "SELECT offer_id, title, clicks, impressions FROM product_performance_view WHERE date BETWEEN \'2026-10-01\' AND \'2026-10-31\'" of "SELECT id, offer_id, title, aggregated_reporting_context_status, item_issues FROM product_view WHERE aggregated_reporting_context_status = \'NOT_ELIGIBLE_OR_DISAPPROVED\'".',
     input: { account, query: z.string().min(10), limit: z.number().int().min(1).max(1000).optional() },
-    run: (a, g, x) => merchant(g, x, a.account, () => g('POST', `${MERCHANT}/reports/v1/accounts/${a.account}/reports:search`, { body: { query: a.query, pageSize: a.limit || 200 } })),
+    run: (a, g, x) => merchant(g, x, a.account, () => g('POST', `${MERCHANT}/reports/v1/accounts/${a.account}/reports:search`, { body: { query: merchantQuery(a.query), pageSize: a.limit || 200 } })),
   },
   // ---- Google Ads
   { name: 'ads_customers', service: 'ads', title: 'Google Ads-accounts', kind: 'read', description: 'Toon de Google Ads-accounts (klant-ID’s) waar dit Google-account direct bij kan.', input: {}, run: (_a, g, x) => g('GET', `${ADS_URL}/customers:listAccessibleCustomers`, { headers: adsHeaders(x) }) },
@@ -468,7 +516,38 @@ export const GOOGLE_TOOLS: GTool[] = [
     scope: S + 'gmail.compose',
     description: 'Zet een concept-e-mail klaar in Gmail (wordt niet verstuurd). Voor een antwoord: geef thread en inReplyTo (het messageId uit gmail_read).',
     input: { to: z.string(), subject: z.string(), body: z.string(), cc: z.string().optional(), thread: z.string().optional(), inReplyTo: z.string().optional() },
-    run: (a, g) => g('POST', `${GMAIL}/drafts`, { body: { message: { raw: rfc822(a), ...(a.thread ? { threadId: a.thread } : {}) } } }),
+    run: async (a, g) => {
+      const eerder = await earlierWith(g, a.to);
+      const r = await g('POST', `${GMAIL}/drafts`, { body: { message: { raw: rfc822(a), ...(a.thread ? { threadId: a.thread } : {}) } } });
+      return eerder.length ? { ...r, eerder, let_op: earlierNote(eerder, false) } : r;
+    },
+  },
+  {
+    name: 'gmail_drafts',
+    service: 'gmail',
+    title: 'Concepten bekijken',
+    kind: 'read',
+    scope: S + 'gmail.compose',
+    description: 'De concepten die in Gmail klaarstaan, eventueel gefilterd met de zoektaal van Gmail (bijv. "to:klant@voorbeeld.nl"). Geeft per concept het concept-id (voor gmail_draft_delete), ontvanger, onderwerp en datum.',
+    input: { query: z.string().optional(), limit: z.number().int().min(1).max(25).optional().describe('Standaard 15') },
+    run: async (a, g) => {
+      const list = await g('GET', `${GMAIL}/drafts`, { query: { ...(a.query ? { q: a.query } : {}), maxResults: a.limit || 15 } });
+      const rows = await Promise.all(((list.drafts || []) as any[]).map((d) => g('GET', `${GMAIL}/drafts/${d.id}`, { query: { format: 'metadata' } })));
+      return rows.map((d) => ({ draft: d.id, thread: d.message?.threadId, to: header(d.message, 'to'), subject: header(d.message, 'subject'), date: header(d.message, 'date'), snippet: d.message?.snippet }));
+    },
+  },
+  {
+    name: 'gmail_draft_delete',
+    service: 'gmail',
+    title: 'Concept weggooien',
+    kind: 'write',
+    scope: S + 'gmail.compose',
+    description: 'Gooi één concept weg dat niet meer klopt of dubbel is (concept-id uit gmail_drafts of gmail_draft). Alleen concepten: verstuurde en ontvangen mail blijft staan.',
+    input: { draft: z.string().regex(/^[A-Za-z0-9_-]{4,64}$/).describe('Concept-id') },
+    run: async (a, g) => {
+      await g('DELETE', `${GMAIL}/drafts/${a.draft}`);
+      return { deleted: a.draft };
+    },
   },
   {
     name: 'gmail_send',
@@ -477,8 +556,15 @@ export const GOOGLE_TOOLS: GTool[] = [
     kind: 'send',
     scope: S + 'gmail.compose',
     description: 'Verstuur een e-mail vanuit het Gmail-adres van de gebruiker. Voor een antwoord: geef thread en inReplyTo (het messageId uit gmail_read).',
-    input: { to: z.string(), subject: z.string(), body: z.string(), cc: z.string().optional(), thread: z.string().optional(), inReplyTo: z.string().optional() },
-    run: (a, g) => g('POST', `${GMAIL}/messages/send`, { body: { raw: rfc822(a), ...(a.thread ? { threadId: a.thread } : {}) } }),
+    input: { to: z.string(), subject: z.string(), body: z.string(), cc: z.string().optional(), thread: z.string().optional(), inReplyTo: z.string().optional(), again: z.boolean().optional().describe('Alleen als er kort geleden al een mail met dit onderwerp naar deze ontvanger ging en dit bewust een tweede is') },
+    run: async (a, g) => {
+      const eerder = await earlierWith(g, a.to);
+      // The same mail to the same person minutes ago (a turn that was resumed, two bots on one thread): not again.
+      const twin = eerder.find((r) => r.what === 'verstuurd' && norm(r.subject) === norm(a.subject) && Math.abs(Date.now() - (Date.parse(r.date) || 0)) < SAME_MAIL_MS);
+      if (twin && !a.again) throw new Error(`Niet verstuurd: aan deze ontvanger ging ${Math.max(1, Math.round((Date.now() - Date.parse(twin.date)) / 60_000))} min geleden al een mail met dit onderwerp (bericht ${twin.id}). Lees die eerst (gmail_read). Is dit echt een tweede bericht, stuur het dan met again: true.`);
+      const r = await g('POST', `${GMAIL}/messages/send`, { body: { raw: rfc822(a), ...(a.thread ? { threadId: a.thread } : {}) } });
+      return eerder.length ? { ...r, eerder, let_op: earlierNote(eerder, true) } : r;
+    },
   },
   // ---- Agenda
   {
