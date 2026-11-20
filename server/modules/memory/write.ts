@@ -97,7 +97,10 @@ export function writeNote(svc: MemoryService, n: NoteIn): NoteOut {
   } catch (e: any) {
     if (e instanceof WriteRefused) return { ...base, action: 'refused', reason: e.reason, message: e.message };
     if (!(e instanceof DossierFull)) throw e;
-    const room = n.full === 'room' ? roomFor(d, next.body, n.text) : null;
+    // A full dossier makes room by itself: its oldest lines go to its archive and the new one comes in. Also when
+    // nobody is there (the review of a conversation, a lesson): what was just learned is worth more in the dossier than
+    // what is oldest, and a dossier that only fills its archive never gets shorter.
+    const room = n.full === 'room' || n.full === 'archive' ? roomFor(d, next.body, n.text) : null;
     if (room)
       try {
         const w = writeBody(svc, d.id, room.body, n.actor);

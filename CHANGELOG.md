@@ -1,5 +1,25 @@
 # Changelog
 
+## [4.9.5] — 2026-11-20
+
+### Specialisten
+- **Elke bot met een rol leert zijn vak, vanzelf.** Een bot werd alleen specialist als zijn naam of rol een woord als
+  “specialist” of een bekend vak (SEO, Google Ads) noemde, en dan nog stond het leren uit tot je de schakelaar vond.
+  In de praktijk leerde er dus niemand iets. Nu is de rol van een bot zijn vak (“Links en vermeldingen voor de
+  websites”): hij zoekt zelf zijn bronnen, leert dagelijks met zijn eigen model en houdt bij wat er verandert. Een rol
+  die alleen “assistent” zegt, noemt geen vak. Bij een specialist die het leren nooit aan had, gaat het nu aan; wie
+  het zelf uitzette, blijft uit. Uitzetten kan per bot onder Specialisme.
+- **Wat een bot leert, brengt hij in.** Zoekt een bot uit eigen initiatief naar verbeteringen, dan legt hij wat hij van
+  zijn vak weet en pas leerde naast hoe het er bij jou werkelijk voor staat, en komt hij met wat jij zelf niet weet of
+  nooit zou vragen, mits het klopt en hij kan zeggen wat het oplevert.
+
+### Geheugen
+- **Een vol dossier maakt zelf ruimte.** Schreef een bot zelf in een vol dossier, dan gingen de oudste regels naar het
+  archief en paste het nieuwe erin. Legde TeamBot op de achtergrond iets vast uit een gesprek, dan ging juist het
+  nieuwe naar het archief en kreeg jij de melding “Geheugen vol”. Nu werkt het in beide gevallen hetzelfde: het
+  nieuwe komt erin, het oudste gaat naar het archief (je bots vinden het met zoeken). Het dossier over jou blijft
+  zoals het is.
+
 ## [4.9.4] — 2026-11-20
 
 ### Apps

@@ -266,9 +266,8 @@ test('5 self-updating by default: a bot named after a known specialism becomes a
     const seo = await t.agent({ name: 'SEO-specialist' });
     const v = await until(async () => ((await t.api('GET', `/specialists/${seo.id}`)).enabled ? t.api('GET', `/specialists/${seo.id}`) : null), 3000, 'adopted');
     assert.equal(v.field, 'Zoekmachineoptimalisatie (SEO)');
-    assert.equal(v.learnOn, false, 'nothing that costs model calls starts by itself');
-    assert.ok(!v.nextRoundAt, 'no round is planned until the round is switched on');
-    const on = await t.api('PUT', `/specialists/${seo.id}`, { learnOn: true });
+    assert.equal(v.learnOn, true, 'a specialist keeps up with its field by itself');
+    const on = await t.api('GET', `/specialists/${seo.id}`);
     assert.deepEqual([on.cadence, on.budget, on.learnWith], ['daily', 'none', 'own'], 'daily, on its own model, no limit of its own');
     assert.ok(on.nextRoundAt, 'the next round is planned');
     assert.ok(v.sources.some((s: any) => s.kind === 'feed' && /developers\.google\.com\/static\/search\/blog\/feed\.xml/.test(s.target) && s.suggested && s.enabled));

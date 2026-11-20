@@ -1011,24 +1011,24 @@ export class SpecialistService {
       if (list.length >= MAX_SOURCES) break;
       if (!list.some((x) => x.target === d.target)) list.push({ ...d, enabled: true, suggested: true });
     }
-    // The learning round stays off: it costs model calls, so it starts only when the owner (or a bot on his word) switches it on.
-    this.save(userId, agentId, { enabled: true, field, learnOn: false, sources: list });
+    // The learning round is on: a specialist keeps up with its field by itself; the owner can switch it off.
+    this.save(userId, agentId, { enabled: true, field, learnOn: true, sources: list });
     return true;
   }
 
   /**
-   * A bot whose name or role says it is a specialist in something — any subject ("Belastingadviseur",
-   * "TikTok-specialist"), or one of the presets — and that was never set up: it becomes a specialist by itself, with
-   * the learning round OFF (nothing that costs model calls starts by itself); once the round is switched on, its
-   * sources are the preset's or the ones it finds itself (discoverSources). Once only: a
-   * bot the owner switched the specialism off for (it has a profile) is never adopted again.
+   * A bot that has a role — any work ("Links en vermeldingen voor de websites", "Belastingadviseur"), or one of the
+   * presets — and that was never set up: it becomes a specialist in that work by itself, with the learning round ON,
+   * so it keeps up with its field without anyone setting it up; its sources are the preset's or the ones it finds
+   * itself (discoverSources). The owner can switch the round or the specialism off. Once only: a bot the owner
+   * switched the specialism off for (it has a profile) is never adopted again.
    */
   adopt(agent: Agent): boolean {
     if (agent.archived || this.profile(agent.id) || agent.settings?.specialist === false) return false;
     const field = fieldOf(agent.name, agent.role || '');
     if (!field || looksLikeInstruction(field)) return false;
     try {
-      this.save(agent.user_id, agent.id, { enabled: true, field, learnOn: false });
+      this.save(agent.user_id, agent.id, { enabled: true, field, learnOn: true });
       this.ctx.audit(agent.user_id, 'specialists.adopted', { agent: agent.name, field, preset: specialismOf(`${agent.name} ${roleHead(agent.role || '')}`)?.id || null }, agent.id);
       return true;
     } catch (e) {

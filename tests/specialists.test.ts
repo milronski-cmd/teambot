@@ -475,16 +475,16 @@ test('budget, own files, documentation pages and feeds: bounded calls per round,
   }
 });
 
-test('templates: a bot from a template becomes a specialist with suggested sources, the learning round off; export has no knowledge', async () => {
+test('templates: a bot from a template becomes a specialist with suggested sources, the learning round on; export has no knowledge', async () => {
   const { t, fx, bot } = await setup();
   try {
     const svc = t.app.ctx.services.specialists;
     assert.equal(svc.importForAgent(bot.user_id, bot.id, { field: 'Belastingen voor zzp’ers', suggestedSources: ['https://belasting.example/nieuws/feed', { url: 'https://belasting.example/gids', label: 'Gids' }, 'ftp://fout.example/x'] }), true);
     const v = await t.api('GET', `/specialists/${bot.id}`);
     assert.equal(v.enabled, true);
-    assert.equal(v.learnOn, false, 'the learning round stays off until it is switched on');
+    assert.equal(v.learnOn, true, 'the learning round is on by itself');
     assert.equal(v.cadence, 'daily');
-    assert.ok(!v.nextRoundAt);
+    assert.ok(v.nextRoundAt);
     assert.deepEqual(
       v.sources.map((s: any) => [s.kind, s.target, s.suggested]),
       [
@@ -498,7 +498,7 @@ test('templates: a bot from a template becomes a specialist with suggested sourc
     const b2 = await t.agent({ name: 'Fiscus', settings: { specialist: { field: 'Btw-regels', suggestedSources: [] } } });
     const v2 = await t.api('GET', `/specialists/${b2.id}`);
     assert.equal(v2.field, 'Btw-regels');
-    assert.equal(v2.learnOn, false);
+    assert.equal(v2.learnOn, true);
 
     // The round is planned by the module itself: weekly by default, daily on request, nothing when learning is off.
     const on = await t.api('PUT', `/specialists/${bot.id}`, { learnOn: true });

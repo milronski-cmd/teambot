@@ -143,8 +143,9 @@ const SPECIALIST_WORD = /(specialist|expert|adviseur|advisor|consultant|deskundi
 
 /**
  * The field of a bot that was never set up, from its name and role — for any subject, not a fixed list: a preset's
- * field when one matches, else the bot's role (or its name without the word "specialist"/"expert" …). Null when
- * nothing says the bot is a specialist.
+ * field when one matches, else the bot's role (or its name without the word "specialist"/"expert" …). A bot with a
+ * role has a field: its role ("Links en vermeldingen voor de websites.") — every bot that has work is to know that
+ * work. Null for a bot without a role whose name says nothing.
  */
 export function fieldOf(name: string, role: string): string | null {
   // What the bot IS: its name and the head of its role, not everything its role mentions. Live (11 Nov 2026) a
@@ -152,7 +153,8 @@ export function fieldOf(name: string, role: string): string | null {
   const text = `${name} ${roleHead(role)}`;
   const preset = specialismOf(text);
   if (preset) return preset.field;
-  if (!SPECIALIST_WORD.test(text)) return null;
+  // (A role that only says "assistant" names no field.)
+  if (!SPECIALIST_WORD.test(text)) return role.trim().length >= 8 && !/^(?:een |an? )?(?:algemene? |general |persoonlijke? |personal )?(?:assistent|assistant|helper|hulp|bot)\.?$/i.test(role.trim()) ? role.trim().slice(0, 300) : null;
   const strip = (x: string) => x.replace(new RegExp(SPECIALIST_WORD.source, 'gi'), ' ').replace(/[-–_/|·]+/g, ' ').replace(/\s+/g, ' ').trim();
   const field = strip(role).length >= 3 ? role.trim() : strip(name);
   return field.length >= 3 ? field.slice(0, 300) : null;

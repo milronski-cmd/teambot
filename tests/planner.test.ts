@@ -107,6 +107,8 @@ test('a fresh install with bots and nothing set up: days pass and nothing starts
     await e.t.agent({ name: 'Pen', role: 'Contentschrijver' });
     assert.equal(ctx.services.teams.mainOf(userId), main.id, 'there is a main bot with an AI: the check-in could run');
     assert.equal(ctx.services.specialists.isSpecialist(seo.id), true, 'and a specialist that could learn');
+    // (A specialist keeps up with its field by itself — tests/memory-current.test.ts. This test is about everything else: here the owner switched learning off.)
+    for (const p of ctx.store.all<any>('SELECT agent_id FROM specialist_profiles')) await e.t.api('PUT', `/specialists/${p.agent_id}`, { learnOn: false });
     // What used to be on by itself is off, and nothing was written for the owner.
     assert.deepEqual(checkinSettings(ctx, userId), { enabled: false, time: '09:00' });
     assert.equal(ctx.services.routines.duties.settings(userId).briefing, 'uit');
@@ -238,6 +240,8 @@ test('the main bot’s own messages and a learning round are planned only after 
     const main = await e.t.agent({ name: 'Eerste' });
     const seo = await e.t.agent({ name: 'Vindbaar', role: 'SEO-specialist: technische SEO en zoekwoorden' });
     const at = (h: number, m = 0) => day + h * HOUR + m * MIN;
+    // (Learning is on by itself; off here, to be switched on below.)
+    await e.t.api('PUT', `/specialists/${seo.id}`, { learnOn: false });
     assert.deepEqual(await e.planned(), []);
 
     // The overview (no model): on at the main bot's hour.

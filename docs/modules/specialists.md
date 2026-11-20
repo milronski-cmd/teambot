@@ -13,8 +13,9 @@ Tests: `tests/specialists.test.ts`, probes in `tests/teams-isolation.test.ts`.
   Dubbel wordt overgeslagen; een feit dat een bekend feit tegenspreekt of bijwerkt **vervangt** het (de nieuwere bron
   wint, de oude versie staat in de geschiedenis, met ongedaan maken). Alleen wat de eigenaar zelf schreef of vastzette
   wordt **te controleren**.
-- **Houdt zichzelf bij, zonder instellen**: de leerronde staat standaard **aan** (wekelijks, klein budget, een gratis
-  model). Een bot waarvan de naam of rol een bekend vak noemt (SEO, Google Ads, Merchant Center, Meta Ads, GA4,
+- **Houdt zichzelf bij, zonder instellen**: een bot met een rol is specialist in dat werk (de rol is het vakgebied;
+  een rol die alleen “assistent” zegt noemt geen vak) en de leerronde staat standaard **aan** (dagelijks, eigen model;
+  migratie `specialists-004` zet haar aan waar ze nooit aan stond). Een bot waarvan de naam of rol een bekend vak noemt (SEO, Google Ads, Merchant Center, Meta Ads, GA4,
   Shopify, WordPress, Core Web Vitals, AVG; `defaults.ts`) wordt vanzelf specialist met de officiële bronnen van dat
   vak (één keer; wie het uitzet wordt niet opnieuw aangezet). Migratie `specialists-002` zet de ronde aan voor
   specialisten die haar nooit aan hadden.

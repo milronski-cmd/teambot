@@ -531,7 +531,7 @@ export class WorkLoop {
       'Zo werk je:',
       main
         ? '1. Kijk hoe het team ervoor staat: de doelen van de eigenaar (teamprofiel, projecten, dossiers), wat er loopt, wat stilstaat en welke bot niets te doen heeft. Meet na wat je kunt meten in plaats van het aan te nemen.'
-        : '1. Kijk binnen jouw vak wat er nu het meeste oplevert voor de doelen van de eigenaar (teamprofiel, projecten, je dossiers): wat is kapot, wat loopt achter, wat kan beter. Meet na wat je kunt meten in plaats van het aan te nemen.',
+        : '1. Kijk binnen jouw vak wat er nu het meeste oplevert voor de doelen van de eigenaar (teamprofiel, projecten, je dossiers): wat is kapot, wat loopt achter, wat kan beter. Meet na wat je kunt meten in plaats van het aan te nemen. Leg wat je van je vak weet en pas leerde (je kennisbank) naast hoe het er hier werkelijk voor staat: juist wat de eigenaar zelf niet weet of nooit zou vragen, breng jij in, mits het klopt en je kunt zeggen wat het hier oplevert.',
       main
         ? '2. Zet het werk dat daaruit volgt uit: per stuk een taak op het takenbord (task_create, met een controleerbare “klaar als”) op naam van de bot wiens vak het is, of delegate_task. Wat bij jou hoort, doe je zelf.'
         : '2. Kies de verbetering die het meeste oplevert en die je nu zelf kunt afmaken, en maak die helemaal af: uitvoeren, nakijken, en vastleggen wat je deed en waar het staat.',

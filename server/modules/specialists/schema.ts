@@ -98,4 +98,11 @@ UPDATE specialist_profiles SET learn_on = 1, cadence = 'weekly', budget = 'small
     id: 'specialists-003',
     sql: `UPDATE specialist_profiles SET budget = 'none' WHERE budget = 'small';`,
   },
+  {
+    // Learning is on by default again (4.9.5): for a while a bot became a specialist with the round off, so nobody
+    // learned anything until the owner found the switch. A specialist whose round was never on gets it now; one the
+    // owner switched on and off again (learn_since set) is left alone.
+    id: 'specialists-004',
+    sql: `UPDATE specialist_profiles SET learn_on = 1, learn_since = strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE enabled = 1 AND learn_on = 0 AND learn_since IS NULL;`,
+  },
 ];

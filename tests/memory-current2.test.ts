@@ -235,6 +235,8 @@ test('5b any specialism: a field nobody foresaw (beekeeping, tax law, TikTok) is
   assert.equal(fieldOf('TikTok-specialist', ''), 'TikTok');
   assert.equal(fieldOf('SEO', ''), 'Zoekmachineoptimalisatie (SEO)', 'a preset is only a known case of the same thing');
   assert.equal(fieldOf('Bo', 'Algemene assistent'), null);
+  assert.equal(fieldOf('Bo', ''), null);
+  assert.equal(fieldOf('Linkbuilding', 'Links en vermeldingen voor de websites.'), 'Links en vermeldingen voor de websites.', 'a bot with work has a field: its work');
   assert.ok(primaryScore('https://www.belastingdienst.nl/zzp', 'Belastingdienst', 'Belastingrecht') > 0);
   assert.ok(primaryScore('https://www.tiktok.com/business', 'TikTok for Business', 'TikTok') > 0, 'the platform itself is primary for that platform');
   assert.equal(primaryScore('https://www.reddit.com/r/bijen', 'Bijen houden', 'Bijen houden'), 0, 'a forum is never a source');
@@ -252,9 +254,7 @@ test('5b any specialism: a field nobody foresaw (beekeeping, tax law, TikTok) is
     const bea = await t.agent({ name: 'Imker-expert', role: 'Bijen houden', settings: { allowPrivateNetwork: true } });
     for (let i = 0; i < 80 && !(await t.api('GET', `/specialists/${bea.id}`)).enabled; i++) await new Promise((r) => setTimeout(r, 25));
     let v = await t.api('GET', `/specialists/${bea.id}`);
-    assert.deepEqual([v.enabled, v.field, v.learnOn, v.sources.length], [true, 'Bijen houden', false, 0]);
-    // The round starts only when it is switched on.
-    await t.api('PUT', `/specialists/${bea.id}`, { learnOn: true });
+    assert.deepEqual([v.enabled, v.field, v.learnOn, v.sources.length], [true, 'Bijen houden', true, 0]);
     // The first due round: it searches, keeps what answers and is primary, and learns from it.
     t.script.push(extract(() => ({ facts: [{ text: BEES, quote: 'Een bijenvolk heeft in de winter ongeveer vijftien kilo wintervoer nodig' }] })));
     assert.equal(await sp.svc.roundsDue(), 1);

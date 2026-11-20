@@ -342,10 +342,11 @@ test('the work loop starts no turn while the owner is talking to the bot, for a 
 test('a specialist learns only about its own field: what a bot is, not what its role mentions; a page about something else is no source', async () => {
   // What the bot IS (its name and the head of its role).
   assert.equal(roleHead("Contentschrijver: SEO-pagina's, gidsen, vergelijkingen en productteksten"), 'Contentschrijver');
-  assert.equal(fieldOf('Pen', "Contentschrijver: SEO-pagina's, gidsen, vergelijkingen en productteksten"), null, 'live this writer became an SEO specialist');
+  assert.equal(fieldOf('Pen', "Contentschrijver: SEO-pagina's, gidsen, vergelijkingen en productteksten"), "Contentschrijver: SEO-pagina's, gidsen, vergelijkingen en productteksten", 'its own work is its field (live this writer became an SEO specialist)');
   assert.equal(fieldOf('Vindbaar', 'SEO-specialist: technische SEO, zoekwoorden en ranking van leadsites en shops'), 'Zoekmachineoptimalisatie (SEO)');
-  assert.equal(fieldOf('Radar', 'Beheerder leadsites: techniek, leadroute, livegang en onderhoud'), null);
-  assert.equal(fieldOf('Verkenner', 'Onderzoekt de markt'), null, '"Verkenner" is not a "kenner"');
+  assert.equal(fieldOf('Radar', 'Beheerder leadsites: techniek, leadroute, livegang en onderhoud'), 'Beheerder leadsites: techniek, leadroute, livegang en onderhoud');
+  assert.equal(fieldOf('Verkenner', 'Onderzoekt de markt'), 'Onderzoekt de markt', 'its role, not its name: "Verkenner" is not a "kenner"');
+  assert.equal(fieldOf('Verkenner', ''), null);
   assert.equal(fieldOf('Imker-expert', 'Bijen houden'), 'Bijen houden');
   // A source must be about the field; that it is official says nothing about its subject.
   const field = 'Strateeg: plannen voor nieuwe leadsites, webshops en bedrijven; scoort kansen';

@@ -146,7 +146,8 @@ test('a learning round is switched on and off with the specialist’s own route,
     const learning = async () => (await e.planned()).filter((p) => p.kind === 'learning');
     const listed = async () => ((await t.api('GET', '/specialists')) as any[]).find((s) => s.agentId === seo.id);
 
-    // Off: not in the list of what starts; the specialists list is what the page offers "Aanzetten" for.
+    // A specialist learns by itself; switched off it is not in the list of what starts (the page offers "Aanzetten").
+    await t.api('PUT', `/specialists/${seo.id}`, { learnOn: false });
     assert.deepEqual(await learning(), []);
     const off = await listed();
     assert.deepEqual([off.enabled, !!off.field, off.learnOn], [true, true, false]);

@@ -541,3 +541,37 @@ test('a routine posts as the owner: its message — also when its turn is retrie
     await t.close();
   }
 });
+
+test('a full dossier makes room by itself, also when nobody is there: the oldest lines go to its archive and the new one comes in', async () => {
+  const t = await startTestApp();
+  try {
+    const { writeNote } = await import('../server/modules/memory/write.js');
+    const { limitOf, notesDossier, writeBody } = await import('../server/modules/memory/living.js');
+    const svc = svcOf(t);
+    const a = await t.agent({ name: 'Ada' });
+    const agent = store(t).agent(a.id)!;
+    const actor = { type: 'agent' as const, id: a.id };
+    let d = notesDossier(svc, agent);
+    const notes: any[] = [];
+    const off = t.app.ctx.events.on('notification', (e: any) => void notes.push(e.data));
+    // Full to the brim with numbered lines.
+    const lines: string[] = [];
+    for (let i = 1; lines.join('\n').length + 80 < limitOf(d) - String(d.body || '').length; i++) lines.push(`- Notitie ${i}: de leverancier van onderdeel ${i} zit in stad nummer ${i}.`);
+    writeBody(svc, d.id, `${String(d.body || '').trim()}\n${lines.join('\n')}`, actor);
+    d = store(t).get('memory_dossiers', d.id);
+    // What the review of a conversation learned (nobody there to shorten the dossier).
+    const fresh = '- Nieuw: de boekhouder wil de facturen voortaan vóór de vijfde van de maand hebben, anders schuift de aangifte een kwartaal op.';
+    const w = writeNote(svc, { dossier: d, text: fresh, actor, full: 'archive' });
+    off();
+    assert.equal(w.action, 'added', w.message);
+    const body = String(store(t).get<any>('memory_dossiers', d.id).body);
+    assert.ok(body.includes('de boekhouder wil de facturen'), 'the new line is in the dossier');
+    assert.ok(body.length <= limitOf(d));
+    assert.ok((w.removed || []).length >= 1, 'older lines made way');
+    for (const l of w.removed || []) assert.ok(/Notitie [123]:/.test(l) && !body.includes(l), `the oldest, and out of the text: ${l}`);
+    assert.ok((w.archived || 0) >= 1, 'and they are in the dossier’s archive');
+    assert.deepEqual(notes.filter((n) => n.title === 'Geheugen vol'), [], 'the owner is not asked to tidy up');
+  } finally {
+    await t.close();
+  }
+});
