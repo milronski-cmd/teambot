@@ -1,16 +1,18 @@
 import { useEffect, useState } from 'react';
-import { History } from 'lucide-react';
+import { ChevronDown, History } from 'lucide-react';
 import { api } from '../lib/api';
 import { useApp } from '../lib/store';
 import type { Approval } from '../lib/types';
 import { BotAvatar, BotFace } from '../components/BotFace';
-import { Badge, Button, Card, EmptyState, Page, PageHeader, timeAgo } from '../components/ui';
+import { Badge, Button, Card, EmptyState, Page, PageHeader, cx, timeAgo } from '../components/ui';
 import { SkeletonRows } from '../components/overview';
 import { Segmented } from '../components/SettingControls';
 import { MoreInfo } from '../components/MoreInfo';
 import { navigate } from '../lib/router';
 import { ApprovalCard } from '../shell/ApprovalCard';
 import { approvalToolName } from '../shell/approvalLabels';
+import { approvalBlocks } from '../../../shared/approvalGroups.js';
+import { groupLabel, groupTitle } from '../shell/approvalGroupText';
 import { stripRefs } from '../lib/preview';
 import { uiModules, useInboxExtraCount } from '../modules';
 
@@ -23,6 +25,41 @@ function answerText(answer: string): string {
     /* plain text answer */
   }
   return answer;
+}
+
+/**
+ * Several requests of one bot for the same action: one block with a line per request, so all of them are in view at
+ * once. Each line opens its own card, where it is decided; there is no "allow all" (every request is read).
+ */
+function ApprovalGroup({ items, name }: { items: Approval[]; name: string }) {
+  const [open, setOpen] = useState<string | null>(null);
+  const label = groupLabel(items.length, name);
+  const title = groupTitle(name, items.length, approvalToolName(items[0]));
+  return (
+    <Card className="p-3 sm:p-4" role="group" aria-label={label}>
+      <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
+        <h2 className="text-[15px] font-bold">{title}</h2>
+        <span className="text-xs text-muted">Open een regel om hem te lezen en te beslissen.</span>
+      </div>
+      <ul className="mt-2 divide-y divide-line">
+        {items.map((a, n) => (
+          <li key={a.id} className="py-1.5">
+            {open === a.id ? (
+              <div className="py-1.5">
+                <ApprovalCard a={a} showThreadLink />
+              </div>
+            ) : (
+              <button className="flex w-full items-start gap-2 rounded-lg px-1.5 py-1.5 text-left hover:bg-surface-2 coarse:min-h-11" onClick={() => setOpen(a.id)} aria-expanded={false}>
+                <span className="mt-0.5 w-5 shrink-0 text-right text-xs font-semibold text-muted">{n + 1}</span>
+                <span className={cx('min-w-0 flex-1 text-sm', 'line-clamp-2 break-words')}>{stripRefs(a.summary)}</span>
+                <ChevronDown className="mt-0.5 h-4 w-4 shrink-0 text-muted" aria-hidden />
+              </button>
+            )}
+          </li>
+        ))}
+      </ul>
+    </Card>
+  );
 }
 
 /** "Wacht op jou": every pending question/approval across bots, plus a history of decisions. */
@@ -69,7 +106,7 @@ export function InboxPage() {
                 Vraagt een bot iets, dan zie je het hier.
               </EmptyState>
             ) : (
-              pending.map((a) => <ApprovalCard key={a.id} a={a} showThreadLink />)
+              approvalBlocks(pending).map((b) => (b.kind === 'one' ? <ApprovalCard key={b.a.id} a={b.a} showThreadLink /> : <ApprovalGroup key={b.key} items={b.items} name={agents.find((x) => x.id === b.agentId)?.name || 'Bot'} />))
             ))}
           {tab === 'open' &&
             uiModules.map((m) => {

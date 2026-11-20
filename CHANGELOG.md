@@ -1,5 +1,12 @@
 # Changelog
 
+## [4.9.8] — 2026-11-20
+
+### Wacht op jou
+- **Tien verzoeken van één bot staan in één blok.** Vraagt een bot drie keer of vaker toestemming voor hetzelfde
+  (tien mails versturen), dan zie je ze onder elkaar in één blok, met per verzoek een regel. Een regel opent zijn
+  eigen kaart, waar je beslist. Er is bewust geen knop die alles tegelijk toestaat: je leest ze allemaal.
+
 ## [4.9.7] — 2026-11-20
 
 ### Samenwerken
