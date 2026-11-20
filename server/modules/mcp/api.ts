@@ -7,6 +7,7 @@ import { HttpError, ah, bad, notFound, own, str, user } from '../../core/http.js
 import type { ConnectionRow, ToolRow } from './db.js';
 import { BEHIND_GOOGLE, CATALOG, type CatalogEntry, catalogEntry } from './catalog.js';
 import { GOOGLE_ID, registerGoogle, revokeGoogle } from './google.js';
+import { BANK_ID, registerBank, revokeBank } from './bank.js';
 import { CALLBACK_PATH, beginOAuth, completeOAuth, connectionSecretPrefix, copyOAuthClient, getConn, prepareOAuth, revokeOAuth, setOAuthClient, sharedOAuthClients } from './oauth.js';
 import { isRisk, riskOf, riskRank } from './risk.js';
 import type { McpManager } from './runtime.js';
@@ -819,6 +820,7 @@ export function registerRoutes(ctx: Ctx, mgr: McpManager, registry?: Registry) {
   }
 
   registerGoogle(ctx, mgr, { baseUrl: (req) => baseUrl(ctx, req), uniqueSlug: (userId, wanted) => uniqueSlug(ctx, userId, wanted), callbackPage, emit, view: (c) => connView(ctx, mgr, c, true), setBindings: (userId, connId, ids) => setBindings(ctx, userId, connId, ids) });
+  registerBank(ctx, mgr, { baseUrl: (req) => baseUrl(ctx, req), uniqueSlug: (userId, wanted) => uniqueSlug(ctx, userId, wanted), callbackPage, emit, view: (c) => connView(ctx, mgr, c, true), setBindings: (userId, connId, ids) => setBindings(ctx, userId, connId, ids), actionsByDefault: (userId) => actionsByDefault(ctx, userId) });
   registerImportRoutes(ctx, mgr, { createConnection, probe: (userId, url, transport) => probeUrl(ctx, userId, url, transport), view: (c) => connView(ctx, mgr, c) });
 
   /**
@@ -976,6 +978,7 @@ export function registerRoutes(ctx: Ctx, mgr: McpManager, registry?: Registry) {
       let revoke = { revokedAtService: false, detail: '' };
       if (c.auth === 'oauth') revoke = await revokeOAuth(ctx, c, { forget: true });
       else if (c.catalog_id === GOOGLE_ID) revoke = await revokeGoogle(ctx, c);
+      else if (c.catalog_id === BANK_ID) revoke = await revokeBank(ctx, c);
       await mgr.remove(c.id);
       deleteKVSecrets(ctx, c.env);
       deleteKVSecrets(ctx, c.headers);

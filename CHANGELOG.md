@@ -1,5 +1,63 @@
 # Changelog
 
+## [4.9.1] — 2026-11-20
+
+### Samenwerken
+- **De controle met een frisse blik keurde goed werk af.** Na een lange beurt kreeg de controleur een tekst die werd
+  afgekapt vóór de laatste stappen, precies de stappen waarin het bestand wordt geschreven en het dossier opgeslagen.
+  Hij zag dus "alleen de eigen melding van de bot" en zette de taak op *te controleren*, ook als alles er was. De
+  laatste stappen vallen er nu nooit meer af: bij ruimtegebrek worden eerst de uitvoer en de oudste stappen korter.
+  Een stap die iets achterlaat (een bestand, een dossier, een bericht aan een collega) blijft ook in beeld als de bot
+  daarna nog lang doorleest. En de controleur krijgt de bestanden en dossiers van die beurt zelf te zien, met het
+  begin van hun inhoud, in plaats van alleen wat de bot erover zegt.
+
+### Chat
+- **Berichten die je snel na elkaar stuurt, komen allemaal bij de bot aan.** Onderbrak een nieuw bericht de beurt van
+  het vorige binnen een seconde, nog voordat de AI was gestart, dan gold dat vorige bericht toch als "afgehandeld" en
+  kreeg een bot op Claude Code, Codex of OpenCode het nooit te zien: van vier berichten in twee seconden voerde hij
+  alleen het laatste uit. Zulke berichten gaan nu mee met het bericht dat wel aan de beurt komt, in de volgorde waarin
+  je ze stuurde. Een taak die je zelf stopt, komt niet terug.
+
+### Computers
+- **Inloggen bij Google in de eigen browser van een bot (Edge of Chrome).** TeamBot startte die browser met een
+  schakelaar waardoor elke site te horen kreeg dat hij geautomatiseerd was; Google weigerde daarop je eigen inlog
+  ("Deze browser of app is mogelijk niet veilig"). Die schakelaar is weg. Dit geldt voor de keuze *Edge of Chrome* op
+  de pagina Computers; in de ingebouwde browser van TeamBot blijft Google het inloggen weigeren.
+- **Een groot team deelt de bot-browsers in plaats van erop vast te lopen.** Er konden er drie tegelijk open staan;
+  de vierde bot kreeg "je hebt al 3 bot-browsers open" en gaf op, ook als de drie browsers van collega's waren die
+  al klaar waren. Nu volgt het maximum het geheugen van je computer (ongeveer één per 3 GB, minstens 4, hoogstens 16).
+  Is het vol, dan sluit TeamBot eerst de browser die niemand gebruikt (de inlog blijft bewaard), en zijn ze allemaal
+  in gebruik, dan wacht de bot tot twee minuten op een vrije.
+
+### Apps
+- **Nieuw: je bank koppelen.** Onder Apps staat de kaart *Bank*. Je bots lezen daarmee het saldo en de af- en
+  bijschrijvingen van je eigen rekeningen (`bank_accounts`, `bank_balances`, `bank_transactions`), bijvoorbeeld om je
+  financiële stand op het dashboard bij te houden of de boekhouding voor te bereiden. Alleen lezen: er is geen
+  gereedschap dat betaalt. Het loopt via Enable Banking (de Europese banken, PSD2): je maakt daar één keer een eigen
+  applicatie (gratis voor je eigen rekeningen), vult het applicatie-ID en de sleutel in, kiest je bank en geeft bij de
+  bank zelf toestemming. Die toestemming loopt na hooguit 180 dagen af en geef je dan opnieuw; de kaart zegt wanneer.
+  Antwoorden van de bank worden een kwartier bewaard, omdat banken maar een paar opvragingen per dag toestaan. Heb je
+  al een applicatie met een ander terugkeeradres, dan vul je dat in en plak je na het inloggen het adres waar je
+  uitkwam.
+- **Google: bij "te veel verzoeken per minuut" wacht TeamBot zelf en probeert opnieuw** (drie keer, samen onder een
+  minuut), in plaats van de bot een fout te geven. Een bot die in één keer een postvak doorzoekt, liep daar tegenaan.
+  Op een daglimiet wordt niet gewacht. Een URL inspecteren in Search Console krijgt twee minuten in plaats van 45
+  seconden (Google doet er vaak tien seconden over, soms ruim veertig), en blijft een antwoord uit, dan hoort de bot
+  dat er geen antwoord kwam in plaats van "Google gaf een fout".
+
+### Spraak
+- **Twee nauwkeurigere lokale spraakmodellen erbij: Cohere Transcribe en Canary 1B v2.** Gratis en op je eigen
+  computer, net als Parakeet en Whisper. Op twintig echte Nederlandse opnamen maken ze ongeveer half zoveel fouten als
+  Parakeet (6,5 % en 6,9 % tegen 11,6 %), maar ze zijn trager (1,3 s en 2,3 s per 10 s spraak tegen 0,5 s) en groter
+  (2,9 GB en 1,4 GB). Je kiest ze zelf bij Instellingen › Spraak; automatisch blijft het snelle Parakeet. Ze herkennen
+  de taal niet zelf en gebruiken je dicteertaal.
+
+### Skills
+- **TeamBot blijft reageren terwijl je skills installeert voor een groot team.** Elke nieuwe skill werd meteen in de
+  werkmap van alle bots geschreven, en zolang dat liep antwoordde TeamBot niet: met 17 bots en 49 skills achter elkaar
+  stond het scherm bij elkaar ruim een halve minuut stil. De mappen worden nu bot voor bot op de achtergrond
+  geschreven. Een bot die een taak start, heeft zijn mappen op dat moment altijd compleet.
+
 ## [4.9.0] — 2026-11-19
 
 Fouten gezocht in de code en gerepareerd, en de telefoon kan nu wat de computer kan.

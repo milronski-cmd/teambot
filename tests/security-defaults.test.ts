@@ -290,7 +290,7 @@ test('share links are off by default: no public route beyond login, pairing, web
       '/mobile/pair', '/mobile/claim', // one-time phone pairing
       '/mobile/hello', // the iPhone app checks it talks to its own TeamBot (HMAC with its token) before sending the token
       '/hooks/:id', '/hooks/channels/:id/:kind', // webhooks with their own secret
-      '/mcp/oauth/callback', '/mcp/google/callback', '/mcp/google/callback', '/mcp/server', '/cli/send', '/cli/runs/:id', // own tokens
+      '/mcp/oauth/callback', '/mcp/google/callback', '/mcp/google/callback', '/mcp/bank/callback', '/mcp/server', '/cli/send', '/cli/runs/:id', // own tokens
       '/sso', '/sso/start', '/sso/callback', '/sso/exchange',
     ];
     const extra = routes.filter((r) => !ALLOWED.includes(r));

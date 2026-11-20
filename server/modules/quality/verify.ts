@@ -62,25 +62,60 @@ export function ruleVerdict(i: CheckInput): Verdict | null {
   return null;
 }
 
-/** The body the checker reads (bounded: about 9.000 characters). */
+/** The most the checker reads. */
+const PROMPT_MAX = 16_000;
+
+/**
+ * The steps of the turn within `budget` characters. The last steps are the ones that deliver the work (the file
+ * written, the dossier saved), so they are never the part that falls off: when the list is too long the outputs get
+ * shorter first, then the summaries, and only then the oldest steps go.
+ */
+export function stepLines(steps: StepItem[], budget: number): string {
+  if (!steps.length) return '(geen stappen)';
+  const all = steps.slice(-45);
+  const line = (s: StepItem, sum: number, out: number) => `- ${s.ok ? 'gelukt' : 'mislukt'}: ${cap(s.summary, sum)}${out && s.out ? ` → ${headAndTail(s.out.replace(/\s+/g, ' '), out)}` : ''}`;
+  // [summary length, output length, how many of the last steps show their output]; a step that left something behind
+  // (a file, a dossier) shows its output wherever it stands.
+  for (const [sum, out, detailed] of [[200, 300, 15], [200, 150, 15], [160, 80, 8], [140, 0, 0], [90, 0, 0]] as const) {
+    const text = all.map((s, n) => line(s, sum, n >= all.length - detailed || s.made ? out : 0)).join('\n');
+    if (text.length <= budget) return text;
+  }
+  // Still too long: the steps that left something behind stay, then the newest of the others, in their own order.
+  const keep = new Set<number>();
+  let used = 40;
+  const order = [...all.keys()].reverse();
+  for (const n of [...order.filter((x) => all[x].made), ...order.filter((x) => !all[x].made)]) {
+    const l = line(all[n], 90, 0).length + 1;
+    if (used + l > budget) continue;
+    keep.add(n);
+    used += l;
+  }
+  const kept = all.filter((_, n) => keep.has(n)).map((s) => line(s, 90, 0));
+  return [`(${all.length - kept.length} andere stappen weggelaten)`, ...kept].join('\n');
+}
+
+/** The body the checker reads (bounded: PROMPT_MAX characters; the steps get what the rest leaves, at least a third). */
 export function checkPrompt(i: CheckInput): string {
   const ev = i.evidence.length
     ? i.evidence
         .map((e, n) => `${n + 1}. [${e.type}] ${cap(e.value, 300)} — TeamBot: ${e.ok === true ? 'klopt' : e.ok === false ? 'klopt niet' : 'niet te controleren'} (${e.note})${e.excerpt ? `\n   Inhoud (begin):\n   """${cap(e.excerpt, 1200).replace(/\n/g, '\n   ')}"""` : ''}`)
         .join('\n')
     : '(geen bewijs bijgevoegd)';
-  const steps = i.steps.length ? i.steps.slice(-15).map((s) => `- ${s.ok ? 'gelukt' : 'mislukt'}: ${cap(s.summary, 200)}${s.out ? ` → ${headAndTail(s.out.replace(/\s+/g, ' '), 300)}` : ''}`).join('\n') : '(geen stappen)';
-  const body = [
-    `Taak: ${cap(i.title, 300)}`,
-    i.description ? `Beschrijving: ${cap(i.description, 1200)}` : '',
-    `Klaar als: ${i.doneWhen ? cap(i.doneWhen, 500) : '(niet opgegeven)'}`,
-    `Wat de bot meldt:\n"""${cap(i.result, 2000) || '(niets)'}"""`,
-    `Bewijs:\n${ev}`,
-    `Stappen die de bot echt zette:\n${steps}`,
-  ]
-    .filter(Boolean)
-    .join('\n\n');
-  return redact(body).slice(0, 9000);
+  const head = redact(
+    [
+      `Taak: ${cap(i.title, 300)}`,
+      i.description ? `Beschrijving: ${cap(i.description, 1200)}` : '',
+      `Klaar als: ${i.doneWhen ? cap(i.doneWhen, 500) : '(niet opgegeven)'}`,
+      `Wat de bot meldt:\n"""${cap(i.result, 2000) || '(niets)'}"""`,
+      `Bewijs:\n${ev}`,
+    ]
+      .filter(Boolean)
+      .join('\n\n'),
+  ).slice(0, Math.floor((PROMPT_MAX * 2) / 3));
+  const label = '\n\nStappen die de bot echt zette:\n';
+  // Secrets are masked before the steps are measured, so masking never pushes the last steps over the edge.
+  const steps = i.steps.map((s) => ({ ...s, summary: redact(s.summary), out: s.out ? redact(s.out) : s.out }));
+  return head + label + stepLines(steps, PROMPT_MAX - head.length - label.length);
 }
 
 function readVerdict(text: string): Verdict {

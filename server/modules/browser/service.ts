@@ -180,6 +180,7 @@ export class ComputerService {
       findBrowser: async () => (await this.caps()).browsers[0] || null,
       inApp: () => inAppBrowserHost(),
       engine: (opts) => this.engineChoice(opts.userId),
+      isBusy: (s) => this.browserInUse(s),
       onClosed: (s, unexpected) => {
         if (unexpected) this.logAction(s.opts.userId, this.agentOfProfile(s.opts.profileId), { actor: 'system', tool: 'browser', summary: 'Browser onverwacht gestopt; profiel en werkmap zijn bewaard', status: 'error' });
         this.emitStatus(s.opts.userId, s.opts.profileId);
@@ -828,6 +829,18 @@ export class ComputerService {
     if (login) this.ctx.secrets.delete(login.id);
     this.proxyCache.delete(p.id);
     this.ctx.audit(userId, 'browser.profile_deleted', { name: p.name });
+  }
+
+  /**
+   * A browser that is not closed to make room for another bot: someone holds it (the owner looks along or took over),
+   * or its bot is at work and used it in the last five minutes. A bot that finished its task, or left its browser
+   * alone that long, gets it back on its next use (the profile keeps its logins).
+   */
+  private browserInUse(s: BrowserSession): boolean {
+    if (this.leases.current('browser:' + s.opts.profileId)) return true;
+    if (Date.now() - s.lastUsed > 5 * 60_000) return false;
+    const agentId = this.agentOfProfile(s.opts.profileId);
+    return !!agentId && !!this.ctx.store.one("SELECT 1 AS x FROM runs WHERE agent_id = ? AND status IN ('queued','running','waiting') LIMIT 1", agentId);
   }
 
   agentOfProfile(profileId: string): string | null {

@@ -71,27 +71,63 @@ const mod: Module = {
     const busy = new Set<string>();
     // Bots that are being removed (the hook below runs right before their row goes): nothing is done for them.
     const leaving = new Set<string>();
-    const upToDate = (agent: Pick<Agent, 'id' | 'user_id'>) => {
+    /** The bot's list complete (a few rows, done on the spot). Returns the bot as stored now, null when it is left alone. */
+    const listed = (agent: Pick<Agent, 'id' | 'user_id'>): Agent | null => {
       // Putting a skill on the list tells "agent.updated" itself: not a second round for the same bot.
-      if (busy.has(agent.id) || leaving.has(agent.id)) return;
+      if (busy.has(agent.id) || leaving.has(agent.id)) return null;
       busy.add(agent.id);
       try {
         // Only reads which team and folder the bot has: an archived bot, and one without a team yet, is left alone.
         const stored = ctx.store.agent(agent.id);
-        if (!stored || stored.archived || stored.user_id !== agent.user_id || !lib.placed(stored)) return;
-        const cur = defaults.offer(stored);
-        if (cur) workspace.sync(cur);
+        if (!stored || stored.archived || stored.user_id !== agent.user_id || !lib.placed(stored)) return null;
+        return defaults.offer(stored);
       } catch (e) {
         ctx.log.error('[skills] skills of a bot not brought up to date', e);
+        return null;
       } finally {
         busy.delete(agent.id);
       }
     };
+    /** The list and the folders. With `until` the folders are written until then; true when there is more to write. */
+    const upToDate = (agent: Pick<Agent, 'id' | 'user_id'>, until?: number): boolean => {
+      const cur = listed(agent);
+      return cur ? workspace.sync(cur, until) : false;
+    };
+    // Writing the folders is disk work per bot (every file of a skill, in two places). It is done bot by bot between
+    // the server's other work (a short piece, then a pause in which requests are answered), so TeamBot keeps answering
+    // while a row of skills is installed for a large team; a bot that is asked for again while it waits is done once.
+    // A CLI engine never starts on old folders: `sync` (below) brings its bot up to date on the spot.
+    const waiting = new Set<string>();
+    let turn: NodeJS.Timeout | null = null;
+    const PIECE_MS = 15;
+    const PAUSE_MS = 20;
+    let stopped = false;
+    const settled: (() => void)[] = [];
+    const work = () => {
+      turn = null;
+      const until = Date.now() + PIECE_MS;
+      for (const id of waiting) {
+        waiting.delete(id);
+        const a = ctx.store.agent(id);
+        // A bot with a lot to write is done in parts: back in the row for what is left.
+        if (a && upToDate(a, until)) waiting.add(id);
+        if (Date.now() > until) break;
+      }
+      // Bringing a bot up to date can put a bot in the row itself (its list changed): one clock at a time.
+      if (waiting.size) turn ??= setTimeout(work, PAUSE_MS);
+      else if (!turn) for (const done of settled.splice(0)) done();
+    };
+    const later = (agent: Pick<Agent, 'id' | 'user_id'>) => {
+      // The list is complete at once (the screens show it); only the folders wait.
+      if (stopped || !listed(agent)) return;
+      waiting.add(agent.id);
+      turn ??= setTimeout(work, PAUSE_MS);
+    };
     const allUpToDate = (userId: string) => {
-      for (const a of ctx.store.agents(userId)) upToDate(a);
+      for (const a of ctx.store.agents(userId)) later(a);
     };
     lib.onChange = allUpToDate;
-    ctx.events.on('agent.updated', (e) => e.data?.id && e.data?.user_id && upToDate(e.data));
+    ctx.events.on('agent.updated', (e) => e.data?.id && e.data?.user_id && later(e.data));
     ctx.events.on('teams.changed', (e) => e.userId && e.userId !== '*' && allUpToDate(e.userId));
 
     ctx.hooks.agentDeleted.push(({ agentId }) => {
@@ -130,7 +166,17 @@ const mod: Module = {
       /** The skills a bot has: the active skills of its team, minus what was taken away from it (library `enabledFor`). */
       enabledFor: (agent: Agent) => lib.enabledFor(agent).map((s) => ({ id: s.id, name: s.name, description: s.description })),
       /** The skill folders in a bot's work folder up to date, right before a CLI engine starts there. */
-      sync: upToDate,
+      sync: (agent: Pick<Agent, 'id' | 'user_id'>) => void upToDate(agent),
+      /** Resolves once the folders of every bot that waited are written (a script or test that reads them right after a change). */
+      settled: () => (waiting.size || turn ? new Promise<void>((done) => settled.push(done)) : Promise.resolve()),
+      /** The server closes: nothing is written any more. */
+      halt: () => {
+        stopped = true;
+        waiting.clear();
+        if (turn) clearTimeout(turn);
+        turn = null;
+        for (const done of settled.splice(0)) done();
+      },
       /**
        * For an engine that loads those folders itself: the bot's instructions with TeamBot's list of skills replaced by
        * one short rule. Null when the list in them is not the one of now (then nothing is left out).
@@ -214,6 +260,10 @@ const mod: Module = {
     } catch (e) {
       ctx.log.error('[skills] default skills failed', e);
     }
+  },
+
+  stop(ctx: Ctx) {
+    ctx.services.skills?.halt?.();
   },
 };
 

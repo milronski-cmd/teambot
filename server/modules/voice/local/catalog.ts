@@ -2,12 +2,18 @@
  * Local (free, on-device) speech models. Every file is pinned to an exact upstream revision and SHA-256, downloaded
  * on first use into <dataDir>/voice/models/<id>/ and verified before use. Nothing here is bundled in the installer.
  *
- * Licences checked 2026-11-08 (each model's own card on Hugging Face / GitHub release pages):
+ * Licences checked 2026-11-08, the two speech models added later on 2026-11-20 (each model's own card on Hugging Face / GitHub release pages):
  * - Parakeet TDT 0.6B v3: CC-BY-4.0 (NVIDIA), ONNX conversion by the sherpa-onnx project (Apache-2.0). 25 European
  *   languages, among them all interface languages except Turkish and Arabic.
  * - Whisper large-v3 turbo: MIT (OpenAI), ONNX conversion by the sherpa-onnx project. 99 languages: the local choice
  *   for Turkish and Arabic. (Whisper small from the same project was tried: a third of the size, but on the CPU hardly
  *   faster than turbo — its decoder is the slow part — and clearly less accurate, so it is not offered.)
+ * - Cohere Transcribe (03-2026): Apache-2.0 (Cohere), ONNX conversion by the sherpa-onnx project. 14 languages. Added
+ *   2026-11-20 with Canary as the more accurate choices: on 20 FLEURS-nl recordings WER 6.5 % (Cohere) and 6.9 %
+ *   (Canary) against 11.6 % for Parakeet, at 1.3 s and 2.3 s per 10 s of speech against 0.5 s. Neither detects the
+ *   language: engine.ts tells them the dictation language (`spokenLanguage`).
+ * - Canary 1B v2: CC-BY-4.0 (NVIDIA). The sherpa-onnx project only publishes the small 180M Canary (no Dutch); this
+ *   int8 conversion is a community one (fussraider) that ships its export script, pinned by revision and SHA-256.
  * - Piper 2023.11.14-2: MIT. The download also contains espeak-ng 1.52 (GPL-3.0-or-later), used by piper.exe for
  *   pronunciation. TeamBot never links it: it only starts piper as a separate program, and the user downloads it
  *   from the upstream release (TeamBot does not redistribute it).
@@ -33,7 +39,7 @@
 
 import { SPEECH_LANGS, recommendedStt, voicesFor } from '../../../../shared/voiceLanguage.js';
 
-export const LICENCES_CHECKED = '2026-11-08';
+export const LICENCES_CHECKED = '2026-11-20';
 
 /** 'call-part': the voice-activity and turn models of the free live call (duplex/catalog.ts, its own store). */
 export type LocalKind = 'stt' | 'tts-runtime' | 'tts-voice' | 'call-part';
@@ -62,7 +68,9 @@ export interface LocalModel {
   /** `${process.platform}-${process.arch}` values this entry is for (default: all). */
   platforms?: string[];
   // STT
-  engine?: 'parakeet' | 'whisper';
+  engine?: 'parakeet' | 'whisper' | 'cohere' | 'canary';
+  /** STT: the model cannot detect the language; it is told the dictation language when it is loaded (engine.ts). */
+  needsLanguage?: boolean;
   /** Rough decode time per 10 s of speech on a modern 8-core desktop CPU (measured, see docs/modules/voice.md). */
   speedHint?: string;
   // TTS voices
@@ -88,6 +96,8 @@ export interface LocalModel {
 const HF = 'https://huggingface.co';
 const PARAKEET = `${HF}/csukuangfj/sherpa-onnx-nemo-parakeet-tdt-0.6b-v3-int8/resolve/2bda32ec70b097a55adaa07d9a7173915b43cc78`;
 const TURBO = `${HF}/csukuangfj/sherpa-onnx-whisper-turbo/resolve/2ca6ff69fc878651b770880507669577ac41c2ff`;
+const COHERE = `${HF}/csukuangfj2/sherpa-onnx-cohere-transcribe-14-lang-int8-2026-04-01/resolve/156a470cf08eefe706a0004f3c52d9ee567ca7a0`;
+const CANARY = `${HF}/fussraider/canary-1b-v2-sherpa-onnx-int8/resolve/4651944c4e30d708a566cd561867925ea0dccfa9`;
 export const VOICES_REVISION = 'e7229f7d33a10e145e109b886d661984201ac3c4';
 const VOICES = `${HF}/rhasspy/piper-voices/resolve/${VOICES_REVISION}`;
 const PIPER = 'https://github.com/rhasspy/piper/releases/download/2023.11.14-2';
@@ -159,6 +169,43 @@ export const LOCAL_MODELS: LocalModel[] = [
       { path: 'turbo-encoder.int8.onnx', url: `${TURBO}/turbo-encoder.int8.onnx`, sha256: 'b02dcdf54f348741e93fe732b67d933c8dcb6735655f710640143081db38878b', size: 674716297 },
       { path: 'turbo-decoder.int8.onnx', url: `${TURBO}/turbo-decoder.int8.onnx`, sha256: '20accd02388482eb3a46bd615631adfdc85e1eb2c7db9ea3f02a40ffe6b81547', size: 361080764 },
       { path: 'turbo-tokens.txt', url: `${TURBO}/turbo-tokens.txt`, sha256: 'b34b360dbb493e781e479794586d661700670d65564001f23024971d1f2fa126', size: 816730 },
+    ],
+  },
+  {
+    id: 'cohere-transcribe-03-2026',
+    kind: 'stt',
+    engine: 'cohere',
+    needsLanguage: true,
+    label: 'Cohere Transcribe — minste fouten, groot (2,9 GB)',
+    description: 'Cohere Transcribe (int8). Ongeveer half zoveel fouten als Parakeet op Nederlands, met leestekens; ruim twee keer trager op de processor. 14 talen waaronder Nederlands, Engels en Arabisch. Herkent de taal niet zelf: het gebruikt je dicteertaal.',
+    licence: 'Apache-2.0',
+    licenceNote: 'Model van Cohere (Apache-2.0), omgezet naar ONNX door het sherpa-onnx-project.',
+    source: 'https://huggingface.co/CohereLabs/cohere-transcribe-03-2026',
+    languages: ['nl', 'en', 'de', 'fr', 'es', 'it', 'pt', 'pl', 'el', 'ar', 'ja', 'ko', 'vi', 'zh'],
+    speedHint: '≈ 1,3 s per 10 s spraak',
+    files: [
+      { path: 'encoder.int8.onnx', url: `${COHERE}/encoder.int8.onnx`, sha256: 'cf704f8cfa90e3f0a76f9ffc05998bdf00ba9ae983192c14a85a3a5eb008b367', size: 3090822 },
+      { path: 'encoder.int8.onnx.data', url: `${COHERE}/encoder.int8.onnx.data`, sha256: 'bcf1b7148c8518ae52df1ad2d2fc2b4e89261ea23e6c874eef1d9f55bcbaa4a3', size: 2731503072 },
+      { path: 'decoder.int8.onnx', url: `${COHERE}/decoder.int8.onnx`, sha256: '8372ca6c8ff4db8b916ca3592f5c757a715e691b9edec751ba19b29fc854baf9', size: 153250705 },
+      { path: 'tokens.txt', url: `${COHERE}/tokens.txt`, sha256: '013ede043ae2480e3a9205cc34550d9686100cc682bacc90f702facdfbb93035', size: 207437 },
+    ],
+  },
+  {
+    id: 'canary-1b-v2',
+    kind: 'stt',
+    engine: 'canary',
+    needsLanguage: true,
+    label: 'Canary 1B v2 — weinig fouten, 25 Europese talen (1,4 GB)',
+    description: 'NVIDIA Canary 1B v2 (int8). Ongeveer half zoveel fouten als Parakeet op Nederlands, met leestekens; ruim vier keer trager op de processor. Dezelfde 25 Europese talen als Parakeet. Herkent de taal niet zelf: het gebruikt je dicteertaal.',
+    licence: 'CC-BY-4.0',
+    licenceNote: 'Model van NVIDIA (CC-BY-4.0), omgezet naar ONNX voor sherpa-onnx door fussraider (exportscript staat bij het model).',
+    source: 'https://huggingface.co/nvidia/canary-1b-v2',
+    languages: PARAKEET_LANGS,
+    speedHint: '≈ 2,3 s per 10 s spraak',
+    files: [
+      { path: 'encoder.int8.onnx', url: `${CANARY}/encoder.int8.onnx`, sha256: '0653fdb7fa13a39f5b63016b91c5319cfdf02736f627aebb57b51aec7c63968e', size: 857603131 },
+      { path: 'decoder.int8.onnx', url: `${CANARY}/decoder.int8.onnx`, sha256: 'e77ad881ee06c0e9f63e9fce0173c446b1e9fae2c7e6ac932d78e8547ad9b6a0', size: 557033012 },
+      { path: 'tokens.txt', url: `${CANARY}/tokens.txt`, sha256: '2c9efe6104fd29522ea27ce0e3aef5d37c690af4e5a4232e643e23ca403ffea3', size: 208022 },
     ],
   },
   {

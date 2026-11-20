@@ -12,6 +12,10 @@ export interface StepItem {
   ok: boolean;
   /** Start of the tool's output (for matching evidence and for the checker). */
   out?: string;
+  /** The step left something behind (a file written or removed, a dossier saved, a message sent). */
+  made?: boolean;
+  /** The file such a step wrote (full path). */
+  target?: string;
 }
 
 export interface Verdict {

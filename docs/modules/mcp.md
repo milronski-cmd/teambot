@@ -233,6 +233,31 @@ Niet opgenomen: gearchiveerde referentieservers (`server-slack`, `server-gdrive`
 Google Workspace staat naast de officiële servers (Developer Preview) één community-server, Workspace MCP (MIT), als
 optie zonder preview; die is niet van Google en standaard alleen-lezen.
 
+## Bank (`bank.ts`, 4.9.1)
+
+Een tweede ingebouwde koppeling (transport `builtin`, `catalog_id` `bank`), naast Google: de bots lezen saldo en
+mutaties van de eigen rekeningen van de eigenaar. Alleen lezen; er is geen gereedschap dat betaalt.
+
+- **Dienst**: Enable Banking (`api.enablebanking.com`, PSD2-rekeninginformatie, Europese banken). De eigenaar maakt
+  daar één keer een eigen applicatie (voor eigen rekeningen gratis, "restricted production": elke rekening eerst
+  koppelen in hun paneel). TeamBot ondertekent elk verzoek met de sleutel van die applicatie (JWT RS256, `kid` =
+  applicatie-ID, een uur geldig).
+- **Koppelen**: Apps › Bank. Applicatie-ID + sleutel (gecontroleerd met één echte aanroep, opgeslagen in de kluis als
+  `mcp:bank:app`), land en bank kiezen (`GET /aspsps`), toestemming bij de bank (`POST /auth`), terug op
+  `/api/public/mcp/bank/callback` met een code (`POST /sessions`). Heeft de applicatie al een ander terugkeeradres,
+  dan vult de eigenaar dat in en plakt hij het adres waar hij uitkwam (`POST /mcp/bank/finish`). Per bank één
+  toestemming (`mcp:<id>:bank:links` in de kluis), hooguit 180 dagen; verlopen = de kaart zegt het en de tools ook.
+- **Tools** (alle `read`): `bank_accounts`, `bank_balances` (alle of één rekening), `bank_transactions` (één rekening,
+  standaard 30 dagen, bij positief en af negatief, met tegenpartij en omschrijving). Antwoorden blijven een kwartier
+  in het geheugen van de server: banken staan zonder de eigenaar erbij meestal vier opvragingen per dag toe.
+- **Routes**: `GET /mcp/bank`, `PUT /mcp/bank/app`, `GET /mcp/bank/banks?country=`, `POST /mcp/bank/link`,
+  `POST /mcp/bank/finish`, `POST /mcp/bank/unlink`. Het scherm krijgt nooit de sleutel terug en toont IBAN's
+  afgeschermd; de bots krijgen het hele IBAN.
+- **Dashboard**: tegels blijven rijen die een bot bijhoudt (teamtabel `dashboard`); een bot met de bank zet er het
+  saldo op en houdt het met een routine bij.
+- **Tests**: `tests/mcp-bank.test.ts` (nagemaakte dienst via `TEAMBOT_BANK_BASE`), `tests/e2e/bank.mjs` (de schermen).
+  Niet getest met een echte bank.
+
 ## Ontwerpkeuzes (mini-ADR's)
 
 1. **Eigen tabel voor koppelingen per bot** (`mcp_bindings`) i.p.v. `agent.settings`: bottemplates exporteren `settings`,

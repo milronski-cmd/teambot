@@ -185,18 +185,26 @@ export class SkillWorkspace {
     return out;
   }
 
-  /** One place (`.claude/skills` or `.agents/skills`). Returns the folders it left alone and did not tell about yet. */
-  private syncPlace(dir: string, wanted: Map<string, Want>): string[] {
+  /**
+   * One place (`.claude/skills` or `.agents/skills`). Returns the folders it left alone and did not tell about yet.
+   * With `until` (a time) it stops there and says `more`: the list file holds what is done, the next call goes on.
+   */
+  private syncPlace(dir: string, wanted: Map<string, Want>, until = Infinity): { tell: string[]; more: boolean } {
     const listFile = path.join(dir, LIST);
     const stored = readList(listFile);
-    if (!wanted.size && !stored) return [];
+    if (!wanted.size && !stored) return { tell: [], more: false };
     const list: ListFile = stored || { managedBy: 'TeamBot', skills: {}, kept: {} };
     const before = JSON.stringify(list);
     const tell: string[] = [];
+    let more = false;
+    // Every call does at least one folder, however slow the disk: a row of calls always ends.
+    let did = 0;
+    const late = () => (more = did++ > 0 && Date.now() > until);
 
     // What the bot no longer has: TeamBot's files go. A folder the owner changed is his from now on.
     for (const [name, e] of Object.entries(list.skills)) {
       if (wanted.get(name)?.skill.id === e.id) continue;
+      if (late()) break;
       const target = path.join(dir, name);
       if (untouched(target, e)) removeFiles(target, Object.keys(e.files));
       else if (fs.existsSync(target)) tell.push(name);
@@ -204,11 +212,12 @@ export class SkillWorkspace {
     }
     for (const name of Object.keys(list.kept)) if (!wanted.has(name)) delete list.kept[name];
 
-    for (const [name, w] of wanted) {
+    for (const [name, w] of more ? [] : wanted) {
       const target = path.join(dir, name);
       const e = list.skills[name];
       const there = fs.existsSync(target);
       if (e && e.state === w.state && there) continue;
+      if (late()) break;
       // Not written by TeamBot, or changed since: never written over.
       if (there && (!e || !untouched(target, e))) {
         if (!list.kept[name]) tell.push(name);
@@ -235,7 +244,7 @@ export class SkillWorkspace {
       fs.writeFileSync(listFile + '.tmp', JSON.stringify(list, null, 1));
       fs.renameSync(listFile + '.tmp', listFile);
     }
-    return tell;
+    return { tell, more };
   }
 
   /** The copies of before this version (`.skills/<naam>/`, only made for trusted skills with scripts): TeamBot's files go. */
@@ -264,17 +273,23 @@ export class SkillWorkspace {
    * Bring the skill folders in a bot's work folder up to date with the skills it has now. Called where that answer
    * changes (a skill installed, changed, trusted, switched or removed; a bot made, changed or moved) and right before a
    * CLI engine starts in the folder. Never throws: a folder that cannot be written is logged, the rest goes on.
+   * With `until` (a time) it writes until then and returns true when there is more to do: call it again.
    */
-  sync(agent: Agent) {
+  sync(agent: Agent, until = Infinity): boolean {
+    let more = false;
     try {
       const root = path.resolve(agent.workspace || '');
-      if (!agent.workspace || !fs.existsSync(root)) return;
+      if (!agent.workspace || !fs.existsSync(root)) return false;
       // A folder that is no longer one TeamBot made for this bot (the owner gave it a second bot as well): TeamBot
       // takes away what it wrote there itself (its list file says what), and writes nothing new.
       const own = this.owns(agent);
       if (own) this.removeOldCopies(root);
       const wanted = own ? this.wanted(agent) : new Map<string, Want>();
-      const kept = SKILL_PLACES.flatMap((place) => this.syncPlace(path.join(root, ...place.split('/')), wanted).map((name) => `${place}/${name}`));
+      const kept = SKILL_PLACES.flatMap((place) => {
+        const r = this.syncPlace(path.join(root, ...place.split('/')), wanted, until);
+        more ||= r.more;
+        return r.tell.map((name) => `${place}/${name}`);
+      });
       if (kept.length) {
         this.ctx.events.emit(agent.user_id, 'notification', {
           title: `Skillmap van ${agent.name} niet overschreven`,
@@ -290,6 +305,7 @@ export class SkillWorkspace {
     } catch (e) {
       this.ctx.log.error('[skills] work folder not brought up to date', agent.id, e);
     }
+    return more;
   }
 
   /**

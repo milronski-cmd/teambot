@@ -163,7 +163,22 @@ class GoogleError extends Error {
   }
 }
 
-type Call = (method: 'GET' | 'POST', url: string, opts?: { query?: Record<string, any>; body?: any; headers?: Record<string, string>; raw?: boolean }) => Promise<any>;
+/** How long to wait before each new try after "too many requests per minute" (three tries, under a minute in all). */
+let retryWaits = [5_000, 15_000, 30_000];
+/** Tests: shorter waits. */
+export function setGoogleRetryWaits(ms: number[] | null) {
+  retryWaits = ms || [5_000, 15_000, 30_000];
+}
+
+/** A limit per minute or per second (429, or Google's older 403 with the same meaning); never a limit per day. */
+export function tooFast(status: number, body: string): boolean {
+  if (status !== 429 && status !== 403) return false;
+  if (/per day|daily|dailyLimit/i.test(body)) return false;
+  return status === 429 ? true : /per minute|per second|rateLimitExceeded|userRateLimitExceeded|RATE_LIMIT_EXCEEDED/i.test(body);
+}
+
+/** `timeoutMs`: for a call Google itself takes long over (inspecting a URL: often 10 s, sometimes over 40 s); default 45 s. */
+type Call = (method: 'GET' | 'POST', url: string, opts?: { query?: Record<string, any>; body?: any; headers?: Record<string, string>; raw?: boolean; timeoutMs?: number }) => Promise<any>;
 
 function caller(ctx: Ctx, mgr: McpManager, connId: string): Call {
   return async (method, url, opts = {}) => {
@@ -174,16 +189,33 @@ function caller(ctx: Ctx, mgr: McpManager, connId: string): Call {
       if (v === undefined || v === null || v === '') continue;
       for (const x of Array.isArray(v) ? v : [v]) u.searchParams.append(k, String(x));
     }
-    const once = async (force: boolean) =>
-      net()(u.href, {
-        method,
-        headers: { authorization: `Bearer ${await accessToken(ctx, mgr, c, force)}`, ...(opts.body !== undefined ? { 'content-type': 'application/json' } : {}), ...(opts.headers || {}) },
-        body: opts.body !== undefined ? JSON.stringify(opts.body) : undefined,
-        signal: AbortSignal.timeout(45_000),
-      });
+    const limit = opts.timeoutMs || 45_000;
+    const once = async (force: boolean) => {
+      try {
+        return await net()(u.href, {
+          method,
+          headers: { authorization: `Bearer ${await accessToken(ctx, mgr, c, force)}`, ...(opts.body !== undefined ? { 'content-type': 'application/json' } : {}), ...(opts.headers || {}) },
+          body: opts.body !== undefined ? JSON.stringify(opts.body) : undefined,
+          signal: AbortSignal.timeout(limit),
+        });
+      } catch (e: any) {
+        // Not an error Google gave: it gave no answer at all. Say so, so the bot tries again instead of concluding.
+        if (e?.name === 'TimeoutError' || e?.name === 'AbortError') throw new GoogleError(504, `geen antwoord binnen ${Math.round(limit / 1000)} seconden. Probeer het opnieuw.`);
+        throw e;
+      }
+    };
     let res = await once(false);
     if (res.status === 401) res = await once(true);
-    const text = await res.text();
+    let text = await res.text();
+    // Too many requests in a minute (a bot that searches a mailbox in a burst): Google did nothing with the request, so
+    // wait and send it again instead of handing the bot an error. A daily limit is not waited for.
+    for (const wait of retryWaits) {
+      if (!tooFast(res.status, text)) break;
+      const after = Number(res.headers.get('retry-after')) * 1000;
+      await new Promise((r) => setTimeout(r, after > 0 && after <= 60_000 ? after : wait));
+      res = await once(false);
+      text = await res.text();
+    }
     if (!res.ok) {
       let j: any = null;
       try {
@@ -301,7 +333,7 @@ export const GOOGLE_TOOLS: GTool[] = [
         body: { startDate: a.start || day(-30), endDate: a.end || day(-2), dimensions: a.dimensions || ['query'], type: a.type, rowLimit: a.limit || 100, ...(a.filters?.length ? { dimensionFilterGroups: [{ filters: a.filters }] } : {}) },
       }),
   },
-  { name: 'gsc_inspect_url', service: 'searchconsole', title: 'URL inspecteren', kind: 'read', description: 'Hoe Google één pagina ziet: geïndexeerd of niet, laatste crawl, canonieke URL, mobiel en rich results.', input: { site, url: z.string().url() }, run: (a, g) => g('POST', 'https://searchconsole.googleapis.com/v1/urlInspection/index:inspect', { body: { inspectionUrl: a.url, siteUrl: a.site, languageCode: 'nl-NL' } }) },
+  { name: 'gsc_inspect_url', service: 'searchconsole', title: 'URL inspecteren', kind: 'read', description: 'Hoe Google één pagina ziet: geïndexeerd of niet, laatste crawl, canonieke URL, mobiel en rich results.', input: { site, url: z.string().url() }, run: (a, g) => g('POST', 'https://searchconsole.googleapis.com/v1/urlInspection/index:inspect', { body: { inspectionUrl: a.url, siteUrl: a.site, languageCode: 'nl-NL' }, timeoutMs: 120_000 }) },
   { name: 'gsc_sitemaps', service: 'searchconsole', title: 'Sitemaps', kind: 'read', description: 'De ingediende sitemaps van een site, met fouten en waarschuwingen.', input: { site }, run: (a, g) => g('GET', `${GSC}/sites/${encodeURIComponent(a.site)}/sitemaps`) },
   // ---- Merchant Center
   { name: 'merchant_accounts', service: 'merchant', title: 'Merchant Center-accounts', kind: 'read', description: 'Toon de Merchant Center-accounts waar dit Google-account bij kan.', input: {}, run: (_a, g) => g('GET', `${MERCHANT}/accounts/v1/accounts`) },

@@ -4,7 +4,7 @@ import path from 'node:path';
 import type { LocalModel } from './catalog.js';
 import type { LocalModels } from './models.js';
 import { STT_RATE, resample } from './pcm.js';
-import { isAutoLanguage } from '../../../../shared/voiceLanguage.js';
+import { baseLang, isAutoLanguage } from '../../../../shared/voiceLanguage.js';
 
 /** One loaded speech recogniser. `decode` must not block the event loop. */
 export interface LocalRecognizer {
@@ -44,6 +44,14 @@ export const sherpaBackend: SttBackend = {
       const f = (suffix: string) => p(model.files.find((x) => x.path.endsWith(suffix))?.path || `turbo${suffix}`);
       modelConfig.whisper = { encoder: f('-encoder.int8.onnx'), decoder: f('-decoder.int8.onnx'), language: lang, task: 'transcribe' };
       modelConfig.tokens = f('-tokens.txt');
+    } else if (model.engine === 'cohere') {
+      modelConfig.cohereTranscribe = { encoder: p('encoder.int8.onnx'), decoder: p('decoder.int8.onnx'), language: spokenLanguage(model, opts.language), usePunct: 1, useItn: 1 };
+      modelConfig.tokens = p('tokens.txt');
+    } else if (model.engine === 'canary') {
+      const lang = spokenLanguage(model, opts.language);
+      // Same source and target language = write down what was said (another target would translate).
+      modelConfig.canary = { encoder: p('encoder.int8.onnx'), decoder: p('decoder.int8.onnx'), srcLang: lang, tgtLang: lang, usePnc: 1 };
+      modelConfig.tokens = p('tokens.txt');
     } else throw new Error(`Onbekend modeltype ${model.engine}`);
     const rec = await sherpa.OfflineRecognizer.createAsync({ featConfig: { sampleRate: STT_RATE, featureDim: 80 }, modelConfig, decodingMethod: 'greedy_search' });
     return {
@@ -96,7 +104,8 @@ export class SttEngines {
 
   private key(modelId: string, language: string) {
     const m = this.models.model(modelId);
-    return m?.engine === 'whisper' ? `${modelId}|${whisperLanguage(language)}` : modelId;
+    // The language is part of what gets loaded for every model that is told its language.
+    return m?.engine === 'whisper' ? `${modelId}|${whisperLanguage(language)}` : m?.needsLanguage ? `${modelId}|${spokenLanguage(m, language)}` : modelId;
   }
 
   private entry(modelId: string, language: string): Loaded {
@@ -159,6 +168,17 @@ export class SttEngines {
 
 /** Whisper's language for a dictation setting: '' (detect) for every automatic setting, else the fixed code. */
 export const whisperLanguage = (setting: string) => (isAutoLanguage(setting) ? '' : setting);
+
+/**
+ * The one language for a model that must be told it (catalog `needsLanguage`): a fixed dictation language, else the
+ * hint of an automatic setting ('auto-nl' → Dutch). A language the model does not know becomes English; "detect
+ * without a hint" never gets here for these models (settings.ts gives it the interface language as hint).
+ */
+export function spokenLanguage(model: Pick<LocalModel, 'languages'>, setting: string): string {
+  const s = String(setting || '');
+  const lang = baseLang(s.startsWith('auto-') ? s.slice(5) : isAutoLanguage(s) ? '' : s);
+  return lang && model.languages.includes(lang) ? lang : 'en';
+}
 
 export function tidy(t: string): string {
   return String(t || '')

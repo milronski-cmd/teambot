@@ -4,7 +4,7 @@ import { GEMINI_LIVE_MODELS, GEMINI_VOICES, OPENAI_TTS_MODELS, REALTIME_MODELS, 
 import { LOCAL_MODELS, LOCAL_STT_DEFAULT, LOCAL_VOICE_EN_DEFAULT, type LocalModel } from './local/catalog.js';
 import { localVoice } from './local/service.js';
 import { DEFAULT_HOTKEY, parseHotkey } from './hotkey.js';
-import { AUTO_APP, preferInstalled, resolveSttLanguage, sttModelLanguage, sttModelsFor, voicesFor } from '../../../shared/voiceLanguage.js';
+import { AUTO_APP, baseLang, preferInstalled, resolveSttLanguage, sttModelLanguage, sttModelsFor, voicesFor } from '../../../shared/voiceLanguage.js';
 import type { AgentVoice, LiveMode, TtsEngine, VoiceSettings } from '../../../shared/voiceSettings.js';
 
 /** The shapes: shared/voiceSettings.ts (the Spraak screens use the same). */
@@ -136,10 +136,13 @@ export function autoVoice(lang: string, installed: (id: string) => boolean, mode
  * model follows the dictation language (Turkish dictation in a Dutch interface → Whisper), the voice the interface.
  */
 export function effectiveSettings(s: VoiceSettings, lang: string, installed: (id: string) => boolean = () => false, models: LocalModel[] = LOCAL_MODELS): VoiceSettings {
-  const sttLanguage = resolveSttLanguage(s.stt.language, lang);
+  let sttLanguage = resolveSttLanguage(s.stt.language, lang);
+  const localModel = s.stt.localModel || autoSttModel(sttModelLanguage(sttLanguage, lang), installed, models);
+  // A model that cannot detect the language needs one: "detect without a hint" then means the interface language.
+  if (sttLanguage === 'auto' && models.find((m) => m.id === localModel)?.needsLanguage) sttLanguage = `auto-${baseLang(lang) || 'nl'}`;
   return {
     ...s,
-    stt: { ...s.stt, language: sttLanguage, localModel: s.stt.localModel || autoSttModel(sttModelLanguage(sttLanguage, lang), installed, models) },
+    stt: { ...s.stt, language: sttLanguage, localModel },
     tts: { ...s.tts, localVoice: s.tts.localVoice || autoVoice(lang, installed, models) },
   };
 }

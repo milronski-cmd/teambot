@@ -107,12 +107,24 @@ export async function turnContext(ctx: Ctx, agent: Agent, thread: Thread, input:
  * session. Sending it again as a "new message" made Claude Code take the stopped task up again on the next message
  * (acceptance round 2, B-32). So does an attempt that failed after it had already done steps (A-33).
  */
-function lastOwnIndex(rows: Message[], agent: Agent): number {
+function lastOwnIndex(ctx: Ctx, rows: Message[], agent: Agent): number {
   let lastOwn = -1;
   rows.forEach((m, i) => {
-    if (m.author_id === agent.id && m.role === 'assistant' && (m.status === 'done' || m.status === 'cancelled' || (m.status === 'error' && doneSteps(m).length))) lastOwn = i;
+    if (m.author_id === agent.id && m.role === 'assistant' && (m.status === 'done' || (m.status === 'cancelled' && !cutOffBeforeItBegan(ctx, m)) || (m.status === 'error' && doneSteps(m).length))) lastOwn = i;
   });
   return lastOwn;
+}
+
+/**
+ * A turn that the owner's next message interrupted before the engine had written or done anything: three messages
+ * typed quickly after each other, each cutting off the turn of the one before within a second. The engine never got
+ * those questions (it had not started yet), so they are not "answered": they go to the bot with the message that
+ * finally got its turn. Seen 20 nov 2026: of four messages in two seconds the bot only ever saw the last one.
+ * A turn the owner stopped himself is different (B-32 above): that task must not come back.
+ */
+function cutOffBeforeItBegan(ctx: Ctx, m: Message): boolean {
+  if (m.content?.trim() || doneSteps(m).length) return false;
+  return !!(m.run_id && ctx.store.run(m.run_id)?.meta?.steerInterrupt);
 }
 
 /**
@@ -126,11 +138,11 @@ function lastOwnIndex(rows: Message[], agent: Agent): number {
  */
 export function missedTurns(ctx: Ctx, agent: Agent, thread: Thread, input: Message | null, o: { seen: number | null; providerId: string }, max = 30): { text: string; count: number } {
   const rows = ctx.store.messages(thread.id, { limit: 200 });
-  const lastOwn = lastOwnIndex(rows, agent);
+  const lastOwn = lastOwnIndex(ctx, rows, agent);
   // The session also saw a turn of its own that did not end well (stopped, or failed after it had done steps): the
   // question of that turn reached it, as in cliPrompt.
   const ownHere = rows.filter((m) => m.parts?.providerId === o.providerId);
-  const here = ownHere.length ? ownHere[lastOwnIndex(ownHere, agent)]?.seq : undefined;
+  const here = ownHere.length ? ownHere[lastOwnIndex(ctx, ownHere, agent)]?.seq : undefined;
   const seen = Math.max(o.seen ?? -1, here ?? -1);
   if (lastOwn < 0 || seen < 0) return { text: '', count: 0 };
   const picked = rows
@@ -147,7 +159,7 @@ export function missedTurns(ctx: Ctx, agent: Agent, thread: Thread, input: Messa
 
 export function cliPrompt(ctx: Ctx, agent: Agent, thread: Thread, input: Message | null): string {
   const rows = ctx.store.messages(thread.id, { limit: 200 });
-  const lastOwn = lastOwnIndex(rows, agent);
+  const lastOwn = lastOwnIndex(ctx, rows, agent);
   // "Opnieuw proberen" (or a reserve engine) after an attempt on this same request that failed halfway: the steps it
   // already took really happened (a file written, a message sent). Continue from there instead of handing the CLI the
   // same request again as if it were new, which could do those actions a second time.

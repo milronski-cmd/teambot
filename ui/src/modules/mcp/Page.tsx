@@ -15,6 +15,7 @@ import { PackageImport } from './PackageImport';
 import { ImportDialog, type ImportedInfo } from './Import';
 import type { ConnDraft } from './forms';
 import { GoogleCard } from './Google';
+import { BankCard } from './Bank';
 import { ServerTab } from './ServerTab';
 import { firstSentence } from '../../lib/sentence';
 import { useQuickConnect, QuickStatus } from './quick';
@@ -161,8 +162,8 @@ export function MainPage() {
       .catch(() => setCatalog([]));
   }, []);
   const custom = catalog?.find((e) => e.id === 'custom') || null;
-  // Google is one card of its own (Google.tsx); its connection is not listed a second time.
-  const mine = (list || []).filter((c) => c.catalog_id !== 'google');
+  // Google and the bank are cards of their own (Google.tsx, Bank.tsx); their connections are not listed a second time.
+  const mine = (list || []).filter((c) => c.catalog_id !== 'google' && c.catalog_id !== 'bank');
   const shown = useMemo(() => {
     // One click or only a login first; an app that needs a key or an own app of the service after those.
     const rank = (e: CatalogEntry) => (e.oneClick === 'form' ? 100 : 0) + (FIRST.indexOf(e.id) + 1 || 99);
@@ -187,6 +188,7 @@ export function MainPage() {
       <div className="mx-auto max-w-5xl space-y-6 p-4 sm:p-6">
         <div className="space-y-3" data-testid="apps-connected">
           <GoogleCard />
+          <BankCard />
           {error && (
             <EmptyState title="Laden mislukt" action={<Button onClick={reload}>Opnieuw</Button>}>
               {error}

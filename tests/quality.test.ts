@@ -6,7 +6,7 @@ import { startTestApp, type TestApp } from './helpers.js';
 import { msgs, settle, team, until } from './team-mock.js';
 import { CliLoopWatch, LoopGuard, loopLimits } from '../server/agent/loops.js';
 import { isCorrection } from '../server/modules/quality/lessons.js';
-import { inspectEvidence, looksLikePath, parseEvidence, runSteps } from '../server/modules/quality/evidence.js';
+import { inspectEvidence, keepSteps, leftBehind, looksLikePath, parseEvidence, runSteps, shortSteps } from '../server/modules/quality/evidence.js';
 import { taskKey } from '../server/modules/quality/skills.js';
 
 /**
@@ -628,4 +628,65 @@ test('team databases per team (B2): task #1 of two teams gets its own second loo
   } finally {
     await t.close();
   }
+});
+
+test('the checker always reads the last steps of a long turn (they deliver the work)', async () => {
+  const { checkPrompt, stepLines } = await import('../server/modules/quality/verify.js');
+  const long = 'x'.repeat(4000);
+  const research = Array.from({ length: 26 }, (_, n) => ({ tool: 'tool', summary: `Voerde uit: onderzoek ${n} ${long}`, ok: true, out: long }));
+  const steps = [...research, { tool: 'tool', summary: 'Schreef Schrijver/Schrijfwijzer.md', ok: true }, { tool: 'tool_result', summary: 'TeamBot · Dossier “Vakkennis Schrijver” herschrijven', ok: true, out: 'Dossier “Vakkennis Schrijver” [d:ab12cd] aangemaakt' }];
+  const evidence = [{ type: 'text' as const, value: long, ok: true, note: 'het geleverde resultaat zelf', excerpt: long }];
+  const body = checkPrompt({ userId: 'u', agent: null, title: long, description: long, doneWhen: long, result: long, evidence, steps });
+  assert.ok(body.length <= 16_000, `bounded (${body.length})`);
+  assert.ok(body.includes('Schreef Schrijver/Schrijfwijzer.md'), 'the file that was written');
+  assert.ok(body.includes('[d:ab12cd] aangemaakt'), 'the dossier that was saved, with its output');
+  assert.ok(body.trimEnd().endsWith('aangemaakt'), 'nothing is cut off after the last step');
+  // A short turn is shown in full, and a budget too small for everything drops the oldest steps and says so.
+  assert.equal(stepLines(steps.slice(-2), 5000).split('\n').length, 2);
+  const tight = stepLines(steps, 400);
+  assert.ok(tight.length <= 400 && /andere stappen weggelaten/.test(tight) && tight.includes('Schrijfwijzer.md'));
+  assert.equal(stepLines([], 100), '(geen stappen)');
+});
+
+test('the checker gets the files and dossiers of the turn themselves, not only the bot’s words about them', () => {
+  const dir = fs.mkdtempSync(path.join(fs.realpathSync(process.env.TEMP || process.env.TMPDIR || '.'), 'tb-left-'));
+  try {
+    const report = path.join(dir, 'rapport.md');
+    fs.writeFileSync(report, '# Rapport\nZes bronnen, drie uit 2026.');
+    const asked: string[] = [];
+    const ctx: any = { services: { memory: { dossiers: { find: (_u: string, input: string) => (asked.push(input), { title: 'Vakkennis Schrijver', body: 'Bron 1 (2026) …' }) } } } };
+    const steps = [
+      { tool: 'tool', summary: 'Las een pagina', ok: true, out: 'tekst' },
+      { tool: 'tool', summary: 'Schreef rapport.md', ok: true, made: true, target: report },
+      { tool: 'tool', summary: 'Schreef rapport.md', ok: true, made: true, target: report },
+      { tool: 'tool', summary: 'Schreef weg.md', ok: true, made: true, target: path.join(dir, 'weg.md') },
+      { tool: 'tool_result', summary: 'TeamBot · Dossier “Vakkennis Schrijver” herschrijven', ok: true, made: true, out: 'Dossier “Vakkennis Schrijver” [d:ab12cd] aangemaakt' },
+      { tool: 'tool_result', summary: 'TeamBot · Melding aan SEO-content', ok: true, made: true, out: 'Bericht verstuurd' },
+      { tool: 'tool_error', summary: 'Lukte niet: schrijven', ok: false, made: true, target: report },
+    ];
+    const got = leftBehind(ctx, { userId: 'u', agent: null, steps });
+    assert.deepEqual(got.map((e) => e.type), ['text', 'file'], 'the dossier and the report, once each; a file that is not there and a message are no evidence');
+    assert.equal(got[0].value, 'Dossier “Vakkennis Schrijver”');
+    assert.match(got[0].excerpt!, /Bron 1 \(2026\)/);
+    assert.deepEqual(asked, ['[d:ab12cd]']);
+    assert.match(got[1].note, /in deze beurt geschreven; bestand bestaat/);
+    assert.deepEqual(leftBehind(ctx, { userId: 'u', agent: null, steps: steps.slice(0, 1) }), []);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('a dossier saved halfway a long turn stays in what the checker reads', async () => {
+  const { stepLines } = await import('../server/modules/quality/verify.js');
+  const read = (n: number) => ({ tool: 'tool', summary: `Las pagina ${n}`, ok: true, out: 'tekst' });
+  const saved = { tool: 'tool_result', summary: 'TeamBot · Dossier “Vakkennis Klantenservice” herschrijven', ok: true, out: 'Dossier aangemaakt', made: true };
+  const turn = [...Array.from({ length: 10 }, (_, n) => read(n)), saved, ...Array.from({ length: 50 }, (_, n) => read(n + 10))];
+  const kept = keepSteps(turn, 30, 15);
+  assert.equal(kept.length, 31, 'the last thirty and the one that left something behind');
+  assert.equal(kept[0], saved);
+  assert.deepEqual(keepSteps(turn.slice(0, 5), 30, 15), turn.slice(0, 5), 'a short turn is kept whole');
+  assert.ok(shortSteps(turn).some((s) => s.made && /Vakkennis Klantenservice/.test(s.summary)), 'also in the record the owner sees');
+  // With hardly any room, the step that left something behind goes last.
+  const tight = stepLines(kept, 200);
+  assert.ok(tight.includes('Vakkennis Klantenservice') && /andere stappen weggelaten/.test(tight));
 });

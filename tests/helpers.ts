@@ -88,6 +88,9 @@ export async function startTestApp(opts: { modules?: Module[]; mode?: 'desktop' 
     });
     const j = await res.json().catch(() => ({}));
     if (!res.ok) throw new Error(`${method} ${p} -> ${res.status}: ${(j as any).error}`);
+    // The skill folders in the bots' work folders follow a change between the server's other work (skills/index.ts):
+    // a test reads them right after its call.
+    await app.ctx.services.skills?.settled?.();
     return j;
   };
   const prov = await api('POST', '/providers', { kind: 'mock' });

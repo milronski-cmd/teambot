@@ -166,6 +166,8 @@ try {
   await card.getByText('Toegevoegd').waitFor({ timeout: 15000 }).catch(() => fail('kaart: "Toegevoegd" na één klik ontbreekt'));
   if (await pc.getByRole('dialog').count()) fail('Toevoegen: er opent nog een venster (moet één klik zijn)');
   const good = (await call(pcToken, 'GET', '/skills/curated')).body.items.find((i) => i.id === 'acme/skills/good');
+  // The skill folders in the work folders follow a change in the background (skills/index.ts).
+  await app.ctx.services.skills.settled();
   if (!good?.installed) fail('Toevoegen: de skill is niet toegevoegd');
   else
     for (const b of [seo, help]) {
@@ -210,6 +212,7 @@ try {
   await pCard.getByRole('button', { name: 'Toevoegen' }).tap();
   await pCard.getByText('Toegevoegd').waitFor({ timeout: 15000 }).catch(() => fail('telefoon: "Toegevoegd" ontbreekt'));
   const scripted = (await call(pcToken, 'GET', '/skills/curated')).body.items.find((i) => i.id === 'acme/skills/scripted');
+  await app.ctx.services.skills.settled();
   if (!scripted?.installed) fail('telefoon: de skill is niet toegevoegd');
   else {
     for (const b of [seo, help]) {
@@ -240,6 +243,7 @@ try {
     );
     const del = await call(pcToken, 'DELETE', `/skills/${good.installed.skillId}`);
     if (del.status !== 200) fail(`verwijderen: ${del.status} ${JSON.stringify(del.body)}`);
+    await app.ctx.services.skills.settled();
     for (const f of folders) if (fs.existsSync(f)) fail(`verwijderen: de skillmap staat nog in de werkplek (${f})`);
     for (const b of [seo, help]) if (!fs.existsSync(b.workspace)) fail(`verwijderen: de werkplek van ${b.name} is weg`);
     step('Verwijderen: de skillmap gaat uit de werkplek van elke bot in de Teammap; de werkplek blijft');

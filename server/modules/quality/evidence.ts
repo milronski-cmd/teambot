@@ -82,7 +82,12 @@ export function runSteps(ctx: Ctx, runId: string | null | undefined, o: { exclud
         if (!a?.title || ['session', 'cli_session', 'settings', 'question', 'mode'].includes(a.kind)) continue;
         // A CLI engine's step: what its command printed (`out`), else the line under it; a failed step is not "gelukt".
         const out = a.out || a.detail;
-        steps.push({ tool: a.kind || 'stap', summary: `${a.title}${a.detail ? `: ${String(a.detail).slice(0, 200)}` : ''}`, ok: a.kind !== 'tool_error', out: out ? String(out).slice(0, 4000) : undefined });
+        // The step left something behind: a file written or removed, or one of TeamBot's own tools that is no reading
+        // (a dossier saved, a message to a colleague). Those are what the checker looks for.
+        const ops: string[] = Array.isArray(a.facts) ? a.facts.map((f: any) => f?.op) : [];
+        const made = a.kind !== 'tool_error' && (ops.some((op) => op === 'write' || op === 'delete') || (a.kind === 'tool_result' && !ops.length));
+        const wrote = made && Array.isArray(a.facts) ? a.facts.find((f: any) => f?.op === 'write' && typeof f.target === 'string')?.target : undefined;
+        steps.push({ tool: a.kind || 'stap', summary: `${a.title}${a.detail ? `: ${String(a.detail).slice(0, 200)}` : ''}`, ok: a.kind !== 'tool_error', out: out ? String(out).slice(0, 4000) : undefined, ...(made ? { made: true } : {}), ...(wrote ? { target: String(wrote).slice(0, 500) } : {}) });
       }
     } else if (m.role === 'tool' && m.parts?.toolResult) {
       const s = steps.find((x) => x.id === m.parts.toolResult!.toolCallId);
@@ -92,12 +97,57 @@ export function runSteps(ctx: Ctx, runId: string | null | undefined, o: { exclud
       }
     }
   }
-  return steps.slice(-30).map(({ id: _id, ...s }) => s);
+  return keepSteps(steps, 30, 15).map(({ id: _id, ...s }) => s);
+}
+
+/**
+ * The last `recent` steps, plus the earlier steps that left something behind (at most `made` of them, the latest):
+ * in a long turn the dossier is often saved halfway and the reading goes on after it.
+ */
+export function keepSteps<T extends StepItem>(steps: T[], recent: number, made: number): T[] {
+  if (steps.length <= recent) return steps;
+  const cut = steps.length - recent;
+  const early = steps.slice(0, cut).filter((s) => s.made);
+  return [...early.slice(-made), ...steps.slice(cut)];
+}
+
+/**
+ * What a turn left behind, as TeamBot finds it now: the files it wrote and the dossiers it saved, each with the start
+ * of its content. A bot that reports "the report is in X and the dossier is filled" is then checked against the report
+ * and the dossier themselves, not against its own summary of them (at most `max`, the latest first).
+ */
+export function leftBehind(ctx: Ctx, o: { userId: string; agent: Agent | null; steps: StepItem[]; max?: number }): EvidenceItem[] {
+  const out: EvidenceItem[] = [];
+  const seen = new Set<string>();
+  const short = (e: EvidenceItem): EvidenceItem => ({ ...e, excerpt: e.excerpt ? e.excerpt.slice(0, 900) : undefined });
+  for (const s of [...o.steps].reverse()) {
+    if (out.length >= (o.max ?? 4)) break;
+    if (!s.made || !s.ok) continue;
+    if (s.target) {
+      const key = s.target.toLowerCase();
+      if (seen.has(key)) continue;
+      seen.add(key);
+      const f = findFile(ctx, o.agent, s.target);
+      if (f.ok) out.push(short({ ...f, note: `in deze beurt geschreven; ${f.note}` }));
+      continue;
+    }
+    const ref = `${s.out || ''} ${s.summary}`.match(/\[d:([a-z0-9]{4,12})\]/i)?.[1];
+    if (!ref || seen.has(`d:${ref}`)) continue;
+    seen.add(`d:${ref}`);
+    try {
+      const d = ctx.services.memory?.dossiers?.find?.(o.userId, `[d:${ref}]`, o.agent?.id || null);
+      const body = String(d?.body || '').trim();
+      if (d && body) out.push({ type: 'text', value: `Dossier “${d.title}”`, ok: true, note: `in deze beurt opgeslagen (${body.length} tekens)`, excerpt: body.slice(0, 900) });
+    } catch {
+      /* no memory here, or the bot may not read it: the step itself still counts */
+    }
+  }
+  return out;
 }
 
 /** The stored form of steps (short outputs; the record is shown to the owner and given to the checker). */
 export function shortSteps(steps: StepItem[]): StepItem[] {
-  return steps.slice(-15).map((s) => ({ tool: s.tool, summary: s.summary.slice(0, 240), ok: s.ok, out: s.out ? s.out.slice(0, 300) : undefined }));
+  return keepSteps(steps, 15, 8).map((s) => ({ tool: s.tool, summary: s.summary.slice(0, 240), ok: s.ok, out: s.out ? s.out.slice(0, 300) : undefined, ...(s.made ? { made: true } : {}) }));
 }
 
 function sizeText(n: number): string {

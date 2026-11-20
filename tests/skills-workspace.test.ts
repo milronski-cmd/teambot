@@ -147,6 +147,7 @@ test('taken away from one bot: gone in its work folder only; a skill of one team
     const team = t.app.ctx.services.teams.create(owner, { name: 'Tweede team' });
     const ver = await t.agent({ name: 'Ver' });
     t.app.ctx.services.teams.setHome(owner, team.id, ver.id);
+    await t.app.ctx.services.skills.settled();
     assert.deepEqual(has(ver, 'dagwoord'), [false, false], 'moved to another team: the first team\'s skill left its folder');
     await importPaste(t, md('alleen-team-twee', 'Voor het tweede team.'), { teamId: team.id });
     assert.deepEqual([has(ver, 'alleen-team-twee'), has(twee, 'alleen-team-twee')], [[true, true], [false, false]]);
@@ -180,12 +181,14 @@ test('the sync only reads which team a bot has: it never gives a bot its team, a
     ctx.services.skills.defaults.offerAll(owner);
     assert.equal(row(loose.id), null, 'the list keeper');
     ctx.events.emit(owner, 'teams.changed', {});
+    await ctx.services.skills.settled();
     assert.equal(row(loose.id), null, 'a change in the teams');
     await importPaste(t, md('later', 'Later geïnstalleerd, voor alle teams.'), { teamId: '*' });
     assert.equal(row(loose.id), null, 'the sync did not choose a team for it');
     assert.deepEqual([has(loose, 'later'), ctx.store.agent(loose.id)!.skills], [[false, false], []]);
     // The teams module places it: brought up to date from then on.
     teams.setHome(owner, two.id, loose.id);
+    await ctx.services.skills.settled();
     assert.deepEqual([row(loose.id), has(loose, 'later'), has(loose, 'van-team-twee')], [two.id, [true, true], [true, true]]);
 
     // Archived: left alone. Removed: no team row comes back, so its team can be emptied and removed.
@@ -600,4 +603,27 @@ test('Claude Code start options: a plugin folder only with the skills of the bot
   const without = buildClaudeArgs(F, { ...base, mode: 'ask' });
   assert.ok(!without.includes('--plugin-dir') && !without.join(' ').includes('disableSkillShellExecution'));
   assert.ok(!buildClaudeArgs(F, { ...base, mode: 'chat', pluginDir: 'C:/x/skills' }).includes('--plugin-dir'));
+});
+
+test('a large team: the server answers the install before every work folder is written, a run never starts on old folders', async () => {
+  const t = await startTestApp();
+  try {
+    const bots: any[] = [];
+    for (let i = 1; i <= 12; i++) bots.push(await t.agent({ name: `Bot ${i}` }));
+    const skills = t.app.ctx.services.skills;
+    const pv = await t.api('POST', '/skills/import/preview', { kind: 'paste', text: DAGWOORD });
+    // The plain request (the helper's `api` waits for the folders): when the answer is there, the folders still follow.
+    const res = await fetch(`${t.app.url}/api/skills/import/commit`, { method: 'POST', headers: { authorization: `Bearer ${t.token}`, 'content-type': 'application/json' }, body: JSON.stringify({ stagingId: pv.stagingId, acknowledge: true, confirmPermissions: true }) });
+    assert.equal(res.status, 200);
+    const written = () => bots.filter((b) => has(b, 'dagwoord').every(Boolean)).length;
+    assert.ok(written() < bots.length, 'the answer did not wait for the folders of all twelve bots');
+    // A bot that starts a task now has its folders on the spot.
+    const last = t.app.ctx.store.agent(bots[bots.length - 1].id)!;
+    skills.sync(last);
+    assert.deepEqual(has(last, 'dagwoord'), [true, true]);
+    await skills.settled();
+    assert.equal(written(), bots.length, 'every bot has the skill a moment later');
+  } finally {
+    await t.close();
+  }
 });

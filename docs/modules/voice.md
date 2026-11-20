@@ -172,7 +172,7 @@ buiten de lijst worden geweigerd. Aangekondigde uitfaseringen staan in de lijst:
 **2027-01-06**, `whisper-1`/`gpt-4o-(mini-)transcribe` op **2027-02-26**; daarna schakelt de server automatisch over
 (TTS → `gpt-realtime-2.1-mini` via de Realtime-WebSocket, STT → `gpt-transcribe`, live-ondertiteling → `gpt-live-transcribe`).
 
-## Lokale modellen (gratis; `local/catalog.ts`, licenties gecontroleerd 2026-11-08)
+## Lokale modellen (gratis; `local/catalog.ts`, licenties gecontroleerd 2026-11-08, Cohere en Canary 2026-11-20)
 
 Alles vastgepind op een exacte upstream-revisie met SHA-256 (voor de nieuwe stemmen ook vergeleken met de LFS-sha256
 van Hugging Face); opgeslagen in `<dataDir>/voice/models/<id>/`. Niets hiervan zit in de installer en niets wordt
@@ -183,6 +183,8 @@ elk onderdeel in Instellingen › Spraak.
 |---|---|---|---|
 | **Parakeet TDT 0.6B v3** int8 (NVIDIA; ONNX van sherpa-onnx) — standaard | CC-BY-4.0 | 670 MB | 10 s spraak → 0,48 s (max 0,86 s), RTF 0,048; laden 1,5 s. FLEURS-nl (80 echte opnamen): WER 11,5 % (strenge normalisatie, cijfers tellen als fout) |
 | Whisper large-v3 turbo int8 (OpenAI; ONNX van sherpa-onnx) | MIT | 1,04 GB | 10 s → 2,6 s (RTF 0,26); FLEURS-nl (20 opnamen) WER 8,9 % tegen 11,9 % voor Parakeet op dezelfde 20 |
+| Cohere Transcribe 03-2026 int8 (Cohere; ONNX van sherpa-onnx) — eigen keuze | Apache-2.0 | 2,9 GB | 10 s → 1,3 s; laden 4,7 s. FLEURS-nl (20 opnamen) WER 6,5 % tegen 11,6 % voor Parakeet op dezelfde 20. 14 talen (ook Arabisch); herkent de taal niet zelf: krijgt de dicteertaal mee (`spokenLanguage`) |
+| Canary 1B v2 int8 (NVIDIA; ONNX voor sherpa-onnx van fussraider, exportscript bij het model) — eigen keuze | CC-BY-4.0 | 1,4 GB | 10 s → 2,3 s; laden 3,9 s. FLEURS-nl (dezelfde 20) WER 6,9 %. Dezelfde 25 talen als Parakeet; krijgt de dicteertaal mee |
 | Piper 2023.11.14-2 (programma; Windows x64, Linux x64/arm64) | MIT (+ espeak-ng GPL-3.0, apart programma) | 22 MB | eerste zin na 53 ms als Piper warm is, 0,9-1,2 s koud; RTF ≈ 0,035 |
 | Stem Alex `nl_NL-alex-medium` — standaard | CC0 (dataset) | 64 MB | stem → Parakeet: WER 6,3 % schoon, 3,6 % met ruis/galm |
 | Stem MLS `nl_NL-mls-medium` (5 gekozen sprekers van 52) | CC-BY-4.0 | 77 MB | beste sprekers 2-5 % WER in dezelfde rondgang; slechtste 28 % (niet aangeboden) |

@@ -13,7 +13,7 @@ import { piperConfig } from '../server/modules/voice/local/piper.js';
 import { toPcm } from '../server/modules/voice/local/vits.js';
 import { STT_LANGUAGES } from '../server/modules/voice/catalog.js';
 import { effectiveSettings, sanitize } from '../server/modules/voice/settings.js';
-import { setSttBackend, whisperLanguage } from '../server/modules/voice/local/engine.js';
+import { setSttBackend, spokenLanguage, whisperLanguage } from '../server/modules/voice/local/engine.js';
 import { setLocalCatalog, setTtsBackend, setVitsProblem } from '../server/modules/voice/local/service.js';
 import { guessLanguage } from '../server/modules/voice/local/pcm.js';
 import fs from 'node:fs';
@@ -203,6 +203,27 @@ test('dictation hints: automatic = the interface language (and English); fixed =
   // Local Whisper: automatic = detect (it can only be forced to one language).
   for (const s of ['auto', 'auto-app', 'auto-nl', 'auto-tr']) assert.equal(whisperLanguage(s), '');
   assert.equal(whisperLanguage('tr'), 'tr');
+});
+
+test('speech models that cannot detect the language are told the dictation language', () => {
+  const told = LOCAL_MODELS.filter((m) => m.kind === 'stt' && m.needsLanguage);
+  assert.deepEqual(told.map((m) => m.id).sort(), ['canary-1b-v2', 'cohere-transcribe-03-2026']);
+  for (const m of told) {
+    for (const f of ['encoder.int8.onnx', 'decoder.int8.onnx', 'tokens.txt']) assert.ok(m.files.some((x) => x.path === f), `${m.id} has ${f}`);
+    assert.ok(m.languages.includes('nl') && !m.languages.includes('*'));
+    assert.equal(spokenLanguage(m, 'auto-nl'), 'nl');
+    assert.equal(spokenLanguage(m, 'de'), 'de');
+    assert.equal(spokenLanguage(m, 'tr'), 'en', 'a language it does not know');
+    assert.equal(spokenLanguage(m, 'auto'), 'en');
+    // "Detect without a hint" becomes the interface language for these models, and stays as it is for the others.
+    assert.equal(effectiveSettings(sanitize({ stt: { language: 'auto', localModel: m.id } }), 'nl').stt.language, 'auto-nl');
+  }
+  assert.equal(effectiveSettings(sanitize({ stt: { language: 'auto', localModel: 'parakeet-tdt-0.6b-v3' } }), 'nl').stt.language, 'auto');
+  // They are a choice: the automatic model stays the fast one, also when they are installed.
+  assert.equal(effectiveSettings(sanitize({}), 'nl', () => true).stt.localModel, 'parakeet-tdt-0.6b-v3');
+  // Cohere knows Arabic, Canary does not.
+  assert.equal(spokenLanguage(told.find((m) => m.engine === 'cohere')!, 'ar'), 'ar');
+  assert.equal(spokenLanguage(told.find((m) => m.engine === 'canary')!, 'ar'), 'en');
 });
 
 const SAMPLES: Record<string, string[]> = {

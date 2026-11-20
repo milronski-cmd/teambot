@@ -10,6 +10,7 @@ import { assertPublicUrl } from '../../tools/builtin/web.js';
 import type { ConnectionRow, ToolRow } from './db.js';
 import { entryForConn } from './package.js';
 import { googleServer } from './google.js';
+import { BANK_ID, bankServer } from './bank.js';
 import { AuthRequiredError, TeamBotOAuthProvider, getConn, patchOAuth, refreshIfNeeded } from './oauth.js';
 import { riskFromAnnotations, riskOf, stricter, toolHash } from './risk.js';
 import { cleanError, guardedFetch, killTree, maskSecrets, mayUsePrivateNetwork, mayUseStdio, pidAlive, resolveKV, sleep, withTimeout } from './util.js';
@@ -173,9 +174,9 @@ export class McpManager {
 
   private async makeTransport(c: ConnectionRow, r: Runtime): Promise<Transport> {
     if (c.transport === 'builtin') {
-      // A server inside TeamBot itself (Google): the client talks to it over a linked in-memory pair.
+      // A server inside TeamBot itself (Google, the bank): the client talks to it over a linked in-memory pair.
       const [mine, theirs] = InMemoryTransport.createLinkedPair();
-      await googleServer(this.ctx, this, c).connect(theirs);
+      await (c.catalog_id === BANK_ID ? bankServer(this.ctx, c) : googleServer(this.ctx, this, c)).connect(theirs);
       return mine;
     }
     if (c.transport === 'stdio') {

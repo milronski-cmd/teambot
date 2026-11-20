@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import http from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { startTestApp } from './helpers.js';
-import { GOOGLE_SERVICES, GOOGLE_TOOLS } from '../server/modules/mcp/google.js';
+import { GOOGLE_SERVICES, GOOGLE_TOOLS, setGoogleRetryWaits, tooFast } from '../server/modules/mcp/google.js';
 
 /**
  * Google in one go, against a local stand-in for Google (TEAMBOT_GOOGLE_BASE): the login (authorization code + PKCE),
@@ -20,7 +20,7 @@ interface Seen {
 
 async function fakeGoogle() {
   const seen: Seen[] = [];
-  const state = { access: 1, grantScope: '' as string, refreshOk: true, merchantRegistered: false };
+  const state = { access: 1, grantScope: '' as string, refreshOk: true, merchantRegistered: false, tooFast: 0, daily: false };
   const server = http.createServer((req, res) => {
     let body = '';
     req.on('data', (c) => (body += c));
@@ -53,6 +53,11 @@ async function fakeGoogle() {
         return json(403, { error: { code: 403, message: 'Google Analytics Admin API has not been used in project 1 before or it is disabled.', details: [{ reason: 'SERVICE_DISABLED', metadata: { activationUrl: 'https://console.developers.google.com/apis/api/analyticsadmin.googleapis.com/overview?project=1' } }] } });
       if (p === '/gmail.googleapis.com/gmail/v1/users/me/profile') return json(200, { emailAddress: 'eigenaar@voorbeeld.nl' });
       if (p === '/gmail.googleapis.com/gmail/v1/users/me/messages/send') return json(200, { id: 'sent-1' });
+      if (p === '/gmail.googleapis.com/gmail/v1/users/me/messages') {
+        if (state.daily) return json(403, { error: { code: 403, message: "Quota exceeded for quota metric 'Queries' and limit 'Queries per day' of service 'gmail.googleapis.com'." } });
+        if (state.tooFast-- > 0) return json(403, { error: { code: 403, message: "Quota exceeded for quota metric 'Total Query Cost' and limit 'Units per minute per user' of service 'gmail.googleapis.com'." } });
+        return json(200, { messages: [] });
+      }
       if (p.startsWith('/www.googleapis.com/calendar/v3/')) return json(200, { items: [] });
       if (p === '/www.googleapis.com/drive/v3/about') return json(200, { user: { emailAddress: 'eigenaar@voorbeeld.nl' } });
       json(404, { error: { code: 404, message: `geen nep-antwoord voor ${p}` } });
@@ -218,7 +223,21 @@ test("Google: with TeamBot's own client there is nothing to set up, and sending 
     assert.deepEqual(r.connection.tools.map((x: any) => x.name).sort(), ['gmail_draft', 'gmail_read', 'gmail_search', 'gmail_send']);
     await assert.rejects(t.api('POST', `/mcp/connections/${s.connection.id}/test`, { tool: 'gmail_send', args: { to: 'a@b.nl', subject: 'x', body: 'y' } }), /alleen leestools/);
     assert.ok(!g.seen.some((x) => x.path.endsWith('/messages/send')));
+    // Too many requests in a minute: TeamBot waits and sends the request again, the bot gets its answer.
+    const searches = () => g.seen.filter((x) => x.path.startsWith('/gmail.googleapis.com/gmail/v1/users/me/messages?')).length;
+    setGoogleRetryWaits([5, 5, 5]);
+    g.state.tooFast = 2;
+    const ok = await t.api('POST', `/mcp/connections/${s.connection.id}/test`, { tool: 'gmail_search', args: { query: 'factuur' } });
+    assert.ok(!/Quota exceeded/.test(JSON.stringify(ok)), 'answered after waiting');
+    assert.equal(searches(), 3, 'two refusals, then the answer');
+    // A limit per day is not waited for: one request, and the bot hears why.
+    g.state.daily = true;
+    const day = await t.api('POST', `/mcp/connections/${s.connection.id}/test`, { tool: 'gmail_search', args: { query: 'factuur' } }).catch((e: any) => String(e?.message || e));
+    assert.match(JSON.stringify(day), /per day/);
+    assert.equal(searches(), 4);
+    assert.ok(tooFast(429, '') && tooFast(403, 'rateLimitExceeded') && !tooFast(403, 'Queries per day') && !tooFast(403, 'insufficient permission') && !tooFast(500, 'per minute'));
   } finally {
+    setGoogleRetryWaits(null);
     delete process.env.TEAMBOT_GOOGLE_BASE;
     delete process.env.TEAMBOT_GOOGLE_CLIENT_ID;
     delete process.env.TEAMBOT_GOOGLE_CLIENT_SECRET;

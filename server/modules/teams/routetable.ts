@@ -790,6 +790,12 @@ PUT    /mcp/google/client                                      shared
 POST   /mcp/google/start                                       shared
 POST   /mcp/google/test                                        shared
 PUT    /mcp/google/ads                                         shared
+GET    /mcp/bank                                               shared
+PUT    /mcp/bank/app                                           shared
+GET    /mcp/bank/banks                                         shared
+POST   /mcp/bank/link                                          shared
+POST   /mcp/bank/finish                                        shared
+POST   /mcp/bank/unlink                                        shared
 GET    /mcp/import/local                                       shared
 GET    /mcp/connections/:id                                    team
 PATCH  /mcp/connections/:id                                    team

@@ -1,6 +1,6 @@
 import type { Agent, Ctx, User } from '../../core/types.js';
 import { newId, now } from '../../core/db.js';
-import { inspectEvidence, parseEvidence, runSteps, shortSteps } from './evidence.js';
+import { inspectEvidence, leftBehind, parseEvidence, runSteps, shortSteps } from './evidence.js';
 import { gaveUpText, limitNowText, secondLook, UNCLEAR } from './verify.js';
 import { maybeSuggestSkill } from './skills.js';
 import { CHECK_LABEL, type CheckState, type EvidenceItem, type QualityRow, type QualityView, type StepItem, type TaskKind, type Verdict } from './types.js';
@@ -237,7 +237,9 @@ export class QualityService {
       return verdict;
     }
     const delivered: EvidenceItem = { type: 'text', value: o.result.slice(0, 600), ok: true, note: 'het geleverde resultaat zelf', excerpt: o.result.slice(0, 1500) };
-    return (await this.report({ userId: o.userId, kind: 'delegation', ref: o.delegationId, title, description: o.task, result: o.result, agent: o.worker, outcome: 'done', steps, requireEvidence: false, extraEvidence: o.result.trim() ? [delivered] : [] })).verdict;
+    // The files and dossiers of this turn themselves: the result text usually only names them.
+    const made = leftBehind(this.ctx, { userId: o.userId, agent: o.worker, steps });
+    return (await this.report({ userId: o.userId, kind: 'delegation', ref: o.delegationId, title, description: o.task, result: o.result, agent: o.worker, outcome: 'done', steps, requireEvidence: false, extraEvidence: [...(o.result.trim() ? [delivered] : []), ...made] })).verdict;
   }
 
   /**

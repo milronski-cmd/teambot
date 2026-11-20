@@ -1,4 +1,5 @@
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import type { BrowserContext, CDPSession, Page } from 'playwright-core';
 import { hostMatches, type UrlPolicy } from './policy.js';
@@ -24,15 +25,24 @@ export interface BrowserLimits {
   idleMs: number;
   maxPerUser: number;
   maxTotal: number;
+  /** How long a bot waits for a browser to come free when all are in use. */
+  waitMs: number;
 }
+
+/**
+ * How many bot-browsers may be open at once: what the memory of this computer carries (about one per 3 GB, at least 4
+ * and at most 16), or TEAMBOT_MAX_BROWSERS. A team of many bots shares them: see BrowserManager.makeRoom.
+ */
+const MAX_BROWSERS = Number(process.env.TEAMBOT_MAX_BROWSERS) || Math.min(16, Math.max(4, Math.floor(os.totalmem() / 1024 ** 3 / 3)));
 
 export const DEFAULT_BROWSER_LIMITS: BrowserLimits = {
   maxTabs: 8,
   navTimeoutMs: 30_000,
   actionTimeoutMs: 10_000,
   idleMs: 10 * 60_000,
-  maxPerUser: 3,
-  maxTotal: Number(process.env.TEAMBOT_MAX_BROWSERS) || 6,
+  maxPerUser: MAX_BROWSERS,
+  maxTotal: MAX_BROWSERS,
+  waitMs: 2 * 60_000,
 };
 
 export type Launcher = (userDataDir: string, options: any) => Promise<BrowserContext>;
@@ -352,6 +362,8 @@ export class BrowserManager {
       inApp?: () => InAppHost | null;
       /** which engine a profile's browser uses ("app" when possible, unless the owner chose Edge/Chrome) */
       engine?: (opts: SessionOpts) => BrowserEngine;
+      /** a task is using this browser now (it is never closed to make room for another bot) */
+      isBusy?: (s: BrowserSession) => boolean;
       onClosed?: (s: BrowserSession, unexpected: boolean) => void;
     },
   ) {
@@ -384,12 +396,37 @@ export class BrowserManager {
     return p;
   }
 
+  /**
+   * Room for one more browser. A full house is no reason to refuse a bot: the browser that a colleague is not using
+   * right now (no task holds it, nobody watches it) is closed first, the longest unused one first; its profile keeps
+   * the logins, so that bot simply gets it back on its next use. Are they all in use, then the bot waits for one to
+   * come free (`waitMs`) and only then hears that it could not get one.
+   */
+  private async makeRoom(userId: string, limits: BrowserLimits): Promise<void> {
+    const until = Date.now() + limits.waitMs;
+    for (;;) {
+      const all = [...this.sessions.values()].filter((s) => !s.closed);
+      const mine = all.filter((s) => s.opts.userId === userId);
+      const userFull = mine.length >= limits.maxPerUser;
+      if (!userFull && all.length < limits.maxTotal) return;
+      const spare = (userFull ? mine : all).filter((s) => !s.closing && !s.viewers.size && !this.o.isBusy?.(s)).sort((a, b) => a.lastUsed - b.lastUsed)[0];
+      if (spare) {
+        await this.close(spare.key);
+        continue;
+      }
+      if (Date.now() >= until) {
+        const waited = Math.round(limits.waitMs / 60_000);
+        const after = waited ? ` Na ${waited} ${waited === 1 ? 'minuut' : 'minuten'} wachten kwam er geen vrij.` : '';
+        if (userFull) throw new Error(`Alle ${limits.maxPerUser} bot-browsers zijn in gebruik door collega's.${after} Probeer het over een paar minuten opnieuw, of zet het maximum hoger (TEAMBOT_MAX_BROWSERS).`);
+        throw new Error(`Deze server heeft het maximum van ${limits.maxTotal} bot-browsers bereikt en ze zijn allemaal in gebruik.${after} Probeer het later opnieuw.`);
+      }
+      await new Promise((r) => setTimeout(r, Math.min(2000, Math.max(50, until - Date.now()))));
+    }
+  }
+
   private async launch(opts: SessionOpts, restoreUrls: string[] = []): Promise<BrowserSession> {
     const limits = this.limits;
-    const mine = this.forUser(opts.userId).length;
-    if (mine >= limits.maxPerUser) throw new Error(`Je hebt al ${mine} bot-browsers open (maximum ${limits.maxPerUser}). Sluit er een op de pagina Computers.`);
-    const open = [...this.sessions.values()].filter((s) => !s.closed).length;
-    if (open >= limits.maxTotal) throw new Error(`Deze server heeft het maximum van ${limits.maxTotal} bot-browsers bereikt. Probeer het later opnieuw.`);
+    await this.makeRoom(opts.userId, limits);
     // Inside TeamBot, unless the owner chose Edge/Chrome and one is installed; a test launcher always goes its own way.
     const host = this.o.launcher ? null : this.o.inApp?.() || null;
     const want: BrowserEngine = host ? (this.o.engine?.(opts) ?? 'app') : 'external';
@@ -433,7 +470,11 @@ export class BrowserManager {
           locale: 'nl-NL',
           timeout: 30_000,
           proxy: { server: `http://127.0.0.1:${this.proxy.port}`, bypass: '<-loopback>', username: creds.username, password: creds.password },
-          args: ['--no-first-run', '--no-default-browser-check', '--disable-sync', '--disable-extensions', '--disable-background-networking', '--disable-features=Translate,MediaRouter'],
+          // Without Playwright's automation switch: with it the page is told "this browser is automated"
+          // (navigator.webdriver), and Google then refuses the owner's own login in the bot's browser ("Deze browser
+          // of app is mogelijk niet veilig", 20 nov 2026), after which the bots fell back on the owner's own screen.
+          ignoreDefaultArgs: ['--enable-automation'],
+          args: ['--no-first-run', '--no-default-browser-check', '--disable-sync', '--disable-extensions', '--disable-background-networking', '--disable-features=Translate,MediaRouter', '--disable-blink-features=AutomationControlled'],
         });
       }
     } catch (e: any) {
