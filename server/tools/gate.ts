@@ -5,6 +5,7 @@ import { PARKED_TEXT } from './broker.js';
 import { agentRoots, fullAccess, resolveInWorkspace, wholeComputer } from './builtin/files.js';
 import { commandPaths, isHardline } from './builtin/command-risk.js';
 import { assertPublicUrl } from './builtin/web.js';
+import { sharedCheckout } from './shared-repo.js';
 
 /**
  * The one permission gate. Every step a bot wants to take passes here, whichever way it arrives: a tool call of a model
@@ -181,6 +182,11 @@ export async function passGate(turn: GateTurn, step: GateStep, o: { onWait?(wait
     const v = await judgeStep(turn, step);
     summary = v.summary;
     if (v.decision === 'refuse') return { allow: false, asked: false, reason: v.reason, blocked: v.blocked, summary };
+    // A write into a checkout of a repository where a colleague's turn is writing: said once, before anything is asked.
+    if (step.risk === 'write' || step.risk === 'danger') {
+      const shared = sharedCheckout(ctx, agent, turn.run, step.paths);
+      if (shared) return { allow: false, asked: false, reason: shared, blocked: false, summary };
+    }
     let note = v.decision === 'ask' ? v.note : '';
     if (v.decision === 'review') {
       // Without a turn there is nothing to read the step against: only a rule that clearly names it asks.

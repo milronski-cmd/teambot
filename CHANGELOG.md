@@ -1,5 +1,15 @@
 # Changelog
 
+## [4.9.13] — 2026-11-20
+
+### Samenwerken
+- **Twee bots schrijven niet meer ongemerkt in dezelfde werkmap van een repo.** Werkten twee bouwers tegelijk in
+  dezelfde map van een site of app, dan schreven ze over elkaars werk heen. Wil een bot schrijven in een werkmap
+  waar een collega op dat moment ook in schrijft, dan hoort hij dat één keer, met wie het is en de opdracht om
+  zijn eigen werkmap van die repo te maken (een git-worktree met een eigen branch). Daar werkt hij ongestoord en
+  komt het werk samen via zijn branch. Hebben ze afgesproken samen in die map te werken, dan gaat dezelfde stap
+  de tweede keer gewoon door.
+
 ## [4.9.12] — 2026-11-20
 
 ### Doorwerken

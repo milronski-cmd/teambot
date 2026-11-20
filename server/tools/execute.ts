@@ -116,6 +116,8 @@ export async function executeTool(i: ExecuteToolInput): Promise<ExecuteToolResul
         // A call that can never succeed is refused before any approval card (asking would only waste the owner's time).
         refusal: hook(() => tool.refuse?.(args ?? {}, who) ?? null, null),
         // The terminal part runs its `command` on this computer: the gate reads it like a command of a CLI engine.
+        // A file tool that writes: the gate sees where, like a write of a CLI engine (two bots in one checkout).
+        ...(tool.group === 'files' && risk === 'write' && typeof args?.path === 'string' && args.path ? { paths: [args.path] } : {}),
         ...(tool.group === 'shell' && typeof args?.command === 'string' ? { command: args.command, cwd: typeof args.cwd === 'string' && args.cwd ? args.cwd : undefined } : {}),
       },
       { onWait: (waiting) => i.onState?.(waiting ? 'waiting' : 'running', risk) },
