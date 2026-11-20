@@ -339,6 +339,17 @@ test('refused in code: another team without aansturen, around a wall via a leade
     await settle(t);
     assert.doesNotMatch(toolOf(t, 'Kim').at(-1)!, /Geweigerd/);
     assert.equal(deleg(t, c.lea.id).length, 1, 'the question reached Lea');
+
+    // A report that comes back as a task: Kim tells Lea something, Lea answers with work for Kim. No loop.
+    const before = deleg(t, c.kim.id).length;
+    o.script('Kim', { toolCalls: [{ name: 'message_bot', args: { bot: 'Lea', message: 'De meting is klaar: twee paginas zakken.' } }] }, { text: 'Gemeld.' });
+    o.script('Lea', { toolCalls: [{ name: 'delegate_task', args: { bot: 'Kim', task: 'Zoek uit waarom die twee zakken', expected_output: 'oorzaak per pagina', wait: true } }] }, { text: 'Kim zoekt het uit.' });
+    o.script('Kim', { text: 'Beide missen een interne link.' });
+    const kth3 = await t.api('POST', '/threads', { agentId: c.kim.id });
+    await t.api('POST', `/threads/${kth3.id}/messages`, { content: 'Meld je meting.' });
+    await settle(t);
+    assert.doesNotMatch(toolOf(t, 'Lea').at(-1)!, /Geweigerd/);
+    assert.equal(deleg(t, c.kim.id).length, before + 1, 'the task reached Kim');
   } finally {
     await t.close();
   }

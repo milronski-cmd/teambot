@@ -1,5 +1,13 @@
 # Changelog
 
+## [4.9.10] — 2026-11-20
+
+### Samenwerken
+- **Een melding aan de leider mag terugkomen als taak.** Meldde een bot iets aan een collega (zijn meting aan de
+  hoofdbot) en wilde die hem daarop een vervolgtaak geven, dan werd dat geweigerd als lus. Wie alleen iets gevraagd
+  of gemeld kreeg, mag één keer met een taak antwoorden. Een taak die heen en weer blijft gaan, wordt nog steeds
+  gestopt.
+
 ## [4.9.9] — 2026-11-20
 
 ### Computer bedienen

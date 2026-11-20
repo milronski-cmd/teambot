@@ -225,8 +225,10 @@ export class Orchestrator {
     // A task never goes back into its own chain. A question or a notice may go back once to a bot that is already in
     // it (the bot that got the work asks the one who gave it; live, 20 Nov 2026, answers got stuck on this); a second
     // time is a loop, and the same text again is stopped by loopError.
+    // A bot that was only asked or told something (it got no task) may answer with a task for the one who asked: a
+    // report to the lead that comes back as "then do this next" is no loop (live, 20 Nov 2026).
     const seen = chain.path.filter((id) => id === target.id).length;
-    if (kind === 'message' ? seen > 1 : seen > 0)
+    if (kind === 'message' || chain.kind === 'message' ? seen > 1 : seen > 0)
       return `Geweigerd om een lus te voorkomen: ${target.name} zit al in deze keten (${this.names(chain.path)} → ${target.name}). Werk het zelf af of leg het voor aan een mens.`;
     const l = this.s.limits(room, t.thread.user_id);
     // Settings of the owner, off unless he set them: -1 = bots may not give each other work, a number = that many hops.
