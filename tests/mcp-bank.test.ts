@@ -95,6 +95,7 @@ test('bank: set up, give permission at the bank, and the bots read balances and 
   const t = await startTestApp({ mode: 'desktop' });
   try {
     assert.equal((await t.api('GET', '/mcp/bank')).status, 'off');
+    assert.deepEqual(await t.api('GET', '/mcp/bank/overview'), { status: 'off', accounts: [], transactions: [] }, 'not connected: an empty overview, no error');
     // A wrong key or id is refused before anything is stored.
     await assert.rejects(t.api('PUT', '/mcp/bank/app', { appId: 'geen-id', privateKey: PEM }), /geen applicatie-ID/);
     await assert.rejects(t.api('PUT', '/mcp/bank/app', { appId: APP_ID, privateKey: 'geen sleutel' }), /geen geldige sleutel/);
@@ -155,6 +156,14 @@ test('bank: set up, give permission at the bank, and the bots read balances and 
     g.state.expired = true;
     assert.match(await call('bank_balances').catch((e) => String(e)), /verlopen of ingetrokken/);
     g.state.expired = false;
+
+    // The money on the dashboard: balances per account and the latest transactions, with masked numbers.
+    clearBankCache();
+    const o = await t.api('GET', '/mcp/bank/overview');
+    assert.equal(o.status, 'on');
+    assert.deepEqual(o.accounts.map((x: any) => [x.name, x.iban, x.balances?.[0]?.amount]), [['Zakelijke rekening', 'NL91 •••• 4300', 1234.56], ['Spaarrekening', 'NL02 •••• 6789', 9000]]);
+    assert.ok(!JSON.stringify(o).includes('NL91ABNA0417164300'), 'never the whole number on the screen');
+    assert.ok(o.transactions.some((x: any) => x.counterparty === 'TransIP B.V.' && x.amount === -59 && x.account === 'Zakelijke rekening'));
 
     // Taking the bank away ends the permission at the bank too.
     const gone = await t.api('POST', '/mcp/bank/unlink', { bank: 'Testbank', country: 'NL' });

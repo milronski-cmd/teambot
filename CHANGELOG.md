@@ -1,5 +1,24 @@
 # Changelog
 
+## [4.9.3] — 2026-11-20
+
+### Dashboard
+- **Het dashboard is je werkplek geworden.** Het toonde alleen de cijfertegels van je bots. Nu staat er van boven naar
+  beneden: *Wacht op jou* (dezelfde kaarten als op die pagina, hier te beantwoorden), *Post* (je inbox uit Gmail via de
+  Google-koppeling: lezen, zelf antwoorden, of een mail met één keuze aan een bot geven), *Geld* (saldo per rekening
+  en de laatste af- en bijschrijvingen uit de bankkoppeling), *Team* (wie nu waaraan werkt, wie op jou wacht en wie
+  stilstaat) en *Cijfers* (de tegels). Een onderdeel dat nog niet gekoppeld is, zegt hoe je het koppelt. Je eigen post
+  en je geld op dit scherm zijn alleen voor jou: een bot gebruikt daarvoor zijn eigen Gmail- en bankgereedschap.
+
+### Werk uit zichzelf
+- **Een bot zonder werk zoekt het zelf.** De werklus startte een bot alleen als er iets op zijn naam lag; daartussen
+  stond het team stil. Nu krijgt een bot die een half uur niets heeft gedaan en niets op zijn naam heeft een beurt om
+  binnen zijn eigen vak te kijken wat kapot is, achterloopt of beter kan: hij maakt één verbetering helemaal af, zet
+  groter werk als taak op het bord (dat pakt de werklus daarna op) en schrijft op wat hij leerde. De hoofdbot kijkt in
+  zo'n beurt hoe het team ervoor staat en zet werk uit. Vindt een bot na echt kijken niets, dan krijgt hij zes uur
+  rust: geen zinloze beurten. Uit te zetten bij Werk (*Een bot zonder werk zoekt zelf werk binnen zijn vak*), en per
+  bot. Toestemming blijft alleen nodig voor geld, een eerste bericht aan een nieuw contact en berichten aan klanten.
+
 ## [4.9.2] — 2026-11-20
 
 ### Samenwerken

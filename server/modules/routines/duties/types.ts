@@ -95,9 +95,14 @@ export interface ProactiveSettings {
   briefing: 'dag' | 'week' | 'uit';
   /** What the owner is interested in, for the opportunity researcher. */
   interests: string;
+  /**
+   * A bot with nothing on its name looks for work itself, within its role (duties/work.ts: own initiative). On by
+   * default: a team that only works when asked stands still between two requests.
+   */
+  initiative: boolean;
 }
 
-export const DEFAULT_PROACTIVE: ProactiveSettings = { runsPerDay: 0, cheapFirst: false, maxSprint: 0, briefing: 'uit', interests: '' };
+export const DEFAULT_PROACTIVE: ProactiveSettings = { runsPerDay: 0, cheapFirst: false, maxSprint: 0, briefing: 'uit', interests: '', initiative: true };
 
 export function cleanProactive(raw: any): ProactiveSettings {
   const r = raw && typeof raw === 'object' ? raw : {};
@@ -108,6 +113,7 @@ export function cleanProactive(raw: any): ProactiveSettings {
     maxSprint: n(r.maxSprint, 0, 1000, DEFAULT_PROACTIVE.maxSprint),
     briefing: ['dag', 'week', 'uit'].includes(r.briefing) ? r.briefing : DEFAULT_PROACTIVE.briefing,
     interests: typeof r.interests === 'string' ? r.interests.trim().slice(0, 1000) : '',
+    initiative: typeof r.initiative === 'boolean' ? r.initiative : DEFAULT_PROACTIVE.initiative,
   };
 }
 

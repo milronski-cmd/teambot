@@ -1,19 +1,65 @@
 import { useEffect, useState } from 'react';
-import { ArrowUpRight } from 'lucide-react';
-import { Card, EmptyState, Page, PageHeader, timeAgo } from '../components/ui';
+import { ArrowUpRight, BarChart3, Inbox } from 'lucide-react';
+import { Card, EmptyState, Page, PageHeader, SectionTitle, timeAgo } from '../components/ui';
 import { t } from '../lib/i18n';
+import { useApp } from '../lib/store';
 import { teamApi, useTeamChanged } from '../modules/teamdata/api';
 import { BotName } from '../modules/teamdata/parts';
 import { TeamFilterNote } from '../modules/teams/FilterNote';
 import { useTeamView } from '../modules/teams/scope';
+import { uiModules, useInboxExtraCount } from '../modules';
+import { ApprovalCard } from '../shell/ApprovalCard';
+import { MailSection } from './dashboard/Mail';
+import { MoneySection } from './dashboard/Money';
+import { TeamSection } from './dashboard/Team';
 
 type Tile = { id: number; sleutel: string; groep?: string | null; titel: string; waarde?: string | null; eenheid?: string | null; toelichting?: string | null; link?: string | null; bot?: string | null; bijgewerkt?: string | null; team?: string };
 
 /**
- * Dashboard: the numbers the bots keep for the owner, on one screen (mail, customer questions, WhatsApp, turnover,
- * leads …; owner, 15 nov: "dan is het alles in 1"). Each tile is a row of the standard team table "dashboard"
- * (server/modules/teamdata/schema.ts) that a bot keeps on its own key; nothing here is typed by hand. By group, in the
- * order the bots gave.
+ * What waits for the owner, right on the dashboard: the same cards as the page "Wacht op jou" (approvals, questions,
+ * decisions, held customer answers), answered here.
+ */
+function WaitingSection() {
+  const pending = useApp((s) => s.approvals);
+  const extra = useInboxExtraCount();
+  const n = pending.length + extra;
+  return (
+    <section className="space-y-2" data-testid="dashboard-waiting">
+      <SectionTitle
+        icon={Inbox}
+        tone="orange"
+        action={
+          n > 0 && (
+            <a href="#/inbox" className="text-sm text-muted hover:text-fg hover:underline">
+              {t('Alles bekijken ({0})', n)}
+            </a>
+          )
+        }
+      >
+        Wacht op jou
+      </SectionTitle>
+      {n === 0 ? (
+        <Card className="p-4 text-sm text-muted">Niets dat op je wacht.</Card>
+      ) : (
+        <div className="space-y-3">
+          {pending.slice(0, 5).map((a) => (
+            <ApprovalCard key={a.id} a={a} showThreadLink />
+          ))}
+          {uiModules.map((m) => {
+            const Section = m.inbox?.component;
+            return Section ? <Section key={m.id} /> : null;
+          })}
+        </div>
+      )}
+    </section>
+  );
+}
+
+/**
+ * Dashboard: the owner's own workplace (20 nov 2026: "Ik heb geen inbox en zo erin. Ik moet er zelf ook in kunnen
+ * werken"). From top to bottom: what waits for him (answered here), his mail (read, answer, or hand to a bot), his
+ * money (the bank app), the team right now, and the numbers the bots keep (the tiles: rows of the standard team table
+ * "dashboard", server/modules/teamdata/schema.ts). A part that is not connected yet says how to connect it.
  */
 export function DashboardPage() {
   // The team chosen in the sidebar, or every team (each tile then names its team).
@@ -37,25 +83,36 @@ export function DashboardPage() {
   }
   return (
     <Page>
-      <PageHeader width="5xl" title="Dashboard" subtitle="De cijfers die je bots voor je bijhouden: mail, klantvragen, WhatsApp, omzet, leads en meer." />
-      <div className="mx-auto max-w-5xl space-y-5 px-4 pb-10 sm:px-6">
+      <PageHeader width="5xl" title="Dashboard" subtitle="Je werkplek: wat op je wacht, je post, je geld, je team en de cijfers die je bots bijhouden." />
+      <div className="mx-auto max-w-5xl space-y-6 px-4 pb-10 sm:px-6">
         <TeamFilterNote />
-        {err && <EmptyState title="Het dashboard laadt niet">{err}</EmptyState>}
-        {rows && !rows.length && !err && (
-          <EmptyState title="Nog leeg">Vraag een bot om zijn cijfers hier bij te houden, bijvoorbeeld: “houd op het dashboard bij hoeveel klantmails er openstaan”.</EmptyState>
-        )}
-        {[...groups].map(([g, list]) => (
-          <section key={g} className="space-y-2" data-testid="dashboard-group">
-            <h2 className="px-1 text-[13px] font-semibold uppercase tracking-wide text-muted" translate="no">
-              {g}
-            </h2>
-            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
-              {list.map((r) => (
-                <TileCard key={`${r.team || ''}:${r.id}`} r={r} team={several ? r.team : undefined} />
-              ))}
+        <WaitingSection />
+        <div className="grid items-start gap-6 lg:grid-cols-2">
+          <MailSection />
+          <div className="space-y-6">
+            <MoneySection />
+            <TeamSection />
+          </div>
+        </div>
+        <section className="space-y-3" data-testid="dashboard-numbers">
+          <SectionTitle icon={BarChart3} tone="amber">
+            Cijfers
+          </SectionTitle>
+          {err && <EmptyState title="De cijfers laden niet">{err}</EmptyState>}
+          {rows && !rows.length && !err && <Card className="p-4 text-sm text-muted">Vraag een bot om zijn cijfers hier bij te houden, bijvoorbeeld: “houd op het dashboard bij hoeveel klantmails er openstaan”.</Card>}
+          {[...groups].map(([g, list]) => (
+            <div key={g} className="space-y-2" data-testid="dashboard-group">
+              <h3 className="px-1 text-[13px] font-semibold uppercase tracking-wide text-muted" translate="no">
+                {g}
+              </h3>
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                {list.map((r) => (
+                  <TileCard key={`${r.team || ''}:${r.id}`} r={r} team={several ? r.team : undefined} />
+                ))}
+              </div>
             </div>
-          </section>
-        ))}
+          ))}
+        </section>
       </div>
     </Page>
   );

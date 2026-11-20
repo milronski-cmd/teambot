@@ -187,7 +187,7 @@ test('an SEO bot given the website check: quiet when in order, one task with pro
 test('no cap by default: the bot’s own model, any frequency; a limit and "gratis eerst" only when the owner sets them', async () => {
   const env = await setup({ free: true });
   try {
-    assert.deepEqual(cleanProactive({}), { runsPerDay: 0, cheapFirst: false, maxSprint: 0, briefing: 'uit', interests: '' }, 'no limit (also none on projects in the sprint), no engine rule, and no overview that nobody asked for');
+    assert.deepEqual(cleanProactive({}), { runsPerDay: 0, cheapFirst: false, maxSprint: 0, briefing: 'uit', interests: '', initiative: true }, 'no limit (also none on projects in the sprint), no engine rule, and no overview that nobody asked for');
     const sem = await env.t.agent({ name: 'Sem', role: 'SEO', tool_groups: ['team'] });
     await teamWithSite(env);
     await give(env, sem, ['seo.techniek']);

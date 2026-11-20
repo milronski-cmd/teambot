@@ -20,7 +20,7 @@ interface Seen {
 
 async function fakeGoogle() {
   const seen: Seen[] = [];
-  const state = { access: 1, grantScope: '' as string, refreshOk: true, merchantRegistered: false, tooFast: 0, daily: false };
+  const state = { access: 1, grantScope: '' as string, refreshOk: true, merchantRegistered: false, tooFast: 0, daily: false, mail: false };
   const server = http.createServer((req, res) => {
     let body = '';
     req.on('data', (c) => (body += c));
@@ -56,8 +56,10 @@ async function fakeGoogle() {
       if (p === '/gmail.googleapis.com/gmail/v1/users/me/messages') {
         if (state.daily) return json(403, { error: { code: 403, message: "Quota exceeded for quota metric 'Queries' and limit 'Queries per day' of service 'gmail.googleapis.com'." } });
         if (state.tooFast-- > 0) return json(403, { error: { code: 403, message: "Quota exceeded for quota metric 'Total Query Cost' and limit 'Units per minute per user' of service 'gmail.googleapis.com'." } });
-        return json(200, { messages: [] });
+        return json(200, { messages: state.mail ? [{ id: 'm1', threadId: 't1' }] : [] });
       }
+      if (p === '/gmail.googleapis.com/gmail/v1/users/me/messages/m1')
+        return json(200, { id: 'm1', threadId: 't1', labelIds: ['INBOX', 'UNREAD'], snippet: 'Kunnen jullie morgen leveren?', payload: { mimeType: 'text/plain', headers: [{ name: 'From', value: 'Jan de Vries <jan@klant.test>' }, { name: 'To', value: 'eigenaar@voorbeeld.nl' }, { name: 'Subject', value: 'Levering' }, { name: 'Date', value: 'Fri, 20 Nov 2026 01:00:00 +0100' }, { name: 'Message-ID', value: '<abc@klant.test>' }], body: { data: Buffer.from('Kunnen jullie morgen leveren?').toString('base64url') } } });
       if (p.startsWith('/www.googleapis.com/calendar/v3/')) return json(200, { items: [] });
       if (p === '/www.googleapis.com/drive/v3/about') return json(200, { user: { emailAddress: 'eigenaar@voorbeeld.nl' } });
       json(404, { error: { code: 404, message: `geen nep-antwoord voor ${p}` } });
@@ -235,6 +237,24 @@ test("Google: with TeamBot's own client there is nothing to set up, and sending 
     const day = await t.api('POST', `/mcp/connections/${s.connection.id}/test`, { tool: 'gmail_search', args: { query: 'factuur' } }).catch((e: any) => String(e?.message || e));
     assert.match(JSON.stringify(day), /per day/);
     assert.equal(searches(), 4);
+    g.state.daily = false;
+    // The owner's own mail on the dashboard: the inbox, one mail in full, and an answer he sends himself.
+    g.state.mail = true;
+    const inbox = (await t.api('GET', '/mcp/google/mail')).messages;
+    assert.deepEqual(inbox.map((m: any) => [m.from, m.subject, m.unread]), [['Jan de Vries <jan@klant.test>', 'Levering', true]]);
+    const one = await t.api('GET', '/mcp/google/mail/m1');
+    assert.equal(one.body.trim(), 'Kunnen jullie morgen leveren?');
+    assert.equal(one.messageId, '<abc@klant.test>');
+    await assert.rejects(t.api('POST', '/mcp/google/mail/send', { to: 'geen adres', body: 'x' }), /Vul een e-mailadres in/);
+    await assert.rejects(t.api('POST', '/mcp/google/mail/send', { to: 'jan@klant.test', body: '  ' }), /Het bericht is leeg/);
+    const sent = await t.api('POST', '/mcp/google/mail/send', { to: 'jan@klant.test', subject: 'Re: Levering', body: 'Ja, morgen voor twaalf uur.', thread: 't1', inReplyTo: '<abc@klant.test>' });
+    assert.equal(sent.ok, true);
+    const out = g.seen.filter((x) => x.path.endsWith('/messages/send')).at(-1)!;
+    const raw = Buffer.from(JSON.parse(out.body).raw, 'base64url').toString();
+    assert.equal(JSON.parse(out.body).threadId, 't1', 'in the same conversation');
+    assert.match(raw, /To: jan@klant\.test/);
+    assert.match(raw, /In-Reply-To: <abc@klant\.test>/);
+    assert.ok(t.app.ctx.store.all<any>("SELECT data FROM audit WHERE kind = 'mcp.google.mail_sent'").length === 1, 'in the log, without the text');
     assert.ok(tooFast(429, '') && tooFast(403, 'rateLimitExceeded') && !tooFast(403, 'Queries per day') && !tooFast(403, 'insufficient permission') && !tooFast(500, 'per minute'));
   } finally {
     setGoogleRetryWaits(null);

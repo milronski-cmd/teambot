@@ -8,7 +8,7 @@ import { api, on } from '../../lib/api';
 import { t } from '../../lib/i18n';
 import { useApp } from '../../lib/store';
 import { PlannedList } from './Planned';
-import { Badge, Button, Card, EmptyState, Input, Page, PageHeader, Select, Tabs, cx, timeAgo, toast, toastError, CardHead, IconTile } from '../../components/ui';
+import { Badge, Button, Card, EmptyState, Input, Page, PageHeader, Select, Tabs, Toggle, cx, timeAgo, toast, toastError, CardHead, IconTile } from '../../components/ui';
 import { teamQuery, useTeamView } from '../teams/scope';
 import { TeamFilterNote } from '../teams/FilterNote';
 
@@ -63,6 +63,8 @@ interface Settings {
   briefing: 'dag' | 'week' | 'uit';
   briefingTime: string;
   interests: string;
+  /** A bot with nothing on its name looks for work itself (missing on an older server: on). */
+  initiative?: boolean;
 }
 interface Project {
   id: number;
@@ -273,6 +275,9 @@ function BudgetBar({ budget, settings, onSaved }: { budget: Budget; settings: Se
           <option value="uit">Uit</option>
         </Select>
       </label>
+      <div className="basis-full" data-testid="proactive-initiative">
+        <Toggle checked={settings.initiative !== false} onChange={(v) => void save({ initiative: v })} label="Een bot zonder werk zoekt zelf werk binnen zijn vak (na een half uur stilstaan)" />
+      </div>
     </Card>
   );
 }

@@ -371,6 +371,47 @@ export function registerBank(ctx: Ctx, mgr: McpManager, h: BankHelpers) {
 
   api.get('/mcp/bank', ah(async (req) => state(req)));
 
+  /**
+   * The money on the dashboard: per account the balance, and the latest transactions of all accounts together. The
+   * same reads the bots' tools make (and the same quarter of an hour of keeping), for the owner himself; here the
+   * screen gets masked account numbers.
+   */
+  api.get(
+    '/mcp/bank/overview',
+    ah(async (req) => {
+      const u = user(req);
+      const c = bankConn(ctx, u.id);
+      const app = bankApp(ctx, u.id);
+      const all = links(ctx, c).filter((l) => Date.parse(l.validUntil) > Date.now());
+      if (!c || !app || !all.length) return { status: !links(ctx, c).length ? 'off' : 'expired', accounts: [], transactions: [] };
+      const call = caller(app);
+      const days = Math.min(90, Math.max(1, Number(req.query.days) || 14));
+      const to = day(new Date());
+      const from = day(new Date(Date.now() - days * 86400_000));
+      const accounts = [];
+      const transactions: any[] = [];
+      for (const acc of findAccounts(all)) {
+        const row: any = { bank: acc.bank, name: acc.name, iban: maskIban(acc.iban), currency: acc.currency };
+        try {
+          const b = await cached(`bal:${acc.uid}`, () => call('GET', `/accounts/${encodeURIComponent(acc.uid)}/balances`));
+          row.balances = tidyBalances(b.value);
+          row.at = new Date(b.at).toISOString();
+        } catch (e: any) {
+          row.error = cleanError(e).slice(0, 300);
+        }
+        try {
+          const t = await cached(`tx:${acc.uid}:${from}:${to}:50`, async () => ({ list: (await call('GET', `/accounts/${encodeURIComponent(acc.uid)}/transactions`, { query: { date_from: from, date_to: to } })).transactions || [], more: false }));
+          for (const x of (t.value.list as any[]).slice(0, 50)) transactions.push({ ...tidyTransaction(x), account: acc.name, iban: maskIban(acc.iban) });
+        } catch (e: any) {
+          row.txError = cleanError(e).slice(0, 300);
+        }
+        accounts.push(row);
+      }
+      transactions.sort((p, q) => String(q.date || '').localeCompare(String(p.date || '')));
+      return { status: 'on', from, to, accounts, transactions: transactions.slice(0, 40) };
+    }),
+  );
+
   /** Save the application (checked with one real call), or forget it. */
   api.put(
     '/mcp/bank/app',

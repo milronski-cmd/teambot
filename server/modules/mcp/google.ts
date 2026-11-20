@@ -764,6 +764,49 @@ export function registerGoogle(ctx: Ctx, mgr: McpManager, h: GoogleHelpers) {
       return state(req);
     }),
   );
+
+  // ---- the owner's own mail on the dashboard: the same Gmail calls the bots' tools make, for the owner himself
+
+  /** The Gmail tool with this name, run for the owner; plain words when Gmail is not connected or not allowed. */
+  const mail = async (req: Request, name: 'gmail_search' | 'gmail_read' | 'gmail_send', args: any) => {
+    const u = user(req);
+    const c = googleConn(ctx, u.id);
+    const o: any = c?.oauth || {};
+    if (!c || o.status !== 'connected' || !serviceIds(o.services).includes('gmail')) throw bad('Gmail is niet gekoppeld. Koppel Google bij Apps en vink Gmail aan.');
+    const tool = GOOGLE_TOOLS.find((t) => t.name === name)!;
+    if (!toolGranted(tool, String(o.scope || ''))) throw bad(name === 'gmail_send' ? 'Je hebt Google alleen laten lezen. Log opnieuw in bij Apps › Google en vink ook het versturen van mail aan.' : 'Je hebt bij Google het lezen van mail niet aangevinkt. Log opnieuw in bij Apps › Google.');
+    try {
+      return await tool.run(args, caller(ctx, mgr, c.id), { ctx, conn: c });
+    } catch (e: any) {
+      if (e instanceof AuthRequiredError) throw bad('De inlog bij Google is verlopen. Log opnieuw in bij Apps › Google.');
+      throw bad(`Google gaf een fout: ${cleanError(e).slice(0, 300)}`);
+    }
+  };
+
+  /** The inbox (or a Gmail search): the newest messages, with who, what and whether it is unread. */
+  api.get(
+    '/mcp/google/mail',
+    ah(async (req) => ({ messages: await mail(req, 'gmail_search', { query: str(req.query.q, 300).trim() || 'in:inbox', limit: Math.min(25, Math.max(1, Number(req.query.limit) || 15)) }) })),
+  );
+
+  api.get(
+    '/mcp/google/mail/:id',
+    ah(async (req) => mail(req, 'gmail_read', { id: str(req.params.id, 120) })),
+  );
+
+  /** The owner answers or writes a mail himself: it goes out at once, from his own address. */
+  api.post(
+    '/mcp/google/mail/send',
+    ah(async (req) => {
+      const to = str(req.body?.to, 500).trim();
+      const body = str(req.body?.body, 100_000);
+      if (!/\S+@\S+\.\S+/.test(to)) throw bad('Vul een e-mailadres in.');
+      if (!body.trim()) throw bad('Het bericht is leeg.');
+      const r = await mail(req, 'gmail_send', { to, subject: str(req.body?.subject, 400).trim(), body, cc: str(req.body?.cc, 500).trim() || undefined, thread: str(req.body?.thread, 120) || undefined, inReplyTo: str(req.body?.inReplyTo, 400) || undefined });
+      ctx.audit(user(req).id, 'mcp.google.mail_sent', { to: to.slice(0, 120), reply: !!req.body?.thread });
+      return { ok: true, id: r?.id || null };
+    }),
+  );
 }
 
 /** Disconnecting: also take the access away at Google itself. */
