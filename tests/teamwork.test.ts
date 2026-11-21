@@ -34,7 +34,7 @@ test('the asker gets the final answer of a CLI worker, not what it said between 
       'Ada',
       { toolCalls: [{ name: 'delegate_task', args: { bot: 'Bo', task: 'Controleer de sitemaps van de 4 leadsites.', expected_output: 'Klaar als: aantal ontbrekende pagina’s per site' } }, { name: 'ask_bot', args: { bot: 'Cy', message: 'Wie is de leadkoper van Voorbeeldsite?' } }] },
       { text: 'Ik heb het uitgezet.' },
-      { text: 'Verwerkt.' },
+      // One follow-up turn for both answers (requests from one turn come back together).
       { text: 'Verwerkt.' },
     );
     // Like Claude Code: text between the steps, then the answer. One message holds all of it.
@@ -65,7 +65,7 @@ test('the asker gets the final answer of a CLI worker, not what it said between 
     assert.match(nCy.content, /Er is geen leadkoper gekoppeld\./);
     assert.doesNotMatch(nCy.content, /Even zoeken/);
     const fu = followUps(t, th.id);
-    assert.ok(fu.length >= 1 && fu.every((r) => r.status === 'done'), 'Ada got a follow-up turn');
+    assert.ok(fu.length === 1 && fu.every((r) => r.status === 'done'), 'Ada got one follow-up turn, with both answers');
 
     // The same with a worker on an API engine that really uses a tool before it answers.
     const dex = await m.bot('Dex');

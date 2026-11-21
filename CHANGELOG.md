@@ -1,5 +1,12 @@
 # Changelog
 
+## [4.13.1] — 2026-11-21
+
+### Overgenomen van andere agentsystemen
+- **Eén wekbeurt met alle antwoorden** (OpenMausBot). Vraagt een bot in één beurt meerdere collega's iets, dan komen
+  de antwoorden samen terug in één vervolgbeurt zodra de laatste binnen is, in plaats van een beurt per antwoord.
+  Nooit later dan tien minuten na het eerste antwoord; wat jij stopte hoort de bot meteen.
+
 ## [4.13.0] — 2026-11-21
 
 ### Overgenomen van andere agentsystemen

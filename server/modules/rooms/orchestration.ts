@@ -1101,6 +1101,24 @@ export class Orchestrator {
     const groups = this.ctx.store.all<{ group_id: string }>('SELECT DISTINCT group_id FROM room_delegations WHERE parent_thread_id = ? AND from_agent_id = ? AND group_id IS NOT NULL AND delivered = 0', parentThreadId, fromAgentId).map((r) => r.group_id);
     const asker = this.ctx.store.agent(fromAgentId);
     const gone = !asker || asker.archived;
+    // One wake with every answer: requests a bot sent from one turn come back together, in one follow-up turn, when
+    // the last of them is in (taken over from OpenMausBot's job runtime: "the requester's wake is its own resume
+    // turn, carrying every settled child at once"). Before, each answer woke the giver for a turn of its own (live,
+    // 20 Nov 2026: 241 follow-up turns in a day). Never longer than HOLD_MS after the first answer.
+    // (What the owner stopped is told at once, and only a colleague whose turn really runs is waited for: a message
+    // that still waits for a busy or stopped bot can take long.)
+    if (!quiet && !gone && singles.length && Orchestrator.HOLD_MS > 0 && !singles.some((d) => stoppedByOwner(d))) {
+      const from = [...new Set(singles.map((d) => d.parent_run_id).filter((x): x is string => !!x))];
+      const firstIn = Math.min(...singles.map((d) => Date.parse(d.finished_at || '') || Date.now()));
+      const left = firstIn + Orchestrator.HOLD_MS - Date.now();
+      if (from.length && left > 0) {
+        const open = this.ctx.store.one<{ n: number }>(`SELECT COUNT(*) AS n FROM room_delegations WHERE parent_thread_id = ? AND from_agent_id = ? AND group_id IS NULL AND (follow_up = 1 OR kind = 'ask') AND status = 'running' AND parent_run_id IN (${from.map(() => '?').join(',')})`, parentThreadId, fromAgentId, ...from)?.n;
+        if (open) {
+          this.flushLater(parentThreadId, fromAgentId, left);
+          return false;
+        }
+      }
+    }
     let first: { d: Delegation; input: string; async: boolean } | null = null;
     let stopped: Delegation | null = null;
     for (const d of singles) {
@@ -1148,6 +1166,26 @@ export class Orchestrator {
     }
     this.followUp(parent, first.d, first.input, first.async);
     return true;
+  }
+
+  /** How long an answer waits at most for the other answers of the same turn before the giver is woken (0 = never wait). */
+  static HOLD_MS = 10 * 60_000;
+  private later = new Map<string, NodeJS.Timeout>();
+
+  /** Look again when the wait for the other answers is over (one timer per conversation and giver). */
+  private flushLater(parentThreadId: string, fromAgentId: string, ms: number) {
+    const key = `${parentThreadId}|${fromAgentId}`;
+    if (this.later.has(key)) return;
+    const t = setTimeout(() => {
+      this.later.delete(key);
+      try {
+        this.flush(parentThreadId, fromAgentId);
+      } catch (e) {
+        this.ctx.log.error('[rooms] flush later', e);
+      }
+    }, ms + 250);
+    t.unref?.();
+    this.later.set(key, t);
   }
 
   /**
