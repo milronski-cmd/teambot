@@ -1,5 +1,20 @@
 # Changelog
 
+## [4.12.4] — 2026-11-21
+
+### Een team dat werk afmaakt in plaats van doorgeeft
+- **Elke bot is eigenaar van zijn resultaat.** Tot nu toe kreeg elke bot te horen dat hij werk dat bij de rol van
+  een collega hoort moest doorgeven en niet zelf mocht doen. Met een team van smalle rollen hoorde bijna elke stap
+  bij een ander, en gaf het team werk door in plaats van het af te maken. Nu maakt een bot zijn werk zelf af tot het
+  werkt of live staat, ook een stap in het vak van een collega als hij die goed kan (zijn eigen tekst plaatsen, een
+  kleine wijziging, zijn eigen resultaat meten), en laat hij die collega weten wat hij veranderde. Doorgeven doet hij
+  alleen wat hij echt niet kan, en dan de hele klus. De hoofdbot geeft een klus als geheel aan één bot.
+- **Niet af is niet terug.** Vindt de controle met een frisse blik een doorgegeven klus nog niet af en zegt ze wat er
+  ontbreekt, dan maakt dezelfde bot het meteen af (hoogstens twee keer), vóór het resultaat teruggaat. Daarvoor moest
+  de bot die de klus gaf een half resultaat lezen en het zelf terugsturen.
+- **Afstemmen zonder beurten.** Is een collega met precies hetzelfde bezig, dan doet een bot dat ene onderdeel later
+  of laat hij een melding achter; hij vraagt er geen beurt van die collega voor.
+
 ## [4.12.3] — 2026-11-21
 
 ### Samenwerken

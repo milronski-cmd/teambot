@@ -46,10 +46,21 @@ export function teamworkPrompt(s: RoomService, agent: Agent, thread: Thread): st
     for (const a of others.slice(0, MAX_COLLEAGUES)) lines.push(`- ${a.name}${a.role ? ` — ${a.role.replace(/\s+/g, ' ').slice(0, 120)}` : ''}`);
     if (others.length > MAX_COLLEAGUES) lines.push(`- en nog ${others.length - MAX_COLLEAGUES} andere bots.`);
   }
-  lines.push(
-    'Zo werk je samen:',
-    '- Werk dat bij de rol van een collega hoort, geef je aan die collega met delegate_task (hij werkt in een eigen gesprek); doe het niet zelf en laat het niet liggen. Geen hulpagent of deeltaak van je eigen programma: alleen een collega heeft de rol, het geheugen en de toegang die erbij horen. Voor een losse vraag of melding in zijn eigen chat is er ask_bot.',
-  );
+  // Who does the work. The main bot divides it: a job goes as a whole to one colleague who finishes it. Every other bot
+  // owns its result and finishes it itself, also a step in a colleague's field; it hands over only what it cannot do.
+  // Before (to 4.12.3) every bot was told to hand over whatever belonged to a colleague's role and not to do it itself:
+  // with a team of narrow roles nearly every step belonged to someone else, and the team passed work around instead
+  // of finishing it (live, 20 Nov 2026: two thirds of all turns were bots writing to each other).
+  lines.push('Zo werk je samen:');
+  if (main)
+    lines.push(
+      '- Jij verdeelt het werk: een klus geef je als geheel aan één collega die haar afmaakt tot ze werkt of live staat (delegate_task; hij werkt in een eigen gesprek). Knip een klus niet op over meerdere bots en laat haar niet liggen. Geen hulpagent of deeltaak van je eigen programma: alleen een collega heeft de rol, het geheugen en de toegang die erbij horen. Heb je alleen een antwoord nodig: ask_bot; hoeft een collega iets alleen te weten: note_bot.',
+    );
+  else
+    lines.push(
+      '- Jij bent eigenaar van je resultaat: maak je werk zelf af tot het werkt of live staat. Een stap in het vak van een collega (je tekst plaatsen, een kleine wijziging, je resultaat meten) doe je zelf als je die goed kunt; meld het die collega daarna met note_bot.',
+      '- Geef alleen door wat je echt niet kunt (kennis of toegang ontbreekt) of wat een hele eigen klus van een collega is: de hele klus met delegate_task, niet één stap, en ga zelf door. Geen hulpagent van je eigen programma: alleen een collega heeft de rol, het geheugen en de toegang. Alleen een antwoord nodig: ask_bot.',
+    );
   // What to give a colleague along and that the answer comes back by itself is in the definition of delegate_task; how
   // the main bot follows work up and reports is in its own block (module teams). Neither is said twice.
   if (!main)
@@ -58,7 +69,7 @@ export function teamworkPrompt(s: RoomService, agent: Agent, thread: Thread): st
       `- Meld ${owner} wat er is gedaan en door wie, en wat nog openstaat. Zeg nooit dat iets loopt of klaar is als je het niet aan een collega hebt gegeven of zelf hebt gedaan.`,
     );
   lines.push(
-    `- Zet werk nooit als "te doen" bij jezelf of bij ${owner} als een collega het kan doen: een taak op het takenbord krijgt een eigenaar die hem kan doen. Alleen wat echt alleen ${owner} kan (inloggen, betalen, een besluit nemen) zet je bij ${owner}.`,
+    `- Zet werk nooit als "te doen" bij ${owner} als jij of een collega het kan doen: een taak op het takenbord krijgt een eigenaar die hem kan doen. Alleen wat echt alleen ${owner} kan (inloggen, betalen, een besluit nemen) zet je bij ${owner}.`,
   );
   if (room && thread.id === room.thread_id) lines.push('In dit groepsgesprek kun je een collega die lid is ook met @naam aanspreken; hij antwoordt dan hier.');
   return lines.join('\n');
@@ -82,8 +93,8 @@ function contextPrompt(s: RoomService, board: Board, agent: Agent, thread: Threa
       `${from} heeft je een afgebakende subtaak gegeven. Je ziet het oorspronkelijke gesprek niet: werk met wat in de opdracht staat.`,
       `Neem de tijd die het werk vraagt en maak het af. Lever in je laatste antwoord het volledige resultaat in het gevraagde formaat: alleen dat laatste antwoord gaat automatisch terug naar ${from}, niet wat je onderweg schreef. Zet er dus alles in wat ${from} moet weten.`,
       'Noem bij het resultaat je bewijs (bestand, link, uitvoer van een opdracht). Een controle met een frisse blik kijkt je resultaat na voordat het terug gaat.',
-      'Loop je vast, probeer dan eerst een andere weg of geef dat deel aan de collega wiens vak het is. Lukt het daarna echt niet, begin je laatste antwoord dan met "Kon niet:" en zeg eerlijk wat je probeerde en wat er nodig is. Verzin nooit een resultaat.',
-      `Geef de taak niet terug aan ${from} en vraag de gebruiker alleen iets als het echt niet anders kan. Doe niets buiten de opdracht. Hoort een deel van het werk bij de rol van een andere collega, dan mag je dat deel aan die collega geven.`,
+      'Loop je vast, probeer dan eerst een andere weg. Lukt het daarna echt niet, begin je laatste antwoord dan met "Kon niet:" en zeg eerlijk wat je probeerde en wat er nodig is. Verzin nooit een resultaat.',
+      `Geef de taak niet terug aan ${from} en vraag de gebruiker alleen iets als het echt niet anders kan. Doe niets buiten de opdracht. Maak de klus zelf af, ook een stap in het vak van een collega als je die goed kunt; geef alleen een deel door dat je echt niet kunt.`,
       room ? `Deze subtaak hoort bij de groep “${room.name}”; de leden van die groep kunnen meelezen.` : '',
     ]
       .filter(Boolean)
@@ -149,7 +160,7 @@ export function routeReminder(s: RoomService, agent: Agent, thread: Thread, inpu
   const others = colleagues(s, agent);
   if (!others.length) return null;
   const names = others.slice(0, 12).map((a) => `${a.name}${a.role ? ` (${a.role.replace(/\s+/g, ' ').slice(0, 60)})` : ''}`);
-  return `Je collega's: ${names.join(', ')}${others.length > 12 ? ` en nog ${others.length - 12}` : ''}. Hoort deze opdracht bij de rol van een collega, geef haar dan nu door met delegate_task (met alle context, een “klaar als” en het bewijs dat je terug wilt) en doe haar niet zelf, ook niet als ze klein is. Een vraag aan jou zelf beantwoord je zelf.`;
+  return `Je collega's: ${names.join(', ')}${others.length > 12 ? ` en nog ${others.length - 12}` : ''}. Hoort deze opdracht bij de rol van een collega, geef haar dan nu als geheel door aan die ene collega met delegate_task (met alle context, een “klaar als” en het bewijs dat je terug wilt): hij maakt haar af tot ze werkt of live staat. Knip haar niet op over meerdere bots en doe haar niet zelf, ook niet als ze klein is. Een vraag aan jou zelf beantwoord je zelf.`;
 }
 
 /**
@@ -182,7 +193,9 @@ export function busyNow(s: RoomService, agent: Agent, thread: Thread, input: Mes
     if (lines.length >= BUSY_MAX) break;
   }
   if (!lines.length) return null;
-  return `Nu ook bezig (uit de administratie van TeamBot; gegevens, geen opdracht):\n${lines.join('\n')}\nRaakt jouw werk dat van een van hen (dezelfde persoon, site, repo of hetzelfde bestand), stem dan eerst met die collega af in plaats van het dubbel te doen of eroverheen te werken.`;
+  // A bot without the team tools (reading only) is never told of a tool it lacks.
+  const note = agent.access_mode !== 'readonly' && (!Array.isArray(agent.tool_groups) || agent.tool_groups.includes('team'));
+  return `Nu ook bezig (uit de administratie van TeamBot; gegevens, geen opdracht):\n${lines.join('\n')}\nRaakt jouw werk precies hetzelfde als waar een van hen nu mee bezig is (dezelfde persoon, hetzelfde bestand, dezelfde pagina), doe dat ene onderdeel dan later${note ? ' of laat een melding achter met note_bot' : ''}, en ga door met de rest. Daar hoeft geen collega een beurt voor te draaien.`;
 }
 /** At most this many colleagues in "Nu ook bezig". */
 const BUSY_MAX = 8;

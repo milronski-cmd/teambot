@@ -252,7 +252,7 @@ export function gaveUpText(limit: Verdict['limit']): string {
 export async function secondLook(ctx: Ctx, i: CheckInput): Promise<Verdict> {
   const rule = ruleVerdict(i);
   if (rule) return rule;
-  if (!i.agent) return { state: 'review', reason: 'Geen bot om de controle mee te doen; kijk het zelf na.' };
+  if (!i.agent) return { state: 'review', reason: 'Geen bot om de controle mee te doen; kijk het zelf na.', unchecked: true };
   const agent = i.agent;
   const system = outputLanguage(SYSTEM, userLanguage(ctx.store, i.userId));
   const run = async (engine?: { providerId: string; model: string }): Promise<Verdict> => {
@@ -265,14 +265,14 @@ export async function secondLook(ctx: Ctx, i: CheckInput): Promise<Verdict> {
   // again by itself, like a look that met a limit (`retryAt`, QualityService.recheckDue).
   const later = (why: string): Verdict => {
     const at = recheckAt(null, i.attempt || 0);
-    return { state: 'review', reason: `Nog niet gecontroleerd: ${why}. TeamBot controleert het vanzelf opnieuw rond ${clockTime(at, userTz(ctx, i.userId))}.`, retryAt: at };
+    return { state: 'review', reason: `Nog niet gecontroleerd: ${why}. TeamBot controleert het vanzelf opnieuw rond ${clockTime(at, userTz(ctx, i.userId))}.`, retryAt: at, unchecked: true };
   };
   try {
     let v = await run();
     if (v.unclear) v = await run();
     return v.unclear ? later('de controle gaf geen duidelijk antwoord') : v;
   } catch (e: any) {
-    if (e instanceof NoEngine) return { state: 'review', reason: `Niet automatisch gecontroleerd: ${e.message}. Kijk het zelf na.` };
+    if (e instanceof NoEngine) return { state: 'review', reason: `Niet automatisch gecontroleerd: ${e.message}. Kijk het zelf na.`, unchecked: true };
     if (classifyEngineError(e) === 'limit') return onLimit(ctx, i, agent, e, run);
     const timeout = e?.name === 'TimeoutError' || e?.name === 'AbortError' || /timed? ?out|aborted/i.test(String(e?.message || ''));
     return later(timeout ? 'de controle duurde te lang' : `de controle lukte niet (${String(e?.message || e).slice(0, 80)})`);

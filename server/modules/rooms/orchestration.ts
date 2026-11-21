@@ -808,13 +808,16 @@ export class Orchestrator {
     // output as "klaar als", the steps of its run as evidence. The verdict travels with the result.
     const q = this.ctx.services.quality;
     if (d.kind === 'delegate' && run.status === 'done' && !run.meta?.loopStop && q?.checkDelegation) {
+      let verdict: { state?: string; reason?: string; unclear?: boolean; unchecked?: boolean; retryAt?: number } | null = null;
       try {
-        await q.checkDelegation({ userId: d.user_id, delegationId: d.id, worker: this.ctx.store.agent(d.to_agent_id), task: d.task, expected: d.expected, result: this.finalText(run, d.thread_id), runId: run.id });
+        verdict = await q.checkDelegation({ userId: d.user_id, delegationId: d.id, worker: this.ctx.store.agent(d.to_agent_id), task: d.task, expected: d.expected, result: this.finalText(run, d.thread_id), runId: run.id });
       } catch (e: any) {
         this.ctx.log.warn('[rooms] delegation check', e?.message || e);
       }
       const cur = this.get(d.id);
       if (!cur || cur.run_id !== run.id || TERMINAL_DELEGATION.has(cur.status)) return;
+      // Not finished, and the check says what is missing: the same bot finishes it now, before anything goes back.
+      if (deliver && verdict?.state === 'review' && !verdict.unclear && !verdict.unchecked && !verdict.retryAt && verdict.reason && this.finishOff(cur, run, verdict.reason)) return;
     }
     this.finalize(d, run, deliver);
   }
@@ -1260,6 +1263,37 @@ export class Orchestrator {
     } catch (e) {
       this.ctx.log.error('[rooms] reconcile', e);
     }
+  }
+
+  /** How often a handed-over job goes back to the same bot to be finished before its result goes to the giver as it is. */
+  static MAX_FINISH = 2;
+
+  /**
+   * The second look found the job not finished and said what is missing: the same bot gets a turn to finish it, in the
+   * same conversation, before the result goes back. So a job is worked on until it is done (or the bot says what it
+   * cannot do), without the giver having to read a half result and send it back. Live (20 Nov 2026): 151 of 190
+   * handed-over jobs came back "te controleren" ("2 of 15 lines done"), and each needed the lead to send it back by hand.
+   * False: not started (tried MAX_FINISH times, or the bot or the conversation is gone); the result then goes back as it is.
+   */
+  private finishOff(d: Delegation, run: Run, reason: string): boolean {
+    const team = (run.meta?.team || {}) as TeamMeta & { finishes?: number };
+    const n = team.finishes ?? 0;
+    const sub = this.ctx.store.thread(d.thread_id);
+    const worker = this.ctx.store.agent(d.to_agent_id);
+    if (!sub || !worker || worker.archived || n >= Orchestrator.MAX_FINISH) return false;
+    if (!this.ctx.store.thread(d.parent_thread_id) || this.ctx.runs.ownerStopped(worker.id) !== null) return false;
+    const room = this.s.room(d.room_id);
+    if (room && (room.archived || room.status === 'paused')) return false;
+    const from = this.s.agentName(d.from_agent_id);
+    const sys = this.s.systemMessage(
+      sub,
+      `Nog niet af volgens de controle met een frisse blik: ${reason}\nMaak het nu zelf af: doe wat nog ontbreekt${d.expected ? ` (${d.expected.replace(/\s+/g, ' ').slice(0, 600)})` : ''}, kijk het na en lever dan opnieuw het volledige resultaat met bewijs. Herhaal niet wat al gelukt is. Kun je een deel echt niet (toegang of kennis ontbreekt), zeg dan precies welk deel en waarom; verzin niets. Je antwoord gaat terug naar ${from}.`,
+      { kind: 'delegation_finish', delegationId: d.id, note: { text: 'Nog niet af: {0} maakt de opdracht van {1} af.', values: [worker.name, from] } },
+    );
+    const next = this.ctx.runs.enqueue({ threadId: sub.id, agentId: worker.id, userId: d.user_id, trigger: `team:${d.kind}`, inputMessageId: sys.id, meta: { team: { ...team, finishes: n + 1 }, finishOf: run.id } });
+    this.turn(d.id, next, { status: 'queued' });
+    this.emit(this.get(d.id)!);
+    return true;
   }
 
   /** Start the turn of an open subtask again after a restart cut it off. False: not possible (it is closed as failed). */

@@ -306,7 +306,7 @@ test('every bot with colleagues knows them, always has delegate_task and reaches
     await t.say(th0.id, 'en nu?');
     const req = m.calls.at(-1)!.req;
     assert.match(req.system, /## Samenwerken met je team[\s\S]*- Radar — Beheerder leadsites: techniek, leadroute en onderhoud\n- Vindbaar — SEO-specialist/);
-    assert.match(req.system, /delegate_task[\s\S]*ask_bot[\s\S]*Zet werk nooit als "te doen" bij jezelf/);
+    assert.match(req.system, /Jij bent eigenaar van je resultaat: maak je werk zelf af[\s\S]*Geef alleen door wat je echt niet kunt[\s\S]*delegate_task[\s\S]*ask_bot[\s\S]*Zet werk nooit als "te doen" bij /);
     // Handing work to a colleague is always in the list (tools/selection.ts); the other team tools are found on demand,
     // and the tool that finds them says so.
     const names = (req.tools || []).map((x: any) => x.name);

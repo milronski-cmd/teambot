@@ -420,7 +420,7 @@ test('an owner correction becomes a lesson for that bot, in its own working note
   }
 });
 
-test('a delegated job that comes back "done" gets the second look; "Kon niet:" is passed on honestly', async () => {
+test('a delegated job the second look finds unfinished goes back to the same bot to be finished, at most twice; "Kon niet:" is passed on honestly', async () => {
   const t = await startTestApp();
   try {
     const m = await team(t);
@@ -428,17 +428,33 @@ test('a delegated job that comes back "done" gets the second look; "Kon niet:" i
     await m.bot('Zoeker', { tool_groups: ['team'] });
     const th = await t.api('POST', '/threads', { agentId: lead.id });
     m.script('Lead', { toolCalls: [{ name: 'delegate_task', args: { bot: 'Zoeker', task: 'Wat is de hoofdstad van Australië?', expected_output: 'De naam van de hoofdstad', wait: true } }] }, { text: 'Ik laat het nakijken.' });
-    m.script('Zoeker', { text: 'Sydney' });
-    m.script('?', { text: '{"verdict":"te_controleren","reason":"Sydney is niet de hoofdstad van Australië; dat is Canberra."}' });
+    // Not finished, and the look says what is missing: the same bot finishes it before anything goes back.
+    m.script('Zoeker', { text: 'Sydney' }, { text: 'Canberra' });
+    m.script('?', { text: '{"verdict":"te_controleren","reason":"Sydney is niet de hoofdstad van Australië; dat is Canberra."}' }, { text: '{"verdict":"klaar","reason":"Canberra klopt."}' });
     await t.say(th.id, 'Zoek de hoofdstad van Australië op');
     await settle(t);
     const out = toolOut(t, th.id, 'delegate_task').at(-1)!;
-    assert.match(out, /TE CONTROLEREN[\s\S]*Canberra/);
+    assert.match(out, /Canberra[\s\S]*Controle met een frisse blik: klaar/);
+    assert.doesNotMatch(out, /TE CONTROLEREN/);
     const checkReq = m.calls.filter((c) => c.bot === '?').at(-1)!.req;
     assert.match(String(checkReq.messages[0].content), /Klaar als: De naam van de hoofdstad/);
     const d = (await t.api('GET', `/rooms/delegations?threadId=${th.id}`))[0];
-    assert.equal(d.check.state, 'review');
-    assert.equal(d.statusLabel, 'te controleren');
+    assert.equal(d.check.state, 'passed');
+    const sub = msgs(t, d.threadId || d.thread_id).filter((x) => x.role === 'system').map((x) => String(x.content));
+    assert.equal(sub.filter((x) => /^Nog niet af volgens de controle met een frisse blik: Sydney is niet de hoofdstad/.test(x)).length, 1, 'told once what is missing');
+    assert.match(sub.join('\n'), /Maak het nu zelf af: doe wat nog ontbreekt \(De naam van de hoofdstad\)/);
+
+    // It stays unfinished: after two more tries the result goes back as it is, with what the look said.
+    const before = m.calls.filter((c) => c.bot === 'Zoeker').length;
+    m.script('Lead', { toolCalls: [{ name: 'delegate_task', args: { bot: 'Zoeker', task: 'Wat is de hoofdstad van Canada?', expected_output: 'De naam van de hoofdstad', wait: true } }] }, { text: 'Ik laat het nakijken.' });
+    m.script('Zoeker', { text: 'Toronto' }, { text: 'Vancouver' }, { text: 'Montreal' });
+    m.script('?', { text: '{"verdict":"te_controleren","reason":"Toronto is niet de hoofdstad."}' }, { text: '{"verdict":"te_controleren","reason":"Vancouver is niet de hoofdstad."}' }, { text: '{"verdict":"te_controleren","reason":"Montreal is niet de hoofdstad."}' });
+    await t.say(th.id, 'Zoek de hoofdstad van Canada op');
+    await settle(t);
+    assert.match(toolOut(t, th.id, 'delegate_task').at(-1)!, /Montreal[\s\S]*TE CONTROLEREN[\s\S]*Montreal is niet de hoofdstad/);
+    assert.equal(m.calls.filter((c) => c.bot === 'Zoeker').length, before + 3, 'the first turn and two to finish it, no more');
+    const d2 = (await t.api('GET', `/rooms/delegations?threadId=${th.id}`)).find((x: any) => /Canada/.test(x.task));
+    assert.equal(d2.statusLabel, 'te controleren');
 
     const calls = m.calls.length;
     m.script('Lead', { toolCalls: [{ name: 'delegate_task', args: { bot: 'Zoeker', task: 'Plaats de advertentie', expected_output: 'Link naar de advertentie', wait: true } }] }, { text: 'ok' });

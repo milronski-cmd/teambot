@@ -183,7 +183,7 @@ export class QualityService {
       requireEvidence: i.requireEvidence !== false,
     });
     // A delegated subtask is not checked again later (its result went back to the bot that asked): say so plainly.
-    const verdict: Verdict = looked.retryAt && i.kind === 'delegation' ? { ...looked, retryAt: undefined, reason: limitNowText(looked.limit) } : looked;
+    const verdict: Verdict = looked.retryAt && i.kind === 'delegation' ? { ...looked, retryAt: undefined, unchecked: true, reason: limitNowText(looked.limit) } : looked;
     const done = verdict.state === 'passed' || verdict.state === 'skipped';
     // The check waits for a limit: what it needs to run again later (evidence and steps are stored anyway).
     const later = verdict.retryAt && i.kind !== 'delegation';

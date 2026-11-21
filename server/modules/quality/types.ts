@@ -29,6 +29,8 @@ export interface Verdict {
   limit?: { free: boolean; engine: string };
   /** The checker answered, but not with a verdict: the look is done again. */
   unclear?: boolean;
+  /** No look was taken (no engine, a limit, a failed call): the reason says that, not what is missing in the work. */
+  unchecked?: boolean;
 }
 
 export interface QualityRow {

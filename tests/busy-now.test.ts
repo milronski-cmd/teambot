@@ -27,7 +27,7 @@ test('a turn says which colleagues are working now and on what; nothing when nob
     assert.match(text, /^Nu ook bezig/);
     assert.match(text, /- Bo: Zet de nieuwe prijspagina van de dakensite live\n/);
     assert.doesNotMatch(text, /Cas|niemand hoort/);
-    assert.match(text, /stem dan eerst met die collega af/);
+    assert.match(text, /doe dat ene onderdeel dan later of laat een melding achter met note_bot, en ga door met de rest/);
     // Bo itself does not read its own line, and a finished turn is gone.
     assert.equal(busyNow(s, st.agent(bo.id)!, st.thread(r1.thread_id)!, input), null);
     st.updateRun(r1.id, { status: 'done' });
