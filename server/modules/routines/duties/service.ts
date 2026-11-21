@@ -751,6 +751,7 @@ export class DutyService {
 
   /** What TeamBot measured itself: bring the board in line, stay quiet when nothing is new, else tell (and wake the bot to fix). */
   private async afterMeasure(r: Routine, agent: Agent, duty: Duty, measured: CheckResult, manual: boolean): Promise<DutyStart> {
+    if (duty.source === 'site' || duty.measure?.kind === 'site') await this.siteTile(r, duty, measured).catch((e) => this.ctx.log.warn('[duties] site tile', e?.message || e));
     const sync = await this.sync(r, agent, measured.findings, { complete: true, line: measured.line });
     const all = [...measured.findings.map((f) => f.title), ...sync.kept.map((t) => t.titel)];
     const meta = { duty: { key: duty.key, measured: measured.line, numbers: { ...measured.numbers, fouten: all.length }, findings: all.length, created: sync.created.map((c) => c.id), closed: sync.closed } };
@@ -867,6 +868,25 @@ export class DutyService {
       {
         sql: "INSERT INTO dashboard (sleutel, groep, titel, waarde, eenheid, maximum, bot, bijgewerkt) VALUES (?, ?, ?, ?, ?, ?, ?, datetime('now','localtime')) ON CONFLICT(sleutel) DO UPDATE SET groep = excluded.groep, titel = excluded.titel, waarde = excluded.waarde, eenheid = excluded.eenheid, maximum = excluded.maximum, bot = excluded.bot, bijgewerkt = excluded.bijgewerkt",
         params: [tile.sleutel, tile.groep || 'Verbruik', tile.titel, text(value), tile.eenheid || null, max === null ? null : text(max), agent.name],
+      },
+    ]);
+  }
+
+  /**
+   * The measurement of the team's websites as a number on the owner's dashboard: how many of them are in order, and
+   * which are not. Refreshed with every measurement and without a bot's turn, so that little work on the board is not
+   * taken for "everything is in order". On no bot's name: it is TeamBot's own measurement, not a bot's own number.
+   */
+  private async siteTile(r: Routine, duty: Duty, measured: CheckResult) {
+    const total = Number(measured.numbers.websites) || 0;
+    if (!total) return;
+    const wrong = [...new Set(measured.findings.map((f) => f.site).filter((s): s is string => !!s))];
+    const uptime = duty.key === 'site.bereikbaar';
+    const note = wrong.length ? `${uptime ? 'Niet bereikbaar of traag' : 'Niet in orde'}: ${wrong.slice(0, 40).join(', ')}` : uptime ? 'Elke website antwoordt' : 'Elke website is bereikbaar en indexeerbaar';
+    await this.write(r, [
+      {
+        sql: "INSERT INTO dashboard (sleutel, groep, titel, waarde, eenheid, toelichting, bijgewerkt) VALUES (?, 'Websites', ?, ?, ?, ?, datetime('now','localtime')) ON CONFLICT(sleutel) DO UPDATE SET groep = excluded.groep, titel = excluded.titel, waarde = excluded.waarde, eenheid = excluded.eenheid, toelichting = excluded.toelichting, bot = NULL, bijgewerkt = excluded.bijgewerkt",
+        params: [uptime ? 'websites-bereikbaar' : 'websites-in-orde', uptime ? 'Websites bereikbaar' : 'Websites in orde', String(total - wrong.length), `van ${total}`, note],
       },
     ]);
   }

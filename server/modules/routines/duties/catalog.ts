@@ -85,7 +85,8 @@ export const ROLE_DUTIES: RoleDuties[] = [
   {
     id: 'merchant',
     label: 'Merchant Center',
-    words: ['merchant', 'productfeed*', 'feed*', 'shopping'],
+    // (Not "feed*": that also names every bot whose text says "feedback".)
+    words: ['merchant', 'productfeed*', 'feedbeheer*', 'shopping'],
     duties: [
       {
         key: 'merchant.afkeuringen',
@@ -112,7 +113,9 @@ export const ROLE_DUTIES: RoleDuties[] = [
   {
     id: 'ads',
     label: 'Advertenties',
-    words: ['ads', 'adwords', 'advertent*', 'campagne*', 'sea'],
+    // (Not "campagne*": an analyst who reports on campaigns and a designer who makes their images do not run the ads.
+    // Seen with a real team of sixteen bots, 21 Nov 2026: both were named for the check of the ad costs.)
+    words: ['ads', 'adwords', 'advertent*', 'campagnebeheer*', 'campagnemanager*', 'betaalde campagnes', 'sea'],
     duties: [
       {
         key: 'ads.kosten',
@@ -234,6 +237,12 @@ export const BUILTIN_KEYS: ReadonlySet<string> = new Set([...ROLE_DUTIES.flatMap
 /** A built-in duty by its key (the library), or null. */
 export function builtinDuty(key: string): CatalogDuty | null {
   return [...ROLE_DUTIES.flatMap((r) => r.duties), FINISH_WORK, SCORE_OPPORTUNITIES].find((d) => d.key === key) || null;
+}
+
+/** A ready-made duty by its title (the built-in ones and the owner's own presets), or null: a bot switches one on by its title. */
+export function dutyByTitle(title: string, presets: Preset[] = ROLE_DUTIES): CatalogDuty | null {
+  const want = String(title || '').trim().toLowerCase();
+  return (want && presets.flatMap((r) => r.duties).find((d) => d.title.trim().toLowerCase() === want)) || null;
 }
 
 const esc = (w: string) => w.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');

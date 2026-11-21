@@ -33,6 +33,7 @@ const REPO_URL = (process.env.TEAMBOT_REPO_URL || 'https://github.com/<org>/team
 const REPO_PLACEHOLDER = REPO_URL.includes('<org>');
 const VERSION = JSON.parse(fs.readFileSync(path.join(repo, 'package.json'), 'utf8')).version;
 const INSTALLER = `TeamBot-Setup-${VERSION}.exe`;
+const RELEASE_TAG = process.env.TEAMBOT_RELEASE_TAG || `teambot-${VERSION}`;
 const MAC_FILE = `TeamBot-${VERSION}-mac-arm64.dmg`;
 /** SHA-256 of this version's installer from the release's SHA256SUMS.txt; null when that file is not given. */
 const SHA256 = (() => {
@@ -607,8 +608,10 @@ ${sec('report', p.report.title, `<p>${fmt(p.report.text, L)}</p>`)}
 // ------------------------------------------------------------------ download
 R.download = (L, t) => {
   const d = t('download');
-  // The newest release's files by name: one click starts the download.
-  const file = (name) => `${REPO_URL}/releases/latest/download/${name}`;
+  // The files of the release this site was built for, by name: one click starts the download. (Not "latest": that
+  // address stops working for a file with the version in its name the moment a newer release is out, so every release
+  // needed a new upload of the site. The app updates itself after installing.)
+  const file = (name) => `${REPO_URL}/releases/download/${RELEASE_TAG}/${name}`;
   const btn = REPO_PLACEHOLDER
     ? `<span class="btn btn-primary btn-lg" role="link" aria-disabled="true">${icon('download')}<span>${esc(d.button)}</span></span>`
     : `<a class="btn btn-primary btn-lg" href="${esc(file(INSTALLER))}" rel="noopener">${icon('download')}<span>${esc(d.button)}</span></a><a class="btn btn-ghost btn-lg" href="${esc(file(MAC_FILE))}" rel="noopener">${icon('download')}<span>${esc(d.macButton)}</span></a>`;

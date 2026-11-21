@@ -4,7 +4,7 @@ import { redact } from '../../../core/secrets.js';
 import { stoppedByOwner } from '../../../agent/runs.js';
 import { tellOwner } from '../../notifications/owner.js';
 import { NO_UPDATE_TOKEN, hideTurn, type RoutineEngine } from '../engine.js';
-import { ROLE_DUTIES, rolesFor } from './catalog.js';
+import { ROLE_DUTIES, rolesFor, toDuty } from './catalog.js';
 import type { Planned } from '../planner.js';
 
 /**
@@ -596,11 +596,27 @@ export class WorkLoop {
     } catch {
       sites = [];
     }
-    const active = this.engine.routinesOf(userId).filter((r) => !!r.options.duty && r.status === 'active');
-    const keysOf = (agentId: string) => new Set(active.filter((r) => r.agent_id === agentId).map((r) => r.options.duty!.key));
+    const all = this.engine.routinesOf(userId).filter((r) => !!r.options.duty);
+    const active = all.filter((r) => r.status === 'active');
+    // The checks of a bot's role that it does not have: by key or by name, and whatever the status (one the owner paused
+    // or one that waits for its source is not missing). `off` can measure now, so the bot can switch it on; `waits`
+    // cannot yet, with what it waits for (an app that is not connected: telling the bot to switch that on is no use).
     const missing = (x: Agent) => {
-      const have = keysOf(x.id);
-      return rolesFor(x, ROLE_DUTIES).flatMap((r) => r.duties).filter((d) => !have.has(d.key)).map((d) => d.title);
+      const have = new Set(all.filter((r) => r.agent_id === x.id).flatMap((r) => [r.options.duty!.key, r.name.trim().toLowerCase()]));
+      const off: string[] = [];
+      const waits: { title: string; need: string }[] = [];
+      for (const d of rolesFor(x, ROLE_DUTIES).flatMap((r) => r.duties)) {
+        if (have.has(d.key) || have.has(d.title.trim().toLowerCase())) continue;
+        let need: string | null = null;
+        try {
+          need = this.engine.duties?.needs({ options: { duty: toDuty(d) }, agent_id: x.id, user_id: userId } as any, x) ?? null;
+        } catch {
+          need = null;
+        }
+        if (need) waits.push({ title: d.title, need });
+        else off.push(d.title);
+      }
+      return { off, waits };
     };
     const hostOf = (u: string) => u.replace(/^https?:\/\//i, '').replace(/\/$/, '');
     const siteLine = sites.length ? `Websites van het team (${sites.length}): ${sites.slice(0, 80).map(hostOf).join(', ')}` : '';
@@ -619,12 +635,23 @@ export class WorkLoop {
           ? `- websites bij het team: ${sites.length}${watched ? '' : ', en geen vaste taak die ze meet'}`
           : '- bij het team staan geen websites ingevuld: TeamBot kan dan niets zelf meten. Heeft het team websites, vul ze dan in bij het team (veld websites) of vraag de eigenaar om de lijst',
       );
-      const off = this.ctx.store
+      const per = this.ctx.store
         .agents(userId)
         .filter((x: Agent) => !x.archived && x.settings?.private !== true)
-        .map((x: Agent) => ({ name: x.name, list: missing(x) }))
-        .filter((x: { list: string[] }) => x.list.length);
-      if (off.length) lines.push(`- controles die bij de rollen van je team horen en uit staan: ${off.slice(0, 10).map((x: { name: string; list: string[] }) => `${x.name}: ${x.list.slice(0, 4).join(', ')}`).join('; ')}`);
+        .map((x: Agent) => ({ name: x.name, ...missing(x) }));
+      const off = per.filter((x) => x.off.length);
+      // (Without websites every site check waits for the same thing, and the line above says it already.)
+      const waits = per.map((x) => ({ name: x.name, items: sites.length ? x.waits : x.waits.filter((w) => !/website/i.test(w.need)) })).filter((x) => x.items.length);
+      if (off.length) lines.push(`- controles die bij de rollen van je team horen en uit staan (de bot zet ze zelf aan: duty_set met alleen die titel): ${off.slice(0, 10).map((x) => `${x.name}: ${x.off.slice(0, 4).join(', ')}`).join('; ')}`);
+      if (waits.length) {
+        // Per bot, the checks that wait for the same thing in one breath.
+        const parts = waits.slice(0, 10).flatMap((x) => {
+          const by = new Map<string, string[]>();
+          for (const w of x.items) by.set(w.need, [...(by.get(w.need) || []), w.title]);
+          return [...by].map(([need, titles]) => `${x.name}, ${titles.slice(0, 4).join(' en ')}: ${need}`);
+        });
+        lines.push(`- controles die nog niets kunnen meten: ${parts.join(' ')}`);
+      }
       lines.push(
         '',
         'Daar stuur je op. Een bot zonder eigen cijfer weet niet of hij beter wordt: geef hem de opdracht zijn ene getal te kiezen, te meten en op het dashboard te zetten. Een experiment dat te beoordelen is leg je bij zijn eigenaar. En kom zelf met kansen: hoogstens drie per ronde, alleen wat nog niet in de tabel kansen staat, elk met wat het de eigenaar oplevert (in euro’s of aanvragen, met hoe je daaraan komt), wat het kost en de kleinste proef die laat zien of het werkt. Een kans is een voorstel aan de eigenaar, geen vraag om hulp.',
@@ -638,8 +665,8 @@ export class WorkLoop {
     lines.push(...(mine.length ? mine.slice(0, 6).map(tile) : ['- je hebt nog geen eigen cijfer op het dashboard']));
     lines.push(...(own.length ? own.slice(0, 6).map(test) : ['- er loopt geen experiment van jou']));
     if (siteLine) lines.push(`- ${siteLine}`);
-    const off = missing(agent);
-    if (off.length) lines.push(`- controles die bij je rol horen en nog uit staan: ${off.slice(0, 6).join(', ')} (aanzetten: duty_set met dezelfde titel)`);
+    const { off } = missing(agent);
+    if (off.length) lines.push(`- controles die bij je rol horen en nog uit staan: ${off.slice(0, 6).join(', ')} (aanzetten: duty_set met alleen die titel)`);
     lines.push('');
     if (!mine.length)
       lines.push(

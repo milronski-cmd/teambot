@@ -1,5 +1,20 @@
 # Changelog
 
+## [4.15.2] — 2026-11-21
+
+### Controles van een rol: de echte, en zichtbaar op het dashboard
+- **Een bot zet een kant-en-klare controle van zijn rol aan met alleen de titel**, en krijgt dan de echte controle,
+  die TeamBot zelf meet. In 4.15.1 kreeg hij een kopie met alleen de naam: die werd nooit zelf gemeten en bleef als
+  "uit" gemeld. Zo'n kopie wordt nu vervangen door de echte.
+- **Alleen wat nu kan meten wordt als "uit" gemeld.** Een controle die wacht op een app die niet gekoppeld is, staat
+  bij de hoofdbot, met wat er ontbreekt. Een controle die je zelf hebt gepauzeerd telt niet als ontbrekend.
+- **De sitemeting staat op het dashboard**: "Websites in orde" en "Websites bereikbaar", met hoeveel van de websites
+  goed zijn en welke niet. Ververst bij elke meting, zonder beurt van een bot.
+- De controle van de advertentiekosten wordt niet meer genoemd bij een bot die alleen over campagnes rapporteert of
+  er beeld voor maakt, en die van Merchant Center niet meer bij het woord "feedback".
+- De website verwijst naar de bestanden van zijn eigen versie: een nieuwe versie uitbrengen vraagt geen nieuwe
+  upload van de website meer.
+
 ## [4.15.1] — 2026-11-21
 
 ### Klaar is alleen wat gemeten is
