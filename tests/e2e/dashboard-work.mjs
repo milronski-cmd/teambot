@@ -150,8 +150,20 @@ try {
     await put(v);
     await td.dashboard(uid);
   }
+  // A budget a bot keeps: a tile with a limit is a meter under Verbruik, not a number among the others.
+  await td.write(uid, [
+    { sql: "INSERT INTO dashboard (sleutel, groep, titel, waarde, maximum, eenheid, bot) VALUES ('hosting-budget', 'Kosten', 'Hosting: extra budget deze maand', '19,55', '23', 'dollar', 'Bo')" },
+    { sql: "INSERT INTO dashboard (sleutel, groep, titel, waarde, maximum, eenheid, bot) VALUES ('bouwminuten', 'Kosten', 'Bouwminuten deze maand', '640', '2000', 'minuten', 'Bo')" },
+  ]);
   await page.reload();
   await page.getByTestId('dashboard-course').first().waitFor({ timeout: 15000 });
+  const usage = page.getByTestId('dashboard-usage');
+  await usage.getByTestId('dashboard-meter').first().waitFor({ timeout: 10000 });
+  const meterText = (await usage.innerText()).replace(/\s+/g, ' ');
+  check('een budget met een grens staat als meter onder Verbruik: wat er gebruikt is van wat, en "bijna op" in woorden', (await usage.getByTestId('dashboard-meter').count()) === 2 && /19,55 van 23 dollar/.test(meterText) && /Bijna op: 85/.test(meterText) && /640 van 2000 minuten/.test(meterText), meterText.slice(0, 200));
+  check('een meter staat niet nog eens tussen de cijfers', (await page.getByTestId('dashboard-numbers').getByText('Hosting: extra budget deze maand').count()) === 0);
+  check('bovenaan staat een begroeting met de bots', (await page.getByTestId('dashboard-hero').count()) === 1 && /Goede|Goed/.test(await page.getByTestId('dashboard-hero').innerText()));
+  check('een cijfer dat steeg toont dat naast het getal', /\+8/.test(await page.getByTestId('dashboard-trend').first().innerText()));
   const tile = await page.getByTestId('dashboard-tile').first().innerText();
   check('een cijfer dat veranderde toont zijn verloop', /Aanvragen deze week/.test(tile) && /\+8 sinds/.test(tile), tile.replace(/\s+/g, ' ').slice(0, 160));
   // A long explanation stays two lines until he asks for all of it.

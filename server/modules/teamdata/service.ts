@@ -41,6 +41,13 @@ export function tileNumber(v: unknown): number | null {
   return Number.isFinite(n) ? n : null;
 }
 
+/** A tile with a limit (column maximum) is a meter: what is used of what, as numbers; null for an ordinary tile. */
+export function meterOf(r: { waarde?: unknown; maximum?: unknown }): { value: number; max: number } | null {
+  const max = tileNumber(r.maximum);
+  const value = tileNumber(r.waarde);
+  return max !== null && max > 0 && value !== null && value >= 0 ? { value, max } : null;
+}
+
 export class TeamDataError extends Error {}
 
 export const QUERY_MAX_ROWS = 500;
@@ -1048,7 +1055,7 @@ export class TeamData {
   async dashboard(userId: string, teamId?: string | null) {
     const keys = this.keysFor(userId, teamId);
     const lists = await Promise.all(
-      keys.map(async (tk) => this.withHistory(userId, tk, await this.rowsIn(userId, tk, 'SELECT * FROM dashboard ORDER BY groep, volgorde, titel LIMIT 500', [])).map((r) => ({ ...r, id: Number(r.id), teamId: tk || null, team: this.teamName(tk) }))),
+      keys.map(async (tk) => this.withHistory(userId, tk, await this.rowsIn(userId, tk, 'SELECT * FROM dashboard ORDER BY groep, volgorde, titel LIMIT 500', [])).map((r) => ({ ...r, id: Number(r.id), teamId: tk || null, team: this.teamName(tk), meter: meterOf(r) }))),
     );
     return lists.flat();
   }

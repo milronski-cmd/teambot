@@ -530,3 +530,12 @@ test('the dashboard keeps the course of a number: a point each time it changes, 
     await t.close();
   }
 });
+
+test('a tile with a limit is a meter: what is used of what, as numbers; an ordinary tile is not', async () => {
+  const { meterOf } = await import('../server/modules/teamdata/service.js');
+  assert.deepEqual(meterOf({ waarde: '19,55', maximum: '23' }), { value: 19.55, max: 23 });
+  assert.deepEqual(meterOf({ waarde: '640 minuten', maximum: '2.000' }), { value: 640, max: 2000 });
+  assert.equal(meterOf({ waarde: '12', maximum: null }), null);
+  assert.equal(meterOf({ waarde: 'onbekend', maximum: '23' }), null);
+  assert.equal(meterOf({ waarde: '5', maximum: '0' }), null);
+});

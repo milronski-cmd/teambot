@@ -23,7 +23,9 @@ test('a bot with nothing on its name looks for work itself after standing still,
     assert.equal(await env.workNow(), 1, 'a turn of own initiative');
     assert.equal(runs().length, 1);
     const asked = JSON.stringify(t.requests.at(-1)!.messages);
-    assert.match(asked, /er ligt geen werk op je naam\. Dan zoek je het zelf, binnen je eigen vak/);
+    // Done is done: no work for the sake of being busy; then the fixed tasks, then maintenance.
+    assert.match(asked, /er ligt geen werk op je naam\. Klaar is klaar: je zoekt geen werk om bezig te zijn\./);
+    assert.match(asked, /in een vaste taak zit[\s\S]*Daarna is je vak in onderhoud/);
     assert.match(asked, /task_create/, 'bigger work goes on the board, where the loop picks it up');
     assert.match(asked, /Jouw stand .*je hebt nog geen eigen cijfer op het dashboard.*er loopt geen experiment van jou.*kies het ene getal/s, 'the turn is measured by a number of its own');
     assert.match(asked, /geld uitgeven, een eerste bericht aan een nieuw contact/, 'the owner’s yes where his rules ask for it');
@@ -71,7 +73,7 @@ test('real work goes first: a bot with a task on its name gets that task, not a 
     assert.equal(await env.workNow(), 1);
     const asked = JSON.stringify(t.requests.at(-1)!.messages);
     assert.match(asked, /Sitemap repareren/);
-    assert.doesNotMatch(asked, /Dan zoek je het zelf/);
+    assert.doesNotMatch(asked, /Klaar is klaar: je zoekt geen werk/);
   } finally {
     work.initiative = false;
     await t.close();

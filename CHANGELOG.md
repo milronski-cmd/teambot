@@ -1,5 +1,21 @@
 # Changelog
 
+## [4.12.5] — 2026-11-21
+
+### Dashboard
+- **Verbruik in beeld.** Een nieuw blok laat zien hoeveel er gebruikt is van wat je betaalt of mag gebruiken: je
+  AI-abonnementen leest TeamBot zelf en live uit, en elk budget of quotum dat een bot bijhoudt (hosting, bouwminuten,
+  een API) staat er als meter bij, met "bijna op" en "op" in woorden. Een bot maakt zo'n meter door bij een tegel ook
+  de grens op te geven.
+- **Mooier en rustiger.** Bovenaan een begroeting met de bots die nu aan het werk zijn; het cijfer van een tegel
+  staat groot voorop, met ernaast of het steeg of daalde.
+
+### Klaar is klaar
+- **Geen werk om bezig te zijn.** Een bot zonder werk loopt één lijn af: is er iets kapot of niet af, dan maakt hij
+  dat af. Is alles af, dan kijkt hij één keer of alles van zijn vak in een vaste taak zit (elke site, elk account,
+  elke instelling en meting) en of hij de tools en skills van zijn vak heeft. Daarna is zijn vak in onderhoud, en
+  uitbreiden gaat met een kans die jij beoordeelt.
+
 ## [4.12.4] — 2026-11-21
 
 ### Een team dat werk afmaakt in plaats van doorgeeft

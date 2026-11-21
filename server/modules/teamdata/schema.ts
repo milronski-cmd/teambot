@@ -105,11 +105,13 @@ export const STANDARD_TABLES: StandardTable[] = [
     name: 'dashboard',
     label: 'Dashboard',
     about:
-      "Tegels op het dashboard van de eigenaar: één rij per cijfer of stand (mail, klantvragen, WhatsApp, omzet, leads …), in een groep. Houd je eigen tegels bij op een vaste sleutel, met INSERT … ON CONFLICT(sleutel) DO UPDATE SET waarde = excluded.waarde, toelichting = excluded.toelichting, bijgewerkt = datetime('now','localtime'): nooit een tweede rij voor hetzelfde cijfer. bot = je naam. De eigenaar leest een tegel in één oogopslag: titel kort (wat het cijfer is, hoogstens een stuk of zes woorden), waarde alleen het getal, eenheid één of twee woorden, toelichting één korte zin (wat het betekent of wat eraan gedaan wordt). Bronnen, meetmethode, uitzonderingen en lijsten horen in je dossier of in een rapport waar link naar wijst, niet op de tegel.",
+      "Tegels op het dashboard van de eigenaar: één rij per cijfer of stand (mail, klantvragen, WhatsApp, omzet, leads …), in een groep. Houd je eigen tegels bij op een vaste sleutel, met INSERT … ON CONFLICT(sleutel) DO UPDATE SET waarde = excluded.waarde, toelichting = excluded.toelichting, bijgewerkt = datetime('now','localtime'): nooit een tweede rij voor hetzelfde cijfer. bot = je naam. De eigenaar leest een tegel in één oogopslag: titel kort (wat het cijfer is, hoogstens een stuk of zes woorden), waarde alleen het getal, eenheid één of twee woorden, toelichting één korte zin (wat het betekent of wat eraan gedaan wordt). Bronnen, meetmethode, uitzonderingen en lijsten horen in je dossier of in een rapport waar link naar wijst, niet op de tegel. Een verbruik met een grens (een budget, een abonnement, bouwminuten, een quotum) is een meter: zet dan ook maximum (de grens, alleen het getal), dan ziet de eigenaar een balk met wat er nog over is; houd zo'n meter vers met een vaste taak.",
     ddl: `CREATE TABLE IF NOT EXISTS dashboard (
   id INTEGER PRIMARY KEY, sleutel TEXT NOT NULL UNIQUE, groep TEXT, titel TEXT NOT NULL, waarde TEXT, eenheid TEXT,
-  toelichting TEXT, link TEXT, bot TEXT, volgorde INTEGER, bijgewerkt TEXT DEFAULT (datetime('now','localtime')))`,
+  toelichting TEXT, link TEXT, bot TEXT, volgorde INTEGER, bijgewerkt TEXT DEFAULT (datetime('now','localtime')), maximum TEXT)`,
     indexes: [],
+    // maximum = the limit of a tile that is a meter (a budget, a quota): the dashboard then draws what is used of it.
+    upgrades: ['ALTER TABLE dashboard ADD COLUMN maximum TEXT'],
   },
 ];
 
