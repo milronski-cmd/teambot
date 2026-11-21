@@ -9,6 +9,7 @@ import { TASK_LABEL, type Task } from './board.js';
 import { TERMINAL_DELEGATION, TERMINAL_RUN, type Delegation, type Room, type TeamMeta } from './types.js';
 import type { RoomService } from './service.js';
 import { progressSince } from './progress.js';
+import { runSteps } from '../quality/evidence.js';
 import type { Words } from '../../../shared/i18n-core.js';
 
 export const DELEGATION_LABEL: Record<string, string> = { queued: 'in de wachtrij', running: 'bezig', done: 'klaar', error: 'fout', cancelled: 'gestopt', timeout: 'time-out' };
@@ -1265,15 +1266,19 @@ export class Orchestrator {
     }
   }
 
-  /** How often a handed-over job goes back to the same bot to be finished before its result goes to the giver as it is. */
-  static MAX_FINISH = 2;
+  /** How often at most a handed-over job goes back to the same bot to be finished before its result goes to the giver as it is. */
+  static MAX_FINISH = 5;
 
   /**
    * The second look found the job not finished and said what is missing: the same bot gets a turn to finish it, in the
    * same conversation, before the result goes back. So a job is worked on until it is done (or the bot says what it
    * cannot do), without the giver having to read a half result and send it back. Live (20 Nov 2026): 151 of 190
    * handed-over jobs came back "te controleren" ("2 of 15 lines done"), and each needed the lead to send it back by hand.
-   * False: not started (tried MAX_FINISH times, or the bot or the conversation is gone); the result then goes back as it is.
+   * It goes on only while it makes progress (taken over from OpenMausBot's job runtime, "a node continues only while it
+   * makes progress"): a turn to finish it in which not one step succeeded ends it, so a bot that only answers that it is
+   * done is not asked again and again.
+   * False: not started (no progress, tried MAX_FINISH times, or the bot or the conversation is gone); the result then
+   * goes back as it is.
    */
   private finishOff(d: Delegation, run: Run, reason: string): boolean {
     const team = (run.meta?.team || {}) as TeamMeta & { finishes?: number };
@@ -1281,6 +1286,7 @@ export class Orchestrator {
     const sub = this.ctx.store.thread(d.thread_id);
     const worker = this.ctx.store.agent(d.to_agent_id);
     if (!sub || !worker || worker.archived || n >= Orchestrator.MAX_FINISH) return false;
+    if (n > 0 && !runSteps(this.ctx, run.id).some((x) => x.ok)) return false;
     if (!this.ctx.store.thread(d.parent_thread_id) || this.ctx.runs.ownerStopped(worker.id) !== null) return false;
     const room = this.s.room(d.room_id);
     if (room && (room.archived || room.status === 'paused')) return false;

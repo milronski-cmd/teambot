@@ -1,5 +1,16 @@
 # Changelog
 
+## [4.13.0] — 2026-11-21
+
+### Overgenomen van andere agentsystemen
+Nagelezen in hun code (OpenMausBot, Hermes, OpenClaw, OpenBot) en overgenomen wat daar beter werkt.
+- **Doorwerken zolang er voortgang is** (OpenMausBot). Een klus die de controle nog niet af vindt, gaat terug naar
+  dezelfde bot zolang die er echt iets aan doet, tot vijf keer; een beurt waarin geen enkele stap lukte, stopt het.
+  Zo werkt een bot een grote klus af in plaats van na een stuk te stoppen.
+- **Een bot schrijft zijn eigen skills** (Hermes). Ging hetzelfde soort werk drie keer goed, dan legt de bot die
+  werkwijze zelf vast als skill, of verbetert hij de skill die er al is. Daar is geen kaart en geen klik van jou meer
+  voor nodig.
+
 ## [4.12.5] — 2026-11-21
 
 ### Dashboard

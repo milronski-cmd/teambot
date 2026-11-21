@@ -420,7 +420,7 @@ test('an owner correction becomes a lesson for that bot, in its own working note
   }
 });
 
-test('a delegated job the second look finds unfinished goes back to the same bot to be finished, at most twice; "Kon niet:" is passed on honestly', async () => {
+test('a delegated job the second look finds unfinished goes back to the same bot to be finished, as long as it makes progress; "Kon niet:" is passed on honestly', async () => {
   const t = await startTestApp();
   try {
     const m = await team(t);
@@ -444,15 +444,15 @@ test('a delegated job the second look finds unfinished goes back to the same bot
     assert.equal(sub.filter((x) => /^Nog niet af volgens de controle met een frisse blik: Sydney is niet de hoofdstad/.test(x)).length, 1, 'told once what is missing');
     assert.match(sub.join('\n'), /Maak het nu zelf af: doe wat nog ontbreekt \(De naam van de hoofdstad\)/);
 
-    // It stays unfinished: after two more tries the result goes back as it is, with what the look said.
+    // It stays unfinished and the turn to finish it did nothing (no step): the result goes back as it is, with what the look said.
     const before = m.calls.filter((c) => c.bot === 'Zoeker').length;
     m.script('Lead', { toolCalls: [{ name: 'delegate_task', args: { bot: 'Zoeker', task: 'Wat is de hoofdstad van Canada?', expected_output: 'De naam van de hoofdstad', wait: true } }] }, { text: 'Ik laat het nakijken.' });
-    m.script('Zoeker', { text: 'Toronto' }, { text: 'Vancouver' }, { text: 'Montreal' });
-    m.script('?', { text: '{"verdict":"te_controleren","reason":"Toronto is niet de hoofdstad."}' }, { text: '{"verdict":"te_controleren","reason":"Vancouver is niet de hoofdstad."}' }, { text: '{"verdict":"te_controleren","reason":"Montreal is niet de hoofdstad."}' });
+    m.script('Zoeker', { text: 'Toronto' }, { text: 'Vancouver' });
+    m.script('?', { text: '{"verdict":"te_controleren","reason":"Toronto is niet de hoofdstad."}' }, { text: '{"verdict":"te_controleren","reason":"Vancouver is niet de hoofdstad."}' });
     await t.say(th.id, 'Zoek de hoofdstad van Canada op');
     await settle(t);
-    assert.match(toolOut(t, th.id, 'delegate_task').at(-1)!, /Montreal[\s\S]*TE CONTROLEREN[\s\S]*Montreal is niet de hoofdstad/);
-    assert.equal(m.calls.filter((c) => c.bot === 'Zoeker').length, before + 3, 'the first turn and two to finish it, no more');
+    assert.match(toolOut(t, th.id, 'delegate_task').at(-1)!, /Vancouver[\s\S]*TE CONTROLEREN[\s\S]*Vancouver is niet de hoofdstad/);
+    assert.equal(m.calls.filter((c) => c.bot === 'Zoeker').length, before + 2, 'the first turn and one to finish it; that one did nothing, so no more');
     const d2 = (await t.api('GET', `/rooms/delegations?threadId=${th.id}`)).find((x: any) => /Canada/.test(x.task));
     assert.equal(d2.statusLabel, 'te controleren');
 
@@ -505,7 +505,7 @@ test('team database: a task set to klaar without evidence goes to wacht_op_contr
   }
 });
 
-test('recurring work done well → a skill suggestion (no install); every bot that can act gets the check-before-klaar rule', async () => {
+test('recurring work done well → the bot is asked to lay it down as a skill itself, without a card; every bot that can act gets the check-before-klaar rule', async () => {
   const t = await startTestApp();
   try {
     const { a, th, ws } = await bot(t, 'Bo');
@@ -513,22 +513,28 @@ test('recurring work done well → a skill suggestion (no install); every bot th
     for (const week of [1, 2, 3]) {
       const tk = await boardTask(t, `Weekrapport SEO week ${week}`);
       t.script.push({ toolCalls: [{ name: 'task_done', args: { id: tk.id, result: 'Rapport klaar', evidence: ['rapport.md'] } }] }, { text: '{"verdict":"klaar","reason":"Het rapport staat er."}' }, { text: 'ok' });
+      // The third good run: TeamBot asks the bot to write the skill, and the bot answers.
+      if (week === 3) t.script.push({ text: 'Ik leg de werkwijze vast.' });
       await t.say(th.id, `meld week ${week} af`);
     }
+    await t.waitIdle(th.id);
     assert.match(t.requests[0].system, /Controleer vóór je "klaar" zegt/);
     // The board lines (a bot with the board tools), without tool ids: those would make the tool selection (package Y)
     // send the whole team part with every call.
     assert.match(t.requests[0].system, /Claim een taak op het takenbord/);
     assert.doesNotMatch(t.requests[0].system, /task_claim|task_done/);
-    const inbox = await t.api('GET', '/quality/inbox');
-    assert.equal(inbox.suggestions.length, 1);
-    assert.equal(inbox.suggestions[0].agentName, a.name);
-    assert.equal(t.app.ctx.store.one<any>('SELECT COUNT(*) AS n FROM skills')?.n ?? 0, 0, 'nothing installed by itself');
-    t.script.push({ text: 'Ik maak een concept.' });
-    await t.api('POST', `/quality/suggestions/${inbox.suggestions[0].id}`, { decision: 'accept' });
+    // No card for the owner: the bot was asked at once, in its own chat, once.
+    assert.equal((await t.api('GET', '/quality/inbox')).suggestions.length, 0, 'nothing waits for the owner');
+    const asked = msgs(t, th.id).filter((m) => m.role === 'user' && /skill_save/.test(m.content));
+    assert.equal(asked.length, 1, 'the bot is asked to save one, once');
+    assert.match(asked[0].content, /al 3 keer goed gedaan\. Leg die werkwijze vast als skill[\s\S]*Bestaat er al een skill voor dit werk, verbeter die dan/);
+    assert.equal(t.app.ctx.store.one<any>("SELECT status FROM quality_suggestions WHERE agent_id = ?", a.id)?.status, 'accepted');
+    // A fourth good run of the same kind does not ask again.
+    const tk4 = await boardTask(t, 'Weekrapport SEO week 4');
+    t.script.push({ toolCalls: [{ name: 'task_done', args: { id: tk4.id, result: 'Rapport klaar', evidence: ['rapport.md'] } }] }, { text: '{"verdict":"klaar","reason":"Het rapport staat er."}' }, { text: 'ok' });
+    await t.say(th.id, 'meld week 4 af');
     await t.waitIdle(th.id);
-    assert.ok(msgs(t, th.id).some((m) => m.role === 'user' && /skill_save/.test(m.content)), 'the bot is asked to save one');
-    assert.equal((await t.api('GET', '/quality/inbox')).suggestions.length, 0);
+    assert.equal(msgs(t, th.id).filter((m) => m.role === 'user' && /skill_save/.test(m.content)).length, 1);
 
     // A chat-only bot gets no such rule.
     const chat = await t.agent({ name: 'Praat', access_mode: 'chat' });

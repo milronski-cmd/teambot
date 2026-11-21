@@ -542,6 +542,7 @@ const EXACT: Record<string, Fn> = {
     sys(tpl`{h} het werk van ${x.bot} na de limiet alsnog nagekeken${d.state === 'passed' ? ' (klaar)' : d.state === 'cant' ? ' (kon niet)' : ' (te controleren)'}${colon(clean(d.task, 80))}`, { tone: d.state === 'passed' ? undefined : 'warn' }),
   'quality.lesson': (_d, x) => sys(tpl`{h} uit jouw correctie een les voor ${x.bot} onthouden`),
   'quality.skill_accepted': (d, x) => you(tpl`{h} ${x.bot} gevraagd een skill voor te stellen${colon(clean(d.title, 80))}`),
+  'quality.skill_self': (d) => you(tpl`{h} een werkwijze die steeds goed ging zelf als skill vastgelegd: ${clean(d.title, 80) || 'een terugkerende taak'}`),
   'team.note': (d) => you(tpl`{h} een melding achtergelaten voor ${clean(d.to, 60) || 'een collega'}`),
   'mcp.mailbox.added': (d) => you(tpl`{h} het postvak ${clean(d.address, 80) || 'van een mailadres'} gekoppeld`),
   'mcp.mailbox.removed': (d) => you(tpl`{h} het postvak ${clean(d.address, 80) || 'van een mailadres'} losgekoppeld`),
