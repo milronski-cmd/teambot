@@ -1,5 +1,20 @@
 # Changelog
 
+## [4.15.1] — 2026-11-21
+
+### Klaar is alleen wat gemeten is
+- **Een lopend experiment is geen reden om stil te staan.** Een bot met een vers cijfer en een experiment dat nog
+  loopt kreeg te horen dat er niets te beoordelen viel, en meldde dan niets. Had elke bot één experiment lopen, dan
+  stond het hele team stil tot de meetdatums. Nu loopt zo'n bot de rest van zijn vak na, site voor site en platform
+  voor platform, en houdt hij daarvan een aflijst bij. Pas als die rond is en alles gemeten en in orde is, is het
+  onderhoud.
+- **Wat niet gemeten wordt, staat erbij.** Een bot ziet bij eigen werk de websites van zijn team en de controles die
+  bij zijn rol horen en nog uit staan. De hoofdbot ziet het voor het hele team: hoeveel websites er zijn, of een
+  vaste taak ze meet, en welke controles per bot uit staan. Staan er geen websites bij het team, dan staat dat er
+  ook: TeamBot kan ze dan niet zelf meten.
+- **Tot 200 websites per team** (was 20).
+- Een "Websitebouwer" wordt nu herkend als bouwer, voor de controle of de websites bereikbaar zijn.
+
 ## [4.15.0] — 2026-11-21
 
 ### Het dashboard is je startscherm, als van een besturingssysteem

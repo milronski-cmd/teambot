@@ -164,7 +164,7 @@ export const ROLE_DUTIES: RoleDuties[] = [
   {
     id: 'techniek',
     label: 'Bouwer',
-    words: ['bouwer', 'webmaster', 'devops', 'sitebeheer', 'websitebeheer'],
+    words: ['bouwer', 'websitebouwer*', 'webbouwer*', 'sitebouwer*', 'webmaster', 'webontwikkelaar*', 'webdeveloper*', 'devops', 'sitebeheer', 'websitebeheer'],
     duties: [
       {
         key: 'site.bereikbaar',

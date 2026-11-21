@@ -24,8 +24,8 @@ test('a bot with nothing on its name looks for work itself after standing still,
     assert.equal(runs().length, 1);
     const asked = JSON.stringify(t.requests.at(-1)!.messages);
     // Done is done: no work for the sake of being busy; then the fixed tasks, then maintenance.
-    assert.match(asked, /er ligt geen werk op je naam\. Klaar is klaar: je zoekt geen werk om bezig te zijn\./);
-    assert.match(asked, /in een vaste taak zit[\s\S]*Daarna is je vak in onderhoud/);
+    assert.match(asked, /er ligt geen werk op je naam\. Klaar is klaar: je zoekt geen werk om bezig te zijn\. Maar klaar is alleen wat gemeten is/);
+    assert.match(asked, /in een vaste taak met meting zit[\s\S]*Daarna is je vak in onderhoud/);
     assert.match(asked, /task_create/, 'bigger work goes on the board, where the loop picks it up');
     assert.match(asked, /Jouw stand .*je hebt nog geen eigen cijfer op het dashboard.*er loopt geen experiment van jou.*kies het ene getal/s, 'the turn is measured by a number of its own');
     assert.match(asked, /geld uitgeven, een eerste bericht aan een nieuw contact/, 'the owner’s yes where his rules ask for it');
@@ -80,7 +80,7 @@ test('real work goes first: a bot with a task on its name gets that task, not a 
   }
 });
 
-test('a turn of own initiative brings the stand: own number, experiments that are due, and nothing to judge is maintenance', async () => {
+test('a turn of own initiative brings the stand: own number, experiments that are due, and a running experiment is no reason to stand still', async () => {
   const env = await setup();
   const { t, work } = env;
   try {
@@ -111,14 +111,23 @@ test('a turn of own initiative brings the stand: own number, experiments that ar
     assert.match(said, /Meet eerst je cijfer opnieuw/);
     assert.match(said, /Een experiment dat te beoordelen is gaat voor: .*bewezen of werkt_niet/);
 
-    // Number fresh, experiment still running: nothing to judge, the bot only maintains.
+    // Number fresh, experiment still running: that is not "done". The bot walks through the rest of its field, and
+    // sees the checks of its role that are still off.
     await td.write(userId, [
       { sql: "UPDATE dashboard SET bijgewerkt = ? WHERE sleutel = 'seo-aanvragen'", params: [fresh] },
       { sql: 'UPDATE experimenten SET meetdatum = ? WHERE id = 1', params: [day(5)] },
     ]);
     said = (await work.stand(sem.id, own))!;
-    assert.match(said, /Je cijfer is bij en je experiment loopt nog: er valt nu niets te beoordelen\. Herstel alleen wat kapot is of achterloopt/);
-    assert.doesNotMatch(said, /Meet eerst|kies het ene getal/);
+    assert.match(said, /Je cijfer is bij en je experiment loopt: daar hoef je niet op te wachten\. Loop de rest van je vak na, site voor site en platform voor platform/);
+    assert.match(said, /Houd in je werknotities een aflijst bij[\s\S]*Pas als die lijst rond is en alles gemeten en in orde is/);
+    assert.doesNotMatch(said, /er valt nu niets te beoordelen|Meet eerst|kies het ene getal/);
+    assert.match(said, /controles die bij je rol horen en nog uit staan: Websites: technische fouten en indexeerbaarheid, Posities en klikken in Google, Indexering in Google/);
+    assert.doesNotMatch(said, /Websites van het team/, 'no websites listed at the team yet');
+    // With the team's websites listed, the bot gets them to walk through.
+    const team = ctx.services.teams.teamOf(sem.id);
+    await t.api('PATCH', `/teams/${team}`, { profile: { sites: Array.from({ length: 30 }, (_, i) => `site${i + 1}.test`) } });
+    said = (await work.stand(sem.id, own))!;
+    assert.match(said, /Websites van het team \(30\): site1\.test, site2\.test[\s\S]*site30\.test/, 'more than twenty websites are kept');
 
     // The main bot gets the team: who has no number, what is due, and the request for opportunities with their yield.
     await td.write(userId, [{ sql: 'UPDATE experimenten SET meetdatum = ? WHERE id = 1', params: [day(-2)] }]);
@@ -128,6 +137,9 @@ test('a turn of own initiative brings the stand: own number, experiments that ar
     assert.match(lead, /cijfers op het dashboard: 1\. Zonder eigen cijfer: Pen/);
     assert.match(lead, /experimenten die lopen: 1, nu te beoordelen: 1\. Kansen die wachten: 0/);
     assert.match(lead, /experiment 1 van Sem/);
+    // What is not measured is said: the websites nobody watches, and the checks of the team's roles that are off.
+    assert.match(lead, /websites bij het team: 30, en geen vaste taak die ze meet/);
+    assert.match(lead, /controles die bij de rollen van je team horen en uit staan: Sem: Websites: technische fouten en indexeerbaarheid, Posities en klikken in Google, Indexering in Google/);
     assert.match(lead, /kom zelf met kansen: hoogstens drie per ronde.*wat het de eigenaar oplevert/s);
     // The main bot gets it on every work turn; another bot only on a turn of own initiative.
     assert.match((await work.stand(baas.id, { role: 'system', parts: { work: { refs: ['tk::1'] } } } as any)) || '', /^Stand van het team/);

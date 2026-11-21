@@ -105,7 +105,8 @@ export function cleanSites(raw: any): string[] {
   for (const x of list) {
     const u = cleanSiteUrl(x);
     if (u && !out.includes(u)) out.push(u);
-    if (out.length >= 20) break;
+    // (Up to 200: an owner with a portfolio of sites has dozens, and each is watched by the standing duties.)
+    if (out.length >= 200) break;
   }
   return out;
 }
