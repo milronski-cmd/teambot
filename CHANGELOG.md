@@ -1,5 +1,37 @@
 # Changelog
 
+## [4.15.0] — 2026-11-21
+
+### Het dashboard is je startscherm, als van een besturingssysteem
+- **Over het hele venster.** Op het dashboard maakt de lijst met bots plaats (hun gezichten blijven in de smalle
+  balk). Een achtergrond over het hele scherm, een menubalk bovenin, widgets, een dock onderin.
+- **Menubalk.** Waar je bent, hoeveel bots er werken, wat er op je wacht, hoe vol je AI-abonnement is, de dag en
+  de tijd: altijd in beeld.
+- **Widgets.** De klok met een begroeting en de bots die nu werken; wat op je wacht, je team en je apps als tellers;
+  je cijfers klein met hun verloop (wat bewoog eerst); je verbruik als ringen; je geld als één bedrag met de lijn
+  van de laatste dertig dagen; je laatste post; de open taken en wie er aan het werk is; je gekoppelde apps.
+- **Dock met apps.** Overzicht, Cijfers, Geld, Post, Verbruik, Team en Apps als iconen, met de weg naar Wacht op
+  jou en Taken. Een app opent als venster: dat onderdeel helemaal, met een kruisje terug naar het startscherm.
+  Cijfers: elk cijfer met verloop, uitleg en wie het bijhoudt. Geld: elke rekening, het saldo per dag en de
+  mutaties. Post: lezen, zoeken, antwoorden en schrijven vanaf elk gekoppeld adres. Verbruik: elke meter.
+
+### Meters die zichzelf verversen
+- **Een vaste taak kan een opdracht op deze computer laten meten**, zonder AI en zonder dat een bot een beurt
+  draait: het getal uit wat de opdracht afdrukt (ook uit JSON). Alleen bij een bot met volledige toegang.
+- **Elke meting kan haar getal op het dashboard zetten**, ververst bij elke meting. Met een grens erbij (vast, of
+  uit hetzelfde antwoord) is het een meter: zo staat het verbruik van je hosting, bouwminuten of een abonnement
+  live op je dashboard.
+
+### Koppelen zonder plakken
+- **Een sleutel uit een bestand.** Bij een sleutel voor scripts kies je het bestand waar hij in staat; de naam volgt
+  het bestand. De bank vult het applicatie-ID zelf in uit de naam van het sleutelbestand.
+- **De bank werkt met echte rekeningen zonder omweg.** Enable Banking neemt voor Production geen http-adres aan;
+  TeamBot geeft nu standaard het https-adres van zijn doorstuurpagina op en komt na je akkoord vanzelf terug.
+
+### Kleiner
+- Een bot die in een andere taal dan Nederlands of Engels meldt dat iets niet lukte, wordt nu ook zo begrepen.
+- Post die niet gekoppeld is, geeft geen foutregel meer in de browser: het dashboard zegt hoe je koppelt.
+
 ## [4.13.1] — 2026-11-21
 
 ### Overgenomen van andere agentsystemen

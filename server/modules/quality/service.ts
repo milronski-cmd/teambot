@@ -12,7 +12,7 @@ export const MAX_RECHECKS = 6;
 export const taskLink = (r: { kind: string; ref: string }) => (r.kind === 'room' ? `#/tasks?open=${encodeURIComponent(`b:${r.ref}`)}` : '#/tasks');
 
 /** "Kon niet: de site was offline" (also "Niet gelukt:", "Lukt niet —"): a delegated bot's honest "could not". */
-export const CANT_RE = /^\s*(?:\*\*)?(kon niet|kan niet|niet gelukt|lukt niet|mislukt|could not|couldn'?t|cannot|can'?t do)(?:\*\*)?\s*[:—–-]\s*([\s\S]*)$/i;
+export const CANT_RE = /^\s*(?:\*\*)?(kon niet|kan niet|niet gelukt|lukt niet|mislukt|could not|couldn'?t|cannot|can'?t do|konnte nicht|impossible|no se pudo|no pude|impossibile|não foi possível|nao foi possivel|nie udało się|yapılamadı|не вдалося|تعذر)(?:\*\*)?\s*[:—–-]\s*([\s\S]*)$/i;
 
 export interface ReportInput {
   userId: string;

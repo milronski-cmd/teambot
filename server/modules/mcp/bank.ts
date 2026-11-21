@@ -26,6 +26,13 @@ import { cleanError, guardedFetch, sha256 } from './util.js';
 
 export const BANK_ID = 'bank';
 export const BANK_CALLBACK_PATH = '/api/public/mcp/bank/callback';
+/**
+ * Enable Banking takes no http:// address for an application with real accounts (Production). TeamBot's website has a
+ * page that only hands the bank's answer on to TeamBot on the owner's own computer (website/build.mjs, bank.html: it
+ * reads the port from the state and keeps nothing). The default return address; another host sets its own with
+ * TEAMBOT_BANK_RELAY ('' = none, TeamBot's own http address).
+ */
+export const BANK_RELAY = process.env.TEAMBOT_BANK_RELAY ?? 'https://teambot-beta.vercel.app/bank.html';
 const API = 'https://api.enablebanking.com';
 
 /** Tests point TEAMBOT_BANK_BASE at a local stand-in for the service. Loopback only. */
@@ -351,7 +358,13 @@ function parseApp(body: any): BankApp {
 export function registerBank(ctx: Ctx, mgr: McpManager, h: BankHelpers) {
   const api = ctx.api;
   const own = (req: Request) => h.baseUrl(req) + BANK_CALLBACK_PATH;
-  const redirect = (req: Request, app: BankApp | null) => app?.redirectUrl || own(req);
+  // The address in use: what the owner filled in, else the https page (when TeamBot listens on this computer itself),
+  // else TeamBot's own address.
+  const local = (req: Request) => /^http:\/\/(127\.0\.0\.1|localhost|\[::1\])(:\d+)?$/i.test(h.baseUrl(req));
+  const relay = (req: Request) => (BANK_RELAY && local(req) ? BANK_RELAY : null);
+  const redirect = (req: Request, app: BankApp | null) => app?.redirectUrl || relay(req) || own(req);
+  /** The port TeamBot listens on, in front of the state: the https page reads it to find this computer's TeamBot. */
+  const port = (req: Request) => /:(\d{2,5})$/.exec(h.baseUrl(req))?.[1] || '80';
 
   const state = (req: Request) => {
     const u = user(req);
@@ -362,6 +375,7 @@ export function registerBank(ctx: Ctx, mgr: McpManager, h: BankHelpers) {
       app: app ? { appId: app.appId } : null,
       /** TeamBot's own address, and the one in use (the same unless the owner filled in another registered one). */
       ownRedirectUrl: own(req),
+      relayUrl: relay(req),
       redirectUrl: redirect(req, app),
       links: all.map((l) => ({ bank: l.bank, country: l.country, validUntil: l.validUntil, expired: Date.parse(l.validUntil) <= Date.now(), accounts: l.accounts.map((a) => ({ name: a.name, iban: maskIban(a.iban), currency: a.currency })) })),
       status: !c || !all.length ? 'off' : all.some((l) => Date.parse(l.validUntil) > Date.now()) ? 'on' : 'expired',
@@ -459,7 +473,7 @@ export function registerBank(ctx: Ctx, mgr: McpManager, h: BankHelpers) {
       const country = str(req.body?.country, 2).toUpperCase();
       if (!bank || !/^[A-Z]{2}$/.test(country)) throw bad('Kies een bank.');
       const days = Math.min(180, Math.max(1, Math.floor(Number(req.body?.days) || 180)));
-      const st = crypto.randomBytes(24).toString('base64url');
+      const st = `${port(req)}.${crypto.randomBytes(24).toString('base64url')}`;
       for (const [k, f] of flows) if (f.expires < Date.now()) flows.delete(k);
       flows.set(sha256(st), { userId: u.id, bank, country, expires: Date.now() + 20 * 60_000 });
       let r: any;

@@ -5,6 +5,7 @@ import { navigate } from '../../lib/router';
 import { Button, Card, SectionTitle, cx } from '../../components/ui';
 import { t } from '../../lib/i18n';
 import { appsCount } from './text';
+import { OpenApp } from './parts';
 
 export interface AppRow {
   id: string;
@@ -37,22 +38,27 @@ export const useApps = () => {
 };
 
 /** Every app the owner connected, as a board of tiles: its name, how it stands, one click to open it. */
-export function AppsSection({ apps }: { apps: AppRow[] | null }) {
-  const list = apps || [];
+export function AppsSection({ apps, compact }: { apps: AppRow[] | null; compact?: boolean }) {
+  const all = apps || [];
+  const list = compact ? all.slice(0, 6) : all;
   return (
     <section className="space-y-2" data-testid="dashboard-apps">
       <SectionTitle
         icon={Blocks}
         tone="blue"
         action={
-          <Button size="sm" variant="ghost" onClick={() => navigate('/m/mcp')}>
-            Apps beheren
-          </Button>
+          compact ? (
+            <OpenApp href="#/dashboard/apps" />
+          ) : (
+            <Button size="sm" variant="ghost" onClick={() => navigate('/m/mcp')}>
+              Apps beheren
+            </Button>
+          )
         }
       >
         Gekoppelde apps
       </SectionTitle>
-      {apps !== null && !list.length ? (
+      {apps !== null && !all.length ? (
         <Card className="flex flex-wrap items-center justify-between gap-3 p-4 text-sm">
           <span className="min-w-0 flex-1 basis-56 text-muted">Nog geen apps gekoppeld. Koppel je mail, je bank of je webshop en je bots kunnen ermee werken.</span>
           <Button size="sm" onClick={() => navigate('/m/mcp')}>
@@ -61,7 +67,7 @@ export function AppsSection({ apps }: { apps: AppRow[] | null }) {
         </Card>
       ) : (
         <>
-          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
+          <div className={compact ? 'grid grid-cols-2 gap-2 p-1' : 'grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4'}>
             {list.map((a) => {
               const st = appState(a);
               return (
@@ -89,7 +95,7 @@ export function AppsSection({ apps }: { apps: AppRow[] | null }) {
               );
             })}
           </div>
-          {apps !== null && <p className="px-1 text-xs text-muted">{appsCount(list.filter((a) => appState(a).tone === 'ok').length, list.length)}</p>}
+          {apps !== null && <p className="px-1 text-xs text-muted">{appsCount(all.filter((a) => appState(a).tone === 'ok').length, all.length)}</p>}
         </>
       )}
     </section>

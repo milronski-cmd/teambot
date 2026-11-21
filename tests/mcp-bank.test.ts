@@ -39,7 +39,7 @@ async function fakeBank() {
       if (p === '/aspsps') return json(200, { aspsps: [{ name: 'Testbank', country: url.searchParams.get('country'), logo: 'https://x/logo.png', psu_types: ['personal', 'business'], auth_methods: [], maximum_consent_validity: 180 * 86400, beta: false }] });
       if (p === '/auth' && req.method === 'POST') {
         const b = JSON.parse(body);
-        if (!/^http:\/\/127\.0\.0\.1:\d+\/api\/public\/mcp\/bank\/callback$/.test(b.redirect_url) && b.redirect_url !== 'https://oud.voorbeeld.nl/terug') return json(400, { error: 'REDIRECT_URI_NOT_ALLOWED', message: 'Redirect URI not allowed', code: 400 });
+        if (b.redirect_url !== 'https://teambot-beta.vercel.app/bank.html' && b.redirect_url !== 'https://oud.voorbeeld.nl/terug') return json(400, { error: 'REDIRECT_URI_NOT_ALLOWED', message: 'Redirect URI not allowed', code: 400 });
         return json(200, { url: `https://auth.enablebanking.com/ais/start?sessionid=s1&state=${b.state}`, authorization_id: 'a1' });
       }
       if (p === '/sessions' && req.method === 'POST') {
@@ -105,7 +105,11 @@ test('bank: set up, give permission at the bank, and the bots read balances and 
     const s0 = await t.api('PUT', '/mcp/bank/app', { appId: APP_ID, privateKey: PEM });
     assert.deepEqual(s0.app, { appId: APP_ID });
     assert.ok(!JSON.stringify(s0).includes('PRIVATE KEY'), 'the key never comes back');
-    assert.match(s0.redirectUrl, /\/api\/public\/mcp\/bank\/callback$/);
+    // An application with real accounts takes no http address: TeamBot's https page is the default, and it hands the
+    // answer on to this computer (the port stands in front of the state).
+    assert.equal(s0.redirectUrl, 'https://teambot-beta.vercel.app/bank.html');
+    assert.equal(s0.relayUrl, s0.redirectUrl);
+    assert.match(s0.ownRedirectUrl, /^http:\/\/127\.0\.0\.1:\d+\/api\/public\/mcp\/bank\/callback$/);
 
     const banks = (await t.api('GET', '/mcp/bank/banks?country=nl')).banks;
     assert.deepEqual(banks.map((b: any) => [b.name, b.country, b.days]), [['Testbank', 'NL', 180]]);
@@ -116,7 +120,8 @@ test('bank: set up, give permission at the bank, and the bots read balances and 
     assert.equal(sent.psu_type, 'personal');
     assert.equal(sent.aspsp.name, 'Testbank');
     // Saying no at the bank is told plainly, and the link can be used again after it.
-    const cb = `${s0.redirectUrl}`;
+    assert.equal(state.split('.')[0], new URL(s0.ownRedirectUrl).port, 'the https page finds TeamBot by this port');
+    const cb = `${s0.ownRedirectUrl}`;
     const no = await fetch(`${cb}?error=access_denied&state=${state}`);
     assert.equal(no.status, 400);
     assert.match(await no.text(), /geen toestemming gegeven/);

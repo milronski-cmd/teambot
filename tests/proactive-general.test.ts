@@ -251,3 +251,55 @@ test('unanswered customer messages are measured from the channel data, without a
     await env.t.close();
   }
 });
+
+test('a command measures and keeps a meter on the dashboard without a model: only with full access, and the limit comes out of the same answer', async () => {
+  const { measureCommand, firstNumber, cleanTile, jsonIn } = await import('../server/modules/routines/duties/service.js');
+  assert.deepEqual(jsonIn(['Update available: 2.0', '{"spend":{"used":3}}', 'Done.'].join('\n')), { spend: { used: 3 } }, 'a notice around the JSON is skipped');
+  assert.equal(jsonIn('geen json'), null);
+  assert.equal(firstNumber('team  $23  $12.31  54%'), 23);
+  assert.equal(firstNumber('1.234,5 euro'), 1234.5);
+  assert.equal(firstNumber('geen getal'), null);
+  assert.deepEqual(cleanTile({ sleutel: 'Hosting Budget!', titel: 'Hosting: budget', eenheid: 'dollar', maxPath: 'budget.amount' }), { sleutel: 'hosting-budget', titel: 'Hosting: budget', eenheid: 'dollar', maxPath: 'budget.amount' });
+  assert.equal(cleanMeasure({ kind: 'command', command: 'usage --json' }), null, 'a command without a threshold or a tile measures nothing');
+  assert.deepEqual(cleanMeasure({ kind: 'command', command: 'usage --json', path: 'spend.used', tile: { sleutel: 'hosting', titel: 'Hosting' } }), { kind: 'command', command: 'usage --json', path: 'spend.used', tile: { sleutel: 'hosting', titel: 'Hosting' } });
+
+  const env = await setup({ start: '2026-11-09T07:00:00Z' });
+  const real = measureCommand.run;
+  try {
+    const ran: string[] = [];
+    let spent = 12.31;
+    measureCommand.run = async (command: string) => (ran.push(command), { code: 0, output: JSON.stringify({ spend: { currentSpend: spent }, budget: { amount: 23 } }), timedOut: false });
+    const full = await env.t.agent({ name: 'Bouwer', role: 'Websites bouwen', access_mode: 'full', tool_groups: ['team', 'shell'] });
+    const ask = await env.t.agent({ name: 'Lezer', role: 'Rapporten', access_mode: 'ask', tool_groups: ['team'] });
+    const measure = { kind: 'command', command: 'hosting billing --json', path: 'spend.currentSpend', op: '<', value: 20, tile: { sleutel: 'hosting-budget', titel: 'Hosting: budget deze maand', eenheid: 'dollar', maxPath: 'budget.amount' } };
+    const made = await env.t.api('POST', '/proactive/duties', { agentId: full.id, title: 'Hostingbudget', check: 'Hoeveel van het hostingbudget is gebruikt?', source: 'team', okWhen: 'minder dan 20 dollar gebruikt', onProblem: 'task', everyMinutes: 30, measure });
+    const before = env.t.requests.length;
+    await env.at('2026-11-09T07:31:00Z');
+    assert.deepEqual(ran, ['hosting billing --json']);
+    const tiles = () => env.t.app.ctx.services.teamdata.dashboard(env.t.app.ctx.auth.owner()!.id);
+    let tile = (await tiles()).find((x: any) => x.sleutel === 'hosting-budget');
+    assert.deepEqual([tile.titel, tile.waarde, tile.maximum, tile.eenheid, tile.bot], ['Hosting: budget deze maand', '12,31', '23', 'dollar', 'Bouwer']);
+    assert.deepEqual(tile.meter, { value: 12.31, max: 23 });
+    assert.match(env.runs(made.id)[0].summary, /12\.31 uit de opdracht \(spend\.currentSpend\) \(in orde als < 20\)/);
+    assert.equal(env.t.requests.length, before, 'in order: no model call');
+
+    // The next measurement refreshes the same tile, and over the threshold it becomes a task.
+    spent = 21.5;
+    await env.at('2026-11-09T08:02:00Z');
+    tile = (await tiles()).find((x: any) => x.sleutel === 'hosting-budget');
+    assert.equal(tile.waarde, '21,5');
+    assert.equal((await tiles()).filter((x: any) => x.sleutel === 'hosting-budget').length, 1, 'one row, refreshed');
+    assert.ok((await env.taken()).some((x) => /Hostingbudget: niet in orde/.test(x.titel)));
+
+    // A bot that asks before it runs a command gets no command run for it by TeamBot.
+    const other = await env.t.api('POST', '/proactive/duties', { agentId: ask.id, title: 'Verbruik lezen', check: 'Verbruik', source: 'team', okWhen: 'onder de grens', onProblem: 'task', everyMinutes: 30, measure: { ...measure, tile: { sleutel: 'ander', titel: 'Ander' } } });
+    await env.at('2026-11-09T08:40:00Z');
+    assert.equal(ran.every((c) => c === 'hosting billing --json') && (await tiles()).some((x: any) => x.sleutel === 'ander') === false, true, 'nothing measured, nothing shown');
+    const got = await env.t.api('GET', '/proactive/duties');
+    const view = (Array.isArray(got) ? got : got.duties || got.items || []).find((d: any) => d.id === other.id);
+    assert.match(String(view.needs), /alleen bij een bot met volledige toegang/);
+  } finally {
+    measureCommand.run = real;
+    await env.t.close();
+  }
+});

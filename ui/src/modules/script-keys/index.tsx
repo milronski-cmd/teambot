@@ -33,6 +33,7 @@ function AgentScriptKeys({ agent }: { agent: Agent; onChange(p: Partial<Agent>):
   const [adding, setAdding] = useState(false);
   const [name, setName] = useState('');
   const [value, setValue] = useState('');
+  const [fromFile, setFromFile] = useState('');
   const [label, setLabel] = useState('');
   const [forTeam, setForTeam] = useState(false);
   const { busy, run } = useAsync();
@@ -147,6 +148,22 @@ function AgentScriptKeys({ agent }: { agent: Agent; onChange(p: Partial<Agent>):
           <Field label="Sleutel of wachtwoord" hint="Wordt versleuteld bewaard en daarna nooit meer getoond.">
             <Input type="password" value={value} onChange={(e) => setValue(e.target.value)} autoComplete="new-password" />
           </Field>
+          {/* A key that lies in a file (a download, a note): chosen, never copied and pasted. The name follows the file. */}
+          <label className="inline-flex h-9 cursor-pointer items-center rounded-lg px-3 text-sm font-medium text-muted hover:bg-surface-2 hover:text-fg" data-testid="script-key-file">
+            {value && fromFile ? t('Sleutel gelezen uit {0}', fromFile) : t('Of kies het bestand waar de sleutel in staat')}
+            <input
+              type="file"
+              accept=".txt,.key,.pem,.env,.json,text/plain"
+              className="sr-only"
+              onChange={async (e) => {
+                const f = e.target.files?.[0];
+                if (!f) return;
+                setValue((await f.text()).trim());
+                setFromFile(f.name);
+                if (!name.trim()) setName(f.name.replace(/\.[a-z0-9]+$/i, '').toUpperCase().replace(/[^A-Z0-9]+/g, '_').replace(/^_+|_+$/g, '').replace(/^(\d)/, 'K_$1'));
+              }}
+            />
+          </label>
           <Field label="Waarvoor (optioneel)">
             <Input value={label} onChange={(e) => setLabel(e.target.value)} placeholder="Bijvoorbeeld: webwinkel Shopify" />
           </Field>

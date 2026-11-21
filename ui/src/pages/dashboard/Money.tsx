@@ -4,6 +4,7 @@ import { api } from '../../lib/api';
 import { navigate } from '../../lib/router';
 import { t } from '../../lib/i18n';
 import { Button, Card, SectionTitle, Spinner } from '../../components/ui';
+import { OpenApp } from './parts';
 
 interface Overview {
   status: 'off' | 'on' | 'expired';
@@ -145,7 +146,7 @@ function MoneyCourse({ points, currency }: { points: ReturnType<typeof balanceCo
 }
 
 /** The owner's money on the dashboard: balances, their course per day and the latest transactions, straight from the bank app. */
-export function MoneySection() {
+export function MoneySection({ compact }: { compact?: boolean } = {}) {
   const [o, setO] = useState<Overview | null>(null);
   const [err, setErr] = useState('');
   const load = () =>
@@ -168,10 +169,14 @@ export function MoneySection() {
         icon={Landmark}
         tone="teal"
         action={
-          o?.status === 'on' && (
-            <Button size="sm" variant="ghost" icon={<RefreshCw className="h-4 w-4" />} onClick={() => (setO(null), void load())}>
-              Verversen
-            </Button>
+          compact ? (
+            <OpenApp href="#/dashboard/geld" />
+          ) : (
+            o?.status === 'on' && (
+              <Button size="sm" variant="ghost" icon={<RefreshCw className="h-4 w-4" />} onClick={() => (setO(null), void load())}>
+                Verversen
+              </Button>
+            )
           )
         }
       >
@@ -191,7 +196,15 @@ export function MoneySection() {
           </div>
         ) : (
           <div className="divide-y divide-line">
-            <div className="grid grid-cols-1 gap-3 p-4 sm:grid-cols-2">
+            {compact && !mixed && (
+              <div className="p-4 pb-1" data-testid="dashboard-money-total">
+                <div className="text-[13px] font-medium text-muted" translate="no">
+                  {o.accounts.length > 1 ? t('Samen op {0} rekeningen', o.accounts.length) : `${o.accounts[0]?.name || ''} · ${o.accounts[0]?.bank || ''}`}
+                </div>
+                <div className="text-3xl font-bold leading-tight tracking-tight tabular-nums">{money(total, o.accounts[0]?.balances?.[0]?.currency)}</div>
+              </div>
+            )}
+            <div className={`${compact && !mixed ? 'hidden' : 'grid'} grid-cols-1 gap-3 p-4 sm:grid-cols-2`}>
               {o.accounts.length > 1 && !mixed && (
                 <div className="rounded-lg bg-surface-2 p-3">
                   <div className="text-[13px] font-medium text-muted">Samen</div>
@@ -213,7 +226,7 @@ export function MoneySection() {
               ))}
             </div>
             {course.length > 1 && <MoneyCourse points={course} currency={o.accounts[0].balances?.[0]?.currency || 'EUR'} />}
-            {o.transactions.length > 0 ? (
+            {compact ? null : o.transactions.length > 0 ? (
               <ul className="divide-y divide-line" data-testid="dashboard-transactions">
                 {o.transactions.slice(0, 12).map((x, i) => (
                   <li key={i} className="flex items-baseline gap-3 px-4 py-2 text-sm">

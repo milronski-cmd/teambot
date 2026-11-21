@@ -13,6 +13,8 @@ interface BankState {
   app: { appId: string } | null;
   ownRedirectUrl: string;
   redirectUrl: string;
+  /** TeamBot's https page that hands the bank's answer on to this computer (Production takes no http address). */
+  relayUrl?: string | null;
   links: { bank: string; country: string; validUntil: string; expired: boolean; accounts: { name: string; iban: string; currency: string }[] }[];
   status: 'off' | 'on' | 'expired';
   connection: Conn | null;
@@ -87,7 +89,8 @@ function AppForm({ s, onSaved }: { s: BankState; onSaved(next: BankState): void 
           </li>
         ))}
       </ol>
-      <CopyField value={s.ownRedirectUrl} label="Redirect-URL" />
+      <CopyField value={s.relayUrl || s.ownRedirectUrl} label="Redirect-URL" />
+      {s.relayUrl && <p className="text-xs text-muted">{t('Enable Banking neemt voor echte rekeningen alleen een https-adres aan. Dit adres is een doorstuurpagina van TeamBot: zij geeft het antwoord van de bank door aan TeamBot op deze computer en bewaart niets. Voor de proefomgeving (Sandbox) kan ook {0}.', s.ownRedirectUrl)}</p>}
       <Field label="Applicatie-ID">
         <Input value={appId} onChange={(e) => setAppId(e.target.value)} placeholder="1a2b3c4d-1234-5678-9abc-1a2b3c4d5e6f" autoComplete="off" className="font-mono text-xs" />
       </Field>
@@ -95,7 +98,7 @@ function AppForm({ s, onSaved }: { s: BankState; onSaved(next: BankState): void 
         <Textarea rows={3} value={key} onChange={(e) => setKey(e.target.value)} className="font-mono text-xs" placeholder="-----BEGIN PRIVATE KEY-----" aria-label="Sleutel van de applicatie" />
       </Field>
       <Field label="Ander terugkeeradres (alleen als je applicatie al een ander adres heeft)" hint="Laat leeg om het adres hierboven te gebruiken. Een applicatie voor echte rekeningen (Production) neemt bij Enable Banking alleen een adres aan dat met https:// begint: vul dan hier het https-adres in dat bij je applicatie staat. Kom je na het inloggen bij de bank niet vanzelf in TeamBot uit, plak dan hieronder het adres waar je uitkwam.">
-        <Input value={other} onChange={(e) => setOther(e.target.value)} placeholder="https://…" autoComplete="off" />
+        <Input value={other} onChange={(e) => setOther(e.target.value)} placeholder={s.relayUrl || 'https://…'} autoComplete="off" />
       </Field>
       <div className="flex flex-wrap items-center gap-2">
         <Button variant="primary" loading={busy} disabled={!appId.trim() || !key.trim()} onClick={save} data-testid="bank-app-save">
@@ -109,7 +112,11 @@ function AppForm({ s, onSaved }: { s: BankState; onSaved(next: BankState): void 
             className="sr-only"
             onChange={async (e) => {
               const f = e.target.files?.[0];
-              if (f) setKey(await f.text());
+              if (!f) return;
+              setKey(await f.text());
+              // Enable Banking names the key file after the application: its id is then filled in too.
+              const id = /^([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\./i.exec(f.name)?.[1];
+              if (id && !appId.trim()) setAppId(id);
             }}
           />
         </label>
@@ -179,7 +186,11 @@ function LinkForm({ s, onDone, onCancel }: { s: BankState; onDone(next?: BankSta
         </div>
         {elsewhere && (
           <div className="space-y-2">
-            <div className="text-xs text-muted">Je applicatie stuurt je daarna naar een ander adres dan TeamBot. Plak hier het adres uit de adresbalk van de pagina waar je uitkomt (ook als die pagina niet laadt).</div>
+            <div className="text-xs text-muted">
+              {s.relayUrl && s.redirectUrl === s.relayUrl
+                ? t('Na je akkoord kom je vanzelf terug in TeamBot. Gebeurt dat niet, plak dan hier het adres uit de adresbalk van de pagina waar je uitkomt.')
+                : t('Je applicatie stuurt je daarna naar een ander adres dan TeamBot. Plak hier het adres uit de adresbalk van de pagina waar je uitkomt (ook als die pagina niet laadt).')}
+            </div>
             <div className="flex flex-wrap items-center gap-2">
               <Input value={pasted} onChange={(e) => setPasted(e.target.value)} placeholder="https://…?code=…" aria-label="Adres waar de bank je naartoe stuurde" className="min-w-0 flex-1 basis-56 font-mono text-xs" />
               <Button variant="primary" loading={busy} disabled={!pasted.trim()} onClick={finish}>

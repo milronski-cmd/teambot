@@ -2,6 +2,7 @@ import { useState, useSyncExternalStore } from 'react';
 import { Inbox, LogOut, PanelLeftClose, PanelLeftOpen, Search, Square, X } from 'lucide-react';
 import { api, disconnectWs, setToken } from '../lib/api';
 import { useApp } from '../lib/store';
+import { useRoute } from '../lib/router';
 import { BotFace } from '../components/BotFace';
 import { cx, toast } from '../components/ui';
 import { ChatList, PinnedRows } from './ChatList';
@@ -108,11 +109,14 @@ export function toggleSidebarFolded() {
   foldListeners.forEach((f) => f());
 }
 export function useSidebarFolded(): boolean {
-  return useSyncExternalStore(
+  const own = useSyncExternalStore(
     (f) => (foldListeners.add(f), () => foldListeners.delete(f)),
     readFolded,
     () => false,
   );
+  // The dashboard is the start screen, over the whole window: there the list of bots makes room (their faces stay).
+  const route = useRoute();
+  return own || route[0] === 'dashboard';
 }
 
 const iconBtn = 'tb-tip flex size-9 shrink-0 items-center justify-center rounded-control text-muted transition-colors hover:bg-surface-2 hover:text-fg active:bg-surface-3 coarse:size-11';

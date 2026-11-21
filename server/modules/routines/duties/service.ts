@@ -1,4 +1,6 @@
 import type { Agent, Ctx } from '../../../core/types.js';
+import { fullAccess } from '../../../tools/builtin/files.js';
+import { runProcess, safeEnv } from '../../../tools/builtin/shell.js';
 import { oneLine } from '../../../core/util.js';
 import { engineTier } from '../../../agent/fallback.js';
 import { redact } from '../../../core/secrets.js';
@@ -10,7 +12,7 @@ import * as S from '../schedule.js';
 import type { WorkLoop } from './work.js';
 import { BUILTIN_KEYS, CATALOG_VERSION, SETUP_KEY, allPresets, builtinDuty, cleanPresets, defaultDuties, toDuty, type CatalogDuty, type Preset } from './catalog.js';
 import { checkSites, checkUrl, compare, pageFacts, pick } from './checks.js';
-import { ACTION_LABEL, SOURCE_APP, SOURCE_LABEL, cleanProactive, type CheckResult, type Duty, type DutySource, type Finding, type Measure, OPS, type ProactiveSettings, type Reminder } from './types.js';
+import { ACTION_LABEL, SOURCE_APP, SOURCE_LABEL, cleanProactive, type CheckResult, type Duty, type DutySource, type Finding, type Measure, type MeasureTile, OPS, type ProactiveSettings, type Reminder } from './types.js';
 import { PLACE } from '../../../../shared/places.js';
 
 /**
@@ -111,11 +113,71 @@ export function cleanDuty(raw: any): Duty | null {
   };
 }
 
+/** How long a command that measures may take. */
+export const COMMAND_MEASURE_SEC = 60;
+
+/** Runs the command of a measurement (swappable for tests: no shell in unit tests). */
+export const measureCommand = {
+  run: (command: string, cwd: string) => runProcess(command, { cwd, timeoutMs: COMMAND_MEASURE_SEC * 1000, signal: new AbortController().signal, env: safeEnv() }),
+};
+
+/** The dashboard tile of a measurement, as given → a valid one, or null. */
+export function cleanTile(raw: any): MeasureTile | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const sleutel = String(raw.sleutel ?? raw.key ?? '').trim().toLowerCase().replace(/[^a-z0-9_-]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 60);
+  const titel = oneLine(raw.titel ?? raw.title ?? '', 120);
+  if (!sleutel || !titel) return null;
+  const max = Number(raw.maximum);
+  const maxPath = String(raw.maxPath ?? raw.max_path ?? '').trim().slice(0, 200);
+  return { sleutel, titel, ...(oneLine(raw.groep, 60) ? { groep: oneLine(raw.groep, 60) } : {}), ...(oneLine(raw.eenheid, 30) ? { eenheid: oneLine(raw.eenheid, 30) } : {}), ...(Number.isFinite(max) && max > 0 ? { maximum: max } : {}), ...(maxPath ? { maxPath } : {}) };
+}
+
+/** What a command printed, as JSON: the whole of it, or the JSON between a notice before and after it; else null. */
+export function jsonIn(output: string): any {
+  const text = String(output || '').trim();
+  try {
+    return JSON.parse(text);
+  } catch {
+    /* not JSON as a whole */
+  }
+  for (const [open, close] of [['{', '}'], ['[', ']']] as const) {
+    const a = text.indexOf(open);
+    const b = text.lastIndexOf(close);
+    if (a < 0 || b <= a) continue;
+    try {
+      return JSON.parse(text.slice(a, b + 1));
+    } catch {
+      /* try the other bracket */
+    }
+  }
+  return null;
+}
+
+/** The first number in a text ("$12.31 of $23" → 12.31; "1.234,5" → 1234.5), or null. */
+export function firstNumber(text: string): number | null {
+  const m = /-?\d[\d.,]*/.exec(String(text || ''));
+  if (!m) return null;
+  let t = m[0].replace(/[.,]+$/, '');
+  if (/,\d{1,2}$/.test(t)) t = t.replace(/\./g, '').replace(',', '.');
+  else t = t.replace(/,/g, '');
+  const n = Number(t);
+  return Number.isFinite(n) ? n : null;
+}
+
 /** A measurement as given by the owner, a preset or a bot → a valid one, or null. */
 export function cleanMeasure(raw: any): Measure | null {
   if (!raw || typeof raw !== 'object') return null;
   const num = (v: any) => (v !== null && v !== '' && Number.isFinite(Number(v)) ? Number(v) : null);
   const op = OPS.includes(raw.op) ? raw.op : null;
+  const tile = cleanTile(raw.tile);
+  if (raw.kind === 'command') {
+    const command = String(raw.command || '').trim().slice(0, 2000);
+    if (!command) return null;
+    // A threshold is optional: without it the command only measures (a meter on the dashboard).
+    const has = !!op && num(raw.value) !== null;
+    if (!has && !tile) return null;
+    return { kind: 'command', command, ...(String(raw.path || '').trim() ? { path: String(raw.path).trim().slice(0, 200) } : {}), ...(has ? { op: op!, value: num(raw.value)! } : {}), ...(tile ? { tile } : {}) };
+  }
   if (raw.kind === 'site') return { kind: 'site' };
   if (raw.kind === 'url') {
     const url = String(raw.url || '').trim();
@@ -125,12 +187,12 @@ export function cleanMeasure(raw: any): Measure | null {
   if (raw.kind === 'tool') {
     const tool = String(raw.tool || '').trim().slice(0, 120);
     if (!tool || !op || num(raw.value) === null) return null;
-    return { kind: 'tool', tool, args: raw.args && typeof raw.args === 'object' ? raw.args : {}, ...(String(raw.path || '').trim() ? { path: String(raw.path).trim().slice(0, 200) } : {}), op, value: num(raw.value)! };
+    return { kind: 'tool', tool, args: raw.args && typeof raw.args === 'object' ? raw.args : {}, ...(String(raw.path || '').trim() ? { path: String(raw.path).trim().slice(0, 200) } : {}), op, value: num(raw.value)!, ...(tile ? { tile } : {}) };
   }
   if (raw.kind === 'query') {
     const sql = String(raw.sql || '').trim().slice(0, 2000);
     if (!/^(select|with)\b/i.test(sql) || sql.includes(';') || !op || num(raw.value) === null) return null;
-    return { kind: 'query', sql, op, value: num(raw.value)! };
+    return { kind: 'query', sql, op, value: num(raw.value)!, ...(tile ? { tile } : {}) };
   }
   return null;
 }
@@ -430,6 +492,7 @@ export class DutyService {
   needs(r: Routine, agent: Agent): string | null {
     const duty = r.options.duty!;
     if (duty.key === SETUP_KEY) return null;
+    if (duty.measure?.kind === 'command' && !fullAccess(agent)) return `Een opdracht als meting kan alleen bij een bot met volledige toegang: geef ${agent.name} volledige toegang of kies een andere meting.`;
     if (duty.measure && duty.measure.kind !== 'site') return duty.measure.kind === 'tool' && !this.toolRow(agent, duty.measure.tool) ? `De tool ${duty.measure.tool} is niet (meer) beschikbaar voor ${agent.name}: koppel de app of zet hem aan bij deze bot.` : null;
     if (duty.source === 'site' || duty.measure?.kind === 'site') return this.sitesOf(r).length ? null : 'Vul bij het team het adres van je website in.';
     if (duty.source === 'inbox') {
@@ -745,8 +808,21 @@ export class DutyService {
     }
     let value: number | null = null;
     let from = '';
+    // The limit of a meter, when it comes out of the same answer (tile.maxPath).
+    let max: number | null = null;
+    const asNumber = (v: any) => (typeof v === 'number' ? v : v !== null && v !== undefined && v !== '' && Number.isFinite(Number(v)) ? Number(v) : null);
     try {
-      if (m.kind === 'query') {
+      if (m.kind === 'command') {
+        // As the bot's own run_command: only a bot that may run any command without asking, now and when it was set.
+        if (!fullAccess(agent)) return one('opdracht niet toegestaan', {}, `Een opdracht als meting kan alleen bij een bot met volledige toegang; ${agent.name} heeft die niet`);
+        const res = await measureCommand.run(m.command, agent.workspace || process.cwd());
+        if (res.timedOut) return one('opdracht duurde te lang', {}, `De opdracht gaf binnen ${COMMAND_MEASURE_SEC} seconden geen antwoord`);
+        if (res.code !== 0) return one('opdracht mislukt', {}, `De opdracht eindigde met code ${res.code}: ${redact(oneLine(res.output, 300))}`);
+        const data = jsonIn(res.output);
+        value = m.path ? asNumber(pick(data, m.path)) : data !== null && typeof data !== 'object' ? asNumber(data) : firstNumber(res.output);
+        if (m.tile?.maxPath) max = asNumber(pick(data, m.tile.maxPath));
+        from = `de opdracht${m.path ? ` (${m.path})` : ''}`;
+      } else if (m.kind === 'query') {
         const rows = await this.rows(r, m.sql, []);
         const first = rows[0] ? Object.values(rows[0])[0] : null;
         value = first === null || first === undefined ? null : Number(first);
@@ -767,16 +843,32 @@ export class DutyService {
           }
         }
         const v = pick(data, m.path || '');
-        value = typeof v === 'number' ? v : v !== null && v !== undefined && v !== '' && Number.isFinite(Number(v)) ? Number(v) : null;
+        value = asNumber(v);
+        if (m.tile?.maxPath) max = asNumber(pick(data, m.tile.maxPath));
         from = `${m.tool}${m.path ? ` (${m.path})` : ''}`;
       }
     } catch (e: any) {
       return one('meting mislukt', {}, `De meting lukte niet: ${redact(String(e?.message || e)).slice(0, 300)}`);
     }
     if (value === null || !Number.isFinite(value)) return one('geen getal gemeten', {}, `Uit ${from} kwam geen getal`);
-    const mm = m as Extract<Measure, { kind: 'tool' | 'query' }>;
+    const mm = m as Extract<Measure, { kind: 'tool' | 'query' | 'command' }>;
+    // On the dashboard too: the owner sees the number (and what is left of its limit) refreshed with every measurement.
+    if (mm.tile) await this.keepTile(r, agent, mm.tile, value, max).catch((e) => this.ctx.log.warn('[duties] tile', e?.message || e));
+    if (!mm.op || mm.value === undefined) return one(`${value} uit ${from}`, { waarde: value }, null);
     const ok = compare(value, mm.op, mm.value);
     return one(`${value} uit ${from} (in orde als ${mm.op} ${mm.value})`, { waarde: value }, ok ? null : `${from} geeft ${value}; in orde is ${mm.op} ${mm.value}`);
+  }
+
+  /** Put a measured number on the dashboard: one row per sleutel, a meter when there is a limit. */
+  private async keepTile(r: Routine, agent: Agent, tile: MeasureTile, value: number, measuredMax: number | null) {
+    const max = measuredMax !== null && measuredMax > 0 ? measuredMax : tile.maximum ?? null;
+    const text = (n: number) => String(Math.round(n * 100) / 100).replace('.', ',');
+    await this.write(r, [
+      {
+        sql: "INSERT INTO dashboard (sleutel, groep, titel, waarde, eenheid, maximum, bot, bijgewerkt) VALUES (?, ?, ?, ?, ?, ?, ?, datetime('now','localtime')) ON CONFLICT(sleutel) DO UPDATE SET groep = excluded.groep, titel = excluded.titel, waarde = excluded.waarde, eenheid = excluded.eenheid, maximum = excluded.maximum, bot = excluded.bot, bijgewerkt = excluded.bijgewerkt",
+        params: [tile.sleutel, tile.groep || 'Verbruik', tile.titel, text(value), tile.eenheid || null, max === null ? null : text(max), agent.name],
+      },
+    ]);
   }
 
   // ------------------------------------------------------------------ customer messages without an answer (channel data)

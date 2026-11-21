@@ -29,14 +29,30 @@ export const OPS: Op[] = ['<', '<=', '>', '>=', '=', '!='];
  *  - url:   one address: does it answer (status), fast enough (maxMs), and does the page say what it should (contains);
  *  - tool:  a reading tool of an app connected to the bot (its real tool name), one number out of the answer
  *           (`path`, e.g. "rows.length" or "rows[0].clicks") against a threshold;
- *  - query: one number from the team database (a SELECT) against a threshold.
- * For tool and query the duty is "in orde" when `<number> <op> <value>` holds.
+ *  - query: one number from the team database (a SELECT) against a threshold;
+ *  - command: a command on this computer (as the bot's own run_command would run it), one number out of what it
+ *           prints: with `path` when it prints JSON ("spend.currentSpend"), else the first number. Only for a bot with
+ *           full access, when it is set and every time it runs. Without op and value it only measures (a meter).
+ * For tool, query and command the duty is "in orde" when `<number> <op> <value>` holds.
+ * `tile`: the measured number is also put on the owner's dashboard, as a tile he sees refreshed with every measurement
+ * (a meter when it has a limit: a budget, a quota, a subscription), without a model and without a bot's turn.
  */
 export type Measure =
   | { kind: 'site' }
   | { kind: 'url'; url: string; status?: number; contains?: string; maxMs?: number }
-  | { kind: 'tool'; tool: string; args?: Record<string, any>; path?: string; op: Op; value: number }
-  | { kind: 'query'; sql: string; op: Op; value: number };
+  | { kind: 'tool'; tool: string; args?: Record<string, any>; path?: string; op: Op; value: number; tile?: MeasureTile }
+  | { kind: 'query'; sql: string; op: Op; value: number; tile?: MeasureTile }
+  | { kind: 'command'; command: string; path?: string; op?: Op; value?: number; tile?: MeasureTile };
+
+/** The dashboard tile a measurement keeps: `maximum` (a fixed limit) or `maxPath` (the limit, from the same answer) makes it a meter. */
+export interface MeasureTile {
+  sleutel: string;
+  titel: string;
+  groep?: string;
+  eenheid?: string;
+  maximum?: number;
+  maxPath?: string;
+}
 
 export interface Duty {
   /** Catalogue key ("seo.indexering") or "eigen" for one the owner wrote. */

@@ -1,4 +1,5 @@
 import { builtinDuty } from './catalog.js';
+import { fullAccess } from '../../../tools/builtin/files.js';
 import type { Ctx, ToolDef, ToolGroup } from '../../../core/types.js';
 import { ah, bad, HttpError, notFound, str, user } from '../../../core/http.js';
 import { HttpishError, type RoutineEngine } from '../engine.js';
@@ -139,7 +140,8 @@ export function dutyTools(engine: RoutineEngine, duties: DutyService): { static:
       'Alleen als de eigenaar erom vraagt, of als het hoort bij een project of taak waar je nu aan werkt: verzin geen vaste taken om iets te doen te hebben, en meet niets waar nog geen gegevens van zijn (een lege tabel, een app die niet gekoppeld is). ' +
       'Geef title, check (wat je controleert), ok_when (wanneer het in orde is) en on_problem: fix (zelf oplossen), task (een taak maken) of ask (de eigenaar vragen). Hoe vaak: every_minutes (vanaf 1), of days (ma, di, …; leeg = elke dag) met times. ' +
       'Kan TeamBot het zelf meten, geef dan measure mee; dan wordt er zonder AI gemeten en word je alleen gewekt als het niet in orde is. measure.kind: url (url, optioneel contains, status, maxMs), ' +
-      'tool (tool = de naam van een van je lees-tools, args, path naar het getal zoals "rows.length", op en value: in orde als getal op value) of query (sql = één SELECT op de teamdatabase die één getal geeft, op, value). ' +
+      'tool (tool = de naam van een van je lees-tools, args, path naar het getal zoals "rows.length", op en value: in orde als getal op value), query (sql = één SELECT op de teamdatabase die één getal geeft, op, value) of command (command = een opdracht op deze computer die een getal of JSON afdrukt, path naar het getal bij JSON; alleen met volledige toegang). ' +
+      'Met measure.tile (sleutel, titel, optioneel eenheid, groep en maximum of maxPath) staat het gemeten getal ook op het dashboard van de eigenaar, ververst bij elke meting zonder dat jij een beurt draait: zo maak je een meter van een budget, abonnement of quotum. ' +
       'Een vaste taak met dezelfde title werk je hiermee bij.',
     parameters: {
       type: 'object',
@@ -153,7 +155,21 @@ export function dutyTools(engine: RoutineEngine, duties: DutyService): { static:
         times: { type: 'array', items: { type: 'string' }, description: "Tijden 'UU:MM'" },
         measure: {
           type: 'object',
-          properties: { kind: { type: 'string', enum: ['url', 'tool', 'query'] }, url: { type: 'string' }, contains: { type: 'string' }, status: { type: 'number' }, maxMs: { type: 'number' }, tool: { type: 'string' }, args: { type: 'object' }, path: { type: 'string' }, sql: { type: 'string' }, op: { type: 'string', enum: ['<', '<=', '>', '>=', '=', '!='] }, value: { type: 'number' } },
+          properties: {
+            kind: { type: 'string', enum: ['url', 'tool', 'query', 'command'] },
+            url: { type: 'string' },
+            contains: { type: 'string' },
+            status: { type: 'number' },
+            maxMs: { type: 'number' },
+            tool: { type: 'string' },
+            args: { type: 'object' },
+            path: { type: 'string' },
+            sql: { type: 'string' },
+            command: { type: 'string' },
+            op: { type: 'string', enum: ['<', '<=', '>', '>=', '=', '!='] },
+            value: { type: 'number' },
+            tile: { type: 'object', properties: { sleutel: { type: 'string' }, titel: { type: 'string' }, groep: { type: 'string' }, eenheid: { type: 'string' }, maximum: { type: 'number' }, maxPath: { type: 'string' } } },
+          },
         },
       },
       required: ['title', 'check'],
@@ -167,7 +183,9 @@ export function dutyTools(engine: RoutineEngine, duties: DutyService): { static:
       const title = String(a?.title || '').trim().slice(0, 80);
       const check = String(a?.check || '').trim();
       if (!title || !check) return { text: 'Geef een title en check (wat je controleert).', isError: true };
-      if (a?.measure && !cleanMeasure(a.measure)) return { text: 'De meting klopt niet. url: een http(s)-adres. tool: tool, op en value. query: één SELECT zonder puntkomma, op en value. Laat measure weg als je zelf meet.', isError: true };
+      if (a?.measure && !cleanMeasure(a.measure)) return { text: 'De meting klopt niet. url: een http(s)-adres. tool: tool, op en value. query: één SELECT zonder puntkomma, op en value. command: een opdracht, met op en value of met een tile. Laat measure weg als je zelf meet.', isError: true };
+      // A command runs on this computer by itself from now on: only for a bot that may run any command without asking.
+      if (a?.measure?.kind === 'command' && !fullAccess(t.agent)) return { text: 'Een opdracht als meting kan alleen bij een bot met volledige toegang. Meet het met een tool of een query, of vraag de eigenaar om volledige toegang.', isError: true };
       const existing = duties.duties(t.userId, t.agent.id).find((r) => r.name.toLowerCase() === title.toLowerCase());
       try {
         const body = { key: existing?.options.duty?.key || 'eigen', title, check, source: a?.measure?.kind === 'url' ? 'web' : 'team', okWhen: String(a?.ok_when || ''), onProblem: a?.on_problem, days: a?.days, times: a?.times, everyMinutes: a?.every_minutes, measure: a?.measure } as any;

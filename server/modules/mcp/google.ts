@@ -1006,7 +1006,13 @@ export function registerGoogle(ctx: Ctx, mgr: McpManager, h: GoogleHelpers) {
   /** The inbox (or a Gmail search): the newest messages, with who, what and whether it is unread. */
   api.get(
     '/mcp/google/mail',
-    ah(async (req) => ({ messages: await mail(req, 'gmail_search', { query: str(req.query.q, 300).trim() || 'in:inbox', limit: Math.min(25, Math.max(1, Number(req.query.limit) || 15)) }) })),
+    ah(async (req) => {
+      // Not connected is a state, not a failure: the dashboard shows how to connect it (and the browser logs no error).
+      const c = googleConn(ctx, user(req).id);
+      const o: any = c?.oauth || {};
+      if (!c || o.status !== 'connected' || !serviceIds(o.services).includes('gmail')) return { messages: [], off: 'Gmail is niet gekoppeld. Koppel Google bij Apps en vink Gmail aan.' };
+      return { messages: await mail(req, 'gmail_search', { query: str(req.query.q, 300).trim() || 'in:inbox', limit: Math.min(25, Math.max(1, Number(req.query.limit) || 15)) }) };
+    }),
   );
 
   api.get(

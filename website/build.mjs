@@ -959,7 +959,7 @@ export function build() {
   for (const f of ['inter-latin-wght-normal.woff2', 'inter-latin-ext-wght-normal.woff2']) copy(path.join(fontDir, 'files', f), path.join(dist, 'assets/fonts', f));
   copy(path.join(fontDir, 'LICENSE'), path.join(dist, 'assets/fonts/OFL.txt'));
   fs.writeFileSync(path.join(dist, 'assets/favicon.svg'), iconSvg());
-  fs.writeFileSync(path.join(dist, 'assets/bank.js'), "if (/[?&]state=/.test(location.search)) location.replace('http://127.0.0.1:4747/api/public/mcp/bank/callback' + location.search);");
+  fs.writeFileSync(path.join(dist, 'assets/bank.js'), "var m = /[?&]state=(?:(\\d{2,5})(?:\\.|%2E))?/i.exec(location.search); if (m) location.replace('http://127.0.0.1:' + (m[1] || '4747') + '/api/public/mcp/bank/callback' + location.search);");
   // only what a page uses: the social preview images and the files of the screenshot slots
   const used = new Set([...LANGS.map((l) => `og-${l}.png`), ...Object.keys(SHOTS).filter((k) => !k.startsWith('_')).map(slotFile).filter(Boolean)]);
   for (const f of used) if (hasImg(f)) copy(path.join(imgDir, f), path.join(dist, 'img', f));

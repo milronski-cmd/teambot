@@ -69,8 +69,16 @@ try {
   await page.goto(`${app.url}/#token=${token}`);
   await page.waitForTimeout(1500);
 
-  // Nothing connected yet: every part says how to connect it, nothing is an error.
-  await page.goto(`${app.url}/#/dashboard`);
+  // The start screen is the home screen of an operating system: a menu bar, widgets, a dock with the apps, and an app
+  // that opens as a window.
+  const go = async (id) => {
+    await page.goto(`${app.url}/#/dashboard${id ? `/${id}` : ''}`);
+    await page.getByTestId('dashboard-dock').waitFor({ timeout: 15000 });
+    await page.waitForTimeout(400);
+  };
+
+  // Nothing connected yet: every block says how to connect it, nothing is an error.
+  await go('');
   await page.getByTestId('dashboard-mail').waitFor({ timeout: 15000 });
   await page.waitForTimeout(1500);
   const empty = await page.locator('main, body').first().innerText();
@@ -79,6 +87,13 @@ try {
   check('Wacht op jou, Team en Cijfers staan er', /Wacht op jou/.test(empty) && /Niets dat op je wacht/.test(empty) && /Staat stil:/.test(empty) && /Cijfers/.test(empty));
   check('Wacht op jou is alleen een teller met een link, geen kaarten', (await page.getByTestId('dashboard-stat-waiting').getAttribute('href')) === '#/inbox' && (await page.getByRole('group', { name: 'Goedkeuring nodig' }).count()) === 0);
   check('Gekoppelde apps staat erop en zegt hoe je koppelt', /Gekoppelde apps/.test(empty) && /Nog geen apps gekoppeld/.test(empty));
+  check('het dock toont de zeven apps met Overzicht gekozen, en de weg naar Wacht op jou en Taken', (await page.locator('[data-testid^="dashboard-app-"]').count()) === 7 && (await page.getByTestId('dashboard-app-home').getAttribute('aria-current')) === 'page' && (await page.getByTestId('dashboard-place-wacht').getAttribute('href')) === '#/inbox' && (await page.getByTestId('dashboard-place-taken').getAttribute('href')) === '#/tasks');
+  const bar = await page.getByTestId('dashboard-menubar').innerText();
+  check('de menubalk zegt waar je bent en hoe laat het is', /TeamBot/.test(bar) && /Overzicht/.test(bar) && /\d{1,2}[:.]\d{2}/.test(bar), bar.replace(/\s+/g, ' '));
+  const homeBox = await page.getByTestId('dashboard-home').boundingBox();
+  check('het startscherm gebruikt het hele venster: de lijst met bots maakt plaats', homeBox.width > 1150 && (await page.getByText('Nog geen gesprek').count()) === 0, `breedte ${Math.round(homeBox.width)}`);
+  check('bovenaan staat een begroeting met de bots, de dag en de tijd', (await page.getByTestId('dashboard-hero').count()) === 1 && /Goede|Goed/.test(await page.getByTestId('dashboard-hero').innerText()) && /\d{1,2}[:.]\d{2}/.test(await page.getByTestId('dashboard-hero').innerText()));
+  check('Taken en Verbruik staan op het startscherm', /Er staat niets open/.test(empty) && (await page.getByTestId('dashboard-usage').count()) === 1);
   await shot('1-leeg');
 
   // With mail and a bank (stand-ins at the page).
@@ -89,12 +104,16 @@ try {
   await page.route('**/api/mcp/bank/overview*', (r) => r.fulfill({ json: BANK }));
   await page.reload();
   await page.getByTestId('dashboard-mail-row').first().waitFor({ timeout: 15000 });
-  await page.getByTestId('dashboard-account').first().waitFor({ timeout: 15000 });
-  const full = await page.locator('body').innerText();
-  check('Post toont de inbox met afzender en onderwerp', /Jan de Vries/.test(full) && /Levering van bestelling 2041/.test(full) && /Sanne Bakker/.test(full));
-  check('Geld toont saldo per rekening, het totaal en de mutaties', /12\.480,55|12,480\.55/.test(full) && /Samen/.test(full) && /TransIP B\.V\./.test(full) && /NL91 •••• 4300/.test(full), '');
-  await shot('2-gevuld');
+  await page.getByTestId('dashboard-money-total').waitFor({ timeout: 15000 });
+  const start = await page.locator('body').innerText();
+  check('het startscherm toont de laatste post', /Jan de Vries/.test(start) && /Levering van bestelling 2041/.test(start) && /Sanne Bakker/.test(start));
+  check('en je geld als één bedrag met zijn verloop, zonder de lijst met mutaties', /21\.480,55|21,480\.55/.test(start) && /Samen op 2 rekeningen/.test(start) && (await page.getByTestId('dashboard-money-course').count()) === 1 && (await page.getByTestId('dashboard-transactions').count()) === 0);
+  await shot('2-start');
 
+  // A block opens its app: Post, whole.
+  await page.getByTestId('dashboard-mail-row').first().click();
+  await page.getByTestId('dashboard-mail-search').waitFor({ timeout: 10000 });
+  check('een bericht op het startscherm opent de app Post, als venster', /#\/dashboard\/post$/.test(page.url()) && (await page.getByTestId('dashboard-app-post').getAttribute('aria-current')) === 'page' && /Post/.test(await page.getByTestId('dashboard-window').locator('h1').innerText()));
   await page.getByTestId('dashboard-mail-row').first().click();
   await page.getByTestId('dashboard-mail-open').waitFor({ timeout: 10000 });
   check('een mail opent met de hele tekst', /Ik heb de onderdelen donderdag nodig/.test(await page.getByTestId('dashboard-mail-open').innerText()));
@@ -138,41 +157,20 @@ try {
   await page.getByTestId('dashboard-mail-send-new').click();
   await page.getByText('Levertijd van de banden').waitFor({ timeout: 10000 });
   check('en gaat vanaf dat postvak de deur uit', boxSent?.to === 'piet@leverancier.test' && boxSent?.body === 'Prima, tot dinsdag.');
-  await page.getByTestId('dashboard-mail').scrollIntoViewIfNeeded();
-  await page.screenshot({ path: path.join(SHOTS, 'dashboard-6-postvak.png') });
+  await shot('4-post');
   await page.unroute('**/api/mcp/mailboxes');
 
-  // A number that changed shows its course as a line.
-  const td = app.ctx.services.teamdata;
-  const uid = app.ctx.auth.owner().id;
-  const put = (v) => td.write(uid, [{ sql: "INSERT INTO dashboard (sleutel, groep, titel, waarde, eenheid, bot, toelichting) VALUES ('aanvragen', 'Leads', 'Aanvragen deze week', ?, 'aanvragen', 'Ada', 'Geteld uit het formulier van de site, zonder proefaanvragen. Vorige week waren het er vier; de stijging komt van de nieuwe knop bovenaan de pagina en van twee advertenties die sinds maandag lopen.') ON CONFLICT(sleutel) DO UPDATE SET waarde = excluded.waarde", params: [v] }]);
-  for (const v of ['4', '6', '5', '9', '12']) {
-    await put(v);
-    await td.dashboard(uid);
-  }
-  // A budget a bot keeps: a tile with a limit is a meter under Verbruik, not a number among the others.
-  await td.write(uid, [
-    { sql: "INSERT INTO dashboard (sleutel, groep, titel, waarde, maximum, eenheid, bot) VALUES ('hosting-budget', 'Kosten', 'Hosting: extra budget deze maand', '19,55', '23', 'dollar', 'Bo')" },
-    { sql: "INSERT INTO dashboard (sleutel, groep, titel, waarde, maximum, eenheid, bot) VALUES ('bouwminuten', 'Kosten', 'Bouwminuten deze maand', '640', '2000', 'minuten', 'Bo')" },
-  ]);
-  await page.reload();
-  await page.getByTestId('dashboard-course').first().waitFor({ timeout: 15000 });
-  const usage = page.getByTestId('dashboard-usage');
-  await usage.getByTestId('dashboard-meter').first().waitFor({ timeout: 10000 });
-  const meterText = (await usage.innerText()).replace(/\s+/g, ' ');
-  check('een budget met een grens staat als meter onder Verbruik: wat er gebruikt is van wat, en "bijna op" in woorden', (await usage.getByTestId('dashboard-meter').count()) === 2 && /19,55 van 23 dollar/.test(meterText) && /Bijna op: 85/.test(meterText) && /640 van 2000 minuten/.test(meterText), meterText.slice(0, 200));
-  check('een meter staat niet nog eens tussen de cijfers', (await page.getByTestId('dashboard-numbers').getByText('Hosting: extra budget deze maand').count()) === 0);
-  check('bovenaan staat een begroeting met de bots', (await page.getByTestId('dashboard-hero').count()) === 1 && /Goede|Goed/.test(await page.getByTestId('dashboard-hero').innerText()));
-  check('een cijfer dat steeg toont dat naast het getal', /\+8/.test(await page.getByTestId('dashboard-trend').first().innerText()));
-  const tile = await page.getByTestId('dashboard-tile').first().innerText();
-  check('een cijfer dat veranderde toont zijn verloop', /Aanvragen deze week/.test(tile) && /\+8 sinds/.test(tile), tile.replace(/\s+/g, ' ').slice(0, 160));
-  // A long explanation stays two lines until he asks for all of it.
-  const note = page.getByTestId('dashboard-tile-note').first();
-  const short = (await note.boundingBox()).height;
-  await page.getByTestId('dashboard-tile-more').first().click();
-  check('een lange toelichting staat ingeklapt en klapt uit met Meer lezen', (await note.boundingBox()).height > short + 10, `${short}`);
-  await page.getByTestId('dashboard-tile-more').first().click();
-  // The money per day as one line, and a day read from it.
+  // A window closes back to the home screen.
+  await page.getByTestId('dashboard-window-close').click();
+  await page.getByTestId('dashboard-home').waitFor({ timeout: 10000 });
+  check('het venster sluit terug naar het startscherm', /#\/dashboard$/.test(page.url()) && (await page.getByTestId('dashboard-window').count()) === 0);
+
+  // The app Geld: every account, the balance per day, and the transactions. Opened from the dock.
+  await page.getByTestId('dashboard-app-geld').click();
+  await page.getByTestId('dashboard-window').waitFor({ timeout: 10000 });
+  await page.getByTestId('dashboard-account').first().waitFor({ timeout: 15000 });
+  const geld = await page.locator('body').innerText();
+  check('Geld toont saldo per rekening, het totaal en de mutaties', /12\.480,55|12,480\.55/.test(geld) && /Samen/.test(geld) && /TransIP B\.V\./.test(geld) && /NL91 •••• 4300/.test(geld), '');
   const course = page.getByTestId('dashboard-money-course');
   await course.waitFor({ timeout: 10000 });
   const svg = course.locator('svg');
@@ -182,8 +180,51 @@ try {
   check('het saldo per dag staat als lijn, en een dag is af te lezen', /21\.480,55|21,480\.55/.test(tip.replace(/\s/g, '')), tip.replace(/\s+/g, ' '));
   check('met wat erbij kwam en eraf ging in de periode', /Bijgeschreven[\s\S]*250[\s\S]*Afgeschreven[\s\S]*471,30|Afgeschreven[\s\S]*471\.30/.test(await course.innerText()), (await course.innerText()).replace(/\s+/g, ' ').slice(-120));
   await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
-  await page.getByTestId('dashboard-numbers').scrollIntoViewIfNeeded();
-  await page.screenshot({ path: path.join(SHOTS, 'dashboard-5-verloop.png') });
+  await shot('5-geld');
+
+  // The numbers the bots keep: one that changed shows its course, a budget with a limit is a meter.
+  const td = app.ctx.services.teamdata;
+  const uid = app.ctx.auth.owner().id;
+  const put = (v) => td.write(uid, [{ sql: "INSERT INTO dashboard (sleutel, groep, titel, waarde, eenheid, bot, toelichting) VALUES ('aanvragen', 'Leads', 'Aanvragen deze week', ?, 'aanvragen', 'Ada', 'Geteld uit het formulier van de site, zonder proefaanvragen. Vorige week waren het er vier; de stijging komt van de nieuwe knop bovenaan de pagina en van twee advertenties die sinds maandag lopen.') ON CONFLICT(sleutel) DO UPDATE SET waarde = excluded.waarde", params: [v] }]);
+  for (const v of ['4', '6', '5', '9', '12']) {
+    await put(v);
+    await td.dashboard(uid);
+  }
+  await td.write(uid, [
+    { sql: "INSERT INTO dashboard (sleutel, groep, titel, waarde, eenheid, bot) VALUES ('omzet', 'Omzet', 'Omzet deze week', '1.240', 'euro', 'Bo')" },
+    { sql: "INSERT INTO dashboard (sleutel, groep, titel, waarde, maximum, eenheid, bot) VALUES ('hosting-budget', 'Kosten', 'Hosting: extra budget deze maand', '19,55', '23', 'dollar', 'Bo')" },
+    { sql: "INSERT INTO dashboard (sleutel, groep, titel, waarde, maximum, eenheid, bot) VALUES ('bouwminuten', 'Kosten', 'Bouwminuten deze maand', '640', '2000', 'minuten', 'Bo')" },
+  ]);
+  await go('cijfers');
+  await page.reload();
+  await page.getByTestId('dashboard-course').first().waitFor({ timeout: 15000 });
+  check('een meter staat niet tussen de cijfers', (await page.getByTestId('dashboard-numbers').getByText('Hosting: extra budget deze maand').count()) === 0 && (await page.getByTestId('dashboard-tile').count()) === 2);
+  check('een cijfer dat steeg toont dat naast het getal', /\+8/.test(await page.getByTestId('dashboard-trend').first().innerText()));
+  const tile = await page.getByTestId('dashboard-tile').first().innerText();
+  check('een cijfer dat veranderde toont zijn verloop', /Aanvragen deze week/.test(tile) && /\+8 sinds/.test(tile), tile.replace(/\s+/g, ' ').slice(0, 160));
+  // A long explanation stays two lines until he asks for all of it.
+  const note = page.getByTestId('dashboard-tile-note').first();
+  const short = (await note.boundingBox()).height;
+  await page.getByTestId('dashboard-tile-more').first().click();
+  check('een lange toelichting staat ingeklapt en klapt uit met Meer lezen', (await note.boundingBox()).height > short + 10, `${short}`);
+  await page.getByTestId('dashboard-tile-more').first().click();
+  await shot('6-cijfers');
+
+  await go('verbruik');
+  const usage = page.getByTestId('dashboard-usage');
+  await usage.getByTestId('dashboard-meter').first().waitFor({ timeout: 10000 });
+  const meterText = (await usage.innerText()).replace(/\s+/g, ' ');
+  check('een budget met een grens staat als meter onder Verbruik: wat er gebruikt is van wat, en "bijna op" in woorden', (await usage.getByTestId('dashboard-meter').count()) === 2 && /19,55 van 23 dollar/.test(meterText) && /Bijna op: 85/.test(meterText) && /640 van 2000 minuten/.test(meterText), meterText.slice(0, 200));
+  await shot('7-verbruik');
+
+  // Back on the start screen: the numbers small with their course, the meters, and everything else at a glance.
+  await go('');
+  await page.getByTestId('dashboard-kpi').first().waitFor({ timeout: 15000 });
+  check('het startscherm toont de cijfers klein, het cijfer dat bewoog eerst met zijn lijn', (await page.getByTestId('dashboard-kpi').count()) === 2 && /Aanvragen deze week/.test(await page.getByTestId('dashboard-kpi').first().innerText()) && (await page.getByTestId('dashboard-spark').count()) === 1);
+  check('en de meters, zonder ze tussen de cijfers te zetten', (await page.getByTestId('dashboard-usage').getByTestId('dashboard-meter').count()) === 2 && (await page.getByTestId('dashboard-numbers').getByText('Hosting: extra budget deze maand').count()) === 0);
+  await page.getByTestId('dashboard-kpi').first().click();
+  await page.getByTestId('dashboard-tile').first().waitFor({ timeout: 10000 });
+  check('een cijfer op het startscherm opent de app Cijfers', /#\/dashboard\/cijfers$/.test(page.url()));
 
   // Connected apps as a board: the name, how it stands, one click to open it (the list as the server gives it).
   await page.route('**/api/mcp/connections', (r) =>
@@ -194,14 +235,18 @@ try {
       { id: 'mcp_d', name: 'Oude koppeling', label: '', enabled: false, status: 'stopped', last_error: null, transport: 'stdio' },
     ] }),
   );
+  await go('apps');
   await page.reload();
   await page.getByTestId('dashboard-app').first().waitFor({ timeout: 15000 });
   const apps = await page.getByTestId('dashboard-apps').innerText();
   check('apps staan er als tegels met hun stand', /Google\s+Verbonden/.test(apps) && /Lighthouse\s+Klaar voor gebruik/.test(apps) && /Boekhouding\s+Werkt niet/.test(apps) && /Oude koppeling\s+Uit/.test(apps) && /Apps die werken: 2 van 4/.test(apps), apps.split('\n').join(' | ').slice(0, 200));
-  check('de teller bovenaan telt ze', /4\s+2 van 4 werken/.test(await page.getByTestId('dashboard-stat-apps').innerText()));
   check('een tegel opent de app', (await page.getByTestId('dashboard-app').first().getAttribute('href')) === '#/m/mcp/c/mcp_a');
-  await page.getByTestId('dashboard-apps').scrollIntoViewIfNeeded();
-  await page.screenshot({ path: path.join(SHOTS, 'dashboard-4-apps.png') });
+  await go('');
+  await page.getByTestId('dashboard-app').first().waitFor({ timeout: 15000 });
+  check('de teller bovenaan telt ze', /4\s+2 van 4 werken/.test(await page.getByTestId('dashboard-stat-apps').innerText()));
+  await page.waitForTimeout(600);
+  await page.screenshot({ path: path.join(SHOTS, 'dashboard-8-start-vol.png'), fullPage: false });
+  console.log('  schermafbeelding: dashboard-8-start-vol.png');
   await page.setViewportSize({ width: 390, height: 844 });
   await page.waitForTimeout(400);
   const wide = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);

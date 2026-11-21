@@ -6,6 +6,7 @@ import { navigate } from '../../lib/router';
 import { t } from '../../lib/i18n';
 import { Button, Card, Field, Input, SectionTitle, Spinner, Textarea, timeAgo, toast, toastError } from '../../components/ui';
 import { Segmented } from '../../components/SettingControls';
+import { OpenApp } from './parts';
 
 interface Row {
   id: string;
@@ -49,7 +50,7 @@ interface Box {
   address: string;
 }
 const GOOGLE = 'google';
-export function MailSection() {
+export function MailSection({ compact }: { compact?: boolean } = {}) {
   const agents = useApp((s) => s.agents);
   const [rows, setRows] = useState<Row[] | null>(null);
   const [off, setOff] = useState('');
@@ -78,9 +79,9 @@ export function MailSection() {
 
   const load = () =>
     api
-      .get<{ messages: Row[] }>(acct === GOOGLE ? `${base}?limit=12&q=${encodeURIComponent(`${box === 'sent' ? 'in:sent' : 'in:inbox'}${asked ? ` ${asked}` : ''}`)}` : `${base}?limit=12&box=${box}&q=${encodeURIComponent(asked)}`)
+      .get<{ messages: Row[]; off?: string }>(acct === GOOGLE ? `${base}?limit=${compact ? 4 : 12}&q=${encodeURIComponent(`${box === 'sent' ? 'in:sent' : 'in:inbox'}${asked ? ` ${asked}` : ''}`)}` : `${base}?limit=${compact ? 4 : 12}&box=${box}&q=${encodeURIComponent(asked)}`)
       .then(
-        (r) => (setRows(r.messages), setOff('')),
+        (r) => (setRows(r.messages), setOff(r.off ? t(r.off) : '')),
         (e) => (setRows([]), setOff(String(e?.message || e))),
       );
   useEffect(() => {
@@ -176,6 +177,9 @@ export function MailSection() {
         icon={MailIcon}
         tone="blue"
         action={
+          compact ? (
+            <OpenApp href="#/dashboard/post" />
+          ) : (
           <span className="flex flex-wrap items-center gap-1">
             {!off && (
               <>
@@ -191,11 +195,12 @@ export function MailSection() {
               Postvak koppelen
             </Button>
           </span>
+          )
         }
       >
         Post
       </SectionTitle>
-      {boxes.length > 0 && !adding && (
+      {!compact && boxes.length > 0 && !adding && (
         <select className="h-9 w-full rounded-lg border border-line bg-surface px-2 text-sm text-fg" value={acct} onChange={(e) => (setFresh(null), setAcct(e.target.value))} aria-label={t('Welk postvak')} data-testid="dashboard-mail-account" translate="no">
           <option value={GOOGLE}>{t('Google-account')}</option>
           {boxes.map((b) => (
@@ -205,7 +210,7 @@ export function MailSection() {
           ))}
         </select>
       )}
-      {!off && !open && !fresh && !adding && (
+      {!compact && !off && !open && !fresh && !adding && (
         <div className="flex flex-wrap items-center gap-2">
           <Segmented<'inbox' | 'sent'>
             label="Welke post"
@@ -325,9 +330,9 @@ export function MailSection() {
           <div className="p-4 text-sm text-muted">{asked ? t('Niets gevonden.') : box === 'sent' ? t('Je hebt nog niets verstuurd.') : t('Je inbox is leeg.')}</div>
         ) : (
           <ul className="divide-y divide-line">
-            {rows.map((r) => (
+            {(compact ? rows.slice(0, 4) : rows).map((r) => (
               <li key={r.id}>
-                <button type="button" onClick={() => read(r.id)} className="flex w-full items-start gap-3 px-4 py-2.5 text-start hover:bg-surface-2" data-testid="dashboard-mail-row">
+                <button type="button" onClick={() => (compact ? navigate('/dashboard/post') : read(r.id))} className="flex w-full items-start gap-3 px-4 py-2.5 text-start hover:bg-surface-2" data-testid="dashboard-mail-row">
                   <span className={`mt-1.5 h-2 w-2 shrink-0 rounded-full ${r.unread ? 'bg-accent' : 'bg-transparent'}`} aria-label={r.unread ? t('ongelezen') : undefined} />
                   <span className="min-w-0 flex-1">
                     <span className="flex items-baseline justify-between gap-2">
