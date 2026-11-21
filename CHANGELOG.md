@@ -1,5 +1,14 @@
 # Changelog
 
+## [4.12.3] — 2026-11-21
+
+### Samenwerken
+- **Een melding kost geen beurt meer.** Een bot kan een collega iets laten weten (ter info, waar zijn werk staat,
+  een correctie, een bedankje) zonder dat die collega daarvoor een hele beurt draait en terugschrijft: de melding
+  wacht en wordt gelezen bij het eerstvolgende werk van die collega. Een "vraag" die zelf zegt dat er geen antwoord
+  nodig is, wordt vanzelf zo'n melding. Gemeten bij een team van 19 bots: twee derde van alle beurten was onderling
+  berichtenverkeer, en een groot deel daarvan waren mededelingen.
+
 ## [4.12.2] — 2026-11-21
 
 ### Dashboard

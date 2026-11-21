@@ -5,6 +5,7 @@ import { Board, TASK_LABEL, TASK_STATUS, type Task, type TaskStatus } from './bo
 import { DELEGATION_LABEL } from './orchestration.js';
 import type { RoomService } from './service.js';
 import { colleagues } from './prompt.js';
+import { isNotice, leaveNote } from './notes.js';
 import { words } from '../../../shared/i18n-core.js';
 
 const s120 = (v: any) => String(v ?? '').replace(/\s+/g, ' ').slice(0, 120);
@@ -97,6 +98,7 @@ export function teamTools(s: RoomService, board: Board): ToolDef[] {
       risk: 'write',
       internal: true,
       description:
+        'Alleen als je een antwoord of werk nodig hebt (dit start een beurt bij de ander); iets dat de ander alleen hoeft te weten: note_bot. ' +
         'Stuur een andere bot een vraag of opdracht ZONDER te wachten, zoals een collega mailen. Het bericht komt in de eigen chat van die bot ("<jij> vraagt: …") en wordt opgepakt zodra die bot vrij is. ' +
         'Zodra hij antwoordt word jij automatisch gewekt met het antwoord als nieuwe beurt in dit gesprek. Zo zet je meerdere bots tegelijk aan het werk: roep ask_bot een paar keer aan en rond daarna je beurt af. ' +
         'Antwoorden die binnenkomen terwijl je bezig bent krijg je gebundeld na je huidige beurt. Lukt het de bot niet, dan hoor je dat ook, met de reden. reply=false = alleen een melding: je wordt niet gewekt als het lukt (wat de bot deed komt als notitie in dit gesprek), wel als het mislukt. Een bot die al in deze keten zit kun je niet opnieuw aanschrijven (geen heen-en-weer). Intrekken: delegation_cancel.',
@@ -111,7 +113,54 @@ export function teamTools(s: RoomService, board: Board): ToolDef[] {
         required: ['bot', 'message'],
       },
       summarize: (a) => words(a.reply === false ? 'Melding aan {0} (asynchroon): {1}' : 'Vraag aan {0} (asynchroon): {1}', a.bot, s120(a.message)),
-      run: (a, t) => s.orch.ask(t, a),
+      run: async (a, t) => {
+        // A "question" that says itself it needs no answer is a note: the colleague reads it at its next turn.
+        if (isNotice(String(a?.message || ''))) {
+          const room = s.roomForThread(t.thread);
+          const target = s.orch.resolveBot(t.thread.user_id, a.bot, room);
+          if (target && target.id !== t.agent.id && !room) {
+            leaveNote(s.ctx, t.agent, target, String(a.message));
+            return { text: `Achtergelaten als melding voor ${target.name}: je bericht zegt zelf dat er geen antwoord nodig is, dus er start geen beurt en er komt geen antwoord. ${target.name} leest het aan het begin van zijn volgende beurt. Heb je wel een antwoord nodig, stel dan de vraag zonder "ter info".` };
+          }
+        }
+        return s.orch.ask(t, a);
+      },
+    },
+    {
+      name: 'note_bot',
+      group: 'team',
+      risk: 'write',
+      internal: true,
+      description:
+        'Laat een melding achter voor collega-bots: iets dat zij alleen hoeven te weten (ter info, een stand, wat je live zette, een correctie, een bedankje). Start geen beurt en krijgt geen antwoord: de collega leest het bij zijn volgende beurt. Gebruik dit in plaats van ask_bot of broadcast zodra je geen antwoord nodig hebt.',
+      parameters: {
+        type: 'object',
+        properties: {
+          bots: { type: 'array', items: { type: 'string' }, description: 'Namen (of id’s) van de bots' },
+          note: { type: 'string', description: 'Wat ze moeten weten, kort, met waar het staat (map, link, taak)' },
+        },
+        required: ['bots', 'note'],
+      },
+      summarize: (a) => words('Melding voor {0}: {1}', (Array.isArray(a.bots) ? a.bots : [a.bots]).join(', '), s120(a.note)),
+      run: async (a, t): Promise<ToolOutput> => {
+        const note = String(a?.note ?? a?.message ?? '').trim();
+        if (!note) return toolError('De melding is leeg.');
+        const refs: any[] = (Array.isArray(a?.bots) ? a.bots : [a?.bots ?? a?.bot]).filter(Boolean).slice(0, 30);
+        if (!refs.length) return toolError('Noem de bots voor wie de melding is.');
+        const room = s.roomForThread(t.thread);
+        const done: string[] = [];
+        const unknown: string[] = [];
+        for (const ref of refs) {
+          const target = s.orch.resolveBot(t.thread.user_id, ref, room);
+          if (!target || target.id === t.agent.id) unknown.push(String(ref));
+          else if (!done.includes(target.name)) {
+            leaveNote(s.ctx, t.agent, target, note);
+            done.push(target.name);
+          }
+        }
+        if (!done.length) return toolError(`Onbekende bot: ${unknown.join(', ')}.`);
+        return { text: `Melding achtergelaten voor ${done.join(', ')}: zij lezen hem aan het begin van hun volgende beurt. Er start geen beurt en er komt geen antwoord.${unknown.length ? ` Niet gevonden: ${unknown.join(', ')}.` : ''}` };
+      },
     },
     {
       name: 'delegation_cancel',
@@ -129,7 +178,7 @@ export function teamTools(s: RoomService, board: Board): ToolDef[] {
       risk: 'write',
       internal: true,
       description:
-        'Vraag meerdere bots tegelijk iets. Elke bot krijgt een aparte, gevolgde beurt (groepsleden antwoorden in de groep, andere bots in een eigen subgesprek). Als iedereen klaar is krijg je een vervolgbeurt met de statussen (follow_up=false om dat over te slaan).',
+        'Vraag meerdere bots tegelijk iets (iets dat ze alleen hoeven te weten: note_bot). Elke bot krijgt een aparte, gevolgde beurt (groepsleden antwoorden in de groep, andere bots in een eigen subgesprek). Als iedereen klaar is krijg je een vervolgbeurt met de statussen (follow_up=false om dat over te slaan).',
       parameters: {
         type: 'object',
         properties: {

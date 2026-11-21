@@ -20,7 +20,7 @@ const MAX_SENT_MAIN_BOT = 26;
  * 111: every bot now has teambot_find and teambot_do, the two the main bot already had ("een bot kan alles wat de
  * gebruiker in het scherm kan"). They are on demand for it, so the number SENT above did not move.
  */
-const MAX_TOOLS_FULL_ACCESS = 111;
+const MAX_TOOLS_FULL_ACCESS = 112; // 112: note_bot, a note for a colleague that starts no turn (a new job: asking always starts one)
 const MAX_TOOLS_MAIN_BOT = 118;
 
 test('tools: no name twice, and a full-access bot does not get more tools than today', async () => {

@@ -150,6 +150,12 @@ CREATE INDEX IF NOT EXISTS attachments_thread ON attachments(thread_id);`,
     sql: `ALTER TABLE approvals ADD COLUMN forgotten_at TEXT;`,
   },
   {
+    // A note for a colleague that starts no turn (rooms/notes.ts): read at the start of the colleague's next turn.
+    id: 'core-bot-notes-001',
+    sql: `CREATE TABLE bot_notes (id TEXT PRIMARY KEY, user_id TEXT NOT NULL, to_agent_id TEXT NOT NULL, from_agent_id TEXT NOT NULL, from_name TEXT NOT NULL, text TEXT NOT NULL, created_at TEXT NOT NULL, read_at TEXT);
+CREATE INDEX bot_notes_to ON bot_notes(to_agent_id, read_at);`,
+  },
+  {
     // The numbers on the dashboard through time: one row each time a tile's number changes, so a tile can show its
     // course (the table of the bots, "dashboard", only holds the latest value).
     id: 'core-dashboard-history-001',
