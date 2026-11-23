@@ -100,8 +100,10 @@ for (const rel of pages) {
   }
   // meta tags and structure every page needs
   if (!/<title>[^<]{3,}<\/title>/.test(html)) problem(rel, 'geen <title>');
-  if (!/<meta name="description" content="[^"]{20,}">/.test(html)) problem(rel, 'geen meta description');
-  for (const p of ['og:title', 'og:description', 'og:image', 'og:image:alt', 'og:locale']) if (!html.includes(`property="${p}"`)) problem(rel, `${p} ontbreekt`);
+  // A page that is not meant to be found or shared (noindex: the bank's hand-over page) needs no description or og tags.
+  const hidden = /<meta name="robots" content="noindex">/.test(html);
+  if (!hidden && !/<meta name="description" content="[^"]{20,}">/.test(html)) problem(rel, 'geen meta description');
+  if (!hidden) for (const p of ['og:title', 'og:description', 'og:image', 'og:image:alt', 'og:locale']) if (!html.includes(`property="${p}"`)) problem(rel, `${p} ontbreekt`);
   const h1s = (html.match(/<h1[\s>]/g) || []).length;
   if (h1s !== 1) problem(rel, `${h1s} keer <h1> (moet 1 zijn)`);
   for (const m of html.matchAll(/<img\b[^>]*>/g)) for (const a of ['alt', 'width', 'height']) if (attr(m[0], a) == null) problem(rel, `<img> zonder ${a}: ${m[0].slice(0, 80)}`);
