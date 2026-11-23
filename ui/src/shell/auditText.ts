@@ -543,6 +543,15 @@ const EXACT: Record<string, Fn> = {
   'quality.lesson': (_d, x) => sys(tpl`{h} uit jouw correctie een les voor ${x.bot} onthouden`),
   'quality.skill_accepted': (d, x) => you(tpl`{h} ${x.bot} gevraagd een skill voor te stellen${colon(clean(d.title, 80))}`),
   'quality.skill_self': (d) => you(tpl`{h} een werkwijze die steeds goed ging zelf als skill vastgelegd: ${clean(d.title, 80) || 'een terugkerende taak'}`),
+  // The look back after real work (quality/skill-review.ts): a skill laid down or improved, or nothing to add.
+  'quality.skill_review': (d, x) => {
+    const skill = colon(clean(d.skill, 80));
+    if (d.decision === 'skipped') return sys(tpl`{h} niet kunnen terugkijken op het werk van ${x.bot}${colon(clean(d.why, 80))}`, { tone: 'warn' });
+    if (d.decision === 'none') return sys(tpl`{h} teruggekeken op het werk van ${x.bot}: niets nieuws voor een skill`);
+    if (d.ok === false) return bot(d.decision === 'improve' ? tpl`{h} een skill willen verbeteren, maar dat lukte niet${skill}` : tpl`{h} een werkwijze willen vastleggen als skill, maar dat lukte niet${skill}`, { tone: 'warn' });
+    if (d.draft) return bot(d.decision === 'improve' ? tpl`{h} een betere versie van een skill klaargezet, die op jou wacht${skill}` : tpl`{h} een werkwijze als skill klaargezet, die op jou wacht${skill}`);
+    return bot(d.decision === 'improve' ? tpl`{h} een skill verbeterd${skill}` : tpl`{h} een werkwijze vastgelegd als skill${skill}`);
+  },
   'team.note': (d) => you(tpl`{h} een melding achtergelaten voor ${clean(d.to, 60) || 'een collega'}`),
   'mcp.mailbox.added': (d) => you(tpl`{h} het postvak ${clean(d.address, 80) || 'van een mailadres'} gekoppeld`),
   'mcp.mailbox.removed': (d) => you(tpl`{h} het postvak ${clean(d.address, 80) || 'van een mailadres'} losgekoppeld`),

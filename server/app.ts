@@ -239,7 +239,18 @@ export async function createApp(over: Partial<Config> & { modules?: Module[]; qu
 
   // ---------- WebSocket: live events per user ----------
   const wss = new WebSocketServer({ noServer: true, maxPayload: 1_000_000 });
-  const clients = new Set<{ ws: WebSocket; userId: string; sessionId: string; device?: boolean; alive: boolean; missed: number }>();
+  type Client = { ws: WebSocket; userId: string; sessionId: string; device?: boolean; alive: boolean; missed: number; since: number; cut?: string };
+  const clients = new Set<Client>();
+  let stopping = false;
+  // One line per live connection that ends, a window or a phone: how long it was open and why it ended. "The app
+  // loses its connection" can then be looked up in server.log instead of guessed (23 Nov 2026: only starts were there).
+  const ended = (c: Client, code: number) => {
+    if (stopping) return;
+    const s = Math.round((Date.now() - c.since) / 1000);
+    const open = s < 120 ? `${s} s` : s < 7200 ? `${Math.round(s / 60)} min` : `${Math.round(s / 3600)} uur`;
+    const why = c.cut || (code === 1001 ? 'venster gesloten of herladen' : code === 1000 ? 'gesloten door de app' : code === 1006 ? 'verbinding weggevallen' : `code ${code}`);
+    log.info(`[live] verbinding met ${c.device ? 'een telefoon' : 'een venster'} weg na ${open}: ${why}`);
+  };
   // Paired phones get the same live events as the user, except provider configuration (may hold custom auth headers).
   const DEVICE_HIDDEN = new Set(['provider.updated', 'provider.deleted']);
   server.on('upgrade', (req, socket, head) => {
@@ -259,10 +270,13 @@ export async function createApp(over: Partial<Config> & { modules?: Module[]; qu
         ws.on('close', () => offRevoke());
         return extra(ws, r, u);
       }
-      const c = { ws, userId: r.user.id, sessionId: r.session.id, device: (r.session as any).kind === 'device', alive: true, missed: 0 };
+      const c: Client = { ws, userId: r.user.id, sessionId: r.session.id, device: (r.session as any).kind === 'device', alive: true, missed: 0, since: Date.now() };
       clients.add(c);
       ws.on('pong', () => ((c.alive = true), (c.missed = 0)));
-      ws.on('close', () => clients.delete(c));
+      ws.on('close', (code) => {
+        clients.delete(c);
+        ended(c, code);
+      });
       ws.on('message', (data) => {
         try {
           const msg = JSON.parse(String(data));
@@ -283,6 +297,7 @@ export async function createApp(over: Partial<Config> & { modules?: Module[]; qu
       // One missed answer is no dead connection: with twenty bots at work the server itself can be busy for a moment
       // when the answer comes in, and a window in the background answers late. Cut loose after two in a row.
       if (!c.alive && ++c.missed >= 2) {
+        c.cut = 'twee keer geen antwoord (60 s)';
         c.ws.terminate();
         clients.delete(c);
         continue;
@@ -297,6 +312,7 @@ export async function createApp(over: Partial<Config> & { modules?: Module[]; qu
     for (const c of clients) {
       if (!ids.includes(c.sessionId)) continue;
       clients.delete(c);
+      c.cut = 'sessie ingetrokken';
       c.ws.close(4401, 'Sessie ingetrokken');
       setTimeout(() => c.ws.terminate(), 2000).unref();
     }
@@ -366,6 +382,7 @@ export async function createApp(over: Partial<Config> & { modules?: Module[]; qu
     server,
     url,
     async close() {
+      stopping = true;
       clearInterval(ping);
       runner.stopRetries();
       queue.stop();

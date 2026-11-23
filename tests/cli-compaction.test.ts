@@ -63,6 +63,11 @@ test('Claude Code: "Gesprek samenvatten" runs /compact on the bot session; witho
     assert.equal(flag(c.argv, '--resume'), sid);
     assert.ok(events(t, th.id).some((e) => /Claude Code heeft het gesprek van CliBot samengevat \(van 120\.000 naar 9\.000 tokens\)/.test(e)));
     assert.equal(session(t, th.id, a.id), sid, 'same session after /compact');
+    // What the compaction itself used is counted like any model call (it was counted nowhere).
+    const row = s.one<any>("SELECT * FROM usage_log WHERE agent_id = ? AND model = 'fake-sonnet' AND input = 120000", a.id);
+    assert.ok(row, 'the compaction is in the usage log');
+    assert.equal(row.output, 900);
+    assert.equal(row.value, 0.01);
   } finally {
     await t.close();
   }

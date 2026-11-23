@@ -121,11 +121,14 @@ test('what an update waits for on the server: bots at work, routines, a backup, 
     const a = await t.agent({ name: 'Werker' });
     const now = Date.now();
     const iso = (ms: number) => new Date(now + ms).toISOString();
-    // A routine that starts in five minutes holds it back; one in an hour does not.
+    // A routine that starts within a few minutes holds it back; one in an hour does not, and neither does one in ten
+    // minutes (installing takes a minute or two: a longer window left a busy team no moment to install).
     ctx.store.exec("INSERT INTO routines (id, user_id, agent_id, name, status, next_run_at, created_at, updated_at) VALUES ('rt_later', ?, ?, 'Later', 'active', ?, ?, ?)", owner, a.id, iso(3600_000), iso(0), iso(0));
     assert.deepEqual(updateBlockers(ctx, now), []);
-    ctx.store.exec("INSERT INTO routines (id, user_id, agent_id, name, status, next_run_at, created_at, updated_at) VALUES ('rt_soon', ?, ?, 'Ochtendnieuws', 'active', ?, ?, ?)", owner, a.id, iso(5 * 60_000), iso(0), iso(0));
-    assert.deepEqual(updateBlockers(ctx, now), [{ kind: 'routine-soon', name: 'Ochtendnieuws', at: iso(5 * 60_000) }]);
+    ctx.store.exec("INSERT INTO routines (id, user_id, agent_id, name, status, next_run_at, created_at, updated_at) VALUES ('rt_soon', ?, ?, 'Ochtendnieuws', 'active', ?, ?, ?)", owner, a.id, iso(10 * 60_000), iso(0), iso(0));
+    assert.deepEqual(updateBlockers(ctx, now), [], 'ten minutes away: not in the way');
+    ctx.store.exec("UPDATE routines SET next_run_at = ? WHERE id = 'rt_soon'", iso(2 * 60_000));
+    assert.deepEqual(updateBlockers(ctx, now), [{ kind: 'routine-soon', name: 'Ochtendnieuws', at: iso(2 * 60_000) }]);
     ctx.store.exec("UPDATE routines SET status = 'paused' WHERE id = 'rt_soon'");
 
     // A run at work (as RunManager stores it).

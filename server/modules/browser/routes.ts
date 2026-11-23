@@ -214,7 +214,7 @@ export function computerRoutes(ctx: Ctx, svc: ComputerService) {
     ah(async (req) => {
       const s = snapshotOf(req);
       const { restorePlan } = await import('./workspace.js');
-      return wrap(() => restorePlan(s.workspace, s.dir));
+      return wrap(() => restorePlan(s.workspace, s.dir, svc.ownPaths(s.workspace)));
     }),
   );
   api.post(

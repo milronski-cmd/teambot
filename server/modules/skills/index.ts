@@ -18,7 +18,7 @@ import { fromChatRoutes } from './from-chat.js';
 import { fromDocumentRoutes } from './from-document.js';
 import { skillTestMigrations, skillTestRoutes } from './tests.js';
 import { SkillDefaults, skillOfferMigrations } from './defaults.js';
-import { SkillWorkspace } from './workspace.js';
+import { SkillWorkspace, ownSkillPaths } from './workspace.js';
 import type { CuratedSource } from './curated.js';
 
 /**
@@ -168,6 +168,8 @@ const mod: Module = {
       enabledFor: (agent: Agent) => lib.enabledFor(agent).map((s) => ({ id: s.id, name: s.name, description: s.description })),
       /** The skill folders in a bot's work folder up to date, right before a CLI engine starts there. */
       sync: (agent: Pick<Agent, 'id' | 'user_id'>) => void upToDate(agent),
+      /** Which paths in a work folder TeamBot wrote itself (the skill folders): a snapshot leaves them alone. */
+      ownPaths: (root: string) => ownSkillPaths(root),
       /** Resolves once the folders of every bot that waited are written (a script or test that reads them right after a change). */
       settled: () => (waiting.size || turn ? new Promise<void>((done) => settled.push(done)) : Promise.resolve()),
       /** The server closes: nothing is written any more. */

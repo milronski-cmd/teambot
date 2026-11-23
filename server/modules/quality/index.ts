@@ -5,6 +5,7 @@ import { plannerOf } from '../routines/planner.js';
 import { qualityRoutes } from './routes.js';
 import { verifyPrompt } from './prompt.js';
 import { isCorrection, learnFromCorrection } from './lessons.js';
+import { reviewRun } from './skill-review.js';
 
 /**
  * Werk dat echt af is: "klaar als" per task, an atomic claim on board tasks, a second look with a fresh context before
@@ -77,6 +78,12 @@ const mod: Module = {
       // (messages TeamBot posts in the owner's name — a decision's answer, a task sent back — carry a kind: no lesson)
       if (message.role !== 'user' || message.author_type !== 'user' || message.author_id !== thread.user_id || message.parts?.kind || !isCorrection(message.content)) return;
       setImmediate(() => track(learnFromCorrection(svc, message, thread)));
+    });
+
+    // After a turn with real work: a short look back that writes or improves a skill when there is a way of working
+    // in it that will come back (skill-review.ts). Never in the way of the answer.
+    ctx.hooks.afterRun.push(({ agent, thread, run, finalText }) => {
+      setImmediate(() => track(reviewRun(ctx, agent, thread, run, finalText || '')));
     });
 
     ctx.hooks.agentDeleted.push(({ agentId }) => {

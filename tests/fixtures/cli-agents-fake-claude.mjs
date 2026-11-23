@@ -182,7 +182,7 @@ async function mcpToolLists(cfgFile, wanted) {
 async function main() {
   const resume = arg('--resume');
   const sysFile = arg('--append-system-prompt-file');
-  log({ argv, prompt, cwd: process.cwd(), system: sysFile && fs.existsSync(sysFile) ? fs.readFileSync(sysFile, 'utf8') : null, leakedSecret: !!process.env.TEAMBOT_TEST_SECRET || !!process.env.MY_API_KEY, autoMemoryOff: process.env.CLAUDE_CODE_DISABLE_AUTO_MEMORY === '1', claudeAiOff: process.env.ENABLE_CLAUDEAI_MCP_SERVERS === 'false' });
+  log({ argv, prompt, cwd: process.cwd(), system: sysFile && fs.existsSync(sysFile) ? fs.readFileSync(sysFile, 'utf8') : null, leakedSecret: !!process.env.TEAMBOT_TEST_SECRET || !!process.env.MY_API_KEY, autoCompactWindow: process.env.CLAUDE_CODE_AUTO_COMPACT_WINDOW || null, autoMemoryOff: process.env.CLAUDE_CODE_DISABLE_AUTO_MEMORY === '1', claudeAiOff: process.env.ENABLE_CLAUDEAI_MCP_SERVERS === 'false' });
   if (scen(prompt) === 'badresume' && resume) {
     process.stderr.write(`No conversation found with session ID: ${resume}\n`);
     process.exit(1);
@@ -215,7 +215,7 @@ async function main() {
     out({ type: 'system', subtype: 'status', status: null, compact_result: 'success', session_id: sid });
     out({ type: 'system', subtype: 'init', session_id: sid, model: 'fake-sonnet' });
     out({ type: 'system', subtype: 'compact_boundary', session_id: sid, compact_metadata: { trigger: 'manual', pre_tokens: 120000, post_tokens: 9000 } });
-    out({ type: 'result', subtype: 'success', is_error: false, num_turns: 0, session_id: sid, total_cost_usd: 0.01, result: '' });
+    out({ type: 'result', subtype: 'success', is_error: false, num_turns: 0, session_id: sid, total_cost_usd: 0.01, usage: { input_tokens: 2000, cache_read_input_tokens: 118000, cache_creation_input_tokens: 0, output_tokens: 900 }, result: '' });
     return;
   }
   // FAKE_CLAUDE_INIT: more of the init message (the owner's own MCP servers and their tools, as Claude Code lists them).

@@ -251,7 +251,10 @@ CREATE INDEX vault_grants_entry ON vault_grants(entry_id, agent_id);
     // stopped/failed runs do not reach afterRun: release their control as soon as the run really ended
     ctx.events.on('run.updated', (e) => {
       const r = e.data;
-      if (r?.id && ['done', 'error', 'cancelled', 'interrupted'].includes(r.status)) s.leases.releaseHolder(r.id);
+      if (!r?.id || !['done', 'error', 'cancelled', 'interrupted'].includes(r.status)) return;
+      s.leases.releaseHolder(r.id);
+      // The frame around the screen follows: a bot whose turn ended no longer waits.
+      if (r.agent_id) s.screen.runEnded(r.agent_id);
     });
     ctx.hooks.agentDeleted.push(({ agentId, userId }) => {
       // a cloud VM is never deleted silently with its bot: it is kept, detached and shown on the Computers page

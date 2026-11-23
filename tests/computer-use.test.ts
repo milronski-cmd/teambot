@@ -554,6 +554,40 @@ test('owner moving the mouse pauses the bot; emergency stop kills input and paus
   }
 });
 
+test('the frame "bot wacht" goes when the bot’s turn ends, also when nothing else happens on the desktop', async () => {
+  // Seen 22 nov 2026: the owner moved the mouse while a bot worked on his screen, the bot's turn ended a minute later,
+  // and the blue frame stayed twelve hours: the state was only sent again when something happened on the desktop.
+  const { t, svc, a } = await setup();
+  try {
+    const s = t.app.ctx.store;
+    const agent = s.agent(a.id)!;
+    const owner = s.user(agent.user_id)!;
+    const thread = s.createThread({ user_id: agent.user_id, agent_id: agent.id });
+    const run = s.createRun({ thread_id: thread.id, agent_id: agent.id, user_id: agent.user_id, status: 'running' });
+    svc.screen.noteAction(agent, 'Klik op Opnieuw laden', null, null);
+    svc.takeControl(owner, 'desktop:host', { sticky: true });
+    const seen: any[] = [];
+    const off = svc.screen.onState((x) => seen.push(x));
+    try {
+      // (Let the update of the takeover itself go out first: it is sent a moment later, coalesced.)
+      await new Promise((r) => setTimeout(r, 150));
+      assert.equal(seen.at(-1).paused, true, 'blue frame: the bot waits, the owner has control');
+      assert.equal(seen.at(-1).agentId, agent.id);
+      // The bot was neither holding nor waiting for the screen: ending its turn changes no lease.
+      assert.equal(svc.leases.waiting('desktop:host').length, 0);
+      const done = s.updateRun(run.id, { status: 'done' });
+      t.app.ctx.events.emit(agent.user_id, 'run.updated', done);
+      await waitFor(() => seen.at(-1)?.paused === false, 3000);
+      assert.equal(seen.at(-1).agentId, null);
+      assert.equal(svc.controller('desktop:host')?.kind, 'user', 'the owner keeps control: no bot takes the screen');
+    } finally {
+      off();
+    }
+  } finally {
+    await t.close();
+  }
+});
+
 test('levels, scope and phone access: owner only, explicit confirmation for all apps, phone may watch and stop', async () => {
   const { t, a } = await setup();
   try {

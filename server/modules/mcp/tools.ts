@@ -236,6 +236,7 @@ function mcpTool(ctx: Ctx, mgr: McpManager, c: ConnectionRow, t: ToolRow, name: 
             maxTotalTimeout: Math.max(fresh.timeout_sec * 1000, 15 * 60_000),
             onprogress: (p: any) => tc.progress(`${svc}: ${p.message || `${p.progress}${p.total ? '/' + p.total : ''}`}`),
           }),
+          { signal: tc.signal },
         );
         const f = formatContent(ctx, tc.userId, tc.thread.id, `${c.slug}-${t.name}`, res?.content || (res?.toolResult ? [{ type: 'text', text: JSON.stringify(res.toolResult) }] : []), res?.structuredContent);
         const isError = !!res?.isError;

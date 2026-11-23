@@ -35,6 +35,27 @@ const LIST = '.teambot-skills.json';
 /** The form of what is written; a higher number writes every folder again. */
 const FORM = 1;
 
+/**
+ * Which paths in this work folder (relative, forward slashes) TeamBot wrote itself: the list file of each place and
+ * the skill folders on it. For whoever keeps copies of a work folder (snapshots): these are not the bot's work and are
+ * written again before every run, so they are neither kept nor put back. A snapshot that did keep them offered to put
+ * TeamBot's own list back and to delete the bot's skills as "later gemaakt".
+ */
+export function ownSkillPaths(root: string): (key: string) => boolean {
+  const own: string[] = [];
+  for (const place of SKILL_PLACES) {
+    try {
+      const list = JSON.parse(fs.readFileSync(path.join(root, place, LIST), 'utf8'));
+      if (list?.managedBy !== 'TeamBot') continue;
+      own.push(`${place}/${LIST}`);
+      for (const name of Object.keys(list.skills || {})) own.push(`${place}/${name}/`);
+    } catch {
+      /* no list file there: nothing of TeamBot's */
+    }
+  }
+  return (key) => own.some((p) => (p.endsWith('/') ? key.startsWith(p) : key === p));
+}
+
 type Scripts = 'on' | 'untrusted' | 'team' | 'none';
 interface Want {
   skill: SkillRow;

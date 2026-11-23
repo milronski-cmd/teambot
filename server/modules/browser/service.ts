@@ -1372,7 +1372,7 @@ export class ComputerService {
     const dir = path.join(this.base, 'snapshots', agent.id.replace(/[^a-zA-Z0-9_-]/g, ''), id);
     let m: ws.Manifest;
     try {
-      m = ws.createSnapshot(root, dir, { keys });
+      m = ws.createSnapshot(root, dir, { keys, skip: this.ownPaths(root) });
     } catch (e: any) {
       fs.rmSync(dir, { recursive: true, force: true });
       throw new HttpLike(400, e instanceof ws.LimitError ? e.message : `Snapshot mislukt: ${e.message}`);
@@ -1392,15 +1392,25 @@ export class ComputerService {
     return this.ctx.store.get<any>('workspace_snapshots', id);
   }
 
+  /** What TeamBot wrote in a work folder itself (the bot's skill folders, modules/skills/workspace.ts): not part of a snapshot. */
+  ownPaths(root: string): ((key: string) => boolean) | undefined {
+    try {
+      return this.ctx.services.skills?.ownPaths?.(root);
+    } catch {
+      return undefined;
+    }
+  }
+
   restoreSnapshot(userId: string, snap: any, deleteExtra: boolean) {
     const agent = this.ctx.store.agent(snap.agent_id);
     if (!agent) throw new HttpLike(404, 'Bot niet gevonden');
     if (path.resolve(snap.workspace) !== path.resolve(this.realWorkspace(agent))) throw new HttpLike(409, 'De werkmap van deze bot is veranderd sinds deze snapshot. Herstellen is daarom geblokkeerd.');
-    const plan = ws.restorePlan(snap.workspace, snap.dir);
+    const skip = this.ownPaths(snap.workspace);
+    const plan = ws.restorePlan(snap.workspace, snap.dir, skip);
     const touched = [...plan.overwrite, ...(deleteExtra ? plan.extra : [])];
     let before: string | null = null;
     if (touched.length) before = this.createSnapshot(userId, agent, 'Voor herstel van snapshot', true, touched, snap.workspace).id;
-    const res = ws.restoreSnapshot(snap.workspace, snap.dir, { deleteExtra });
+    const res = ws.restoreSnapshot(snap.workspace, snap.dir, { deleteExtra, skip });
     this.ctx.audit(userId, 'snapshot.restored', { id: snap.id, overwrite: res.overwrite.length, recreate: res.recreate.length, deleted: deleteExtra ? res.extra.length : 0, before }, agent.id);
     this.ctx.events.emit(userId, 'snapshot.updated', { agentId: agent.id });
     return { ...res, deleted: deleteExtra ? res.extra : [], before };

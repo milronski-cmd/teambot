@@ -265,6 +265,26 @@ test('tools only for bound bots; actions only after test + opt-in; ask mode appr
   }
 });
 
+test('an app on this computer that does one thing at a time: two calls at once both work, the second waits its turn', async () => {
+  // Seen 22 nov 2026 with a real team: 7 of 17 calls to Lighthouse failed with "An audit is already running" because
+  // two bots used it at the same moment. The app is one process that every bot shares.
+  const t = await startTestApp();
+  try {
+    const c = await stdioConn(t);
+    await verified(t, c.id);
+    const call = () => t.api('POST', `/mcp/connections/${c.id}/test`, { tool: 'exclusive', args: { ms: 300 } });
+    const started = Date.now();
+    const results = await Promise.all([call(), call(), call()]);
+    for (const r of results) assert.equal(r.sample?.isError, false, r.sample?.text || JSON.stringify(r));
+    assert.ok(results.every((r) => /klaar/.test(r.sample.text)));
+    assert.ok(Date.now() - started >= 850, 'one after the other');
+    // Other calls are not held up for ever: after the line the app answers at once again.
+    assert.equal((await t.api('POST', `/mcp/connections/${c.id}/test`, { tool: 'echo', args: { text: 'hoi' } })).sample.isError, false);
+  } finally {
+    await t.close();
+  }
+});
+
 test('danger tools ask even in auto mode; risk overrides: stricter free, looser needs confirmation', async () => {
   const t = await startTestApp();
   try {

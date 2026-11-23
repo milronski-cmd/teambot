@@ -325,12 +325,7 @@ export function threadRoutes(ctx: Ctx) {
     }
     // A CLI engine (Claude Code, Codex …) keeps the conversation in a session of its own, with the replaced answer in
     // it: forget that session, so the next turn starts a new one from what is still in this conversation.
-    ctx.store.updateThread(t.id, { provider_state: {} });
-    try {
-      ctx.store.exec('DELETE FROM cli_sessions WHERE thread_id = ? AND agent_id = ?', t.id, t.agent_id);
-    } catch {
-      /* no CLI module in this build: no session table */
-    }
+    ctx.store.forgetEngineSessions(t.id, { agentId: t.agent_id });
     return ctx.chat.startAgent(ctx.store.thread(t.id) || t, t.agent_id, m.id, 'retry');
   };
 

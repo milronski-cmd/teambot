@@ -1466,8 +1466,7 @@ export class RoutineEngine {
       // Each run in its own thread starts with a fresh context: history from this message on, and a new CLI session.
       // In the main chat the bot keeps its context.
       if (r.options.runIn !== 'main' && !(r.options.waitpoint && thread.id === r.options.waitpoint.threadId)) {
-        const t = ctx.store.thread(thread.id)!;
-        ctx.store.updateThread(thread.id, { meta: { ...t.meta, routineId: r.id, contextFromSeq: m.seq }, provider_state: {} });
+        ctx.store.forgetEngineSessions(thread.id, { meta: { routineId: r.id, contextFromSeq: m.seq } });
       }
     } else if (rr.meta?.limitWait) {
       ctx.chat.addEvent(thread, `De limiet is voorbij: routine “${r.name}” probeert het opnieuw.`, { kind: 'routine_retry', routineRunId: rr.id });

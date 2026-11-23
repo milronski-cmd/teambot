@@ -106,19 +106,21 @@ const WHY: Record<Exclude<EngineProblem, 'unsupported'>, string> = {
  * One bounded call. Throws NoEngine (with a reason in words) when no call could be made. `engine`: another engine than
  * the bot's check engine (the next one of the chain when that one is at its limit).
  */
-export async function quickCall(ctx: Ctx, agent: Agent, req: { system: string; prompt: string; maxTokens?: number; timeoutMs?: number; engine?: EngineRef }): Promise<QuickResult> {
+export async function quickCall(ctx: Ctx, agent: Agent, req: { system: string; prompt: string; maxTokens?: number; timeoutMs?: number; engine?: EngineRef; ownLimit?: boolean }): Promise<QuickResult> {
   const pick = req.engine || checkEngineOf(ctx, agent);
   if (!pick) throw new NoEngine('deze bot heeft geen engine voor de controle');
   const { engine, problem, cfg } = judgeEngine(ctx, { userId: agent.user_id, agent }, pick, 'explicit');
   if (!engine) throw new NoEngine(problem === 'unsupported' ? `${cfg!.name} kan geen losse controle doen` : WHY[problem]);
-  if (!countCall(agent.user_id)) throw new NoEngine(`de controlelimiet van ${DAILY_CALLS} per dag is bereikt`);
+  // `ownLimit`: a caller with a limit of its own (the look back for skills) does not use up the checks of the day.
+  const counted = !req.ownLimit;
+  if (counted && !countCall(agent.user_id)) throw new NoEngine(`de controlelimiet van ${DAILY_CALLS} per dag is bereikt`);
   try {
     const r = await runShortCall(ctx, engine, { userId: agent.user_id, agentId: agent.id, system: req.system, prompt: req.prompt, maxTokens: req.maxTokens ?? CHECK_MAX_TOKENS, timeoutMs: req.timeoutMs ?? 60_000 });
     return { text: r.text, engine: r.engine, tokens: r.usage.input + r.usage.output };
   } catch (e) {
     if (isBudgetError(e)) {
       // No call was made: it does not count towards the daily number of checks.
-      counts.get(agent.user_id)!.n--;
+      if (counted) counts.get(agent.user_id)!.n--;
       throw new NoEngine('het dagbudget is op');
     }
     if (e instanceof ShortCallError && e.code === 'unsupported') throw new NoEngine(`${engine.name} kan geen losse controle doen`);

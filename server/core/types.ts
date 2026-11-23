@@ -247,6 +247,11 @@ export interface ToolContext {
   toolCallId: string;
   /** A human approved this call (approval card), as opposed to an automatic allow. */
   approved?: boolean;
+  /**
+   * Set by TeamBot itself, never by a model: what this call makes waits for the owner, for this reason (after "omdat").
+   * The look back for skills of a bot that asks before it writes (quality/skill-review.ts): its skill is a draft.
+   */
+  ownerFirst?: string;
   progress(text: string): void;
 }
 

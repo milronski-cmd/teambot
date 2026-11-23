@@ -524,8 +524,7 @@ export class WorkflowEngine {
           ].join('\n');
           const m = await ctx.chat.postUserMessage({ thread, user: { id: run.user_id, name: owner?.name || 'Gebruiker' }, content, authorName: `Workflow · ${w.name}`.slice(0, 80), parts: { workflow: { id: w.id, runId, stepId: step.id } }, route: false });
           // Every step starts with a fresh context (and a new CLI session): what it needs is in the message.
-          const t = ctx.store.thread(thread.id)!;
-          ctx.store.updateThread(thread.id, { meta: { ...t.meta, workflowId: w.id, contextFromSeq: m.seq }, provider_state: {} });
+          ctx.store.forgetEngineSessions(thread.id, { meta: { workflowId: w.id, contextFromSeq: m.seq } });
           const core = ctx.chat.startAgent(thread, agent.id, m.id, 'workflow', { workflow: { id: w.id, runId, stepId: step.id } });
           if (!core) return this.finish(runId, 'error', `${agent.name} kon niet gestart worden.`);
           const at = this.trace(runId, { ...head, status: 'running', agentId: agent.id, threadId: thread.id, runId: core.id });

@@ -35,8 +35,13 @@ export const AUTO_AT = 0.75;
 /**
  * A CLI session is compacted from this many tokens too, whatever its window: with a window of a million tokens, 75%
  * let sessions grow past 800,000 tokens, and every turn reads all of that again (slow, and it eats the usage limits).
+ * Claude Code gets the same number as its window for compacting within a turn (CLAUDE_CODE_AUTO_COMPACT_WINDOW,
+ * cli-agents/claude.ts): on its own it compacts a 1M-token model only near 967,000 tokens, and one long task of a real
+ * team grew to 650,000 tokens per step (22 Nov 2026). Tried on the real Claude Code (23 Nov 2026), one task of reading
+ * 30 stories: without it 953,000 tokens of input and up to 282,000 per step; with it 313,000 and at most 120,000 per
+ * step (Claude Code compacted twice); all 30 answers right both times.
  */
-export const CLI_CONTEXT_CAP = 400_000;
+export const CLI_CONTEXT_CAP = 200_000;
 
 function tokens(m: Message): number {
   let chars = (m.content || '').length;

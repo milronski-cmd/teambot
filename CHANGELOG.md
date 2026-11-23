@@ -1,5 +1,43 @@
 # Changelog
 
+## [4.16.0] — 2026-11-23
+
+### Bots leggen zelf vast wat werkt
+- **Na echt werk kijkt een bot kort terug.** Na een beurt met minstens acht stappen werk kijkt hij, op zijn eigen
+  engine en zonder tools, of daar een werkwijze in zit die terugkomt, of dat een skill die hij gebruikte iets mist.
+  Dan legt hij die vast als skill, of maakt hij een betere versie (de vorige blijft bewaard). Overgenomen van
+  Hermes, OpenBot en OpenClaw. Geprobeerd op de echte Claude Code: na een klus van tien bestanden legde de bot de
+  werkwijze vast, en bij de volgende klus van die soort, in andere woorden, pakte hij die skill er zelf bij. Beide
+  keren was alles goed.
+- **Meteen actief voor het hele team**, behalve een skill die geld uitgeeft of zelf klanten schrijft, en elke skill
+  van een bot die toestemming vraagt (de standaard voor een nieuwe bot): die wacht op jou in Marktplaats ›
+  Geïnstalleerd › Concepten. In het gesprek staat één regel als er iets is vastgelegd.
+- Per bot hoogstens één keer per kwartier en twaalf keer per dag. Het telt niet mee voor de controles van de dag.
+- Het oude voorstel na drie gelijke taken op het takenbord is weg: dat kwam bijna nooit, omdat het meeste werk niet
+  op het takenbord staat.
+
+### Kortere gesprekken, minder verbruik
+- **Claude Code vat nu ook binnen één lange beurt samen.** Uit zichzelf doet het dat bij een model met een miljoen
+  tokens pas rond 967.000. Eén lange klus groeide zo tot 650.000 tokens per stap, en elke stap leest dat allemaal
+  opnieuw. TeamBot geeft Claude Code nu dezelfde grens als tussen de beurten: 200.000 (was 400.000). Geprobeerd op
+  de echte Claude Code met een klus van 30 verhalen: 313.000 tokens in plaats van 953.000, en alle 30 antwoorden
+  even goed. Niet als je samenvatten voor die bot hebt uitgezet.
+- **Een vaste taak in zijn eigen gesprek begint echt vers.** TeamBot vergat het vorige gesprek wel, maar Claude Code
+  ging toch verder in de oude sessie. Eén vaste taak liep zo 131 keer door in één sessie, tot 966.000 tokens per
+  stap. Nu krijgt elke ronde een nieuwe sessie, ook bij workflows en bij Opnieuw proberen.
+- **Samenvatten telt mee in Verbruik.** Het samenvatten van een Claude Code-gesprek stond er niet in; nu wel.
+
+### Minder haperingen
+- **Het blauwe kader "bot wacht" verdwijnt als de beurt van de bot klaar is**, ook als er verder niets op het
+  bureaublad gebeurt, en anders na tien minuten.
+- **Een app op deze computer die één ding tegelijk doet**, zoals Lighthouse, krijgt de aanroepen van de bots om de
+  beurt, in plaats van "already running". Een aanroep wacht hoogstens vijf minuten.
+- **Een wegvallende verbinding staat in het logboek.** Elke live verbinding die wegvalt, van een venster of van de
+  telefoon, staat in server.log met hoe lang hij open was en waarom. Zo is "de app verliest de verbinding" na te
+  zoeken in plaats van te raden.
+- Een vaste taak houdt een update alleen nog tegen als hij binnen drie minuten start (was tien).
+- Een snapshot van een werkmap laat de skill-mappen die TeamBot daar zelf schrijft met rust.
+
 ## [4.15.2] — 2026-11-21
 
 ### Controles van een rol: de echte, en zichtbaar op het dashboard

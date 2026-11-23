@@ -1,4 +1,5 @@
 import fs from 'node:fs';
+import { CLI_CONTEXT_CAP } from '../../agent/compaction.js';
 import os from 'node:os';
 import path from 'node:path';
 import { clampEffort, claudeInfo } from '../../providers/capabilities.js';
@@ -669,7 +670,7 @@ export async function runClaude(s: RunScope, d: ClaudeRunDeps): Promise<AgentRun
         // tool that waits for the owner (a form, a yes or no) stays silent for as long as he takes: Claude Code stopped
         // it after 30 minutes without a sign of life (CLAUDE_CODE_MCP_TOOL_IDLE_TIMEOUT); the bridge also sends one
         // every minute (bridge.ts).
-        env: { MCP_TOOL_TIMEOUT: String(24 * 3600 * 1000), CLAUDE_CODE_MCP_TOOL_IDLE_TIMEOUT: String(24 * 3600 * 1000), BASH_DEFAULT_TIMEOUT_MS: String(10 * 60_000), BASH_MAX_TIMEOUT_MS: String(24 * 3600 * 1000), NO_COLOR: '1', ...(s.opts.ownerMemory ? {} : { CLAUDE_CODE_DISABLE_AUTO_MEMORY: '1' }), ...(noConnectors ? { ENABLE_CLAUDEAI_MCP_SERVERS: 'false' } : {}) },
+        env: { MCP_TOOL_TIMEOUT: String(24 * 3600 * 1000), CLAUDE_CODE_MCP_TOOL_IDLE_TIMEOUT: String(24 * 3600 * 1000), BASH_DEFAULT_TIMEOUT_MS: String(10 * 60_000), BASH_MAX_TIMEOUT_MS: String(24 * 3600 * 1000), NO_COLOR: '1', ...(s.opts.ownerMemory ? {} : { CLAUDE_CODE_DISABLE_AUTO_MEMORY: '1' }), ...(noConnectors ? { ENABLE_CLAUDEAI_MCP_SERVERS: 'false' } : {}), ...(agent.settings?.compaction === false ? {} : { CLAUDE_CODE_AUTO_COMPACT_WINDOW: String(CLI_CONTEXT_CAP) }) },
         signal: s.signal,
         timeoutMs: s.opts.timeoutMin * 60_000,
         idleMs: s.opts.idleMin * 60_000,

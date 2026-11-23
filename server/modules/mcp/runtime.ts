@@ -52,9 +52,19 @@ interface Runtime {
   lastError: string | null;
   pid: number | null;
   inflight: number;
+  /** The end of the line of calls to a server on this computer (stdio): the next call waits for it (`use`). */
+  line: Promise<void>;
+  /** Calls waiting for their turn. */
+  waiting: number;
   /** The server failed the 2026-07-28 probe: use the plain 2025 handshake from now on (this run of TeamBot). */
   legacyOnly?: boolean;
 }
+
+/**
+ * A call to an app on this computer waits at most this long for its turn before it gives up with a clear message
+ * (the calls before it each end by their own time-out).
+ */
+export const TURN_WAIT_MS = 5 * 60_000;
 
 export interface RuntimeStatus {
   state: RuntimeState;
@@ -104,6 +114,8 @@ export class McpManager {
         lastError: null,
         pid: null,
         inflight: 0,
+        line: Promise.resolve(),
+        waiting: 0,
       };
       this.runtimes.set(c.id, r);
     }
@@ -509,10 +521,19 @@ export class McpManager {
     return this.client(getConn(this.ctx, c.id)!, { force: true });
   }
 
-  /** Run a request against the server, tracking in-flight work and auth failures. */
-  async use<T>(c: ConnectionRow, fn: (client: Client) => Promise<T>): Promise<T> {
+  /**
+   * Run a request against the server, tracking in-flight work and auth failures.
+   *
+   * An app on this computer (stdio) is one process that every bot shares, and most of them do one thing at a time: a
+   * second bot's call failed while the first one ran ("An audit is already running": 7 of 17 calls to Lighthouse with
+   * a real team, 22 Nov 2026; one browser for Chrome DevTools). Calls to such an app take their turn instead. An app
+   * over the internet, and TeamBot's own built-in ones, are called at once, as before. `signal`: the bot's turn was
+   * stopped while it waited.
+   */
+  async use<T>(c: ConnectionRow, fn: (client: Client) => Promise<T>, o: { signal?: AbortSignal } = {}): Promise<T> {
     const client = await this.client(c);
     const r = this.rt(c);
+    const done = c.transport === 'stdio' ? await this.turn(r, c, o.signal) : null;
     r.inflight++;
     try {
       return await fn(client);
@@ -525,6 +546,40 @@ export class McpManager {
     } finally {
       r.inflight--;
       r.lastUsed = Date.now();
+      done?.();
+    }
+  }
+
+  /** Wait for this call's turn at a server on this computer; returns the function that gives the turn to the next one. */
+  private async turn(r: Runtime, c: ConnectionRow, signal?: AbortSignal): Promise<() => void> {
+    const before = r.line;
+    let done!: () => void;
+    const mine = new Promise<void>((res) => (done = res));
+    r.line = before.then(() => mine);
+    r.waiting++;
+    let timer: NodeJS.Timeout | null = null;
+    let onAbort: (() => void) | null = null;
+    try {
+      const stop = new Promise<'tijd' | 'gestopt'>((res) => {
+        timer = setTimeout(() => res('tijd'), TURN_WAIT_MS);
+        timer.unref?.();
+        if (signal) {
+          onAbort = () => res('gestopt');
+          if (signal.aborted) onAbort();
+          else signal.addEventListener('abort', onAbort, { once: true });
+        }
+      });
+      const why = await Promise.race([before.then(() => null), stop]);
+      if (why) {
+        // This call gives up, but the line goes on: its turn passes on as soon as it comes.
+        void before.then(done);
+        throw new Error(why === 'gestopt' ? 'Gestopt.' : `${label(c)} was al ${Math.round(TURN_WAIT_MS / 60_000)} minuten bezig voor een andere bot. Probeer het zo opnieuw.`);
+      }
+      return done;
+    } finally {
+      r.waiting--;
+      if (timer) clearTimeout(timer);
+      if (onAbort && signal) signal.removeEventListener('abort', onAbort);
     }
   }
 

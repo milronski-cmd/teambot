@@ -22,6 +22,7 @@ import { codexReadGuard, codexReadText } from './codex-sandbox.js';
 import { compactCodexSession } from './compact.js';
 import { runAcp } from './acp.js';
 import { cliComplete } from './complete.js';
+import { logUsage } from '../../agent/short-call.js';
 import { autoDefaultProvider, ensureFreeDefaultModel } from '../../api/providers.js';
 import { rememberFreeReserve } from '../../agent/alternatives.js';
 import { withCapabilities } from '../../providers/capabilities.js';
@@ -523,7 +524,15 @@ export class CliAgents {
     if (!sessionId) return { compacted: false, fallback: true, reason: `er is nog geen ${def.label}-sessie in dit gesprek` };
     const { bin } = await this.resolveBin(def, cfg);
     if (!bin) return { compacted: false, reason: `${def.label} is niet gevonden op deze computer. Installeer de CLI of stel het pad in via ${PLACE.aiPrograms}.` };
-    if (def.engine === 'claude') return compactClaudeSession({ bin, cwd: workdir(agent), sessionId, model: agent.model });
+    if (def.engine === 'claude') {
+      const r = await compactClaudeSession({ bin, cwd: workdir(agent), sessionId, model: agent.model });
+      // The compaction itself is counted, like every other model call (it used to be counted nowhere).
+      if (r.usage) {
+        const billing = await this.status(def, cfg).then((x) => x.billing).catch(() => 'unknown' as const);
+        logUsage(this.ctx, { userId: agent.user_id, agentId: agent.id, providerId: cfg.id, model: r.usage.model || agent.model || 'default', input: r.usage.input, output: r.usage.output, cost: billing === 'api' ? r.usage.value || 0 : 0, value: r.usage.value ?? null });
+      }
+      return r;
+    }
     const r = await compactCodexSession({ bin, cwd: workdir(agent), threadId: sessionId, args: await codexIsolation(bin, false) });
     return r.unsupported ? { ...r, fallback: true } : r;
   }

@@ -433,7 +433,7 @@ export function skillTools(lib: SkillLibrary, deps: SkillToolDeps = {}): ToolDef
         const createdBy = `bot:${t.agent.id}`;
         const place = lib.placementOfAgent(t.agent);
         const existing = lib.existingFor(t.userId, name, place);
-        const wait = ownerFirst(`${name.replace(/-/g, ' ')}. ${description}\n${instructions}\n${[...files].filter(([p]) => p !== 'SKILL.md').map(([, b]) => b.toString('utf8')).join('\n')}`, an.scan.level);
+        const wait = ownerFirst(`${name.replace(/-/g, ' ')}. ${description}\n${instructions}\n${[...files].filter(([p]) => p !== 'SKILL.md').map(([, b]) => b.toString('utf8')).join('\n')}`, an.scan.level) || t.ownerFirst || null;
         const scriptsNote = an.scan.kind === 'scripts' ? ' De scripts erin staan uit tot de eigenaar de skill vertrouwt.' : '';
 
         // ---- active at once: a new skill for the team, or a new version of the team's own skill

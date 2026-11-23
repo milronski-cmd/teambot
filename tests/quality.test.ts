@@ -7,7 +7,6 @@ import { msgs, settle, team, until } from './team-mock.js';
 import { CliLoopWatch, LoopGuard, loopLimits } from '../server/agent/loops.js';
 import { isCorrection } from '../server/modules/quality/lessons.js';
 import { inspectEvidence, keepSteps, leftBehind, looksLikePath, parseEvidence, runSteps, shortSteps } from '../server/modules/quality/evidence.js';
-import { taskKey } from '../server/modules/quality/skills.js';
 
 /**
  * Werk dat echt af is (plan 0.4, package C): "klaar als" per task, a second look with a fresh context before "klaar"
@@ -505,16 +504,15 @@ test('team database: a task set to klaar without evidence goes to wacht_op_contr
   }
 });
 
-test('recurring work done well → the bot is asked to lay it down as a skill itself, without a card; every bot that can act gets the check-before-klaar rule', async () => {
+test('every bot that can act gets the check-before-klaar rule; recurring board work no longer sends the bot an extra turn to write a skill', async () => {
+  // (A bot lays a way of working down in the look back after its work, skill-review.ts: tests/skill-review.test.ts.)
   const t = await startTestApp();
   try {
-    const { a, th, ws } = await bot(t, 'Bo');
+    const { th, ws } = await bot(t, 'Bo');
     fs.writeFileSync(path.join(ws, 'rapport.md'), 'SEO-weekrapport met posities.');
-    for (const week of [1, 2, 3]) {
+    for (const week of [1, 2, 3, 4]) {
       const tk = await boardTask(t, `Weekrapport SEO week ${week}`);
       t.script.push({ toolCalls: [{ name: 'task_done', args: { id: tk.id, result: 'Rapport klaar', evidence: ['rapport.md'] } }] }, { text: '{"verdict":"klaar","reason":"Het rapport staat er."}' }, { text: 'ok' });
-      // The third good run: TeamBot asks the bot to write the skill, and the bot answers.
-      if (week === 3) t.script.push({ text: 'Ik leg de werkwijze vast.' });
       await t.say(th.id, `meld week ${week} af`);
     }
     await t.waitIdle(th.id);
@@ -523,18 +521,9 @@ test('recurring work done well → the bot is asked to lay it down as a skill it
     // send the whole team part with every call.
     assert.match(t.requests[0].system, /Claim een taak op het takenbord/);
     assert.doesNotMatch(t.requests[0].system, /task_claim|task_done/);
-    // No card for the owner: the bot was asked at once, in its own chat, once.
+    // No card for the owner, and no extra turn that asks the bot for a skill.
     assert.equal((await t.api('GET', '/quality/inbox')).suggestions.length, 0, 'nothing waits for the owner');
-    const asked = msgs(t, th.id).filter((m) => m.role === 'user' && /skill_save/.test(m.content));
-    assert.equal(asked.length, 1, 'the bot is asked to save one, once');
-    assert.match(asked[0].content, /al 3 keer goed gedaan\. Leg die werkwijze vast als skill[\s\S]*Bestaat er al een skill voor dit werk, verbeter die dan/);
-    assert.equal(t.app.ctx.store.one<any>("SELECT status FROM quality_suggestions WHERE agent_id = ?", a.id)?.status, 'accepted');
-    // A fourth good run of the same kind does not ask again.
-    const tk4 = await boardTask(t, 'Weekrapport SEO week 4');
-    t.script.push({ toolCalls: [{ name: 'task_done', args: { id: tk4.id, result: 'Rapport klaar', evidence: ['rapport.md'] } }] }, { text: '{"verdict":"klaar","reason":"Het rapport staat er."}' }, { text: 'ok' });
-    await t.say(th.id, 'meld week 4 af');
-    await t.waitIdle(th.id);
-    assert.equal(msgs(t, th.id).filter((m) => m.role === 'user' && /skill_save/.test(m.content)).length, 1);
+    assert.equal(msgs(t, th.id).filter((m) => m.role === 'user' && /skill_save/.test(m.content)).length, 0);
 
     // A chat-only bot gets no such rule.
     const chat = await t.agent({ name: 'Praat', access_mode: 'chat' });
@@ -546,7 +535,7 @@ test('recurring work done well → the bot is asked to lay it down as a skill it
   }
 });
 
-test('helpers: corrections, evidence, task kinds', () => {
+test('helpers: corrections, evidence', () => {
   for (const s of ['Nee, zo doen we dat niet.', 'Dat klopt niet, de prijs is exclusief btw.', 'Doe dit voortaan anders: eerst bellen.', 'Volgende keer graag in het Engels.', "That's not how we do it here"]) assert.ok(isCorrection(s), s);
   for (const s of ['nee', 'Top, dank je!', 'Onthoud dat ik in Delft woon', 'Wat is de hoofdstad van Frankrijk?']) assert.ok(!isCorrection(s), s);
   // What he tells this bot to do from now on is that bot's own order (its working notes), not a lesson for the team.
@@ -555,8 +544,6 @@ test('helpers: corrections, evidence, task kinds', () => {
   assert.deepEqual(parseEvidence([{ path: 'b.pdf' }, 'b.pdf', 'msg_123456789']), ['b.pdf', 'msg_123456789']);
   assert.ok(looksLikePath('rapporten/q3.pdf') && looksLikePath('C:\\Werk\\a.txt') && looksLikePath('offerte.md'));
   assert.ok(!looksLikePath('Ik heb het bestand gemaakt.') && !looksLikePath('https://x.nl/a.pdf'));
-  assert.equal(taskKey('Weekrapport SEO 12 november'), taskKey('Weekrapport SEO week 47'));
-  assert.notEqual(taskKey('Weekrapport SEO'), taskKey('Offerte zonnepanelen'));
 });
 
 test('evidence of a CLI bot: a path with a remark after it is that file, a command\'s output is a real step, a failed step is not "gelukt"', async () => {

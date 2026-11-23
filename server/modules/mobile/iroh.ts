@@ -321,6 +321,7 @@ export class IrohLink {
       return;
     }
     const peer = peerAddress(conn.remoteId().toString());
+    const since = Date.now();
     this.conns.add(conn);
     this.noteLast(conn);
     setTimeout(() => this.noteLast(conn), 3000).unref();
@@ -333,6 +334,12 @@ export class IrohLink {
       /* the phone went away or the endpoint closed */
     } finally {
       this.conns.delete(conn);
+      // One line per phone connection that ends: how long, and directly or through the relay (n0's public relays are
+      // rate-limited), so a phone that keeps losing TeamBot can be looked up in server.log.
+      if (this.state.running) {
+        const m = Math.round((Date.now() - since) / 60_000);
+        this.ctx.log.info(`[mobile] telefoon los na ${m < 1 ? 'minder dan een minuut' : `${m} min`} (${this.state.last?.path === 'relay' ? 'via de relay' : this.state.last?.path === 'direct' ? 'rechtstreeks' : '?'}${this.state.last?.rttMs != null ? `, ${this.state.last.rttMs} ms` : ''})`);
+      }
     }
   }
 

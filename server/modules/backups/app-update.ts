@@ -15,8 +15,13 @@ import type { AppUpdatePhase, AppUpdateView, AutoMode, OffReason, WaitReason } f
  *    how this TeamBot gets new versions.
  */
 
-/** A routine that starts within this window holds the update back (installing takes a minute or two). */
-export const ROUTINE_SOON_MS = 10 * 60_000;
+/**
+ * A routine that starts within this window holds the update back (installing takes a minute or two). Not longer than
+ * that: with ten minutes a team with a round every half hour and a few reminders had almost no moment left to install
+ * (live, 21 Nov 2026: an update waited behind "start zo" of a meter, a reminder and a round, one after the other). A
+ * routine that falls in the minute of the restart runs right after it.
+ */
+export const ROUTINE_SOON_MS = 3 * 60_000;
 /** A message from a person within this window counts as "still using TeamBot". */
 export const CHAT_RECENT_MS = 15 * 60_000;
 

@@ -58,9 +58,17 @@ Tests: `tests/quality.test.ts`. Plan 0.4, pakket C (kwaliteitshelft).
   eigenaar), zodat het hele team het zo doet; een bot die geen gedeelde kennis leest houdt de les zelf (scope `agent`).
   Zichtbaar onder zijn bericht en in Geheugen, met ongedaan maken en *Alleen voor <bot>*.
   Zonder engine blijven zijn eigen woorden de les. Max. 10 per bot per dag; per bot uit te zetten.
-- **Skill voorstellen**: deed een bot dezelfde soort taak 3× gecontroleerd goed (90 dagen), dan een kaart onder
-  Wacht op jou. "Ja" vraagt de bot in zijn eigen chat een skill te maken met `skill_save`; dat gaat door de
-  gewone beoordeling in Mijn skills. Er wordt nooit iets vanzelf geïnstalleerd.
+- **Terugblik na echt werk** (`skill-review.ts`, 4.16.0): na een beurt met minstens 8 stappen werk (lezen of
+  bijhouden van skills en geheugen telt niet mee) één korte aanroep op de eigen engine van de bot, zonder tools: zit
+  er een werkwijze in die terugkomt (`nieuw`), mist een skill die hij gebruikte iets (`verbeter`, met de tekst van
+  die skill erbij), of niets. Opgeslagen via de eigen `skill_save` van de bot, met al zijn regels: meteen actief voor
+  het team; een concept voor de eigenaar als de skill geld uitgeeft, zelf klanten schrijft of door de scan valt, en
+  altijd bij een bot die toestemming vraagt (`ToolContext.ownerFirst`). Niet als de bot in die beurt zelf een skill
+  opsloeg. Per bot hoogstens één per 15 minuten en 12 per dag, los van de dagteller van de controles; per bot uit met
+  `settings.quality.skillReview: false`. Een regel in het gesprek, audit `quality.skill_review`. Overgenomen van
+  Hermes (na 10 toolstappen), OpenBot (elke 20 beurten) en OpenClaw. Het eerdere voorstel na 3 gecontroleerde taken
+  van dezelfde soort is weg: dat kwam bij een echt team nooit, omdat het meeste werk niet op het takenbord staat.
+  Kaarten van vóór 4.16.0 blijven te beantwoorden.
 - **Ingebouwde werkregel** in de systeemprompt van elke bot die meer mag dan chatten: "Controleer vóór je klaar zegt"
   (eigen tekst; idee: verification-before-completion uit obra/superpowers, MIT).
 

@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import { APP_VERSION } from '../../core/config.js';
 import { runQuick, startProc } from './proc.js';
 import { RpcPeer } from './rpc.js';
-import { parseClaudeUsageText, parseCodexRateLimits, parseOpencodeStats, type LimitReport } from '../usage/parse.js';
+import { parseClaudeUsageText, parseCodexRateLimits, parseOpencodeStats, type LimitReport, claudeUsage } from '../usage/parse.js';
 
 /**
  * Read usage limits from the user's own CLI logins, without a prompt and without reading private files:
@@ -111,6 +111,12 @@ export interface CompactResult {
   /** Context after compaction (tokens), when Claude Code reports it. */
   postTokens?: number;
   preTokens?: number;
+  /**
+   * What the compaction itself used: it is a model call over the whole session (up to hundreds of thousands of
+   * tokens) and was counted nowhere. From Claude Code's result line: tokens like a turn (claudeUsage), the list price
+   * as `value`, and the model.
+   */
+  usage?: { input: number; output: number; cacheRead: number; value?: number; model?: string };
 }
 
 /** Claude Code's own `/compact` on the bot's session for this chat (same working folder, no tools, no MCP). */
@@ -120,6 +126,8 @@ export async function compactClaudeSession(o: { bin: string; cwd: string; sessio
   let meta: any = null;
   let ok: boolean | null = null;
   let err = '';
+  let result: any = null;
+  let model = '';
   const proc = startProc({
     bin: o.bin,
     args,
@@ -135,6 +143,8 @@ export async function compactClaudeSession(o: { bin: string; cwd: string; sessio
       } catch {
         return;
       }
+      if (m.type === 'system' && m.subtype === 'init' && typeof m.model === 'string') model = m.model;
+      if (m.type === 'result') result = m;
       if (m.type === 'system' && m.subtype === 'compact_boundary') meta = m.compact_metadata || {};
       else if (m.type === 'system' && m.subtype === 'status' && m.compact_result) ok = m.compact_result === 'success';
       else if (m.type === 'result' && m.is_error) err = String(m.result || m.subtype || '').slice(0, 300);
@@ -143,6 +153,8 @@ export async function compactClaudeSession(o: { bin: string; cwd: string; sessio
   proc.write('/compact');
   proc.end();
   await proc.done;
-  if (meta || ok) return { compacted: true, preTokens: Number(meta?.pre_tokens) || undefined, postTokens: Number(meta?.post_tokens) || undefined };
-  return { compacted: false, reason: err || proc.killedReason || proc.stderrTail().slice(-300) || 'Claude Code heeft niet samengevat' };
+  const used = result?.usage ? claudeUsage([result.usage]) : null;
+  const usage = used && (used.input || used.output) ? { ...used, ...(typeof result.total_cost_usd === 'number' ? { value: result.total_cost_usd } : {}), model: model || Object.keys(result.modelUsage || {})[0] || undefined } : undefined;
+  if (meta || ok) return { compacted: true, preTokens: Number(meta?.pre_tokens) || undefined, postTokens: Number(meta?.post_tokens) || undefined, ...(usage ? { usage } : {}) };
+  return { compacted: false, reason: err || proc.killedReason || proc.stderrTail().slice(-300) || 'Claude Code heeft niet samengevat', ...(usage ? { usage } : {}) };
 }

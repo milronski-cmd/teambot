@@ -190,6 +190,27 @@ export class Store {
     this.update('threads', id, { ...patch, updated_at: now() });
     return this.thread(id)!;
   }
+  /**
+   * The engines forget this conversation, so its next turn starts a new session: what an engine keeps about it
+   * (`provider_state`) and the session of a CLI engine (Claude Code, Codex …, which keep the conversation in a session
+   * of their own, table `cli_sessions`). `agentId`: only that bot's sessions. `meta`: merged into the thread's meta in
+   * the same step (a routine or workflow step marks where its fresh context begins).
+   * Forgetting `provider_state` alone was not enough: the next turn still resumed the old CLI session, and a routine
+   * that should start fresh every run went on in one session for days (live, 22 Nov 2026: 131 runs, up to 966,000
+   * tokens per step, never compacted because its thread counts as fresh).
+   */
+  forgetEngineSessions(id: string, o: { agentId?: string; meta?: Record<string, unknown> } = {}): Thread | null {
+    const t = this.thread(id);
+    if (!t) return null;
+    this.updateThread(id, { provider_state: {}, ...(o.meta ? { meta: { ...t.meta, ...o.meta } } : {}) });
+    try {
+      if (o.agentId) run(this.db, 'DELETE FROM cli_sessions WHERE thread_id = ? AND agent_id = ?', id, o.agentId);
+      else run(this.db, 'DELETE FROM cli_sessions WHERE thread_id = ?', id);
+    } catch {
+      /* no CLI module in this build: no session table */
+    }
+    return this.thread(id);
+  }
   deleteThread(id: string) {
     this.tx(() => {
       run(this.db, 'DELETE FROM messages_fts WHERE rowid IN (SELECT rid FROM messages_fts_map WHERE thread_id = ?)', id);

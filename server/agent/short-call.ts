@@ -261,8 +261,8 @@ export function setShortCallFake(fn: typeof fake) {
   fake = fn;
 }
 
-/** The one place a short call is written to the usage log. Never fails the call. */
-function logUsage(ctx: Pick<Ctx, 'store' | 'log'>, row: { userId: string; agentId?: string | null; providerId: string | null; model: string; input: number; output: number; cost: number; value?: number | null }) {
+/** The one place a model call outside a bot's turn is written to the usage log (a short call, a compaction). Never fails the call. */
+export function logUsage(ctx: Pick<Ctx, 'store' | 'log'>, row: { userId: string; agentId?: string | null; providerId: string | null; model: string; input: number; output: number; cost: number; value?: number | null }) {
   try {
     ctx.store.insert('usage_log', { user_id: row.userId, agent_id: row.agentId ?? null, provider_id: row.providerId, model: row.model, input: row.input || 0, output: row.output || 0, cost: row.cost || 0, value: row.value ?? null, created_at: now() });
   } catch (e) {

@@ -167,6 +167,9 @@ export class PersistentScreenDriver implements ScreenDriver {
 
 // ---------------- control service ----------------
 
+/** How long after a bot's last action on the desktop the frame says "bot wacht" while the owner has control. */
+export const LAST_WAITS_MS = 10 * 60_000;
+
 export interface DesktopState {
   /** a bot holds the desktop right now */
   active: boolean;
@@ -211,6 +214,8 @@ export class ScreenControl {
   private latest = new Map<string, { buf: Buffer; at: number }>();
   private listeners = new Set<(s: DesktopState) => void>();
   private last: { agentId: string; agentName: string; summary: string; at: number; monitor: Monitor | null } | null = null;
+  /** Looks again when "bot wacht" can no longer hold (see emitState). */
+  private expiry: NodeJS.Timeout | null = null;
   private stateTimer: NodeJS.Timeout | null = null;
   private stopped = false;
 
@@ -498,7 +503,7 @@ export class ScreenControl {
     // The owner holds it: "Bot wacht" only while that bot still has a turn going. With its turn stopped nothing waits,
     // and the blue frame stayed for ten minutes while the owner looked for a way to make it go (15 nov).
     const last = this.last;
-    const lastWaits = !!last && Date.now() - last.at < 10 * 60_000 && this.ctx.store.runsByStatus(['queued', 'running', 'waiting']).some((r) => r.agent_id === last.agentId);
+    const lastWaits = !!last && Date.now() - last.at < LAST_WAITS_MS && this.ctx.store.runsByStatus(['queued', 'running', 'waiting']).some((r) => r.agent_id === last.agentId);
     const agentId = botHolder?.agentId || (l?.holder.kind === 'user' && lastWaits ? last!.agentId : null);
     const agent = agentId ? this.ctx.store.agent(agentId) : null;
     const cfg = agent ? this.svc.config(agent) : null;
@@ -534,6 +539,15 @@ export class ScreenControl {
     return () => this.listeners.delete(fn);
   }
 
+  /**
+   * A bot's turn ended. When the frame shows that bot waiting for the owner, it must go: the state is only sent again
+   * when something happens on the desktop, and the blue frame stayed for twelve hours after the bot's turn ended
+   * (live, 22 Nov 2026).
+   */
+  runEnded(agentId: string) {
+    if (this.last?.agentId === agentId) this.emitState();
+  }
+
   emitState() {
     // coalesce bursts (lease changes + action notes) into one update
     if (this.stateTimer || this.stopped) return;
@@ -545,6 +559,15 @@ export class ScreenControl {
         s = this.state();
       } catch {
         return;
+      }
+      // "Bot wacht" because of its last action holds for LAST_WAITS_MS at most: look again when that has passed, also
+      // when nothing else happens on the desktop meanwhile.
+      if (this.expiry) clearTimeout(this.expiry);
+      this.expiry = null;
+      const last = this.last;
+      if (s.paused && last && s.agentId === last.agentId) {
+        this.expiry = setTimeout(() => this.emitState(), Math.max(1000, last.at + LAST_WAITS_MS - Date.now() + 1000));
+        this.expiry.unref?.();
       }
       for (const fn of this.listeners) {
         try {
@@ -565,6 +588,8 @@ export class ScreenControl {
 
   stop() {
     this.stopped = true;
+    if (this.expiry) clearTimeout(this.expiry);
+    this.expiry = null;
     for (const t of this.loops.values()) clearInterval(t);
     this.loops.clear();
     this.viewers.clear();

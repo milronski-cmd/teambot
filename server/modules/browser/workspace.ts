@@ -549,8 +549,10 @@ export function revertInCopy(original: string, copyDir: string, baseFile: string
 
 // ---------------- snapshots ----------------
 
-export function createSnapshot(root: string, dir: string, o: { keys?: string[]; limits?: CopyLimits } = {}): Manifest {
+/** `skip`: paths the program wrote there itself and writes again by itself (the caller knows which): not kept, not put back. */
+export function createSnapshot(root: string, dir: string, o: { keys?: string[]; limits?: CopyLimits; skip?: (key: string) => boolean } = {}): Manifest {
   const full = scanTree(root, o.limits || DEFAULT_LIMITS);
+  if (o.skip) for (const k of Object.keys(full.files)) if (o.skip(k)) delete full.files[k];
   let m = full;
   if (o.keys) {
     const files: Record<string, FileEntry> = {};
@@ -571,7 +573,7 @@ export interface RestorePlan {
   unchanged: number;
 }
 
-export function restorePlan(root: string, dir: string): RestorePlan {
+export function restorePlan(root: string, dir: string, skip?: (key: string) => boolean): RestorePlan {
   const snap = readManifest(path.join(dir, 'manifest.json'));
   const cur = scanTree(root, { ...DEFAULT_LIMITS, maxTotalBytes: DEFAULT_LIMITS.maxTotalBytes * 4, maxFiles: DEFAULT_LIMITS.maxFiles * 4 });
   const overwrite: string[] = [];
@@ -579,6 +581,8 @@ export function restorePlan(root: string, dir: string): RestorePlan {
   const extra: string[] = [];
   let unchanged = 0;
   for (const [k, f] of Object.entries(snap.files)) {
+    // (Also for a snapshot made before this rule existed: what is TeamBot's own now is not put back.)
+    if (skip?.(k)) continue;
     const c = cur.files[k];
     if (!c) recreate.push(k);
     else if (c.hash !== f.hash) overwrite.push(k);
@@ -586,13 +590,13 @@ export function restorePlan(root: string, dir: string): RestorePlan {
   }
   if (!snap.partial) {
     const skipped = new Set(snap.skipped);
-    for (const k of Object.keys(cur.files)) if (!snap.files[k] && !skipped.has(k)) extra.push(k);
+    for (const k of Object.keys(cur.files)) if (!snap.files[k] && !skipped.has(k) && !skip?.(k)) extra.push(k);
   }
   return { overwrite: overwrite.sort(), recreate: recreate.sort(), extra: extra.sort(), unchanged };
 }
 
-export function restoreSnapshot(root: string, dir: string, o: { deleteExtra?: boolean } = {}): RestorePlan {
-  const plan = restorePlan(root, dir);
+export function restoreSnapshot(root: string, dir: string, o: { deleteExtra?: boolean; skip?: (key: string) => boolean } = {}): RestorePlan {
+  const plan = restorePlan(root, dir, o.skip);
   const files = path.join(dir, 'files');
   copyFiles(files, root, [...plan.overwrite, ...plan.recreate]);
   if (o.deleteExtra) for (const k of plan.extra) fs.rmSync(safeJoin(root, k), { force: true });

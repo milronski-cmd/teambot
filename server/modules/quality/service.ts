@@ -2,7 +2,6 @@ import type { Agent, Ctx, User } from '../../core/types.js';
 import { newId, now } from '../../core/db.js';
 import { inspectEvidence, leftBehind, parseEvidence, runSteps, shortSteps } from './evidence.js';
 import { gaveUpText, limitNowText, secondLook, UNCLEAR } from './verify.js';
-import { maybeSuggestSkill } from './skills.js';
 import { CHECK_LABEL, type CheckState, type EvidenceItem, type QualityRow, type QualityView, type StepItem, type TaskKind, type Verdict } from './types.js';
 
 const DONE_WHEN_MAX = 300;
@@ -208,13 +207,6 @@ export class QualityService {
     });
     this.ctx.audit(i.userId, 'quality.report', { kind: i.kind, ref: i.ref, task: i.title.slice(0, 120), state: verdict.state, evidence: evidence.length }, by);
     this.emit(i.userId, i.kind, String(i.ref));
-    if (done && i.agent && i.kind !== 'delegation') {
-      try {
-        maybeSuggestSkill(this, i.userId, i.agent, i.title);
-      } catch (e) {
-        this.ctx.log.warn('[quality] skill suggestion', e);
-      }
-    }
     return { verdict, row: this.row(i.userId, i.kind, i.ref)! };
   }
 
@@ -379,13 +371,6 @@ export class QualityService {
       kind: 'task',
     });
     this.emit(r.user_id, r.kind, r.ref);
-    if (done) {
-      try {
-        maybeSuggestSkill(this, r.user_id, agent, r.title);
-      } catch (e) {
-        this.ctx.log.warn('[quality] skill suggestion', e);
-      }
-    }
   }
 
   /** Tasks that wait for the owner (te controleren, kon niet), newest first. */

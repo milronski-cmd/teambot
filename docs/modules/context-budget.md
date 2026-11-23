@@ -182,8 +182,12 @@ er staat, dat de uitvoer van de huidige beurt heel is, en aan het eind dat de fe
 - Schattingen (tekens/3,5); de echte telling van de engine staat ernaast.
 - Compaction (`agent/compaction.ts`) start nog op dezelfde ruwe grootte als in 0.3.0 (75% van `historyTokens`) en
   telt het inkorten niet mee; daardoor wordt soms eerder samengevat dan nodig.
-- CLI-engines: TeamBot kort hun sessie niet in en kiest hun eigen tools niet; van zijn eigen tools geeft het de korte
-  lijst (zie boven), en verder alleen de schatting en de telling.
+- CLI-engines: TeamBot kiest hun eigen tools niet; van zijn eigen tools geeft het de korte lijst (zie boven). Een
+  Claude Code-sessie wordt samengevat vanaf `CLI_CONTEXT_CAP` (200.000 tokens, `agent/compaction.ts`): tussen de
+  beurten door TeamBot (`/compact`), en binnen één lange beurt door Claude Code zelf (`CLAUDE_CODE_AUTO_COMPACT_WINDOW`,
+  sinds 4.16.0; gemeten met een klus van 30 verhalen: 313.000 tokens invoer in plaats van 953.000, even goede
+  antwoorden). Beide niet als het samenvatten voor die bot uit staat. Het eigen gesprek van een vaste taak begint elke
+  ronde met een nieuwe sessie (`store.forgetEngineSessions`).
 - Voor Anthropic zijn oudere delen in de cache al goedkoop (lezen uit de cache ±5–10% van de prijs): daar levert
   inkorten vooral een kleinere context op, en kost een verschuiving van het afsnijpunt eens per paar beurten een
   nieuwe cache-schrijfactie. Bij aanbieders zonder cache en bij gratis tegoed per token is de winst het grootst.
