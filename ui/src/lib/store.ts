@@ -67,6 +67,13 @@ export const upsert = <T extends { id: string }>(list: T[], item: T, front = fal
   return front ? [item, ...list] : [...list, item];
 };
 
+/** Runs that ended (a run never runs again): a thread loaded a moment later must not bring one back as running. */
+const ended = new Set<string>();
+function noteEnded(id: string) {
+  ended.add(id);
+  if (ended.size > 2000) ended.delete(ended.values().next().value as string);
+}
+
 export const useApp = create<State>((set, get) => ({
   me: null,
   mode: 'desktop',
@@ -98,12 +105,20 @@ export const useApp = create<State>((set, get) => ({
   },
   async loadThread(id) {
     try {
+      // The runs of this thread the app knew before asking: a run that came in live while the answer was on its way
+      // (a turn that starts, an engine that takes over) is newer than that answer and stays (4.17.0: it was lost).
+      const known = new Set(get().runs.filter((x) => x.thread_id === id).map((x) => x.id));
       const r = await api.get(`/threads/${id}`);
-      set((s) => ({
-        messages: { ...s.messages, [id]: r.messages },
-        threads: upsert(s.threads, r.thread),
-        runs: [...s.runs.filter((x) => x.thread_id !== id), ...r.runs],
-      }));
+      set((s) => {
+        // What came in live while the answer was on its way is newer than the answer; a run that ended never runs again.
+        const live = s.runs.filter((x) => x.thread_id === id && !known.has(x.id));
+        const fresh = (r.runs as Run[]).filter((y) => !ended.has(y.id) && !live.some((x) => x.id === y.id));
+        return {
+          messages: { ...s.messages, [id]: r.messages },
+          threads: upsert(s.threads, r.thread),
+          runs: [...s.runs.filter((x) => x.thread_id !== id), ...fresh, ...live],
+        };
+      });
       return { thread: r.thread, canResume: r.canResume, resumeReason: r.resumeReason ?? null };
     } catch {
       return null;
@@ -178,6 +193,7 @@ export function wireEvents() {
     s.setState((st) => {
       const active = ['queued', 'running', 'waiting'].includes(r.status);
       if (active) return { runs: upsert(st.runs, r) };
+      noteEnded(r.id);
       if (st.alive[r.id]) {
         const { [r.id]: _over, ...alive } = st.alive;
         st = { ...st, alive };

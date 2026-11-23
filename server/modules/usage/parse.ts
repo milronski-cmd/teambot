@@ -67,10 +67,14 @@ const epochMs = (v: unknown): number | null => {
 };
 const cap = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
 
-/** "five_hour" → "Sessie (5 uur)", "seven_day" → "Week · alle modellen", "seven_day_opus" → "Week · Opus". */
+/**
+ * "five_hour" → "Sessie (5 uur)", "seven_day" → "Week · alle modellen", "seven_day_opus" → "Week · Opus". The week
+ * that counts extra usage too had Claude's own English ("Week · Overage Included", seen 23 nov 2026): in words.
+ */
 export function claudeWindowLabel(id: string): string {
   if (id === 'five_hour') return 'Sessie (5 uur)';
   if (id === 'seven_day') return 'Week · alle modellen';
+  if (id === 'seven_day_overage_included') return 'Week · inclusief extra gebruik';
   const m = id.match(/^seven_day_(.+)$/);
   if (m) return `Week · ${m[1].split('_').map(cap).join(' ')}`;
   if (id === 'overage') return 'Extra gebruik';
@@ -99,7 +103,7 @@ export function parseClaudeRateLimitEvent(m: any, now = Date.now()): LimitReport
   return {
     windows,
     blocked: info.status === 'rejected',
-    note: overageOff ? 'Extra gebruik (overage) staat uit: bij de limiet stopt Claude tot de reset.' : info.isUsingOverage ? 'Claude gebruikt nu extra gebruik (overage).' : undefined,
+    note: overageOff ? 'Extra gebruik staat uit: je betaalt niets extra. Bij de limiet stopt Claude tot de reset.' : info.isUsingOverage ? 'Claude gebruikt nu extra gebruik: dat kost geld bovenop je abonnement.' : undefined,
     source: 'stream',
     at: now,
   };

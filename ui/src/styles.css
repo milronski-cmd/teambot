@@ -917,3 +917,61 @@ body {
     transform: none;
   }
 }
+
+/*
+ * TeamBot's shape (4.17.0): a menu bar over the whole app (shell/TopBar.tsx), and below it the pages as windows on a
+ * wallpaper (App.tsx). The dashboard lies on the wallpaper itself; its widgets are panes of glass (.tb-glass above).
+ */
+.tb-desk {
+  background:
+    radial-gradient(70rem 44rem at -6% -18%, rgb(99 102 241 / 0.2), transparent 62%),
+    radial-gradient(56rem 38rem at 104% -8%, rgb(255 138 61 / 0.2), transparent 60%),
+    radial-gradient(60rem 40rem at 88% 118%, rgb(16 185 129 / 0.14), transparent 62%),
+    radial-gradient(50rem 34rem at -4% 112%, rgb(236 72 153 / 0.13), transparent 60%),
+    var(--color-canvas);
+}
+.dark .tb-desk {
+  background:
+    radial-gradient(70rem 44rem at -6% -18%, rgb(99 102 241 / 0.26), transparent 62%),
+    radial-gradient(56rem 38rem at 104% -8%, rgb(255 138 61 / 0.22), transparent 60%),
+    radial-gradient(60rem 40rem at 88% 118%, rgb(16 185 129 / 0.16), transparent 62%),
+    radial-gradient(50rem 34rem at -4% 112%, rgb(236 72 153 / 0.15), transparent 60%),
+    #0d0d10;
+}
+/*
+ * A window: the list of bots, a page. Nearly solid (text stays calm to read), the wallpaper shows at its edges. No
+ * backdrop-filter here: a blurred ancestor becomes the box of every fixed overlay inside it, and dialogs and full
+ * screens would stay inside the window.
+ */
+.tb-pane {
+  border-radius: 1.25rem;
+  border: 1px solid color-mix(in srgb, var(--color-fg) 9%, transparent);
+  background: color-mix(in srgb, var(--color-surface) 94%, transparent);
+  box-shadow:
+    inset 0 1px 0 0 color-mix(in srgb, #fff 6%, transparent),
+    0 24px 48px -30px rgb(0 0 0 / 0.45),
+    0 2px 6px -2px rgb(0 0 0 / 0.08);
+}
+.tb-desk-page {
+  background: transparent;
+}
+.tb-desk .tb-os {
+  background: transparent;
+}
+/* The places in the menu bar: one pill of glass, the one you are at lifted out of it. */
+.tb-places,
+.tb-search {
+  border: 1px solid color-mix(in srgb, var(--color-fg) 8%, transparent);
+  background: color-mix(in srgb, var(--color-surface) 55%, transparent);
+  -webkit-backdrop-filter: blur(18px) saturate(1.3);
+  backdrop-filter: blur(18px) saturate(1.3);
+}
+.tb-place-on {
+  background: var(--color-surface);
+  box-shadow:
+    0 1px 2px rgb(0 0 0 / 0.12),
+    0 0 0 1px color-mix(in srgb, var(--color-fg) 7%, transparent);
+}
+.dark .tb-place-on {
+  background: color-mix(in srgb, var(--color-fg) 12%, var(--color-surface));
+}

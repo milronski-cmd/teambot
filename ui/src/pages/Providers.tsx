@@ -18,6 +18,7 @@ import { LocalModelsCard } from '../modules/local-models';
 import { OllamaInstallButton } from '../modules/local-models/install';
 import { useAdvanced } from '../shell/advanced';
 import { KeyPaste } from './welcome/StartOptions';
+import { KeyFromFile } from '../components/KeyFile';
 
 /** Section of a kind (CLI engines have none of their own: free when the CLI has free models, else subscription). */
 export function sectionOf(k: Pick<ProviderKindView, 'section' | 'type' | 'billing' | 'group'>): NonNullable<ProviderKindView['section']> {
@@ -220,7 +221,10 @@ export function ConnectProvider({ kind, open, onClose, onDone, onRecheck }: { ki
         )
       }
     >
-      <Input type="password" autoComplete="off" value={f.apiKey} onChange={(e) => { const v = e.target.value; setF((x) => ({ ...x, apiKey: v })); }} placeholder={kind.keyPlaceholder || 'Plak hier je sleutel'} />
+      <div className="flex items-center gap-1">
+        <Input type="password" autoComplete="off" value={f.apiKey} onChange={(e) => { const v = e.target.value; setF((x) => ({ ...x, apiKey: v })); }} placeholder={kind.keyPlaceholder || 'Plak hier je sleutel, of kies het bestand'} />
+        <KeyFromFile onKey={(v) => setF((x) => ({ ...x, apiKey: v }))} />
+      </div>
     </Field>
   );
   return (

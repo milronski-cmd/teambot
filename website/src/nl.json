@@ -117,7 +117,7 @@
   },
   "shots": {
     "hero": {
-      "alt": "TeamBot op de computer: de hoofdbot Baas geeft per team de stand van zaken, met onderin de zijbalk de gebruiksbalk met Claude en de gratis bronnen."
+      "alt": "TeamBot op de computer: bovenin de menubalk, links de lijst met bots als eigen venster, en de hoofdbot Baas die per team de stand van zaken geeft."
     },
     "teams": {
       "alt": "De teamkiezer in TeamBot open, met Alle teams, Webshop (4 bots) en Bakkerij (2 bots), naast een gesprek met de hoofdbot."

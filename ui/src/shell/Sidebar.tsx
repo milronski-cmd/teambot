@@ -1,19 +1,13 @@
 import { useState, useSyncExternalStore } from 'react';
-import { Inbox, LogOut, PanelLeftClose, PanelLeftOpen, Search, Square, X } from 'lucide-react';
+import { Search, Square, X } from 'lucide-react';
 import { api, disconnectWs, setToken } from '../lib/api';
 import { useApp } from '../lib/store';
-import { useRoute } from '../lib/router';
 import { BotFace } from '../components/BotFace';
 import { cx, toast } from '../components/ui';
 import { ChatList, PinnedRows } from './ChatList';
-import { DESTINATIONS } from './nav';
-import { useInboxExtraCount } from '../modules';
-import { NotificationBell } from '../modules/notifications/parts';
 import { openPalette } from './CommandPalette';
 import { saveLock } from './lockCore';
-import { AwakeIndicator } from './power';
 import { UsageMeter } from '../modules/usage/UsageMeter';
-import { TeamSwitcher } from './TeamSwitcher';
 import { NewMenu } from './NewMenu';
 import { t } from '../lib/i18n';
 import { useAccent } from './theme';
@@ -50,11 +44,14 @@ export function StopAllButton({ className, compact, always }: { className?: stri
     return (
       <button
         onClick={stopAll}
-        className={cx('flex h-11 shrink-0 items-center gap-1.5 rounded-full bg-danger-soft px-3.5 text-[13px] font-bold text-danger', className)}
+        className={cx('flex shrink-0 items-center gap-1.5 rounded-full bg-danger-soft px-3.5 text-[13px] font-bold text-danger', /(^|\s)h-\d/.test(className || '') ? '' : 'h-11', className)}
         aria-label={t('Alles stoppen ({0, plural, one {# taak} other {# taken}} bezig)', runs)}
         title="Stopt alle lopende taken van je bots"
       >
-        <Square className="h-3 w-3 fill-current" aria-hidden /> {runs}
+        {/* "Alles stoppen" is the visible text and the start of the name; the count is drawn by the style (the name says it
+            in words: checkers compare without what is between brackets). */}
+        <Square className="h-3 w-3 fill-current" aria-hidden /> Alles stoppen
+        <span data-count={runs} className="flex h-[18px] min-w-[18px] items-center justify-center rounded-full bg-danger px-1 text-[11px] tabular-nums text-danger-fg after:content-[attr(data-count)]" aria-hidden />
       </button>
     );
   return (
@@ -114,69 +111,7 @@ export function useSidebarFolded(): boolean {
     readFolded,
     () => false,
   );
-  // The dashboard is the start screen, over the whole window: there the list of bots makes room (their faces stay).
-  const route = useRoute();
-  return own || route[0] === 'dashboard';
-}
-
-const iconBtn = 'tb-tip flex size-9 shrink-0 items-center justify-center rounded-control text-muted transition-colors hover:bg-surface-2 hover:text-fg active:bg-surface-3 coarse:size-11';
-
-/** One place on the rail: the icon in a pill (TeamBot orange when you are there), its name under it, a count. */
-function RailItem({ href, label, icon: Icon, active, count, onNavigate }: { href: string; label: string; icon: React.ComponentType<{ className?: string }>; active: boolean; count?: number; onNavigate?(): void }) {
-  return (
-    <a href={href} onClick={onNavigate} aria-current={active ? 'page' : undefined} className="group flex w-full flex-col items-center gap-1 rounded-xl py-1">
-      <span className={cx('relative flex h-8 w-12 items-center justify-center rounded-full transition-colors', active ? 'bg-brand-soft text-brand' : 'text-muted group-hover:bg-surface-2 group-hover:text-fg')}>
-        <Icon className={cx('size-[19px]', active ? 'stroke-[2.2]' : 'stroke-[1.75]')} aria-hidden />
-        {!!count && (
-          <span className="absolute -end-1 -top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-warn-strong px-1 text-[10.5px] font-bold tabular-nums text-warn-fg">
-            {count}
-            <span className="sr-only"> open</span>
-          </span>
-        )}
-      </span>
-      <span data-i18n="label" className={cx('w-full truncate px-0.5 text-center text-[10.5px] font-semibold leading-tight', active ? 'text-fg' : 'text-muted group-hover:text-fg')}>
-        {label}
-      </span>
-    </a>
-  );
-}
-
-/**
- * The rail on the far left: TeamBot's mark, the chats, Wacht op jou and Taken at the top; the Marktplaats, Instellingen
- * and folding the list at the bottom, each with its name. Always there, also with the list folded away. Together with
- * the list next to it this is the "Hoofdmenu" (App.tsx).
- */
-export function NavRail({ route, onNavigate }: { route: string[]; onNavigate?(): void }) {
-  const approvals = useApp((s) => s.approvals.length) + useInboxExtraCount();
-  const online = useApp((s) => s.online);
-  const mode = useApp((s) => s.mode);
-  const folded = useSidebarFolded();
-  const d = DESTINATIONS;
-  return (
-    <div className="flex w-[76px] shrink-0 flex-col items-center gap-1.5 py-1">
-      <a href="#/" onClick={onNavigate} aria-label="TeamBot" className="relative mb-3 flex size-12 items-center justify-center">
-        <Mark size={38} />
-        {!online && <span className="absolute bottom-0.5 end-0.5 h-2.5 w-2.5 rounded-full border-2 border-canvas bg-warn" aria-hidden />}
-        <span className="sr-only">{online ? 'verbonden' : 'verbinding herstellen'}</span>
-      </a>
-      <RailItem href={d.chats.href} label={d.chats.label} icon={d.chats.icon} active={d.chats.active(route)} onNavigate={onNavigate} />
-      <RailItem href={d.inbox.href} label={d.inbox.label} icon={Inbox} active={d.inbox.active(route)} count={approvals} onNavigate={onNavigate} />
-      <RailItem href={d.tasks.href} label={d.tasks.label} icon={d.tasks.icon} active={d.tasks.active(route)} onNavigate={onNavigate} />
-      <RailItem href={d.dashboard.href} label={d.dashboard.label} icon={d.dashboard.icon} active={d.dashboard.active(route)} onNavigate={onNavigate} />
-      <div className="mt-auto flex w-full flex-col items-center gap-1.5">
-        <RailItem href={d.market.href} label={d.market.label} icon={d.market.icon} active={d.market.active(route)} onNavigate={onNavigate} />
-        <RailItem href={d.settings.href} label={d.settings.label} icon={d.settings.icon} active={d.settings.active(route)} onNavigate={onNavigate} />
-        {mode === 'server' && (
-          <button type="button" aria-label="Uitloggen" onClick={logout} className={cx(iconBtn, 'tb-tip-start size-10 rounded-xl')}>
-            <LogOut className="size-5 stroke-[1.75]" aria-hidden />
-          </button>
-        )}
-        <button type="button" aria-label={t(folded ? 'Zijbalk uitklappen' : 'Zijbalk inklappen')} onClick={toggleSidebarFolded} className={cx(iconBtn, 'tb-tip-up tb-tip-start size-10 rounded-xl')}>
-          {folded ? <PanelLeftOpen className="size-5 stroke-[1.75]" aria-hidden /> : <PanelLeftClose className="size-5 stroke-[1.75]" aria-hidden />}
-        </button>
-      </div>
-    </div>
-  );
+  return own;
 }
 
 /**
@@ -194,7 +129,6 @@ export function Sidebar({ route, onNavigate }: { route: string[]; onNavigate?():
   return (
     <div className="flex h-full w-full flex-col" role="region" aria-label="Bots en gesprekken">
       {/* The team switcher (only from two teams on), then search, the bell and "+" in one row, as OpenBot. */}
-      <TeamSwitcher className="mx-2 mt-2" onNavigate={onNavigate} />
       <div className="flex shrink-0 items-center gap-1 px-2 pb-2 pt-2">
         {searching ? (
           <form
@@ -234,7 +168,6 @@ export function Sidebar({ route, onNavigate }: { route: string[]; onNavigate?():
             <span className="flex-1 text-start">Zoeken</span>
           </button>
         )}
-        <NotificationBell />
         {/* "+": Nieuwe bot, Nieuw team, Team uit een sjabloon. */}
         <NewMenu onNavigate={onNavigate} />
       </div>
@@ -248,8 +181,6 @@ export function Sidebar({ route, onNavigate }: { route: string[]; onNavigate?():
       {/* At the bottom: stop what runs, and the usage rings (one per subscription or provider; each shows its details).
           relative: the usage popover opens above this footer. */}
       <div className="relative border-t border-line px-2 py-1.5">
-        <StopAllButton className="mb-1" />
-        <AwakeIndicator className="mb-1" />
         <UsageMeter className="min-w-0 px-1" />
       </div>
     </div>

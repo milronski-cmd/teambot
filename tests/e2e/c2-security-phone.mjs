@@ -119,7 +119,7 @@ async function walkToLog(p, phone) {
   if (phone) {
     await p.getByRole('navigation', { name: 'Hoofdmenu' }).getByRole('link', { name: /^(\d+ )?Meer$/ }).tap();
     await p.getByRole('main').getByRole('navigation', { name: 'Meer' }).getByRole('link', { name: 'Instellingen', exact: true }).tap();
-  } else await p.locator('aside a[href="#/settings"]').first().click();
+  } else await p.getByRole('navigation', { name: 'Hoofdmenu' }).locator('a[href="#/settings"]').first().click();
   const go = (loc) => (phone ? loc.tap() : loc.click());
   await go(p.getByRole('navigation', { name: 'Instellingen' }).getByRole('link', { name: /^Meer mogelijkheden/ }).first());
   await go(p.getByRole('main').getByRole('link', { name: /^Beveiliging/ }).first());

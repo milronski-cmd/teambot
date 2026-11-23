@@ -24,6 +24,7 @@ const src = path.join(here, 'src');
 const dist = path.join(here, 'dist');
 const require = createRequire(path.join(repo, 'package.json'));
 const { botSvg } = await import(pathToFileURL(path.join(repo, 'ui/src/lib/botface.ts')).href);
+const { appIconSvg } = await import(pathToFileURL(path.join(repo, 'shared/appicon.ts')).href);
 // micromark (MIT) is already installed with react-markdown; it turns docs/HANDLEIDING.md into HTML at build time.
 const { micromark } = await import('micromark');
 const { gfm, gfmHtml } = await import('micromark-extension-gfm');
@@ -274,12 +275,10 @@ let uidN = 0;
 const faceSvg = (seed, traits, mood = 'idle') => botSvg(seed, { traits, mood, uid: `f${++uidN}` });
 /** A bot figure. Decorative: the name or text next to it always says what it is. */
 const face = (seed, traits, mood = 'idle', cls = '') => `<span class="tb-face${cls ? ' ' + cls : ''}" aria-hidden="true">${faceSvg(seed, traits, mood)}</span>`;
-/** Full-bleed square app icon (same recipe as scripts/make-icons.mjs). */
-function iconSvg(round = 230, pad = 0.16) {
-  const s = 1 - pad * 2,
-    o = 1024 * pad;
+/** The app icon (shared/appicon.ts: the same recipe as the app's icon files, `npm run icons`). */
+function iconSvg(round = 230, pad = 0.14) {
   const inner = botSvg('TeamBot', { traits: BRAND, uid: 'icon' }).replace(/^<svg[^>]*>/, '').replace(/<\/svg>\s*$/, '');
-  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024"><defs><radialGradient id="bgicon" cx="50%" cy="38%" r="75%"><stop offset="0" stop-color="#1b1b21"/><stop offset="1" stop-color="#0b0b0e"/></radialGradient></defs><rect width="1024" height="1024" rx="${round}" fill="url(#bgicon)"/><g transform="translate(${o} ${o + 1024 * 0.02}) scale(${(1024 * s) / 100})">${inner}</g></svg>`;
+  return appIconSvg(inner, { round, pad, id: 'icon' });
 }
 /** The example team: one bot per mood, so the faces explain themselves. */
 const TEAM = [

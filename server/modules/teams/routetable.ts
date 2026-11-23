@@ -904,6 +904,7 @@ PATCH  /rooms/tasks/:id                                        team
 POST   /rooms/tasks/:id/approve                                team
 POST   /rooms/tasks/:id/reopen                                 team
 POST   /rooms/tasks/:id/start-after                            team
+POST   /tasks/plain                                            shared
 POST   /rooms/tasks/:id/release                                team
 DELETE /rooms/tasks/:id                                        team
 GET    /rooms/by-thread/:threadId                              team

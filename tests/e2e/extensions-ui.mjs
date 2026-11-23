@@ -405,7 +405,7 @@ try {
     for (let i = 0; i < 50 && posted === before; i++) await page.waitForTimeout(100);
     if (how === 'het adres') await page.evaluate(() => (location.hash = '#/settings/usage'));
     else {
-      await page.locator('aside a[href="#/settings"]').first().click();
+      await page.getByRole('navigation', { name: 'Hoofdmenu' }).locator('a[href="#/settings"]').first().click();
       await page.getByRole('navigation', { name: 'Instellingen' }).getByRole('link', { name: /^Meer mogelijkheden/ }).first().click();
       await page.locator('#inhoud a[href="#/settings/usage"]').first().click();
     }

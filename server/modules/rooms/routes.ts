@@ -14,11 +14,23 @@ import type { Delegation, Room } from './types.js';
 import { exportTeam, installTeam, normalizeTeam, previewTeam } from './packages.js';
 import { TEAM_TEMPLATES, teamTemplate } from './team-templates.js';
 import { PLACE } from '../../../shared/places.js';
+import { TaskPlainer } from './plain.js';
 
 const p = (req: Request, k: string) => String((req.params as any)[k] ?? '');
 
 export function roomRoutes(ctx: Ctx, s: RoomService, board: Board) {
   const api = ctx.api;
+  // Every task the owner looks at, in plain words (plain.ts): board tasks and team-database tasks alike.
+  const plainer = new TaskPlainer(ctx);
+  ctx.services.taskPlainer = plainer;
+  api.post(
+    '/tasks/plain',
+    ah(async (req) => {
+      const u = user(req);
+      const items = Array.isArray(req.body?.items) ? req.body.items : [];
+      return { plain: plainer.lookup(u.id, items) };
+    }),
+  );
   const actorOf = (req: Request) => {
     const u = user(req);
     return { type: 'user' as const, id: u.id, name: u.name };

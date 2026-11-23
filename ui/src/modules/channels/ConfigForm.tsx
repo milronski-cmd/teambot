@@ -3,6 +3,7 @@ import { Check, Copy, KeyRound, RefreshCw } from 'lucide-react';
 import { Button, Field, Input, Select, Toggle, copyText } from '../../components/ui';
 import type { FieldDef, Guide } from './guides';
 import { randomSecret } from './shared';
+import { KeyFromFile } from '../../components/KeyFile';
 
 function SecretInput({ f, value, onChange, isSet }: { f: FieldDef; value: string; onChange(v: string): void; isSet: boolean }) {
   const [show, setShow] = useState(!!f.generate);
@@ -18,6 +19,7 @@ function SecretInput({ f, value, onChange, isSet }: { f: FieldDef; value: string
         className="font-mono"
         aria-label={f.label}
       />
+      {!f.generate && <KeyFromFile onKey={(v) => onChange(v)} />}
       {f.generate && (
         <>
           <Button type="button" size="icon" variant="secondary" aria-label="Nieuw geheim genereren" title="Nieuw geheim genereren" onClick={() => onChange(randomSecret(32))}>

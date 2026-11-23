@@ -46,7 +46,7 @@ export interface EngineView {
   error: string | null;
   unsupported: string | null;
   stats: { input: number; output: number; cost: number; sessions: number } | null;
-  spend: { today: Spend; week: Spend };
+  spend: { today: Spend; week: Spend; month?: Spend };
 }
 
 export interface AlertSettings {

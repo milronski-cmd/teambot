@@ -1,5 +1,53 @@
 # Changelog
 
+## [4.17.0] — 2026-11-23
+
+### Een nieuwe indeling en een nieuw icoon
+- **Eén menubalk bovenin, over de hele app**, als die van een besturingssysteem: links TeamBot en de plekken (Chats,
+  Dashboard, Wacht op jou, Taken, Apps, Marktplaats), rechts zoeken, hoeveel bots er werken, hoe vol je
+  AI-abonnement is, de tijd en Instellingen. De rail met iconen links is weg.
+- **De schermen zijn vensters op een achtergrond.** De lijst met bots is een eigen venster naast de chats; Taken,
+  Dashboard, Apps, Marktplaats en Instellingen krijgen de hele breedte.
+- **Apps is een eigen plek** in de menubalk (was een pagina onder Instellingen).
+- **Op elke pagina in de menubalk**: de teamkiezer (vanaf twee teams; hij filtert ook Taken en het Dashboard), de
+  meldingen, "Alles stoppen" terwijl er iets loopt en "Pc blijft wakker". Die stonden onderaan de lijst met bots.
+- **De menubalk past zich aan**: passen de namen niet (een taal met lange woorden, een smal venster), dan tonen de
+  plekken hun icoon en staat de naam erbij als je erop wijst.
+- Een gesprek dat je opent laat een beurt die net begon of net van AI wisselde niet meer verdwijnen.
+- **Een nieuw icoon**: het oranje robotje op een achtergrond van indigo naar violet, met een warme gloed. Ook in de
+  taakbalk, het installatievenster en de app op je telefoon.
+
+### Het dashboard klopt
+- **Bovenaan één strook** met je begroeting, de bots aan het werk en drie tellers (wacht op jou, aan het werk, apps
+  die werken). Vroeger waren dat een grote klok en drie hoge kaarten die vooral leeg waren.
+- **Elke cijfertegel is even hoog**, dus rijen staan recht.
+- **Een lijntje alleen bij een echt verloop**: minstens vier metingen over minstens twee dagen, op hun echte tijd
+  gezet. Wijs het aan en je ziet de waarde en de datum. Met minder metingen staat er eerlijk wanneer er gemeten is
+  ("Eerste meting op 22 nov", "Vorige meting: 5.800 op 21 nov"). Vroeger werd een lijn door twee punten over de
+  hele breedte getrokken.
+- **"6 van 9" is een balk**: het deel van het geheel.
+- **Het dock valt niet meer over je tegels.** Op de telefoon staat het als rij bovenaan.
+
+### Verbruik: alles, en hoeveel erboven
+- **Elke AI-dienst**: een abonnement met zijn vensters in gewone woorden ("Week · inclusief extra gebruik" in
+  plaats van "Overage Included"), en of extra gebruik geld kost: "Extra gebruik staat uit: je betaalt niets extra."
+  Een betaalde sleutel met wat hij vandaag, deze week en **deze maand** kostte. Een gratis dienst als gratis.
+- **Budgetten met een limiet** zeggen hoeveel je erboven zit ("3,40 dollar boven je limiet").
+- **Kosten van andere diensten** die een bot bijhoudt in de groep Verbruik (bijvoorbeeld GitHub Actions boven het
+  gratis tegoed) staan er nu ook in, met "kost extra" als de titel dat zegt.
+
+### Taken in gewone woorden
+- **TeamBot legt elke taak zelf uit**: wat er moet gebeuren, waarom, en waarop hij wacht als hij vastzit. Bots
+  schrijven hun taken voor elkaar, met paden en codes; die tekst blijft eronder staan ("Wat de bot schreef"). Voor
+  het takenbord en de takenlijst van de bots allebei. De uitleg wordt bewaard en alleen opnieuw gemaakt als de taak
+  verandert, met een korte aanroep op de engine voor controles (bij voorkeur een gratis).
+
+### Koppelen zonder plakken
+- **"Uit bestand" bij elk veld voor een sleutel**: bij een app, een AI-dienst, een kanaal, een zoekdienst, de
+  gratis modellen en het wachtwoord van een postvak. Je kiest het bestand (bijvoorbeeld van je bureaublad); deze
+  computer leest het en vult het veld, verder gaat de tekst nergens heen. Een regel NAAM=waarde of een JSON-bestand
+  met één sleutelveld geeft die waarde.
+
 ## [4.16.0] — 2026-11-23
 
 ### Bots leggen zelf vast wat werkt

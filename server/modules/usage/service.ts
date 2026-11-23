@@ -7,9 +7,15 @@ import { dayStart } from '../../agent/budget.js';
 import { LOCAL_PROBES } from '../../providers/local.js';
 import { parseLimitReset } from '../routines/limits.js';
 import { clockTime, DEFAULT_LIMIT_WAIT_MS, isFreeLimit } from '../../agent/fallback.js';
-import { mergeWindows, worstWindow, type LimitLevel, type LimitReport, type LimitWindow } from './parse.js';
+import { claudeWindowLabel, mergeWindows, worstWindow, type LimitLevel, type LimitReport, type LimitWindow } from './parse.js';
 import { blockedUntil, cleanReserve, cleanSource, effectiveSource, sameSource, sortWindows, weekStart, type ReserveReport, type ReserveView, type SourceReport, type SourceStatus, type SourceView, type StoredSource } from './bar.js';
 import { toolLabel } from '../../../shared/toolLabels.js';
+
+/** Notes an older version stored, in today's words (the note says plainly whether extra usage costs money). */
+const OLD_NOTES: Record<string, string> = {
+  'Extra gebruik (overage) staat uit: bij de limiet stopt Claude tot de reset.': 'Extra gebruik staat uit: je betaalt niets extra. Bij de limiet stopt Claude tot de reset.',
+  'Claude gebruikt nu extra gebruik (overage).': 'Claude gebruikt nu extra gebruik: dat kost geld bovenop je abonnement.',
+};
 
 /**
  * Usage limits per account (= provider) and context fill per chat. Engines report what they know (see parse.ts);
@@ -348,7 +354,10 @@ export class UsageService {
     if (st.billing === 'subscription' && billing === 'unknown') billing = 'subscription';
     const today = new Date();
     today.setHours(0, 0, 0, 0);
-    const windows = mergeWindows(st.windows, [], Date.now());
+    const month = new Date(today.getFullYear(), today.getMonth(), 1);
+    // A Claude window is named by its id at every view: a name stored by an older version ("Week · Overage Included")
+    // is not shown again.
+    const windows = mergeWindows(st.windows, [], Date.now()).map((w) => (c.kind === 'claude-code' ? { ...w, label: claudeWindowLabel(w.id) } : w));
     const runner = this.ctx.services.runner?.limited?.get?.(c.id);
     return {
       providerId: c.id,
@@ -360,7 +369,7 @@ export class UsageService {
       billing,
       billingPath,
       plan: st.plan || null,
-      note: st.note || null,
+      note: (st.note && OLD_NOTES[st.note]) || st.note || null,
       windows,
       worst: worstWindow(windows),
       blocked: st.blocked || null,
@@ -374,7 +383,7 @@ export class UsageService {
       error: st.error || null,
       unsupported: st.unsupported || null,
       stats: st.stats || null,
-      spend: { today: this.spend(c.id, today.toISOString()), week: this.spend(c.id, new Date(Date.now() - 7 * 864e5).toISOString()) },
+      spend: { today: this.spend(c.id, today.toISOString()), week: this.spend(c.id, new Date(Date.now() - 7 * 864e5).toISOString()), month: this.spend(c.id, month.toISOString()) },
     };
   }
 

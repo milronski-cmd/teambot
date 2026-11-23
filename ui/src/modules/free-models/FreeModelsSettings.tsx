@@ -7,6 +7,7 @@ import { Badge, Button, Card, CardHead, Field, Input, Spinner, cx, toastError, E
 import { ConnectCard, ConnectResult, type ConnectState } from '../../components/ConnectCard';
 import { freeStart } from '../cli-agents/runtime';
 import { OllamaInstallButton } from '../local-models/install';
+import { KeyFromFile } from '../../components/KeyFile';
 
 type Level = 'local' | 'no-store' | 'may-train';
 type Tools = 'tools' | 'text' | 'unknown';
@@ -403,6 +404,7 @@ function SourceRow({ s, more, onView }: { s: Source; more: boolean; onView(v: Vi
               </Field>
             ))}
             <div className="flex flex-wrap items-center gap-2">
+              <KeyFromFile onKey={(v) => (setKey(v), fieldsOk && !busy && void connect(v))} />
               <Input
                 type="password"
                 autoComplete="off"

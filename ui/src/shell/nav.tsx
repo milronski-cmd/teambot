@@ -1,4 +1,4 @@
-import { Activity, AlarmClock, Brain, Ellipsis, Inbox, LayoutDashboard, MessageCircle, Settings, SquareKanban, Store } from 'lucide-react';
+import { Activity, AlarmClock, Blocks, Brain, Ellipsis, Inbox, LayoutDashboard, MessageCircle, Settings, SquareKanban, Store } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { settingsHostOf } from '../lib/palette';
 import { uiModules } from '../modules';
@@ -14,7 +14,7 @@ import { uiModules } from '../modules';
  * TeamBot 0.4.5: the Marktplaats is a fixed place again (what you can add to your bots, visible by default): its own
  * row in the sidebar, its pages no longer inside Instellingen (lib/palette.ts OWN_PLACES).
  */
-export type DestId = 'chats' | 'inbox' | 'tasks' | 'dashboard' | 'routines' | 'memory' | 'market' | 'settings' | 'more' | 'now';
+export type DestId = 'chats' | 'inbox' | 'tasks' | 'dashboard' | 'apps' | 'routines' | 'memory' | 'market' | 'settings' | 'more' | 'now';
 
 export interface Destination {
   id: DestId;
@@ -51,6 +51,8 @@ export const DESTINATIONS: Record<DestId, Destination> = {
   tasks: { id: 'tasks', href: '#/tasks', label: 'Taken', icon: SquareKanban, active: (r) => r[0] === 'tasks' || mod(r, 'teamdata') || mod(r, 'routines') || (mod(r, 'rooms') && r[2] === 'taken') },
   // Dashboard (15 nov): the numbers the bots keep (team table dashboard), mail, customers, WhatsApp … on one screen.
   dashboard: { id: 'dashboard', href: '#/dashboard', label: 'Dashboard', icon: LayoutDashboard, active: (r) => r[0] === 'dashboard' },
+  // Apps (4.17.0): the connections of the bots, a place of its own in the menu bar (was a page under Instellingen).
+  apps: { id: 'apps', href: '#/m/mcp/', label: 'Apps', icon: Blocks, active: (r) => mod(r, 'mcp') },
   routines: { id: 'routines', href: '#/m/routines/', label: 'Routines', icon: AlarmClock, active: (r) => mod(r, 'routines') },
   memory: { id: 'memory', href: '#/m/memory/', label: 'Geheugen', icon: Brain, active: (r) => mod(r, 'memory') },
   market: { id: 'market', href: '#/m/skills/', label: 'Marktplaats', icon: Store, active: (r) => mod(r, 'skills') },

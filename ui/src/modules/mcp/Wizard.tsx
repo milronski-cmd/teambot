@@ -22,6 +22,7 @@ import { BotPicker, ConnForm, OAuthPanel, draftFromEntry, draftPayload, openLogi
 import { t, uiLocale } from '../../lib/i18n';
 import { ImportedFacts, type ImportedInfo } from './Import';
 import { RuntimeInstall } from './quick';
+import { KeyFromFile } from '../../components/KeyFile';
 
 /**
  * form: what is needed (often nothing) and one button; creating → login → testing run by themselves; done or error.
@@ -221,13 +222,16 @@ export function Wizard({
   const busy = phase === 'creating' || phase === 'testing';
   const kvField = (k: KVDraft, kind: 'env' | 'headers') => (
     <Field key={`${kind}-${k.name}`} label={k.label || k.name} hint={k.help}>
-      <Input
-        type={k.secret ? 'password' : 'text'}
-        autoComplete="off"
-        value={k.value}
-        placeholder={k.placeholder || (k.secret ? 'Plak hier je sleutel' : '')}
-        onChange={(e) => set({ [kind]: d[kind].map((x) => (x.name === k.name ? { ...x, value: e.target.value } : x)) } as Partial<ConnDraft>)}
-      />
+      <div className="flex items-center gap-1">
+        <Input
+          type={k.secret ? 'password' : 'text'}
+          autoComplete="off"
+          value={k.value}
+          placeholder={k.placeholder || (k.secret ? 'Plak hier je sleutel, of kies het bestand' : '')}
+          onChange={(e) => set({ [kind]: d[kind].map((x) => (x.name === k.name ? { ...x, value: e.target.value } : x)) } as Partial<ConnDraft>)}
+        />
+        {k.secret && <KeyFromFile onKey={(v) => set({ [kind]: d[kind].map((x) => (x.name === k.name ? { ...x, value: v } : x)) } as Partial<ConnDraft>)} />}
+      </div>
     </Field>
   );
   const required = simple ? [...d.env.filter((k) => k.required).map((k) => kvField(k, 'env')), ...d.headers.filter((k) => k.required).map((k) => kvField(k, 'headers'))] : [];

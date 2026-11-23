@@ -117,7 +117,7 @@
   },
   "shots": {
     "hero": {
-      "alt": "TeamBot on the computer (in Dutch): the main bot Baas gives the status per team, with the usage bar for Claude and the free sources at the bottom of the sidebar."
+      "alt": "TeamBot on the computer (in Dutch): the menu bar at the top, the list of bots as a window of its own on the left, and the main bot Baas giving the status per team."
     },
     "teams": {
       "alt": "The team picker in TeamBot open (in Dutch), with All teams, Webshop (4 bots) and Bakkerij (bakery, 2 bots), next to a conversation with the main bot."
@@ -572,7 +572,7 @@
           "Keys are encrypted and never appear in conversations, logs or exports.",
           "Sending, paying and deleting ask for your permission first."
         ],
-        "start": "Click the padlock at the bottom of the sidebar: *Where is my data?* shows per bot what leaves your PC. Everything in one place is on [Safety and privacy](page:privacy)."
+        "start": "Open *Settings › Privacy and security › Where is my data?*: there you see per bot what leaves your PC. Everything in one place is on [Safety and privacy](page:privacy)."
       },
       {
         "id": "colours",

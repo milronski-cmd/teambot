@@ -749,7 +749,9 @@ try {
 
   // ---------------------------------------------------------------- 3b. a second team, from the "+" in the sidebar
   // (0.4.4: the "+" was a link to Nieuwe bot only; with one team there was no way to a team from it.)
-  const side = page.getByRole('navigation', { name: 'Hoofdmenu' });
+  // 4.17.0: the "+" is in the list of bots (the aside next to the chats); the main menu is the bar at the top.
+  if (!(await page.locator('aside').count())) await page.evaluate(() => (location.hash = '#/'));
+  const side = page.locator('aside').first();
   const plus = side.getByRole('button', { name: 'Nieuw', exact: true });
   await plus.click();
   const plusMenu = page.getByRole('menu', { name: 'Nieuw' });
@@ -762,7 +764,8 @@ try {
   await teamDlg.getByLabel('Naam').fill('Bakkerij');
   await teamDlg.getByRole('button', { name: 'Team maken' }).click();
   await until(async () => (await api('GET', '/teams')).some((t) => t.name === 'Bakkerij'), 8000, '"+" › Nieuw team: het team is niet gemaakt');
-  const switcher = side.getByTestId('team-switcher').getByRole('button').first();
+  // 4.17.0: the team switcher is in the menu bar.
+  const switcher = page.getByTestId('topbar').getByTestId('team-switcher').getByRole('button').first();
   await switcher.waitFor({ timeout: 8000 }).catch(() => fail('tweede team: de teamkiezer verschijnt niet'));
   await switcher.click();
   await axe(page, 'teamkiezer open');

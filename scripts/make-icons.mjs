@@ -4,16 +4,12 @@ const repo = process.cwd();
 const require = createRequire(path.join(repo, 'package.json'));
 const { chromium } = require('playwright-core');
 const { botSvg } = await import(new URL('file:///' + path.join(repo, 'shared/botface.ts').split(path.sep).join('/')).href);
+const { appIconSvg } = await import(new URL('file:///' + path.join(repo, 'shared/appicon.ts').split(path.sep).join('/')).href);
 const out = process.argv[2] || '.';
 const inner = (seed, traits, uid) => botSvg(seed, { traits, uid }).replace(/^<svg[^>]*>/, '').replace(/<\/svg>\s*$/, '');
-// full-bleed square icon; figure scaled into the centre. pad = share of the canvas left around the figure
-function icon(traits, { bg1 = '#1b1b21', bg2 = '#0b0b0e', pad = 0.16, round = 0, id = 'tb' } = {}) {
-  const s = 1 - pad * 2, o = 1024 * pad;
-  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024">
-<defs><radialGradient id="bg${id}" cx="50%" cy="38%" r="75%"><stop offset="0" stop-color="${bg1}"/><stop offset="1" stop-color="${bg2}"/></radialGradient></defs>
-<rect width="1024" height="1024" rx="${round}" fill="url(#bg${id})"/>
-<g transform="translate(${o} ${o + 1024 * 0.02}) scale(${(1024 * s) / 100})">${inner('TeamBot', traits, id)}</g></svg>`;
-}
+// The icon: the figure on TeamBot's background (shared/appicon.ts, one recipe with the website's favicon).
+// pad = share of the canvas left around the figure; round = corner radius (0: full bleed).
+const icon = (traits, { pad, round = 0, id = 'tb' } = {}) => appIconSvg(inner('TeamBot', traits, id), { pad, round, id });
 const variants = {
   a: { shape: 'squircle', color: 'tangerine', eyes: 'bean', mouth: 'smile', extra: 'antenna', cheeks: true },
   b: { shape: 'squircle', color: 'mint', eyes: 'bean', mouth: 'smile', extra: 'antenna', cheeks: true },

@@ -60,7 +60,8 @@ const pick = async (page, from, to) => (await box(page, from).click(), await pag
  * Meer mogelijkheden, that row first). By the links, so it works in every language.
  */
 async function walkTo(page, href, under) {
-  const side = page.locator('aside a[href="#/settings"]').first();
+  // 4.17.0: Instellingen is in the menu bar at the top (found by its link, so it works in every language).
+  const side = page.locator('[data-testid="topbar"] a[href="#/settings"]').first();
   await side.waitFor({ timeout: 15_000 });
   await side.click();
   if (under) await page.locator(`#inhoud a[href="${under}"]`).first().click();
@@ -116,6 +117,7 @@ try {
   );
   check('welkomstscherm: kiezen voor Français schakelt om', await choose(page, PICKER, 'fr'), (await htmlLang(page)).lang);
   const fr = testLanguage(['--lang', 'fr']);
+  await until(async () => (await page.locator('h1').first().innerText()).trim() === fr.L('Welkom bij TeamBot'), 5000);
   check('welkomstscherm in het Frans, keuze opgeslagen voor de gebruiker', (await page.locator('h1').first().innerText()).trim() === fr.L('Welkom bij TeamBot') && userLang() === 'fr', `${await page.locator('h1').first().innerText()} / ${userLang()}`);
   const names = await page.locator(`${PICKER} option`).allTextContents();
   check('taalnamen worden nooit vertaald (ook niet in een Franse interface)', names.includes('Nederlands') && names.includes('Deutsch') && names.includes('العربية'), names.join(', '));
@@ -129,7 +131,10 @@ try {
   check('Instellingen: kiezen voor العربية schakelt om', await chooseBox(page, 'ar'), JSON.stringify(await htmlLang(page)));
   const rtl = await htmlLang(page);
   check('Arabisch: de pagina loopt van rechts naar links', rtl.dir === 'rtl' && userLang() === 'ar', JSON.stringify(rtl));
-  // The sidebar sits on the right in a right-to-left layout (the switch reloads the page: wait until the app is back).
+  // The list of bots sits on the right in a right-to-left layout (the switch reloads the page: wait until the app is
+  // back). Since 4.17.0 the list is next to the chats only: go there.
+  await page.waitForSelector('[data-testid="topbar"]', { timeout: 15_000 }).catch(() => {});
+  await page.evaluate(() => (location.hash = '#/'));
   await page.waitForSelector('aside', { timeout: 15_000 }).catch(() => {});
   const side = await page.evaluate(() => {
     const a = document.querySelector('aside');
@@ -137,7 +142,8 @@ try {
     const r = a.getBoundingClientRect();
     return { left: Math.round(r.left), right: Math.round(r.right), vw: window.innerWidth };
   });
-  check('Arabisch: de zijbalk staat rechts', !!side && side.right >= side.vw - 2 && side.left > side.vw / 2, JSON.stringify(side));
+  // (the list of bots is a window with a margin of its own around it since 4.17.0)
+  check('Arabisch: de zijbalk staat rechts', !!side && side.right >= side.vw - 24 && side.left > side.vw / 2, JSON.stringify(side));
   // Chat bubbles swap sides: your own message at the end of the line (left in Arabic), the bot's at the start.
   const th = store.createThread({ user_id: owner.id, agent_id: helper.id, kind: 'chat' });
   const mine = store.createMessage({ thread_id: th.id, role: 'user', author_type: 'user', author_id: owner.id, author_name: owner.name, content: 'مرحبا' });

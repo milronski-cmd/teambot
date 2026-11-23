@@ -302,7 +302,7 @@ const HOSTED_MODULES = new Set(['memory']);
  * Modules with a fixed place of their own in the sidebar (the Marktplaats): their pages are never shown inside
  * Instellingen and are not listed there either (one place for each thing).
  */
-const OWN_PLACES = new Set(['skills']);
+const OWN_PLACES = new Set(['skills', 'mcp']);
 
 /**
  * The Instellingen entry a page belongs to (`<module>/<path>`, or `agents/`), or null when the page has its own place

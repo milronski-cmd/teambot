@@ -3,12 +3,12 @@
   "hero": {
     "file": "chat-desktop",
     "kind": "desktop",
-    "wil": "Desktop 1280x800 @1.5x, licht: de hoofdbot die per team de stand geeft, met de gebruiksbalk onderin de zijbalk."
+    "wil": "Desktop 1280x800 @1.5x, licht: de hoofdbot die per team de stand geeft, met de menubalk bovenin en de lijst met bots als venster ernaast."
   },
   "teams": {
     "file": "teams-desktop",
     "kind": "desktop",
-    "wil": "Desktop: de teamkiezer bovenin de zijbalk open, met Alle teams, Webshop en Bakkerij in hun eigen kleur."
+    "wil": "Desktop: de teamkiezer in de menubalk open, met Alle teams, Webshop en Bakkerij in hun eigen kleur."
   },
   "tasks": {
     "file": "tasks-desktop",

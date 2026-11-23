@@ -7,6 +7,7 @@ import { t } from '../../lib/i18n';
 import { Button, Card, Field, Input, SectionTitle, Spinner, Textarea, timeAgo, toast, toastError } from '../../components/ui';
 import { Segmented } from '../../components/SettingControls';
 import { OpenApp } from './parts';
+import { KeyFromFile } from '../../components/KeyFile';
 
 interface Row {
   id: string;
@@ -241,7 +242,10 @@ export function MailSection({ compact }: { compact?: boolean } = {}) {
               <Input value={adding.address} onChange={(e) => setAdding({ ...adding, address: e.target.value })} placeholder="naam@voorbeeld.nl" inputMode="email" autoComplete="off" />
             </Field>
             <Field label="Wachtwoord of app-wachtwoord" hint="Gmail en de meeste grote aanbieders vragen een app-wachtwoord: dat maak je aan bij de beveiliging van je account. Het wordt versleuteld op deze computer bewaard.">
-              <Input type="password" value={adding.password} onChange={(e) => setAdding({ ...adding, password: e.target.value })} autoComplete="new-password" />
+              <div className="flex items-center gap-1">
+                <Input type="password" value={adding.password} onChange={(e) => setAdding({ ...adding, password: e.target.value })} autoComplete="new-password" />
+                <KeyFromFile onKey={(v) => setAdding({ ...adding, password: v })} />
+              </div>
             </Field>
             <div className="flex flex-wrap gap-2">
               <Button variant="primary" loading={busy} disabled={!adding.address.trim() || !adding.password} onClick={connect} data-testid="dashboard-mail-connect-save">

@@ -91,13 +91,17 @@ try {
   watch(d);
   await d.goto(`${app.url}/#token=${token}`);
   await d.waitForTimeout(1200);
-  const side = d.getByRole('navigation', { name: 'Hoofdmenu' });
+  // 4.17.0: the main menu is the menu bar at the top (places), the list of bots is the aside next to the chats.
+  const mainMenu = d.getByRole('navigation', { name: 'Hoofdmenu' });
+  const side = d.locator('aside').first();
+  const menuCur = () => mainMenu.locator('a[aria-current="page"]').first().evaluate((a) => (a.getAttribute('aria-label') || a.textContent || '').trim()).catch(() => '');
 
   // Sidebar: the fixed places in order, no Meer and no Teamwerk (0.4.5: Nu bezig and the Marktplaats are fixed places).
-  const fixed = await side.locator('a[href^="#/"]').evaluateAll((as) => as.map((a) => a.textContent.trim()).filter((t) => ['Wacht op jou', 'Nu bezig', 'Taken', 'Marktplaats', 'Routines', 'Geheugen', 'Instellingen', 'Meer', 'Teamwerk'].includes(t)));
+  const fixed = await mainMenu.locator('a[href^="#/"]').evaluateAll((as) => as.map((a) => (a.getAttribute('aria-label') || a.textContent || '').trim()).filter((t) => ['Wacht op jou', 'Nu bezig', 'Taken', 'Marktplaats', 'Routines', 'Geheugen', 'Instellingen', 'Meer', 'Teamwerk'].includes(t)));
   check('zijbalk: Wacht op jou, Taken, Marktplaats, Instellingen (geen Routines, Geheugen of Meer; Nu bezig via Taken)', fixed.join(',') === 'Wacht op jou,Taken,Marktplaats,Instellingen', fixed.join(','));
-  check('zijbalk: Taken gaat naar #/tasks', (await side.getByRole('link', { name: 'Taken', exact: true }).getAttribute('href')) === '#/tasks');
-  check('zijbalk: Marktplaats gaat naar #/m/skills/', (await side.getByRole('link', { name: 'Marktplaats', exact: true }).getAttribute('href')) === '#/m/skills/');
+  check('zijbalk: Taken gaat naar #/tasks', (await mainMenu.getByRole('link', { name: 'Taken', exact: true }).getAttribute('href')) === '#/tasks');
+  check('zijbalk: Marktplaats gaat naar #/m/skills/', (await mainMenu.getByRole('link', { name: 'Marktplaats', exact: true }).getAttribute('href')) === '#/m/skills/');
+  check('menubalk: Apps is een eigen plek (#/m/mcp/)', (await mainMenu.getByRole('link', { name: 'Apps', exact: true }).getAttribute('href')) === '#/m/mcp/');
   // Each row ends in ONE signal (count that waits, working, unread); calm shows nothing, but says data-status="idle".
   const dots = await side.locator('[data-status]').evaluateAll((ds) => ds.map((x) => x.getAttribute('data-status')));
   check('zijbalk: elke bot heeft een statusbolletje (rustig: grijs)', dots.length >= 3 && dots.every((x) => x === 'idle'), dots.join(', '));
@@ -162,7 +166,6 @@ try {
   check('Instellingen: één Back-ups, geen Gebruik, Limieten of Takenbord van groepen', rowNames.filter((r) => /back-ups/i.test(r)).length === 1 && !rowNames.some((r) => ['Gebruik', 'Limieten', 'Takenbord van groepen'].includes(r)), rowNames.join(', '));
   for (const [h, row] of [
     ['#/m/channels/', 'Kanalen'],
-    ['#/m/mcp/', 'Apps'],
     ['#/m/memory/', 'Geheugen'],
     ['#/m/memory/dossiers', 'Geheugen'],
     ['#/m/folders/', 'Bestanden'],
@@ -179,20 +182,23 @@ try {
   ]) {
     await go(d, h);
     const cur = (await settingsNav.locator('a[aria-current="page"]').innerText().catch(() => '')).trim();
-    const sideCur = await side.locator('a[aria-current="page"]').innerText().catch(() => '');
+    const sideCur = await menuCur();
     check(`${h}: binnen Instellingen (${row} gemarkeerd, zijbalk op Instellingen)`, cur === row && sideCur === 'Instellingen', `${cur} / ${sideCur}`);
   }
+  // 4.17.0: Apps has its own place in the menu bar (no longer a page inside Instellingen).
+  await go(d, '#/m/mcp/');
+  check('#/m/mcp/: eigen plek (menubalk op Apps, niet binnen Instellingen)', (await menuCur()) === 'Apps' && !(await settingsNav.count()), await menuCur());
   // 0.4.5: "Nu bezig" has its own place in the sidebar (no longer on the Geavanceerd page of Instellingen).
   await go(d, '#/m/usage/status');
   {
-    const sideCur = await side.locator('a[aria-current="page"]').innerText().catch(() => '');
+    const sideCur = await menuCur();
     check('#/m/usage/status: een eigen pagina (via Taken, niet binnen Instellingen)', !(await settingsNav.count()), `${sideCur} / instellingen: ${await settingsNav.count()}`);
   }
   await shot(d, 'instellingen-kanalen');
   // The Marktplaats (0.4.5): its own place, not inside Instellingen; its tabs and details keep the sidebar on it.
   for (const h of ['#/m/skills/', '#/m/skills/mine']) {
     await go(d, h);
-    const sideCur = await side.locator('a[aria-current="page"]').innerText().catch(() => '');
+    const sideCur = await menuCur();
     check(`${h}: eigen plek (zijbalk op Marktplaats, niet binnen Instellingen)`, sideCur === 'Marktplaats' && !(await settingsNav.count()), sideCur);
   }
   // Detail page under its list page; deep link with parameters keeps working.
@@ -234,9 +240,9 @@ try {
   check('Meer mogelijkheden › Deze computer: Geavanceerd tonen en pc wakker houden, met een pijl terug', (await d.getByRole('switch', { name: 'Geavanceerd tonen' }).isVisible()) && (await d.locator('#inhoud a[href="#/settings/meer"]').count()) >= 1);
   // Routines live in Taken: Taken stays marked on the routines pages; the old Groepen › Takenbord is the same board.
   await go(d, '#/m/routines/');
-  check('#/m/routines/: zijbalk op Taken', (await side.locator('a[aria-current="page"]').innerText().catch(() => '')) === 'Taken');
+  check('#/m/routines/: zijbalk op Taken', (await menuCur()) === 'Taken');
   await go(d, '#/m/rooms/taken');
-  check('#/m/rooms/taken (hetzelfde bord als Taken): zijbalk op Taken, niet binnen Instellingen', (await side.locator('a[aria-current="page"]').innerText().catch(() => '')) === 'Taken' && !(await settingsNav.count()));
+  check('#/m/rooms/taken (hetzelfde bord als Taken): zijbalk op Taken, niet binnen Instellingen', (await menuCur()) === 'Taken' && !(await settingsNav.count()));
   // The bot page: everything optional is a row under "Meer mogelijkheden"; an old link to a tab (?tab=rechten) opens it.
   await go(d, `#/agents/${sam.id}?tab=rechten`, 900);
   const noTeams = (await d.locator('[data-section="teams:teams"]').count()) === 0 && (await d.locator('[data-section="usage:cap"]').count()) === 1;
@@ -254,7 +260,8 @@ try {
   // row of Instellingen is one click further: Instellingen › the row › the page.
   const reached = new Set();
   const norm = (h) => h.replace(/^#\/?/, '').split('?')[0].replace(/\/$/, '');
-  const level1 = await side.locator('a[href^="#/"]').evaluateAll((as) => as.map((a) => a.getAttribute('href')));
+  // 4.17.0: the places are in the menu bar at the top (the main menu), on every page.
+  const level1 = await mainMenu.locator('a[href^="#/"]').evaluateAll((as) => as.map((a) => a.getAttribute('href')));
   for (const h of level1) reached.add(norm(h));
   for (const h of level1) {
     await go(d, h, 500);
@@ -395,13 +402,10 @@ try {
   const shop = await call('POST', '/teams', { name: 'Webshop', color: '#10b981' });
   await call('PUT', `/teams/${shop.id}/bots/${noor.id}`);
   await go(d, `#/t/${chatMila.id}`, 300);
-  const switcher = side.getByTestId('team-switcher').getByRole('button').first();
+  // 4.17.0: the team switcher is in the menu bar (it filters Taken and the Dashboard too, so it is on every page).
+  const switcher = d.getByTestId('topbar').getByTestId('team-switcher').getByRole('button').first();
   const appeared = await until(async () => (await switcher.count()) === 1);
-  check('tweede team: de teamkiezer verschijnt vanzelf, bovenaan de zijbalk', appeared && (await d.evaluate(() => {
-      // The top of the list of bots (the panel next to the rail).
-      const top = document.querySelector('nav[aria-label="Hoofdmenu"] [role="region"]')?.firstElementChild;
-      return !!top && (top.matches('[data-testid="team-switcher"]') || !!top.querySelector('[data-testid="team-switcher"]'));
-    })));
+  check('tweede team: de teamkiezer verschijnt vanzelf, in de menubalk', appeared);
   check('teamkiezer: begint op Alle teams (niets verborgen)', (await switcher.innerText()).includes('Alle teams') && (await d.getByRole('list', { name: 'Bots en groepen' }).innerText()).includes('Noor'));
   // Keyboard: Enter opens with the focus on the current choice, Escape closes and gives the focus back.
   await switcher.focus();
@@ -493,7 +497,7 @@ try {
   await mainSide.getByTestId('team-switcher').getByRole('button').first().click();
   await mp.getByRole('menuitemradio', { name: /Mijn team/ }).click();
   await mp.waitForTimeout(400);
-  const tiles = await mainSide.getByRole('group', { name: 'Vastgezette bots' }).getByRole('link').allInnerTexts();
+  const tiles = await mp.locator('aside').first().getByRole('group', { name: 'Vastgezette bots' }).getByRole('link').allInnerTexts();
   check('hoofdbot: eerste tegel, ook met een ander team gekozen', !!tiles[0]?.includes('Noor') && tiles.some((x) => x.includes('Mila')), tiles.join(' | ').replace(/\n/g, ' '));
   await shot(mp, 'hoofdbot');
   await mainCtx.close();

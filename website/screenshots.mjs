@@ -295,17 +295,27 @@ try {
     if (waitFor) await page.getByText(waitFor).first().waitFor({ timeout: 10_000 });
     await page.waitForTimeout(1000);
   }
-  // clip: only part of the window (CSS pixels), so the feature pages show the screen itself, large enough to read.
+  // clip: only part of the window (CSS pixels), so the feature pages show the screen itself, large enough to read. A
+  // function measures it on the page (the layout decides where the page is, not a fixed number).
   const shoot = (page, name, hash, waitFor, before, clip) =>
     soft(name, async () => {
       await open(page, hash, waitFor);
       // no focus ring left over from the previous screen
       await page.evaluate(() => document.activeElement instanceof HTMLElement && document.activeElement.blur());
       if (before) await before(page);
-      await save(page, name, clip);
+      await save(page, name, typeof clip === 'function' ? await clip(page) : clip);
     });
-  /** The page next to the sidebar and the settings list (pages under Instellingen). */
-  const MAIN = (height) => ({ x: 532, y: 0, width: 748, height });
+  /**
+   * The page itself, measured (4.17.0: the menu bar at the top, the page as a window): for a page under Instellingen
+   * the part next to the settings list, else the whole window of the page. At most `height` high.
+   */
+  const MAIN = (height) => async (page) =>
+    page.evaluate((h) => {
+      const main = document.getElementById('inhoud')?.getBoundingClientRect();
+      const nav = [...document.querySelectorAll('#inhoud nav')].find((n) => n.getAttribute('aria-label') === 'Instellingen')?.getBoundingClientRect();
+      const x = nav ? Math.round(nav.right + 8) : Math.round(main.left);
+      return { x, y: Math.round(main.top), width: Math.round(main.right - x), height: Math.min(h, Math.round(main.height)) };
+    }, height);
   fs.mkdirSync(out, { recursive: true });
 
   const desk = await context({ viewport: { width: 1280, height: 800 }, deviceScaleFactor: 1.5 });
@@ -335,7 +345,7 @@ try {
   });
   await d.keyboard.press('Escape');
   await shoot(d, 'market-desktop', '#/m/skills/', null, (p) => p.waitForTimeout(2000));
-  await shoot(d, 'calendar-desktop', '#/m/routines/kalender', 'Ochtendoverzicht', null, { x: 308, y: 20, width: 962, height: 620 });
+  await shoot(d, 'calendar-desktop', '#/m/routines/kalender', 'Ochtendoverzicht', null, MAIN(620));
   await soft('kleur', () => api('PUT', '/settings', { ui: { accent: 'lavender' } }));
   await shoot(d, 'colours-desktop', '#/settings/appearance', 'Lavendel', null, MAIN(575));
   await desk.close();

@@ -1,5 +1,5 @@
 import React, { type ReactNode, useEffect, useMemo, useRef, useState } from 'react';
-import { Activity, CircleAlert, Flag, FlaskConical, ListChecks, MessageSquare, Paperclip, Plus, Repeat, Scale, ScrollText, Table2, Trash2, Users, Waypoints } from 'lucide-react';
+import { Activity, CircleAlert, Flag, FlaskConical, Hourglass, ListChecks, MessageSquare, Paperclip, Plus, Repeat, Scale, ScrollText, Sparkles, Table2, Trash2, Users, Waypoints } from 'lucide-react';
 import { TaskLinks } from '../modules/routines/Head';
 import { useAdvanced } from '../shell/advanced';
 import { api, on } from '../lib/api';
@@ -19,6 +19,38 @@ import { CostEstimate } from '../modules/usage/Estimate';
 import { TeamFilterNote } from '../modules/teams/FilterNote';
 import { hiddenTaskKeys } from '../shell/teamFilter';
 import { tText } from '../lib/format';
+
+/** A task in plain words, made by TeamBot itself (server/modules/rooms/plain.ts). */
+export interface Plain {
+  wat: string;
+  waarom: string;
+  wacht: string;
+}
+
+/**
+ * The plain words for the tasks on the board (4.17.0): bots write their tasks for each other (paths, codes, column
+ * names); TeamBot puts what the owner sees into plain words and keeps them. The open ones first; what is not there yet
+ * comes as an event when it is made. The bot's own text stays under it.
+ */
+function usePlain(tasks: BoardTask[]): Record<string, Plain> {
+  const [plain, setPlain] = useState<Record<string, Plain>>({});
+  const sig = tasks.map((t) => `${t.key}:${t.updated}:${t.column}`).join('|');
+  useEffect(() => {
+    const items = tasks
+      .filter((t) => t.column !== 'stopped')
+      .sort((a, b) => Number(a.column === 'done') - Number(b.column === 'done'))
+      .slice(0, 60)
+      .map((t) => ({ ref: t.key, title: t.title, description: t.description, status: t.status, result: t.result, owner: t.owner }));
+    if (!items.length) return;
+    api
+      .post<{ plain: Record<string, Plain> }>('/tasks/plain', { items })
+      .then((r) => setPlain((p) => ({ ...p, ...(r?.plain || {}) })))
+      .catch(() => {});
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sig]);
+  useEffect(() => on('tasks.plain', (d: any) => void (d?.ref && setPlain((p) => ({ ...p, [d.ref]: { wat: String(d.wat || ''), waarom: String(d.waarom || ''), wacht: String(d.wacht || '') } })))), []);
+  return plain;
+}
 
 /** The task a link asks to open (`#/tasks?open=b:<id>` or `t:<id>`, as Ctrl+K gives), else null. */
 function openParam(): string | null {
@@ -173,7 +205,7 @@ let dragged: BoardTask | null = null;
  * A card: what, who, and one signal. Moving goes by dragging it to another column (mouse) or through the "⋯" menu
  * (keyboard, touch, screen reader); a click opens the details.
  */
-function TaskCard({ t, onOpen, onMoved }: { t: BoardTask; onOpen(): void; onMoved(): void }) {
+function TaskCard({ t, plain, onOpen, onMoved }: { t: BoardTask; plain?: Plain; onOpen(): void; onMoved(): void }) {
   const [drag, setDrag] = useState(false);
   return (
     <article
@@ -193,13 +225,33 @@ function TaskCard({ t, onOpen, onMoved }: { t: BoardTask; onOpen(): void; onMove
       className={cx('tb-in relative rounded-xl border border-line bg-surface text-sm transition-[opacity,border-color] duration-150 hover:border-line-strong', drag && 'opacity-40')}
     >
       <button type="button" onClick={onOpen} className="block w-full rounded-xl p-3 text-start">
-        <span className="line-clamp-3 block pe-7 font-semibold leading-snug [overflow-wrap:anywhere]" translate="no">
-          {t.title}
-        </span>
-        {t.result && (
-          <span className="mt-1 line-clamp-2 block text-[13px] leading-snug text-muted [overflow-wrap:anywhere]" translate="no">
-            {t.result}
-          </span>
+        {plain ? (
+          <>
+            <span className="line-clamp-3 block pe-7 font-semibold leading-snug" data-testid="task-plain">
+              {plain.wat}
+            </span>
+            {plain.waarom && <span className="mt-1 line-clamp-2 block text-[13px] leading-snug text-muted">{plain.waarom}</span>}
+            {plain.wacht && t.column !== 'done' && (
+              <span className="mt-2 flex items-start gap-1.5 rounded-lg bg-warn-soft px-2 py-1 text-[12px] leading-snug text-warn">
+                <Hourglass className="mt-px h-3.5 w-3.5 shrink-0" aria-hidden />
+                <span className="line-clamp-2">{plain.wacht}</span>
+              </span>
+            )}
+            <span className="mt-2 line-clamp-1 block text-[11.5px] text-muted/80 [overflow-wrap:anywhere]" translate="no" title={t.title}>
+              {t.title}
+            </span>
+          </>
+        ) : (
+          <>
+            <span className="line-clamp-3 block pe-7 font-semibold leading-snug [overflow-wrap:anywhere]" translate="no">
+              {t.title}
+            </span>
+            {t.result && (
+              <span className="mt-1 line-clamp-2 block text-[13px] leading-snug text-muted [overflow-wrap:anywhere]" translate="no">
+                {t.result}
+              </span>
+            )}
+          </>
         )}
         <span className="mt-2.5 flex min-w-0 flex-wrap items-center justify-between gap-x-2 gap-y-1 text-xs text-muted">
           {t.owner ? <BotName name={t.owner} size={18} bold={false} /> : <span>Nog niemand</span>}
@@ -224,7 +276,7 @@ function TaskCard({ t, onOpen, onMoved }: { t: BoardTask; onOpen(): void; onMove
 
 const PAGE = 25;
 
-function Column({ id, label, hint, list, onOpen, onMoved }: { id: Place; label: string; hint: string; list: BoardTask[]; onOpen(t: BoardTask): void; onMoved(): void }) {
+function Column({ id, label, hint, list, plain, onOpen, onMoved }: { id: Place; label: string; hint: string; list: BoardTask[]; plain: Record<string, Plain>; onOpen(t: BoardTask): void; onMoved(): void }) {
   const [all, setAll] = useState(false);
   const [over, setOver] = useState(false);
   const shown = all ? list : list.slice(0, PAGE);
@@ -257,7 +309,7 @@ function Column({ id, label, hint, list, onOpen, onMoved }: { id: Place; label: 
       </div>
       <div className="space-y-2">
         {shown.map((t) => (
-          <TaskCard key={t.key} t={t} onOpen={() => onOpen(t)} onMoved={onMoved} />
+          <TaskCard key={t.key} t={t} plain={plain[t.key]} onOpen={() => onOpen(t)} onMoved={onMoved} />
         ))}
         {!list.length && <p className="px-2 pb-2 text-xs text-muted">{hint}</p>}
         {list.length > shown.length && (
@@ -302,7 +354,7 @@ function TextBlock({ title, text }: { title: string; text: string }) {
   );
 }
 
-function TaskDetails({ t, onClose, onChanged }: { t: BoardTask; onClose(): void; onChanged(): void }) {
+function TaskDetails({ t, plain, onClose, onChanged }: { t: BoardTask; plain?: Plain; onClose(): void; onChanged(): void }) {
   const me = useApp((s) => s.me);
   const allAgents = useApp((s) => s.agents);
   const agents = useMemo(() => allAgents.filter((a) => !a.archived), [allAgents]);
@@ -406,8 +458,23 @@ function TaskDetails({ t, onClose, onChanged }: { t: BoardTask; onClose(): void;
             }}
           />
         )}
+        {plain && (
+          <section className="space-y-1.5 rounded-2xl border border-line bg-surface-2/60 p-3.5" data-testid="task-plain-details">
+            <h3 className="flex items-center gap-1.5 text-[12px] font-bold uppercase tracking-wider text-muted">
+              <Sparkles className="h-3.5 w-3.5" aria-hidden /> In gewone woorden
+            </h3>
+            <p className="text-[15px] font-semibold leading-snug">{plain.wat}</p>
+            {plain.waarom && <p className="text-sm text-muted">{plain.waarom}</p>}
+            {plain.wacht && t.column !== 'done' && (
+              <p className="flex items-start gap-1.5 text-sm text-warn">
+                <Hourglass className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden />
+                {plain.wacht}
+              </p>
+            )}
+          </section>
+        )}
         {!quality && <TextBlock title="Klaar als" text={t.doneWhen} />}
-        <TextBlock title="Beschrijving" text={t.description} />
+        <TextBlock title={plain ? 'Wat de bot schreef' : 'Beschrijving'} text={t.description} />
         <TextBlock title="Resultaat" text={t.result} />
         {/* Klaar als, who works on it, the evidence TeamBot found and the second look, with the owner's actions (C1). */}
         {quality && <TaskQuality kind={t.source === 'board' ? 'room' : 'teamdata'} refId={t.source === 'board' ? t.id : teamTaskRef(t.id)} q={t.source === 'board' ? (t.quality as QualityView) : undefined} onChanged={onChanged} />}
@@ -615,6 +682,7 @@ export function TasksPage() {
   }, [all, board, team, view.activeId, view.teams]);
   const shown = useMemo(() => tasks.filter((t) => matches(t, q)), [tasks, q]);
   const places = useMemo(() => byPlace(shown), [shown]);
+  const plain = usePlain(tasks);
   // A task opened by its link also opens when the team filter hides it on the board.
   const open = openKey ? all.find((t) => t.key === openKey) || null : null;
 
@@ -685,20 +753,20 @@ export function TasksPage() {
             {desk ? (
               <div className={cx('grid items-start gap-3', stopped ? 'md:grid-cols-3 xl:grid-cols-6' : 'md:grid-cols-3 xl:grid-cols-5')}>
                 {cols.map((c) => (
-                  <Column key={c.id} id={c.id} label={c.label} hint={c.hint} list={places[c.id]} onOpen={(t) => setOpenKey(t.key)} onMoved={reload} />
+                  <Column key={c.id} id={c.id} label={c.label} hint={c.hint} list={places[c.id]} plain={plain} onOpen={(t) => setOpenKey(t.key)} onMoved={reload} />
                 ))}
               </div>
             ) : (
               <div className="space-y-3">
                 <Chips label="Kolom" value={phone} onChange={setPhoneCol} items={cols.map((c) => ({ id: c.id, label: c.label, count: places[c.id].length }))} />
-                <Column id={phone} label={placeLabel(phone)} hint={cols.find((c) => c.id === phone)?.hint || ''} list={places[phone]} onOpen={(t) => setOpenKey(t.key)} onMoved={reload} />
+                <Column id={phone} label={placeLabel(phone)} hint={cols.find((c) => c.id === phone)?.hint || ''} list={places[phone]} plain={plain} onOpen={(t) => setOpenKey(t.key)} onMoved={reload} />
               </div>
             )}
           </>
         )}
       </div>
       {adding && <NewTask onAdded={() => void loadBoard()} onClose={() => setAdding(false)} />}
-      {open && <TaskDetails t={open} onClose={() => setOpenKey(null)} onChanged={reload} />}
+      {open && <TaskDetails t={open} plain={plain[open.key]} onClose={() => setOpenKey(null)} onChanged={reload} />}
     </Page>
   );
 }

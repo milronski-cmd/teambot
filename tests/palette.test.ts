@@ -218,9 +218,9 @@ test('settings search: finds every entry, also the rare ones, by the words peopl
 test('settingsHostOf: pages under Instellingen, detail pages under their list, own places stay out', () => {
   assert.equal(settingsHostOf('channels/'), 'channels/');
   assert.equal(settingsHostOf('browser/kluis'), 'browser/kluis');
-  assert.equal(settingsHostOf('mcp/c'), 'mcp/');
   assert.equal(settingsHostOf('agents/'), 'agents/');
   // Geheugen lives under Instellingen with all its tabs and detail pages (0.4.2); the Marktplaats and Nu bezig are own places (0.4.5).
   for (const [page, host] of [['memory/', 'memory/'], ['memory/over-jou', 'memory/'], ['memory/item', 'memory/']]) assert.equal(settingsHostOf(page), host, page);
-  for (const own of ['routines/', 'routines/kalender', 'teamdata/', 'usage/eiland', 'usage/status', 'seen/', 'skills/', 'skills/mine']) assert.equal(settingsHostOf(own), null, own);
+  // Apps is a place of its own in the menu bar since 4.17.0 (its detail pages too).
+  for (const own of ['routines/', 'routines/kalender', 'teamdata/', 'usage/eiland', 'usage/status', 'seen/', 'skills/', 'skills/mine', 'mcp/', 'mcp/c']) assert.equal(settingsHostOf(own), null, own);
 });

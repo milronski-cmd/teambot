@@ -10,16 +10,15 @@ import { teamApi, useTeamChanged } from '../modules/teamdata/api';
 import { BotName } from '../modules/teamdata/parts';
 import { TeamFilterNote } from '../modules/teams/FilterNote';
 import { useTeamView } from '../modules/teams/scope';
-import { useUsage } from '../modules/usage/api';
-import { Ring } from '../modules/usage/parts';
-import { useInboxExtraCount } from '../modules';
+import { useBusy, useClock, useWaiting } from '../shell/status';
 import { AppsSection, appState, useApps, type AppRow } from './dashboard/Apps';
-import { appsWorking, botsBusy, courseChange, courseLabel, courseSame } from './dashboard/text';
+import { botsBusy } from './dashboard/text';
+import { RatioBar, TrendLine, courseOf, ratioOf, trendNote } from './dashboard/Trend';
 import { MailSection } from './dashboard/Mail';
 import { MoneySection } from './dashboard/Money';
 import { OpenApp, TasksBlock } from './dashboard/parts';
 import { TeamSection } from './dashboard/Team';
-import { UsageSection, type MeterTile } from './dashboard/Usage';
+import { UsageSection, isUsageTile, type MeterTile } from './dashboard/Usage';
 
 type Tile = { id: number; sleutel: string; groep?: string | null; titel: string; waarde?: string | null; eenheid?: string | null; toelichting?: string | null; link?: string | null; bot?: string | null; history?: { v: number; at: string }[]; bijgewerkt?: string | null; team?: string; maximum?: string | null; meter?: { value: number; max: number } | null };
 
@@ -53,81 +52,12 @@ function AppIcon({ icon: Icon, from, to, size = 48 }: { icon: LucideIcon; from: 
   );
 }
 
-/** The time on this computer, to the minute. */
-function useClock(): Date {
-  const [now, setNow] = useState(() => new Date());
-  useEffect(() => {
-    const id = window.setInterval(() => setNow(new Date()), 20_000);
-    return () => window.clearInterval(id);
-  }, []);
-  return now;
-}
-
-const useBusy = () => {
-  const agents = useApp((s) => s.agents);
-  const runs = useApp((s) => s.runs);
-  return { agents, busy: agents.filter((a) => runs.some((r) => r.agent_id === a.id && (r.status === 'running' || r.status === 'queued'))) };
-};
-const useWaiting = () => useApp((s) => s.approvals).length + useInboxExtraCount();
-
-/**
- * The menu bar: where he is, and the state of the whole thing in a few signs that are always in view: the bots at
- * work, what waits for him, how full his AI subscription is, the day and the time.
- */
-function MenuBar({ app }: { app: (typeof APPS)[number] }) {
-  const { agents, busy } = useBusy();
-  const waiting = useWaiting();
-  const now = useClock();
-  const engines = useUsage((s) => s.engines);
-  const loadUsage = useUsage((s) => s.load);
-  useEffect(() => {
-    if (engines === null) void loadUsage().catch(() => {});
-  }, []);
-  // The fullest window of the subscriptions in use: one ring says whether there is room to work.
-  const worst = (engines || []).filter((e) => e.enabled && e.worst && typeof e.worst.usedPercent === 'number').sort((a, b) => (b.worst!.usedPercent || 0) - (a.worst!.usedPercent || 0))[0]?.worst;
-  const day = now.toLocaleDateString(undefined, { weekday: 'short', day: 'numeric', month: 'short' });
-  const time = now.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });
-  const item = 'inline-flex h-7 items-center gap-1.5 rounded-lg px-2 transition-colors hover:bg-fg/[0.08]';
-  const usedText = worst ? new Intl.NumberFormat(undefined, { style: 'percent', maximumFractionDigits: 0 }).format((worst.usedPercent || 0) / 100) : '';
-  return (
-    <header className="tb-glass sticky top-0 z-30 flex h-10 items-center justify-between gap-2 border-x-0 border-t-0 px-3 text-[13px] sm:px-4" data-testid="dashboard-menubar">
-      <div className="flex min-w-0 items-center gap-2">
-        <a href="#/dashboard" className="font-bold tracking-tight" translate="no">
-          TeamBot
-        </a>
-        <span className="truncate text-muted">{t(app.label)}</span>
-      </div>
-      <div className="flex shrink-0 items-center gap-0.5">
-        {agents.length > 0 && (
-          <a href="#/dashboard/team" className={item} title={botsBusy(busy.length, agents.length)}>
-            <span className={cx('size-2 rounded-full', busy.length ? 'animate-pulse bg-ok' : 'bg-line-strong')} aria-hidden />
-            <span className="tabular-nums">{busy.length}</span>
-            <span className="hidden text-muted sm:inline">{t('aan het werk')}</span>
-          </a>
-        )}
-        <a href="#/inbox" className={cx(item, waiting > 0 && 'font-semibold')} title={t('Wacht op jou')}>
-          <Inbox className="h-3.5 w-3.5" aria-hidden />
-          <span className="tabular-nums">{waiting}</span>
-        </a>
-        {worst && (
-          <a href="#/dashboard/verbruik" className={item} title={t(worst.label)}>
-            <Ring value={worst.usedPercent} size={16} stroke={3} level={worst.level} />
-            <span className="tabular-nums">{usedText}</span>
-          </a>
-        )}
-        <span className="ms-1 hidden text-muted first-letter:uppercase sm:inline">{day}</span>
-        <span className="ms-1 font-semibold tabular-nums">{time}</span>
-      </div>
-    </header>
-  );
-}
-
 /** The dock: every app as its icon, the one that is open marked. Always at the foot of the screen. */
-function Dock({ active }: { active: AppId }) {
+function Dock({ active, inline }: { active: AppId; inline?: boolean }) {
   const waiting = useWaiting();
   return (
-    <nav aria-label={t('Onderdelen van het dashboard')} className="pointer-events-none sticky bottom-3 z-30 mt-auto flex shrink-0 justify-center px-2 pt-6" data-testid="dashboard-dock">
-      <div className="tb-glass tb-dock scroll-thin pointer-events-auto flex max-w-full items-end gap-1.5 overflow-x-auto px-2.5 pb-1.5 pt-2.5 sm:gap-2.5">
+    <nav aria-label={t('Onderdelen van het dashboard')} className={inline ? 'flex shrink-0 px-3 pt-1' : 'pointer-events-none sticky bottom-3 z-30 mt-auto flex shrink-0 justify-center px-2 pt-6'} data-testid="dashboard-dock">
+      <div className={cx('tb-glass tb-dock scroll-thin pointer-events-auto flex max-w-full items-end gap-1.5 overflow-x-auto px-2.5 pb-1.5 pt-2.5 sm:gap-2.5', inline && 'w-full')}>
         {APPS.map((a) => {
           const on = a.id === active;
           return (
@@ -138,8 +68,8 @@ function Dock({ active }: { active: AppId }) {
             </a>
           );
         })}
-        <span className="mx-0.5 mb-5 h-9 w-px shrink-0 bg-fg/15" aria-hidden />
-        {PLACES.map((p) => (
+        {inline && <span className="mx-0.5 mb-5 h-9 w-px shrink-0 bg-fg/15" aria-hidden />}
+        {(inline ? PLACES : []).map((p) => (
           <a key={p.id} href={p.href} className="tb-dock-item group relative flex w-[4.5rem] shrink-0 flex-col items-center gap-1 rounded-xl outline-none" data-testid={`dashboard-place-${p.id}`}>
             <AppIcon icon={p.icon} from={p.from} to={p.to} size={44} />
             {p.id === 'wacht' && waiting > 0 && <span className="absolute -top-1 end-0.5 flex h-5 min-w-5 items-center justify-center rounded-full bg-danger px-1 text-[11px] font-bold tabular-nums text-danger-fg">{waiting}</span>}
@@ -157,71 +87,59 @@ function Widget({ className, children }: { className?: string; children: React.R
   return <div className={cx('tb-glass tb-widget', className)}>{children}</div>;
 }
 
-/** The first widget: the time large, the day, a greeting, and the bots that are at work right now (their faces). */
-function ClockWidget() {
+/**
+ * The top of the home screen, one strip (4.17.0; was a big clock and three tall cards that were mostly empty): the
+ * greeting and the day, the bots at work by their faces, and three counts that are each a way somewhere — what waits
+ * for you, who works, which apps work. The time itself is in the menu bar.
+ */
+function Greeting({ apps }: { apps: AppRow[] | null }) {
   const me = useApp((s) => s.me);
   const { agents, busy } = useBusy();
+  const waiting = useWaiting();
   const now = useClock();
   const hour = now.getHours();
   const hello = hour < 6 ? t('Goedenacht') : hour < 12 ? t('Goedemorgen') : hour < 18 ? t('Goedemiddag') : t('Goedenavond');
   const first = String(me?.name || '').trim().split(/\s+/)[0];
   const day = now.toLocaleDateString(undefined, { weekday: 'long', day: 'numeric', month: 'long' });
-  const time = now.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });
-  return (
-    <div className="tb-glass tb-widget flex h-full flex-col justify-between gap-4 p-5 sm:p-6" data-testid="dashboard-hero">
-      <div>
-        <div className="text-6xl font-bold leading-none tracking-tighter tabular-nums sm:text-7xl">{time}</div>
-        <div className="mt-2 text-sm text-muted first-letter:uppercase">{day}</div>
-      </div>
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="text-xl font-bold tracking-tight sm:text-2xl" translate="no">
-          {first ? `${hello}, ${first}` : hello}
-        </div>
-        {agents.length > 0 && (
-          <a href="#/dashboard/team" className="flex items-center gap-2.5 rounded-xl p-1 transition-colors hover:bg-fg/[0.06]">
-            <div className="flex -space-x-2">
-              {(busy.length ? busy : agents).slice(0, 6).map((a) => (
-                <span key={a.id} className="rounded-full ring-2 ring-surface" title={a.name}>
-                  <BotAvatar bot={a} size={32} mood={busy.length ? 'working' : 'idle'} />
-                </span>
-              ))}
-            </div>
-            <div className="text-[13px] text-muted">{botsBusy(busy.length, agents.length)}</div>
-          </a>
-        )}
-      </div>
-    </div>
-  );
-}
-
-/**
- * The state of everything at a glance, three small widgets: what waits (a number and the way there, never the cards
- * themselves: those are the page "Wacht op jou"), who is at work, and how the connected apps stand.
- */
-function Stats({ apps }: { apps: AppRow[] | null }) {
-  const waiting = useWaiting();
-  const { agents, busy } = useBusy();
   const ok = (apps || []).filter((a) => appState(a).tone === 'ok').length;
-  const stats: { key: string; icon: LucideIcon; from: string; to: string; title: string; value: string; note: string; href: string }[] = [
-    { key: 'waiting', icon: Inbox, from: '#f97316', to: '#c2410c', title: t('Wacht op jou'), value: String(waiting), note: waiting ? t('Bekijken en beslissen') : t('Niets dat op je wacht'), href: '#/inbox' },
-    { key: 'team', icon: Users, from: '#ec4899', to: '#be185d', title: t('Team'), value: String(busy.length), note: botsBusy(busy.length, agents.length), href: '#/dashboard/team' },
-    { key: 'apps', icon: Blocks, from: '#06b6d4', to: '#0e7490', title: t('Apps'), value: apps === null ? '…' : String(apps.length), note: apps === null ? '' : appsWorking(ok, apps.length), href: '#/dashboard/apps' },
+  const stats: { key: string; icon: LucideIcon; from: string; to: string; title: string; value: string; href: string }[] = [
+    { key: 'waiting', icon: Inbox, from: '#f97316', to: '#c2410c', title: t('Wacht op jou'), value: String(waiting), href: '#/inbox' },
+    { key: 'team', icon: Users, from: '#ec4899', to: '#be185d', title: t('Aan het werk'), value: t('{0} van {1}', busy.length, agents.length), href: '#/dashboard/team' },
+    { key: 'apps', icon: Blocks, from: '#06b6d4', to: '#0e7490', title: t('Apps werken'), value: apps === null ? '…' : t('{0} van {1}', ok, apps.length), href: '#/m/mcp/' },
   ];
   return (
-    <div className="grid h-full grid-cols-3 gap-4" data-testid="dashboard-status">
-      {stats.map((x) => (
-        <a key={x.key} href={x.href} className="tb-glass tb-widget group flex flex-col justify-between gap-3 p-4 hover:-translate-y-0.5" data-testid={`dashboard-stat-${x.key}`}>
-          <div className="flex items-start justify-between gap-2">
-            <AppIcon icon={x.icon} from={x.from} to={x.to} size={38} />
-            <ArrowUpRight className="h-4 w-4 shrink-0 text-muted transition-colors group-hover:text-fg" aria-hidden />
-          </div>
-          <div className="min-w-0">
-            <div className="truncate text-[13px] font-medium text-muted">{x.title}</div>
-            <div className="text-4xl font-bold leading-tight tracking-tight tabular-nums">{x.value}</div>
-            <div className="truncate text-xs text-muted">{x.note}</div>
-          </div>
-        </a>
-      ))}
+    <div className="tb-glass tb-widget flex flex-wrap items-center gap-x-6 gap-y-4 px-5 py-4 sm:px-6" data-testid="dashboard-hero">
+      <div className="min-w-0 flex-1">
+        <div className="text-2xl font-bold tracking-tight sm:text-[28px]" translate="no">
+          {first ? `${hello}, ${first}` : hello}
+        </div>
+        <div className="mt-1 flex flex-wrap items-center gap-3 text-sm text-muted">
+          <span className="first-letter:uppercase">{day}</span>
+          {agents.length > 0 && (
+            <a href="#/dashboard/team" className="flex items-center gap-2 rounded-full pe-2 transition-colors hover:text-fg" title={botsBusy(busy.length, agents.length)}>
+              <span className="flex -space-x-1.5">
+                {(busy.length ? busy : agents).slice(0, 6).map((a) => (
+                  <span key={a.id} className="rounded-full ring-2 ring-surface">
+                    <BotAvatar bot={a} size={22} mood={busy.length ? 'working' : 'idle'} />
+                  </span>
+                ))}
+              </span>
+              {botsBusy(busy.length, agents.length)}
+            </a>
+          )}
+        </div>
+      </div>
+      <div className="grid w-full grid-cols-3 gap-2 sm:w-auto" data-testid="dashboard-status">
+        {stats.map((x) => (
+          <a key={x.key} href={x.href} className="group flex flex-col items-start gap-2 rounded-2xl bg-fg/[0.05] px-3 py-2.5 transition-colors hover:bg-fg/[0.09] sm:min-w-[180px] sm:flex-row sm:items-center sm:gap-3" data-testid={`dashboard-stat-${x.key}`}>
+            <AppIcon icon={x.icon} from={x.from} to={x.to} size={34} />
+            <div className="min-w-0">
+              <div className="text-[12px] font-medium leading-4 text-muted sm:truncate">{x.title}</div>
+              <div className="text-lg font-bold leading-tight tracking-tight">{x.value}</div>
+            </div>
+          </a>
+        ))}
+      </div>
     </div>
   );
 }
@@ -257,15 +175,17 @@ export function DashboardPage() {
   useTeamChanged(['dashboard'], () => void load());
   const several = multi && new Set((rows || []).map((r) => r.team || '')).size > 1;
   // A tile with a limit is a meter (Verbruik); the others are the numbers of the business, by group.
+  // A tile with a limit is a meter, a tile in the group Verbruik without one a cost: both are Verbruik, not Cijfers.
   const meters = (rows || []).filter((r) => r.meter) as MeterTile[];
-  const numbers = (rows || []).filter((r) => !r.meter);
+  const costs = (rows || []).filter((r) => !r.meter && isUsageTile(r)) as MeterTile[];
+  const numbers = (rows || []).filter((r) => !r.meter && !isUsageTile(r));
   const here = APPS.find((a) => a.id === app)!;
   // One app, whole.
   let one: React.ReactNode = null;
   if (app === 'cijfers') one = <NumbersApp rows={rows} numbers={numbers} err={err} several={several} />;
   else if (app === 'geld') one = <MoneySection />;
   else if (app === 'post') one = <MailSection />;
-  else if (app === 'verbruik') one = <UsageSection meters={meters} />;
+  else if (app === 'verbruik') one = <UsageSection meters={meters} costs={costs} />;
   else if (app === 'apps') one = <AppsSection apps={apps} />;
   else if (app === 'team')
     one = (
@@ -276,29 +196,26 @@ export function DashboardPage() {
     );
   return (
     <Page className="tb-os flex flex-col">
-      <MenuBar app={here} />
       {/* On the phone the way back (to "Meer") is the page's own. */}
       {!desktop && <PageHeader width="full" title="Dashboard" back={app ? { href: '#/dashboard', label: 'Dashboard' } : undefined} />}
-      <div className="mx-auto w-full max-w-[1500px] shrink-0 space-y-4 px-3 pb-4 pt-4 sm:px-6">
+      {!desktop && <Dock active={app} inline />}
+      <div className="mx-auto w-full max-w-[1500px] shrink-0 space-y-4 px-3 pb-4 pt-2 sm:px-4">
         <TeamFilterNote />
         {app === '' ? (
-          <div className="grid grid-cols-1 gap-4 xl:grid-cols-12" data-testid="dashboard-home">
-            <div className="xl:col-span-5">
-              <ClockWidget />
-            </div>
-            <div className="xl:col-span-7">
-              <Stats apps={apps} />
+          <div className={cx('grid grid-cols-1 items-stretch gap-4 xl:grid-cols-12', desktop && 'pb-28')} data-testid="dashboard-home">
+            <div className="xl:col-span-12">
+              <Greeting apps={apps} />
             </div>
             <Widget className="xl:col-span-8">
               <NumbersBlock rows={rows} numbers={numbers} err={err} />
             </Widget>
             <Widget className="xl:col-span-4">
-              <UsageSection meters={meters} compact />
+              <UsageSection meters={meters} costs={costs} compact />
             </Widget>
-            <Widget className="xl:col-span-8">
+            <Widget className="xl:col-span-6">
               <MoneySection compact />
             </Widget>
-            <Widget className="xl:col-span-4">
+            <Widget className="xl:col-span-6">
               <MailSection compact />
             </Widget>
             <Widget className="xl:col-span-4">
@@ -312,7 +229,7 @@ export function DashboardPage() {
             </Widget>
           </div>
         ) : (
-          <div className="tb-glass tb-window min-h-[62vh]" data-testid="dashboard-window">
+          <div className={cx('tb-glass tb-window min-h-[62vh]', desktop && 'mb-28')} data-testid="dashboard-window">
             <div className="flex h-12 items-center justify-between gap-3 border-b border-fg/10 px-3">
               <div className="flex min-w-0 items-center gap-2.5">
                 <AppIcon icon={here.icon} from={here.from} to={here.to} size={28} />
@@ -326,7 +243,7 @@ export function DashboardPage() {
           </div>
         )}
       </div>
-      <Dock active={app} />
+      {desktop && <Dock active={app} />}
     </Page>
   );
 }
@@ -336,7 +253,7 @@ const EMPTY_NUMBERS = 'Hier komen je omzet, je bestellingen en je aanvragen te s
 /** The numbers on the home screen: the first six, each as its number with its course behind it. All of them: the app. */
 function NumbersBlock({ rows, numbers, err }: { rows: Tile[] | null; numbers: Tile[]; err: string }) {
   // The numbers that moved come first: that is where there is something to see.
-  const first = [...numbers].sort((a, b) => Number((b.history || []).length > 1) - Number((a.history || []).length > 1)).slice(0, 6);
+  const first = [...numbers].sort((a, b) => Number(courseOf(b.history).course) - Number(courseOf(a.history).course)).slice(0, 6);
   const allLabel = numbers.length > first.length ? t('Alle {0} cijfers', numbers.length) : undefined;
   return (
     <section className="space-y-2" data-testid="dashboard-numbers">
@@ -346,17 +263,17 @@ function NumbersBlock({ rows, numbers, err }: { rows: Tile[] | null; numbers: Ti
       {err && <EmptyState title="De cijfers laden niet">{err}</EmptyState>}
       {rows && !numbers.length && !err && <div className="p-4 pt-2 text-sm text-muted">{t(EMPTY_NUMBERS)}</div>}
       {first.length > 0 && (
-        <div className="grid grid-cols-2 gap-3 p-4 pt-1 sm:grid-cols-3">
+        <div className="grid grid-cols-1 gap-3 p-4 pt-1 min-[460px]:grid-cols-2 sm:grid-cols-3">
           {first.map((r) => (
-            <a key={`${r.team || ''}:${r.id}`} href="#/dashboard/cijfers" className="group block rounded-2xl bg-fg/[0.05] p-3 transition-colors hover:bg-fg/[0.09]" data-testid="dashboard-kpi">
+            <a key={`${r.team || ''}:${r.id}`} href="#/dashboard/cijfers" className="group flex flex-col rounded-2xl bg-fg/[0.05] p-3 transition-colors hover:bg-fg/[0.09]" data-testid="dashboard-kpi">
               <div className="line-clamp-2 min-h-8 text-[12px] font-medium leading-4 text-muted" translate="no" title={r.titel}>
                 {r.titel}
               </div>
-              <div className="mt-1 flex items-baseline gap-1.5" translate="no">
-                <span className="text-2xl font-bold leading-tight tracking-tight tabular-nums">{r.waarde ?? '–'}</span>
+              <div className="mt-1 flex min-w-0 items-baseline gap-1.5" translate="no">
+                <span className="truncate text-2xl font-bold leading-tight tracking-tight">{r.waarde ?? '–'}</span>
                 {r.eenheid ? <span className="truncate text-xs text-muted">{r.eenheid}</span> : null}
               </div>
-              <Spark points={r.history || []} />
+              <TileCourse r={r} small />
             </a>
           ))}
         </div>
@@ -401,49 +318,18 @@ function when(s?: string | null): string | null {
   return d && Number.isFinite(d.getTime()) ? d.toISOString() : null;
 }
 
-const r1 = (n: number) => Math.round(n * 10) / 10;
-
-/** The path of a line through the points, in a box of w by h. */
-function linePath(points: { v: number }[], w: number, h: number): string {
-  const vs = points.map((p) => p.v);
-  const lo = Math.min(...vs);
-  const hi = Math.max(...vs);
-  const x = (i: number) => (i / (points.length - 1)) * (w - 4) + 2;
-  const y = (v: number) => (hi === lo ? h / 2 : h - 4 - ((v - lo) / (hi - lo)) * (h - 8));
-  return points.map((p, i) => `${i ? 'L' : 'M'}${r1(x(i))},${r1(y(p.v))}`).join(' ');
-}
-
-/** The course of a number, small: only the line (the widget on the home screen). Nothing when it never changed. */
-function Spark({ points }: { points: { v: number; at: string }[] }) {
-  if (points.length < 2) return <div className="mt-2 h-7" aria-hidden />;
-  const W = 160;
-  const H = 28;
-  const line = linePath(points, W, H);
+/**
+ * Under the number of a tile, always the same height (rows line up): a part of a whole as a bar ("6 van 9"), else the
+ * course when there is a real one (pages/dashboard/Trend.tsx), and one line on the change or when it was measured.
+ */
+function TileCourse({ r, small }: { r: Tile; small?: boolean }) {
+  const { points, course } = courseOf(r.history);
+  const ratio = ratioOf(r.waarde);
+  const note = trendNote(points, course);
   return (
-    <svg viewBox={`0 0 ${W} ${H}`} className="mt-2 h-7 w-full text-accent" role="img" aria-label={courseLabel(points.length)} preserveAspectRatio="none" data-testid="dashboard-spark">
-      <path d={`${line} L${W - 2},${H} L2,${H} Z`} fill="currentColor" opacity="0.12" />
-      <path d={line} fill="none" stroke="currentColor" strokeWidth="2" strokeLinejoin="round" strokeLinecap="round" vectorEffect="non-scaling-stroke" />
-    </svg>
-  );
-}
-
-/** The course of a number as a small line: where it came from and where it stands, with the change since the start. */
-function Course({ points }: { points: { v: number; at: string }[] }) {
-  if (points.length < 2) return null;
-  const vs = points.map((p) => p.v);
-  const W = 240;
-  const H = 44;
-  const line = linePath(points, W, H);
-  const diff = vs[vs.length - 1] - vs[0];
-  const fmt = new Intl.NumberFormat(undefined, { maximumFractionDigits: 2 });
-  const since = new Date(points[0].at).toLocaleString(undefined, { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
-  return (
-    <div className="mt-1" data-testid="dashboard-course">
-      <svg viewBox={`0 0 ${W} ${H}`} className="h-11 w-full text-accent" role="img" aria-label={courseLabel(points.length)} preserveAspectRatio="none">
-        <path d={`${line} L${W - 2},${H} L2,${H} Z`} fill="currentColor" opacity="0.12" />
-        <path d={line} fill="none" stroke="currentColor" strokeWidth="2" strokeLinejoin="round" strokeLinecap="round" vectorEffect="non-scaling-stroke" />
-      </svg>
-      <div className="text-[12px] text-muted">{diff === 0 ? courseSame(since) : courseChange(`${diff > 0 ? '+' : ''}${fmt.format(diff)}`, since)}</div>
+    <div className={cx('mt-auto flex flex-col justify-end gap-1.5 pt-2', small ? 'min-h-[52px]' : 'min-h-[68px]')} data-testid="dashboard-course">
+      {ratio ? <RatioBar part={ratio.part} whole={ratio.whole} /> : course ? <TrendLine points={points} height={small ? 28 : 40} /> : null}
+      {note && <div className="truncate text-[12px] text-muted">{note}</div>}
     </div>
   );
 }
@@ -455,9 +341,9 @@ function TileCard({ r, team }: { r: Tile; team?: string }) {
   const long = String(r.toelichting || '').length > 110;
   const link = String(r.link || '');
   const linked = /^https?:\/\//i.test(link) || link.startsWith('#/');
-  // Up or down since the first point, next to the number (the line below shows the way there).
-  const h = r.history || [];
-  const diff = h.length > 1 ? h[h.length - 1].v - h[0].v : 0;
+  // Up or down over the course, next to the number (only for a real course: two points say little).
+  const { points, course } = courseOf(r.history);
+  const diff = course ? points[points.length - 1].v - points[0].v : 0;
   const card = (
     <Card className={`tb-widget-card relative flex h-full flex-col gap-1 overflow-hidden p-4${linked ? ' transition-colors group-hover:border-fg/30' : ''}`} data-testid="dashboard-tile">
       <div className="flex items-start justify-between gap-2 text-[13px] font-medium text-muted">
@@ -468,7 +354,7 @@ function TileCard({ r, team }: { r: Tile; team?: string }) {
         {linked && <ArrowUpRight className="h-4 w-4 shrink-0 transition-colors group-hover:text-fg" aria-label={t('Openen')} />}
       </div>
       <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1" translate="no">
-        <span className="text-3xl font-bold leading-tight tracking-tight tabular-nums">{r.waarde ?? '–'}</span>
+        <span className="text-3xl font-bold leading-tight tracking-tight">{r.waarde ?? '–'}</span>
         {r.eenheid ? <span className="text-sm font-semibold text-muted">{r.eenheid}</span> : null}
         {diff !== 0 && (
           <span className="ms-auto inline-flex items-center gap-1 rounded-full bg-surface-2 px-2 py-0.5 text-[12px] font-semibold tabular-nums text-fg" data-testid="dashboard-trend">
@@ -477,7 +363,7 @@ function TileCard({ r, team }: { r: Tile; team?: string }) {
           </span>
         )}
       </div>
-      <Course points={r.history || []} />
+      <TileCourse r={r} />
       {r.toelichting && (
         <div className="text-[13px] text-muted">
           <span className={more ? 'block [overflow-wrap:anywhere]' : 'line-clamp-2 [overflow-wrap:anywhere]'} translate="no" data-testid="dashboard-tile-note">

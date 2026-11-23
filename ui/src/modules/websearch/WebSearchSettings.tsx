@@ -9,6 +9,7 @@ import { SelectBox as Select } from '../../components/Listbox';
 import { MoreInfo } from '../../components/MoreInfo';
 import { MoreOptions } from '../../components/MoreOptions';
 import { ComputerOnly, useIsPhoneSession } from '../../shell/computerOnly';
+import { KeyFromFile } from '../../components/KeyFile';
 
 /**
  * Instellingen › Geavanceerd › Zoeken (0.4.5): which source web_search tries first (Automatisch = the free chain in
@@ -198,6 +199,7 @@ function KeyRow({ k, has, reload }: { k: KeyInfo; has: boolean; reload(): void }
         {has ? <Badge tone="ok">Sleutel opgeslagen</Badge> : <Badge>Geen sleutel</Badge>}
       </div>
       <div className="flex flex-wrap gap-2">
+        <KeyFromFile onKey={(x) => setV(x)} />
         <Input className="min-w-[11rem] flex-1" type="password" autoComplete="off" value={v} onChange={(e) => setV(e.target.value)} placeholder={has ? 'Nieuwe sleutel' : k.placeholder} aria-label={t('Sleutel voor {0}', name)} />
         <Button onClick={store} disabled={!v.trim()} loading={busy}>
           Opslaan

@@ -8,7 +8,8 @@ import { DESK_QUERY, useIsDesktop, useVisualViewportHeight } from './lib/media';
 import { uiModules, useInboxExtraCount } from './modules';
 import { Button, EmptyState, Spinner, Toaster, cx } from './components/ui';
 import { AuthScreen } from './shell/Auth';
-import { NavRail, Sidebar, useSidebarFolded } from './shell/Sidebar';
+import { Sidebar, useSidebarFolded } from './shell/Sidebar';
+import { TopBar } from './shell/TopBar';
 import { AgentChatRoute, ChatView } from './shell/ChatView';
 import { applyTheme } from './shell/theme';
 import { useDesktopBadge } from './shell/badge';
@@ -153,8 +154,9 @@ function Shell() {
   // --tb-side: the sidebar's width, for what is centred over the page next to it (the island's messages).
   // The very first screen (no bot yet) is the welcome over the whole width: the list of bots comes with the first bot.
   const firstRun = useApp((s) => !s.agents.some((a) => !a.archived) && s.shared.length === 0) && !parts[0];
-  const listShown = !folded && !firstRun;
-  useEffect(() => document.documentElement.style.setProperty('--tb-side', listShown ? '374px' : '84px'), [listShown]);
+  // The list of bots is a window next to the chats (and a bot's own settings); every other page has the whole width.
+  const listShown = !folded && !firstRun && DESTINATIONS.chats.active(parts);
+  useEffect(() => document.documentElement.style.setProperty('--tb-side', listShown ? '324px' : '12px'), [listShown]);
   useVisualViewportHeight();
 
   useEffect(() => {
@@ -206,28 +208,27 @@ function Shell() {
     );
   }
 
+  // The dashboard is the desktop itself: its widgets lie on the wallpaper, not in a window.
+  const onDesk = parts[0] === 'dashboard';
   return (
-    // TeamBot's own rail with the places on the left (icon and name), the list of bots as a rounded panel next to it
-    // (folds away), and the page as a second rounded panel.
-    <div className="safe-x flex h-full gap-2 overflow-hidden bg-canvas py-2 pe-2">
+    // TeamBot's own shape (4.17.0): a menu bar over the whole app, and below it the pages as windows on a wallpaper;
+    // the list of bots is a window of its own next to the chats.
+    <div className="tb-desk safe-x flex h-full flex-col overflow-hidden">
       <SkipLink />
-      {/* The rail and the list of bots next to it together are the main menu (one landmark). */}
-      <aside className="flex shrink-0">
-        <nav aria-label="Hoofdmenu" className="flex h-full gap-2">
-          <NavRail route={parts} />
-          {listShown && (
-            <div className="w-[290px] shrink-0 overflow-hidden rounded-[16px] border border-line bg-surface">
-              <Sidebar route={parts} />
-            </div>
-          )}
-        </nav>
-      </aside>
-      <main id="inhoud" tabIndex={-1} className="relative flex min-w-0 flex-1 flex-col overflow-hidden rounded-[16px] border border-line bg-surface outline-none">
-        <OfflineBar />
-        <div className="min-h-0 flex-1">
-          <Routed parts={parts} />
-        </div>
-      </main>
+      <TopBar route={parts} listShown={listShown} />
+      <div className="flex min-h-0 flex-1 gap-3 px-3 pb-3">
+        {listShown && (
+          <aside className="tb-pane w-[300px] shrink-0 overflow-hidden">
+            <Sidebar route={parts} />
+          </aside>
+        )}
+        <main id="inhoud" tabIndex={-1} className={cx('relative flex min-w-0 flex-1 flex-col overflow-hidden outline-none', onDesk ? 'tb-desk-page' : 'tb-pane')}>
+          <OfflineBar />
+          <div className="min-h-0 flex-1">
+            <Routed parts={parts} />
+          </div>
+        </main>
+      </div>
       <CommandPalette />
     </div>
   );

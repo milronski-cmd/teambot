@@ -6,6 +6,7 @@ import { t } from '../../lib/i18n';
 import { Badge, Button, Field, Input, Select, Textarea, Toggle, Spinner, toast, toastError, cx, copyText } from '../../components/ui';
 import type { CatalogEntry, CatalogField, Conn, KVView, OAuthAppGuide } from './shared';
 import { BotPicker as SharedBotPicker } from '../../components/BotPicker';
+import { KeyFromFile } from '../../components/KeyFile';
 
 export interface KVDraft {
   name: string;
@@ -44,14 +45,17 @@ export function KVEditor({ list, onChange, kind, fixed }: { list: KVDraft[]; onC
         <div key={i} className="space-y-1">
           {k.label ? (
             <Field label={`${k.label}${k.required ? ' *' : ''}`} hint={k.help}>
-              <Input
-                type={k.secret ? 'password' : 'text'}
-                autoComplete="off"
-                value={k.value}
-                placeholder={k.keep ? '•••••• (opgeslagen — laat leeg om te houden)' : k.placeholder}
-                onChange={(e) => set(i, { value: e.target.value, keep: k.keep && !e.target.value })}
-                aria-label={k.label}
-              />
+              <div className="flex items-center gap-1">
+                <Input
+                  type={k.secret ? 'password' : 'text'}
+                  autoComplete="off"
+                  value={k.value}
+                  placeholder={k.keep ? '•••••• (opgeslagen — laat leeg om te houden)' : k.placeholder}
+                  onChange={(e) => set(i, { value: e.target.value, keep: k.keep && !e.target.value })}
+                  aria-label={k.label}
+                />
+                {k.secret && <KeyFromFile onKey={(v) => set(i, { value: v, keep: false })} />}
+              </div>
             </Field>
           ) : (
             <div className="flex flex-wrap items-center gap-2">

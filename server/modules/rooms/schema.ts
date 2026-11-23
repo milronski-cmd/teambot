@@ -1,3 +1,4 @@
+import { plainMigration } from './plain.js';
 import { defineTable } from '../../core/db.js';
 import type { Migration } from '../../core/types.js';
 
@@ -182,4 +183,6 @@ CREATE INDEX room_progress_at ON room_progress(at);
 CREATE INDEX room_delegations_chain ON room_delegations(chain_id, from_agent_id, to_agent_id);
 `,
   },
+  // A task in plain words for the owner (plain.ts), made by TeamBot itself and kept with a fingerprint of the task.
+  plainMigration(),
 ];
