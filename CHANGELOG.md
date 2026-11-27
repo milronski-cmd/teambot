@@ -1,5 +1,10 @@
 # Changelog
 
+## [4.18.19] — 2026-11-27
+
+### Hersteld
+- **Het nieuwe menu** gaat één keer vanzelf open (ook als je het oude had ingeklapt), en het ingeklapte menu heeft de nieuwe icoontjes.
+
 ## [4.18.18] — 2026-11-27
 
 ### Rustiger menu

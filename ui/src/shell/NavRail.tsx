@@ -45,7 +45,8 @@ import { useBusy, useWaiting, useWorstUsage } from './status';
  * menu (Werkruimte + Bouwen & Kennis + Teamkiezer + Live status/thema/instellingen). Replaces the old top bar.
  */
 
-const KEY = 'tb_nav_open';
+// 4.18.19: a new key, so the new open menu shows once also for whoever had folded the old one.
+const KEY = 'tb_nav_open2';
 const listeners = new Set<() => void>();
 const readOpen = () => {
   try {
@@ -337,9 +338,9 @@ export function NavRail({ route, listShown }: { route: string[]; listShown: bool
       <div className={cx('min-h-0 flex-1 space-y-1', open ? 'scroll-thin overflow-y-auto overflow-x-hidden' : 'overflow-visible')}>
         {open && <div className="px-2.5 pb-1 font-mono text-[10px] font-semibold uppercase tracking-widest text-muted/80">Werkruimte</div>}
         <RailItem open={open} id="chats" href={d.chats.href} label={d.chats.label} icon={MessageSquareText} active={chatsActive} />
-        <RailItem open={open} id="dashboard" href={d.dashboard.href} label={d.dashboard.label} icon={Activity} active={d.dashboard.active(route)} />
-        <RailItem open={open} id="inbox" href={d.inbox.href} label={d.inbox.label} icon={Inbox} active={d.inbox.active(route)} count={waiting} />
-        <RailItem open={open} id="tasks" href={d.tasks.href} label={d.tasks.label} icon={CheckSquare} active={d.tasks.active(route)} />
+        <RailItem open={open} id="dashboard" href={d.dashboard.href} label={d.dashboard.label} icon={LayoutGrid} active={d.dashboard.active(route)} />
+        <RailItem open={open} id="inbox" href={d.inbox.href} label={d.inbox.label} icon={Hand} active={d.inbox.active(route)} count={waiting} />
+        <RailItem open={open} id="tasks" href={d.tasks.href} label={d.tasks.label} icon={ListTodo} active={d.tasks.active(route)} />
 
         <SectionLabel open={open}>Kennis & Apps</SectionLabel>
         <RailItem open={open} id="routines" href={d.routines.href} label={d.routines.label} icon={AlarmClock} active={d.routines.active(route)} />
