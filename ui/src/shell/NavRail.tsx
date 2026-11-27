@@ -1,4 +1,5 @@
 import { useSyncExternalStore } from 'react';
+import { logoMark } from '../../../shared/logo.js';
 import {
   Activity,
   AlarmClock,
@@ -147,9 +148,9 @@ export function NavRail({ route, listShown }: { route: string[]; listShown: bool
         <a
           href="#/"
           title="TeamBot"
-          className="relative flex size-10 shrink-0 items-center justify-center rounded-[11px] bg-fg text-surface tb-editorial text-[16px] font-bold tracking-tight transition hover:opacity-90"
+          className="relative flex size-10 shrink-0 items-center justify-center rounded-[11px] bg-fg text-surface transition hover:opacity-90"
         >
-          TB
+          <svg viewBox="0 0 512 512" className="size-7" aria-hidden dangerouslySetInnerHTML={{ __html: logoMark('currentColor', 'var(--color-fg)') }} />
           {busy.length > 0 && <span className="absolute -end-1 -top-1 size-2.5 animate-pulse rounded-full bg-ok ring-2 ring-rail" aria-hidden />}
           {!online && <span className="absolute -bottom-0.5 -end-0.5 size-2.5 rounded-full bg-warn ring-2 ring-rail" aria-hidden />}
         </a>

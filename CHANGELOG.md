@@ -1,5 +1,10 @@
 # Changelog
 
+## [4.18.13] — 2026-11-27
+
+### Nieuw logo
+- **Het TeamBot-logo**: een wit bothoofdje met antenne op zwart, in het menu, als app-icoon, op het bureaublad en in de taakbalk.
+
 ## [4.18.12] — 2026-11-27
 
 ### Nieuw uiterlijk
