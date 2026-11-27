@@ -222,7 +222,9 @@ test('real dictionaries: complete, placeholders and markup intact, plural forms 
   for (const l of targets()) {
     const d = readDict(l.code);
     const missing = strings.filter((s) => (typeof d[s] !== 'string' || !d[s]) && !nameLike(s));
-    assert.deepEqual(missing.slice(0, 5), [], `${l.code}: every interface text translated`);
+    // 27 Nov 2026, the owner: "Nederlands is nu eerst voldoende". A text without a translation shows in Dutch
+    // (Translator.translate), so completeness is only required with TEAMBOT_I18N_STRICT=1 (before translating again).
+    if (process.env.TEAMBOT_I18N_STRICT === '1') assert.deepEqual(missing.slice(0, 5), [], `${l.code}: every interface text translated`);
     const bad: string[] = [];
     for (const s of strings) {
       const v = d[s];
