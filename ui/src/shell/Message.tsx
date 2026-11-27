@@ -773,7 +773,7 @@ export const MessageItem = memo(function MessageItem({ m, results, compact, show
   return (
     <div id={`m-${m.id}`} className={cx('group relative flex gap-2.5 px-4 sm:px-6', compact ? 'pt-1.5' : 'pt-5')}>
       {actions}
-      {compact ? <div className="w-[28px] shrink-0" /> : <BotAvatar bot={agent || { id: m.author_id, name: m.author_name }} size={28} mood={streaming ? 'working' : 'idle'} className="mt-0.5" />}
+      {compact ? <div className="w-[36px] shrink-0" /> : <BotAvatar bot={agent || { id: m.author_id, name: m.author_name }} size={36} mood={streaming ? 'working' : 'idle'} className="mt-0.5" />}
       <div className="flex min-w-0 max-w-full flex-1 flex-col items-start gap-2 sm:max-w-[88%]">
         {!compact && (
           <div className="-mb-1 flex items-baseline gap-2">

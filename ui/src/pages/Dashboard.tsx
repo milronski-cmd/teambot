@@ -61,12 +61,12 @@ function Widget({ className, children }: { className?: string; children: React.R
 /** One number on the overview: a label, the number, and where it leads. */
 function Stat({ label, value, href, tone, testid }: { label: string; value: string; href: string; tone?: 'warn'; testid: string }) {
   return (
-    <a href={href} className="tb-glass group block rounded-[18px] px-4 py-3.5 transition-[border-color,box-shadow,transform] duration-150 hover:-translate-y-0.5 hover:border-line-strong hover:shadow-md" data-testid={testid}>
+    <a href={href} className="tb-glass group block rounded-[20px] px-5 py-4 transition-[border-color,box-shadow,transform] duration-150 hover:-translate-y-0.5 hover:border-line-strong hover:shadow-md" data-testid={testid}>
       <div className="flex items-center justify-between gap-2 text-[13px] text-muted">
         <span>{label}</span>
         <ArrowUpRight className="size-3.5 opacity-0 transition-opacity duration-150 group-hover:opacity-70" aria-hidden />
       </div>
-      <div className={cx('mt-1 text-2xl font-semibold tabular-nums tracking-tight', tone === 'warn' && 'text-warn')}>{value}</div>
+      <div className={cx('mt-1.5 text-[34px] font-bold leading-none tabular-nums tracking-tight', tone === 'warn' && 'text-brand')}>{value}</div>
     </a>
   );
 }
@@ -84,9 +84,9 @@ function Greeting({ apps }: { apps: AppRow[] | null }) {
   const ok = (apps || []).filter((a) => appState(a).tone === 'ok').length;
   const used = worst ? new Intl.NumberFormat(undefined, { style: 'percent', maximumFractionDigits: 0 }).format((worst.usedPercent || 0) / 100) : '–';
   return (
-    <div className="space-y-4 rounded-xl border border-line bg-surface p-5 sm:p-6" data-testid="dashboard-hero">
+    <div className="tb-hero space-y-5 rounded-[28px] border border-line p-6 sm:p-8" data-testid="dashboard-hero">
       <div className="flex flex-wrap items-baseline justify-between gap-2">
-        <h1 className="text-2xl font-bold tracking-tight" translate="no">
+        <h1 className="text-[32px] font-bold leading-tight tracking-tight" translate="no">
           {first ? `${hello}, ${first}` : hello}
         </h1>
         <span className="text-xs font-medium text-muted">

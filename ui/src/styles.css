@@ -929,6 +929,12 @@ body {
 .dark .tb-sheet {
   box-shadow: -2px 0 32px -12px rgb(0 0 0 / 0.65);
 }
+/* The dashboard greeting: the surface with a soft glow of TeamBot orange in the corner (4.18.16). */
+.tb-hero {
+  background:
+    radial-gradient(120% 140% at 100% 0%, color-mix(in srgb, var(--color-brand) 16%, transparent), transparent 55%),
+    var(--color-surface);
+}
 .tb-editorial {
   font-family: var(--font-editorial);
   letter-spacing: -0.025em;

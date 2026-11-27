@@ -1,5 +1,13 @@
 # Changelog
 
+## [4.18.17] — 2026-11-27
+
+### Mooier
+- **Lege chat als welkomscherm**: groot figuurtje in het midden, "Waarmee kan ik helpen?" en voorstellen als knoppen.
+- **Grotere bots in de chat** zelf, naast elk bericht en bovenin.
+- **Rustiger menu**: geen los sorteerpijltje meer, de teamkiezer als strakke knop.
+- **Dashboard**: grote cijfers en een zachte oranje gloed bij je begroeting.
+
 ## [4.18.16] — 2026-11-27
 
 ### Groter

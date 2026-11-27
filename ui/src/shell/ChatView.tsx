@@ -178,6 +178,38 @@ function Intro({ agent, onSend }: { agent: Agent; onSend(text: string): Promise<
       setBusy(null);
     }
   };
+  // 4.18.16: an empty chat is a calm welcome screen in the middle (big figure, one question, suggestions as pills).
+  if (!welcome)
+    return (
+      <div className="flex flex-col items-center px-4 pb-6 pt-[14vh] text-center sm:px-6">
+        <BotAvatar bot={agent} size={120} />
+        <h2 className="mt-6 text-[32px] font-bold leading-tight tracking-tight">{t('Waarmee kan ik helpen?')}</h2>
+        <div className="mt-2 text-[14px] text-muted" translate="no">
+          {agent.role ? `${agent.name} · ${agent.role}` : agent.name}
+        </div>
+        {agent.description && (
+          <p className="mt-3 max-w-[520px] text-[14px] leading-relaxed text-muted" translate="no">
+            {agent.description}
+          </p>
+        )}
+        <div className="mt-8 flex max-w-[680px] flex-wrap justify-center gap-2.5" role="group" aria-label="Voorstellen voor een opdracht">
+          {firstTasks(agent).map((task) => {
+            const text = translate(task);
+            return (
+              <button
+                key={task}
+                type="button"
+                disabled={!!busy}
+                onClick={() => void answer(text)}
+                className="min-h-10 rounded-full border border-line-strong bg-surface px-4 py-2 text-[13.5px] font-medium transition-colors hover:border-brand/60 hover:bg-surface-2 active:bg-surface-3 disabled:opacity-60 coarse:min-h-11"
+              >
+                {text}
+              </button>
+            );
+          })}
+        </div>
+      </div>
+    );
   return (
     <div className="flex flex-col items-center px-4 pb-4 pt-[12vh] sm:px-6">
       <BotAvatar bot={agent} size={96} />
@@ -639,7 +671,7 @@ export function ChatView({ threadId }: { threadId: string }) {
             {room ? (
               <StackedFaces bots={room.bots.map((b) => ({ id: b.agentId, name: b.name, avatar: b.avatar }))} size={36} />
             ) : agent ? (
-              <LiveBotAvatar bot={agent} size={desktop ? 28 : 36} />
+              <LiveBotAvatar bot={agent} size={desktop ? 36 : 36} />
             ) : (
               <div className="flex h-9 w-9 items-center justify-center rounded-full bg-surface-3 text-xs font-bold">{kindTitle[thread.kind][0]}</div>
             )}

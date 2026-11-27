@@ -233,7 +233,7 @@ export function NavRail({ route, listShown }: { route: string[]; listShown: bool
         </div>
         <PinnedRows route={route} className="px-2" />
         <div className="scroll-thin min-h-0 flex-1 overflow-y-auto px-2 pb-2">
-          <ChatList route={route} pinned="apart" />
+          <ChatList route={route} pinned="apart" order={false} />
         </div>
 
         <div className="space-y-1 border-t border-line px-3 pb-3 pt-2">

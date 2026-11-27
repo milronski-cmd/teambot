@@ -727,7 +727,7 @@ export function PinnedRows({ route, onNavigate, q = '', className }: { route: st
 }
 
 /** `pinned="apart"`: the pinned bots are shown elsewhere (PinnedRows) and left out here. */
-export function ChatList({ route, onNavigate, q = '', size = 'desk', pinned = 'inline' }: { route: string[]; onNavigate?(): void; q?: string; size?: 'desk' | 'phone'; pinned?: 'inline' | 'apart' }) {
+export function ChatList({ route, onNavigate, q = '', size = 'desk', pinned = 'inline', order = true }: { route: string[]; onNavigate?(): void; q?: string; size?: 'desk' | 'phone'; pinned?: 'inline' | 'apart'; /** false: no order button (the open menu keeps it simple). */ order?: boolean }) {
   const mode = useOrderMode();
   const section = useSection('bots');
   const [reorder, setReorder] = useState(false);
@@ -771,7 +771,7 @@ export function ChatList({ route, onNavigate, q = '', size = 'desk', pinned = 'i
   const folded = size === 'desk' && !q && section.closed;
   return (
     <div className={size === 'desk' ? 'space-y-0.5' : 'space-y-2'}>
-      {!q && (botCount > 1 || size === 'desk') && <OrderMenu mode={mode} onMode={setMode} onReorder={() => setReorder(true)} onNewFolder={() => setNewFolder(true)} size={size} section={size === 'desk' ? section : undefined} />}
+      {order && !q && (botCount > 1 || size === 'desk') && <OrderMenu mode={mode} onMode={setMode} onReorder={() => setReorder(true)} onNewFolder={() => setNewFolder(true)} size={size} section={size === 'desk' ? section : undefined} />}
       <NewFolderDialog open={newFolder} onClose={() => setNewFolder(false)} />
       {pinned === 'inline' && <PinnedBots route={route} onNavigate={onNavigate} q={q} size={size} />}
       {folded ? null : (

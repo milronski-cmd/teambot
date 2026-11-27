@@ -71,10 +71,10 @@ export function TeamSwitcher({ size = 'desk', className, onNavigate }: { size?: 
           if (e.key === 'ArrowDown' || e.key === 'ArrowUp') (e.preventDefault(), setOpen(true));
         }}
         className={cx(
-          'flex w-full min-w-0 items-center rounded-control text-start font-semibold transition-colors',
+          'flex w-full min-w-0 items-center text-start font-semibold transition-colors',
           // The sidebar's header row: quiet, like the app name it stands in for; the phone keeps the bordered field.
           // Tight padding: "Alle teams" has to fit next to the three header buttons without being cut off.
-          phone ? 'h-11 gap-2.5 border border-line bg-surface-2 px-2.5 text-[15px] hover:bg-surface-3' : 'h-9 gap-1.5 px-1.5 text-sm hover:bg-surface-2 aria-expanded:bg-surface-2 coarse:h-11',
+          phone ? 'h-11 gap-2.5 rounded-control border border-line bg-surface-2 px-2.5 text-[15px] hover:bg-surface-3' : 'h-10 gap-2.5 rounded-full border border-line-strong bg-surface px-4 text-[13.5px] font-medium hover:border-fg/25 aria-expanded:border-fg/25 coarse:h-11',
         )}
       >
         {active ? <TeamDot color={active.color} size={phone ? 12 : 10} /> : <AllDots teams={teams} size={phone ? 12 : 10} />}
