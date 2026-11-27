@@ -3,8 +3,8 @@
 //
 //   node scripts/update.mjs [--version 4.19.0] [--skip-build]
 //
-// 1. typecheck + the full test suite must pass (one rerun of failing files, for a flaky timing test);
-// 2. version: --version, or the patch number + 1 (package.json);
+// 1. version: --version, or the patch number + 1 (package.json), and a CHANGELOG entry from the commits (unless written);
+// 2. typecheck + the full test suite must pass (one rerun of failing files, for a flaky timing test); else 1. is undone;
 // 3. npm run dist:win → release/TeamBot-Setup-<version>.exe;
 // 4. TeamBot is closed and its data folder copied to %APPDATA%\TeamBot-backup-voor-<version> (the last 3 are kept);
 // 5. silent install, TeamBot started, then checked: it answers on the new version, and POST /mcp/health says every
@@ -75,36 +75,54 @@ const install = (exe) => spawnSync(`"${exe}"`, ['/S', '/currentuser'], { stdio: 
 /** robocopy: exit codes below 8 are success. */
 const mirror = (from, to) => (spawnSync('robocopy', [from, to, '/MIR', '/R:2', '/W:2', '/NFL', '/NDL', '/NJH', '/NJS', '/NP'], { stdio: 'inherit' }).status ?? 16) < 8;
 
-// 1. Tests.
-if (!flag('skip-build')) {
-  log('typecheck…');
-  if (!run('npm', ['run', 'typecheck'])) die('typecheck faalt');
-  log('alle tests…');
-  const out = spawnSync('node', ['--import', 'tsx', '--test', 'tests/**/*.test.ts'], { cwd: root, encoding: 'utf8', shell: true, maxBuffer: 256 * 1024 * 1024 });
-  const text = (out.stdout || '') + (out.stderr || '');
-  if (out.status !== 0) {
-    const files = [...new Set([...text.matchAll(/^test at (tests[\\/][\w.-]+\.test\.ts)/gm)].map((m) => m[1]))];
-    if (!files.length) die(`tests falen (geen bestand gevonden in de uitvoer)\n${text.slice(-3000)}`);
-    log(`opnieuw, alleen: ${files.join(' ')}`);
-    if (!run('node', ['--import', 'tsx', '--test', ...files])) die(`tests falen: ${files.join(', ')}`);
-  }
-  log('tests OK');
-}
-
-// 2. Version.
+// 1. Version and changelog first (the tests check that the running version has a "what is new" entry); both are
+// put back when a test or the build fails.
 const pkgFile = path.join(root, 'package.json');
+const lockFile = path.join(root, 'package-lock.json');
+const logFile = path.join(root, 'CHANGELOG.md');
 const pkg = JSON.parse(fs.readFileSync(pkgFile, 'utf8'));
 let version = pkg.version;
 if (!flag('skip-build')) {
+  const saved = [pkgFile, lockFile, logFile].map((f) => [f, fs.readFileSync(f)]);
+  const restore = () => saved.forEach(([f, b]) => fs.writeFileSync(f, b));
+  const fail = (why) => {
+    restore();
+    die(why);
+  };
   const [a, b, c] = vparts(pkg.version);
   version = opt('version') || `${a}.${b}.${c + 1}`;
   if (!/^\d+\.\d+\.\d+$/.test(version)) die(`ongeldige versie ${version}`);
   pkg.version = version;
   fs.writeFileSync(pkgFile, JSON.stringify(pkg, null, 2) + '\n');
   run('npm', ['install', '--package-lock-only', '--ignore-scripts', '--no-audit', '--no-fund']);
+  // Changelog: the commit subjects since the last version bump, unless the entry is already written by hand.
+  const cl = fs.readFileSync(logFile, 'utf8');
+  if (!cl.includes(`## [${version}]`)) {
+    const since = spawnSync('git', ['log', '-1', '--format=%H', '--', 'package.json'], { cwd: root, encoding: 'utf8' }).stdout.trim();
+    const subjects = spawnSync('git', ['log', '--format=%s', since ? `${since}..HEAD` : '-5'], { cwd: root, encoding: 'utf8' }).stdout.split('\n').map((x) => x.trim()).filter(Boolean);
+    const items = (subjects.length ? subjects : ['Kleine verbeteringen']).map((x) => `- ${x}`).join('\n');
+    const entry = `## [${version}] — ${new Date().toISOString().slice(0, 10)}\n\n### Nieuw\n${items}\n\n`;
+    const at = cl.indexOf('## [');
+    fs.writeFileSync(logFile, at >= 0 ? cl.slice(0, at) + entry + cl.slice(at) : cl + '\n' + entry);
+  }
   log(`versie ${version}`);
+
+  // 2. Tests.
+  log('typecheck…');
+  if (!run('npm', ['run', 'typecheck'])) fail('typecheck faalt');
+  log('alle tests…');
+  const out = spawnSync('node', ['--import', 'tsx', '--test', 'tests/**/*.test.ts'], { cwd: root, encoding: 'utf8', shell: true, maxBuffer: 256 * 1024 * 1024 });
+  const text = (out.stdout || '') + (out.stderr || '');
+  if (out.status !== 0) {
+    const files = [...new Set([...text.matchAll(/^test at (tests[\\/][\w.-]+\.test\.ts)/gm)].map((m) => m[1]))];
+    if (!files.length) fail(`tests falen (geen bestand gevonden in de uitvoer)\n${text.slice(-3000)}`);
+    log(`opnieuw, alleen: ${files.join(' ')}`);
+    if (!run('node', ['--import', 'tsx', '--test', ...files])) fail(`tests falen: ${files.join(', ')}`);
+  }
+  log('tests OK');
+
   // 3. Build.
-  if (!run('npm', ['run', 'dist:win'])) die('bouwen mislukt');
+  if (!run('npm', ['run', 'dist:win'])) fail('bouwen mislukt');
 }
 const setup = path.join(root, 'release', `TeamBot-Setup-${version}.exe`);
 if (!fs.existsSync(setup)) die(`${setup} bestaat niet`);

@@ -1,5 +1,17 @@
 # Changelog
 
+## [4.18.12] — 2026-11-27
+
+### Nieuw uiterlijk
+- **Strak zwart-wit**: puur zwarte achtergrond (licht: wit), neutrale grijzen, geen kaders meer rond de werkruimte.
+- **Rustiger chat**: je eigen berichten als ronde bel, het invoerveld als ronde pil, koppen in de gewone letter.
+
+## [4.18.11] — 2026-11-27
+
+### Nieuw
+- **Dagelijkse controle van je apps**: elke dag test TeamBot of je gekoppelde apps nog werken; werkt er een niet meer, dan krijg je een melding.
+- **Specialisten**: kies per bot wat hij op internet mag opzoeken en van welk eigen materiaal (gesprekken, producten, verkopen) hij leert.
+
 ## [4.18.10] — 2026-11-25
 
 ### Hersteld
