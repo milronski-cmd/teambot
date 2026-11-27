@@ -32,7 +32,7 @@ test('unknown or hostile trait values are dropped, never reach the SVG', () => {
   const svg = botSvg(evil, { traits: { color: evil as any, shape: evil as any }, uid: evil, mood: evil as any, style: evil as any });
   assert.ok(!/<img|<script|<foreignObject|\son[a-z]+\s*=|javascript:/i.test(svg), 'no injected markup or event handlers');
   const tags = new Set([...svg.matchAll(/<([a-zA-Z]+)/g)].map((m) => m[1]));
-  const allowed = new Set(['svg', 'defs', 'radialGradient', 'stop', 'filter', 'feGaussianBlur', 'feTurbulence', 'feDisplacementMap', 'feColorMatrix', 'feComposite', 'feMerge', 'feMergeNode', 'clipPath', 'path', 'ellipse', 'circle', 'rect', 'g', 'text']);
+  const allowed = new Set(['svg', 'defs', 'radialGradient', 'linearGradient', 'stop', 'filter', 'feGaussianBlur', 'feTurbulence', 'feDisplacementMap', 'feColorMatrix', 'feComposite', 'feMerge', 'feMergeNode', 'clipPath', 'path', 'ellipse', 'circle', 'rect', 'g', 'text']);
   for (const t of tags) assert.ok(allowed.has(t), `unexpected element <${t}>`);
   // ids are reduced to [A-Za-z0-9]
   for (const m of svg.matchAll(/id="([^"]+)"/g)) assert.match(m[1], /^[A-Za-z0-9]+$/);
