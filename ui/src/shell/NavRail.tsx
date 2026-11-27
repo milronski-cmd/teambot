@@ -162,12 +162,12 @@ export function NavRail({ route, listShown }: { route: string[]; listShown: bool
     return (
       <nav aria-label="Hoofdmenu" data-testid="navrail" data-open className="tb-rail relative z-20 flex w-[284px] shrink-0 flex-col select-none">
         <div className="flex items-center gap-2.5 px-4 pb-2 pt-4">
-          <a href="#/" title="TeamBot" className="relative flex size-9 shrink-0 items-center justify-center rounded-[10px] bg-black ring-1 ring-white/10 transition hover:opacity-90">
-            <svg viewBox="0 0 512 512" className="size-7" aria-hidden dangerouslySetInnerHTML={{ __html: logoMark('var(--color-brand)', '#000') }} />
+          <a href="#/" title="TeamBot" className="relative flex size-12 shrink-0 items-center justify-center rounded-[14px] bg-black ring-1 ring-white/10 transition hover:opacity-90">
+            <svg viewBox="0 0 512 512" className="size-10" aria-hidden dangerouslySetInnerHTML={{ __html: logoMark('var(--color-brand)', '#000') }} />
             {busy.length > 0 && <span className="absolute -end-1 -top-1 size-2.5 animate-pulse rounded-full bg-ok ring-2 ring-rail" aria-hidden />}
             {!online && <span className="absolute -bottom-0.5 -end-0.5 size-2.5 rounded-full bg-warn ring-2 ring-rail" aria-hidden />}
           </a>
-          <div className="min-w-0 flex-1 text-[17px] font-bold tracking-tight text-fg" translate="no">
+          <div className="min-w-0 flex-1 text-[21px] font-bold tracking-tight text-fg" translate="no">
             TeamBot
           </div>
           <NotificationBell className="flex size-8 items-center justify-center rounded-full text-muted transition-colors hover:bg-surface-2 hover:text-fg" />

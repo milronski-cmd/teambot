@@ -1,5 +1,10 @@
 # Changelog
 
+## [4.18.16] — 2026-11-27
+
+### Groter
+- **De bots in het menu en het TeamBot-logo** zijn groter.
+
 ## [4.18.15] — 2026-11-27
 
 ### Simpeler en mooier
