@@ -1,11 +1,11 @@
 /**
- * TeamBot's logo (4.18.12, chosen by the owner on 27 Nov 2026 from four drafts: "A, bot met antenne"): a white bot
- * head with two pill eyes and an antenna on black. Monochrome, to match the black-and-white look of the app. One
+ * TeamBot's logo (4.18.12, chosen by the owner on 27 Nov 2026 from four drafts: "A, bot met antenne"): an orange bot
+ * head with two pill eyes and an antenna, TeamBot orange on black (4.18.14; first white). One
  * recipe for the menu (NavRail), the app icon files (scripts/make-logo.mjs) and anything else that draws the logo.
  */
 
 /** The mark alone, in a 512 × 512 box; `fg` is the head, `cut` the eyes (the background colour). */
-export function logoMark(fg = '#fff', cut = '#000'): string {
+export function logoMark(fg = '#ff8a3d', cut = '#000'): string {
   return (
     `<rect x="116" y="138" width="280" height="236" rx="92" fill="${fg}"/>` +
     `<rect x="190" y="208" width="34" height="78" rx="17" fill="${cut}"/>` +

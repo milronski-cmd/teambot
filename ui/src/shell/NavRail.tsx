@@ -6,6 +6,7 @@ import {
   Blocks,
   Brain,
   CheckSquare,
+  ChevronDown,
   ChevronsLeft,
   ChevronsRight,
   Inbox,
@@ -29,6 +30,9 @@ import { openPalette } from './CommandPalette';
 import { DESTINATIONS } from './nav';
 import { AwakeIndicator } from './power';
 import { StopAllButton, logout, toggleSidebarFolded, useSidebarFolded } from './Sidebar';
+import { ChatList, PinnedRows } from './ChatList';
+import { NewMenu } from './NewMenu';
+import { UsageMeter } from '../modules/usage/UsageMeter';
 import { TeamSwitcher } from './TeamSwitcher';
 import { setThemePref, useThemePref } from './theme';
 import { useBusy, useWaiting, useWorstUsage } from './status';
@@ -42,7 +46,7 @@ const KEY = 'tb_nav_open';
 const listeners = new Set<() => void>();
 const readOpen = () => {
   try {
-    return localStorage.getItem(KEY) === '1';
+    return localStorage.getItem(KEY) !== '0';
   } catch {
     return false;
   }
@@ -55,6 +59,30 @@ function toggleOpen() {
   }
   listeners.forEach((f) => f());
 }
+const MORE_KEY = 'tb_nav_more';
+const readMore = () => {
+  try {
+    return localStorage.getItem(MORE_KEY) === '1';
+  } catch {
+    return false;
+  }
+};
+function toggleMore() {
+  try {
+    localStorage.setItem(MORE_KEY, readMore() ? '0' : '1');
+  } catch {
+    /* not kept */
+  }
+  listeners.forEach((f) => f());
+}
+function useMoreOpen(): boolean {
+  return useSyncExternalStore(
+    (f) => (listeners.add(f), () => listeners.delete(f)),
+    readMore,
+    () => false,
+  );
+}
+
 export function useNavOpen(): boolean {
   return useSyncExternalStore(
     (f) => (listeners.add(f), () => listeners.delete(f)),
@@ -126,7 +154,110 @@ export function NavRail({ route, listShown }: { route: string[]; listShown: bool
   const theme = useThemePref();
   const isDark = theme === 'dark' || (theme === 'system' && typeof window !== 'undefined' && window.matchMedia('(prefers-color-scheme: dark)').matches);
   const chatsActive = d.chats.active(route);
+  const more = useMoreOpen();
   const settingsOn = d.settings.active(route);
+
+  // Open: one sidebar like a modern AI app (4.18.14): logo, search pill, the places with their names, then the bots as
+  // the conversation list, and the small tools at the bottom. Folded it is the icon rail below.
+  if (open)
+    return (
+      <nav aria-label="Hoofdmenu" data-testid="navrail" data-open className="tb-rail relative z-20 flex w-[284px] shrink-0 flex-col select-none">
+        <div className="flex items-center gap-2.5 px-4 pb-2 pt-4">
+          <a href="#/" title="TeamBot" className="relative flex size-9 shrink-0 items-center justify-center rounded-[10px] bg-black ring-1 ring-white/10 transition hover:opacity-90">
+            <svg viewBox="0 0 512 512" className="size-7" aria-hidden dangerouslySetInnerHTML={{ __html: logoMark('var(--color-brand)', '#000') }} />
+            {busy.length > 0 && <span className="absolute -end-1 -top-1 size-2.5 animate-pulse rounded-full bg-ok ring-2 ring-rail" aria-hidden />}
+            {!online && <span className="absolute -bottom-0.5 -end-0.5 size-2.5 rounded-full bg-warn ring-2 ring-rail" aria-hidden />}
+          </a>
+          <div className="min-w-0 flex-1 text-[17px] font-bold tracking-tight text-fg" translate="no">
+            TeamBot
+          </div>
+          <NotificationBell className="flex size-8 items-center justify-center rounded-full text-muted transition-colors hover:bg-surface-2 hover:text-fg" />
+          <button type="button" onClick={toggleOpen} aria-expanded data-testid="nav-toggle" aria-label={t('Menu inklappen')} className="flex size-8 items-center justify-center rounded-full text-muted transition-colors hover:bg-surface-2 hover:text-fg">
+            <PanelLeftClose className="size-[17px]" aria-hidden />
+          </button>
+        </div>
+
+        <div className="px-3 pb-2">
+          <button type="button" onClick={() => openPalette()} aria-label={`${t('Zoeken')} (Ctrl K)`} className="flex h-10 w-full items-center gap-2.5 rounded-full border border-line-strong bg-surface px-4 text-[13.5px] text-muted transition-colors hover:border-fg/25 hover:text-fg">
+            <Search className="size-4 shrink-0" aria-hidden />
+            <span className="flex-1 text-start">{t('Zoeken')}</span>
+            <kbd className="font-mono text-[10.5px] text-muted">Ctrl K</kbd>
+          </button>
+        </div>
+
+        <div className="space-y-0.5 px-3 pb-1">
+          {(
+            [
+              ['dashboard', d.dashboard, Activity, 0],
+              ['inbox', d.inbox, Inbox, waiting],
+              ['tasks', d.tasks, CheckSquare, 0],
+              ...(more || [d.routines, d.memory, d.apps, d.market].some((x) => x.active(route))
+                ? ([
+                    ['routines', d.routines, AlarmClock, 0],
+                    ['memory', d.memory, Brain, 0],
+                    ['apps', d.apps, Blocks, 0],
+                    ['market', d.market, Store, 0],
+                  ] as const)
+                : []),
+            ] as const
+          ).map(([id, dest, Icon, count]) => {
+            const active = dest.active(route);
+            return (
+              <a
+                key={id}
+                href={dest.href}
+                data-testid={`nav-${id}`}
+                aria-current={active ? 'page' : undefined}
+                className={cx('flex h-9 items-center gap-3 rounded-full px-3.5 text-[13.5px] font-medium transition-colors', active ? 'bg-surface-2 text-fg' : 'text-muted hover:bg-surface-2/70 hover:text-fg')}
+              >
+                <Icon className={cx('size-[17px] shrink-0', active ? 'text-brand stroke-[2.2]' : 'stroke-[1.8]')} aria-hidden />
+                <span className="min-w-0 flex-1 truncate">{t(dest.label)}</span>
+                {!!count && <span className="flex h-5 min-w-5 items-center justify-center rounded-full bg-brand px-1.5 text-[11px] font-bold tabular-nums text-black">{count}</span>}
+              </a>
+            );
+          })}
+          <button type="button" onClick={toggleMore} aria-expanded={more} className="flex h-9 w-full items-center gap-3 rounded-full px-3.5 text-[13.5px] font-medium text-muted transition-colors hover:bg-surface-2/70 hover:text-fg">
+            <ChevronDown className={cx('size-[17px] shrink-0 transition-transform', more && 'rotate-180')} aria-hidden />
+            <span className="flex-1 text-start">{t(more ? 'Minder' : 'Meer')}</span>
+          </button>
+        </div>
+
+        <div className="px-3 pt-1">
+          <TeamSwitcher className="w-full" />
+        </div>
+
+        <div className="flex items-center justify-between px-5 pb-1 pt-3">
+          <a href={d.chats.href} aria-current={chatsActive ? 'page' : undefined} className="text-[11.5px] font-semibold uppercase tracking-wider text-muted hover:text-fg">
+            {t('Gesprekken')}
+          </a>
+          <NewMenu />
+        </div>
+        <PinnedRows route={route} className="px-2" />
+        <div className="scroll-thin min-h-0 flex-1 overflow-y-auto px-2 pb-2">
+          <ChatList route={route} pinned="apart" />
+        </div>
+
+        <div className="space-y-1 border-t border-line px-3 pb-3 pt-2">
+          <StopAllButton />
+          <AwakeIndicator className="w-full rounded-full" />
+          <UsageMeter className="min-w-0 px-1" />
+          <div className="flex items-center gap-1 pt-1">
+            <a href={d.settings.href} aria-current={settingsOn ? 'page' : undefined} className={cx('flex h-9 flex-1 items-center gap-2.5 rounded-full px-3 text-[13px] font-medium transition-colors', settingsOn ? 'bg-surface-2 text-fg' : 'text-muted hover:bg-surface-2/70 hover:text-fg')}>
+              <Settings className="size-[17px] shrink-0" aria-hidden />
+              {t(d.settings.label)}
+            </a>
+            <button type="button" onClick={() => setThemePref(isDark ? 'light' : 'dark')} aria-label={isDark ? t('Licht thema') : t('Donker thema')} className="flex size-9 items-center justify-center rounded-full text-muted transition-colors hover:bg-surface-2 hover:text-fg">
+              {isDark ? <Sun className="size-[17px]" /> : <Moon className="size-[17px]" />}
+            </button>
+            {mode === 'server' && (
+              <button type="button" onClick={logout} aria-label="Uitloggen" className="flex size-9 items-center justify-center rounded-full text-muted transition-colors hover:bg-surface-2 hover:text-fg">
+                <LogOut className="size-[17px]" aria-hidden />
+              </button>
+            )}
+          </div>
+        </div>
+      </nav>
+    );
 
   const utilClass = cx(
     'flex items-center rounded-[10px] text-muted transition-colors hover:bg-surface/65 hover:text-fg',
@@ -148,9 +279,9 @@ export function NavRail({ route, listShown }: { route: string[]; listShown: bool
         <a
           href="#/"
           title="TeamBot"
-          className="relative flex size-10 shrink-0 items-center justify-center rounded-[11px] bg-fg text-surface transition hover:opacity-90"
+          className="relative flex size-10 shrink-0 items-center justify-center rounded-[11px] bg-black ring-1 ring-white/10 transition hover:opacity-90"
         >
-          <svg viewBox="0 0 512 512" className="size-7" aria-hidden dangerouslySetInnerHTML={{ __html: logoMark('currentColor', 'var(--color-fg)') }} />
+          <svg viewBox="0 0 512 512" className="size-7" aria-hidden dangerouslySetInnerHTML={{ __html: logoMark('var(--color-brand)', '#000') }} />
           {busy.length > 0 && <span className="absolute -end-1 -top-1 size-2.5 animate-pulse rounded-full bg-ok ring-2 ring-rail" aria-hidden />}
           {!online && <span className="absolute -bottom-0.5 -end-0.5 size-2.5 rounded-full bg-warn ring-2 ring-rail" aria-hidden />}
         </a>

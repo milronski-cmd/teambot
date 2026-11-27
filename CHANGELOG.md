@@ -1,5 +1,12 @@
 # Changelog
 
+## [4.18.14] — 2026-11-27
+
+### Nieuwe indeling
+- **Eén zijbalk**: logo, zoeken, je plekken met hun naam (de rest onder "Meer") en daaronder al je gesprekken met de bots; meldingen, verbruik, instellingen en thema onderin. Inklappen kan nog steeds.
+- **De chat in het midden**: een smallere kolom zonder balk erboven, het invoerveld eronder.
+- **TeamBot-oranje** als accent op zwart, ook in het logo.
+
 ## [4.18.13] — 2026-11-27
 
 ### Nieuw logo

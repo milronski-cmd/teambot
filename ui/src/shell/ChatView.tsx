@@ -179,9 +179,9 @@ function Intro({ agent, onSend }: { agent: Agent; onSend(text: string): Promise<
     }
   };
   return (
-    <div className="flex flex-col items-center px-4 pb-4 pt-10 sm:px-6">
-      <BotAvatar bot={agent} size={84} />
-      <div className="mt-3 text-lg font-bold tracking-tight">{agent.name}</div>
+    <div className="flex flex-col items-center px-4 pb-4 pt-[12vh] sm:px-6">
+      <BotAvatar bot={agent} size={96} />
+      <div className="mt-4 text-[30px] font-bold tracking-tight">{agent.name}</div>
       {agent.role && (
         <div className="text-sm text-muted" translate="no">
           {agent.role}
@@ -626,9 +626,9 @@ export function ChatView({ threadId }: { threadId: string }) {
   const multiAuthor = thread.kind === 'room' || list.some((m) => m.author_type === 'agent' && m.author_id && m.author_id !== thread.agent_id);
 
   return (
-    <div className="flex h-full min-w-0 bg-surface">
+    <div className="flex h-full min-w-0 bg-canvas">
       <div className="flex min-w-0 flex-1 flex-col" style={pagesDocked ? { minWidth: CHAT_MIN } : undefined}>
-        <header className="safe-top shrink-0 border-b border-line bg-surface">
+        <header className="safe-top shrink-0 bg-canvas">
           {/* With the model control in it, the phone's header stands a little closer together, so the name and the model both fit. */}
           <div className={cx('@container flex h-[56px] items-center px-3 desk:h-[52px] desk:px-5', modelSwitch ? 'gap-1.5 desk:gap-2' : 'gap-2')}>
             {!desktop && (
@@ -751,7 +751,7 @@ export function ChatView({ threadId }: { threadId: string }) {
             </div>
           )}
           {list.length === 0 && approvals.length === 0 && (agent && thread.kind === 'chat' ? <Intro agent={agent} onSend={(t) => send(t, { attachments: [] })} /> : <EmptyState title="Nog geen berichten">Stel een vraag of geef een opdracht.</EmptyState>)}
-          <div className="mx-auto max-w-[860px]">
+          <div className="mx-auto max-w-[780px]">
             {list.map((m) => {
               const day = m.created_at.slice(0, 10);
               const divider = day !== lastDay;
@@ -816,7 +816,7 @@ export function ChatView({ threadId }: { threadId: string }) {
         </div>
 
         <div className="tb-chat-canvas w-full">
-          <div className="mx-auto w-full max-w-[860px]">
+          <div className="mx-auto w-full max-w-[780px]">
           {elsewhere.map((w) => (
             <a
               key={w.id}

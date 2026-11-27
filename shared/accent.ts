@@ -58,8 +58,8 @@ export const ACCENTS: readonly Accent[] = [
   {
     id: 'standard',
     label: 'Standaard',
-    light: { accent: '#0d0d0d', accentSoft: '#e7e7e7', accentFg: '#ffffff', ring: '#0d0d0d' },
-    dark: { accent: '#fafafa', accentSoft: '#282828', accentFg: '#000000', ring: '#fafafa' },
+    light: { accent: '#b23a08', accentSoft: '#ffedd5', accentFg: '#ffffff', ring: '#0d0d0d' },
+    dark: { accent: '#ff8a3d', accentSoft: '#2b1c10', accentFg: '#000000', ring: '#fafafa' },
     logo: STANDARD_LOGO,
   },
   pal({ id: 'lavender', label: 'Lavendel', light: ['#7c48ae', '#eee5f9'], dark: ['#c0a1e4', '#2d2636'], logo: '#cba1fa' }),

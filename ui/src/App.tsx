@@ -155,10 +155,11 @@ function Shell() {
   // The agents are a column next to the chats (and a bot's own settings); every other page has the whole width.
   const folded = useSidebarFolded();
   const navOpen = useNavOpen();
-  const listShown = desktop && !firstRun && DESTINATIONS.chats.active(parts) && !folded;
+  // Open menu: the bots are in it (NavRail); folded: the bot list is a column of its own on the chat pages.
+  const listShown = desktop && !firstRun && DESTINATIONS.chats.active(parts) && !folded && !navOpen;
   // --tb-side: what lies left of the page (rail + agents), for what is centred over the page.
   useEffect(() => {
-    const railW = navOpen ? 232 : 66;
+    const railW = navOpen ? 284 : 66;
     document.documentElement.style.setProperty('--tb-side', desktop ? `${railW + (listShown ? 288 : 12)}px` : '12px');
   }, [desktop, listShown, navOpen]);
   useVisualViewportHeight();

@@ -53,17 +53,17 @@
   --color-muted: #5c5c5c;
   --color-line: #ececec;
   --color-line-strong: #d6d6d6;
-  /* Grok-like: pure black / white, neutral greys, no colour cast. */
+  /* Black and white with TeamBot orange as the one accent (4.18.14). */
   --color-bubble: #f3f3f3;
   --color-bubble-me: #f0f0f0;
   --color-bubble-me-fg: #0d0d0d;
   /* Refined Deep Cobalt brand accent (user can still pick any accent in Instellingen). */
-  --color-brand: #0d0d0d;
-  --color-brand-soft: #ececec;
-  --color-accent: #0d0d0d;
-  --color-accent-soft: #e7e7e7;
+  --color-brand: #b23a08;
+  --color-brand-soft: #ffedd5;
+  --color-accent: #b23a08;
+  --color-accent-soft: #ffedd5;
   /* The call-to-action button: the accent itself (a chosen accent colour replaces both). */
-  --color-btn: #0d0d0d;
+  --color-btn: #b23a08;
   --color-btn-fg: #ffffff;
   --color-accent-fg: #ffffff;
   --color-ok: #0f766e;
@@ -95,11 +95,11 @@
   --color-bubble: #1d1d1d;
   --color-bubble-me: #262626;
   --color-bubble-me-fg: #fafafa;
-  --color-brand: #e6e6e6;
-  --color-brand-soft: #262626;
-  --color-accent: #fafafa;
-  --color-accent-soft: #282828;
-  --color-btn: #fafafa;
+  --color-brand: #ff8a3d;
+  --color-brand-soft: #2b1a0d;
+  --color-accent: #ff8a3d;
+  --color-accent-soft: #2b1c10;
+  --color-btn: #ff8a3d;
   --color-btn-fg: #000000;
   --color-accent-fg: #000000;
   --color-ok: #2dd4bf;
