@@ -1,5 +1,11 @@
 # Changelog
 
+## [4.18.15] — 2026-11-27
+
+### Simpeler en mooier
+- **Rustiger menu**: elke bot is één regel (figuurtje en naam, een stipje als er iets is); het verbruik staat alleen nog op het dashboard.
+- **De bots meer 3D**: dezelfde figuurtjes met meer diepte, een glimlicht, een lichtrand en een zachte schaduw.
+
 ## [4.18.14] — 2026-11-27
 
 ### Nieuwe indeling

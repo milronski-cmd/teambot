@@ -37,7 +37,7 @@ export type FaceShape = (typeof SHAPES)[number];
 export type FaceEyes = (typeof EYES)[number];
 export type FaceMouth = (typeof MOUTHS)[number];
 export type FaceExtra = (typeof EXTRAS)[number];
-export type FaceStyle = 'clay' | 'felt';
+export type FaceStyle = 'clay' | 'felt' | 'neo' | 'void';
 /**
  * idle · working (a run is active) · waiting (needs you) · paused (archived/off) · error (last run failed) · done (just
  * finished) · limit (stopped by the daily budget until the new day: a limit, not a failure; drawn resting like paused)
@@ -251,6 +251,7 @@ export interface BotSvgOptions {
 
 /** The character as an SVG string (viewBox 0 0 100 100, aria-hidden: always pair it with a visible text). */
 export function botSvg(seed: string, { traits, style = 'clay', mood = 'idle', uid }: BotSvgOptions): string {
+  if (style === 'neo' || style === 'void') return futureSvg(seed, { traits, style, mood, uid });
   const t = traitsFor(seed, traits);
   const id = 'tb' + String(uid).replace(/[^a-zA-Z0-9]/g, '').slice(0, 40);
   const base = (PALETTE as Record<string, string>)[t.color] || (HEX.test(t.color) ? t.color : PALETTE.slate);
@@ -278,12 +279,14 @@ export function botSvg(seed: string, { traits, style = 'clay', mood = 'idle', ui
     mouth = 'grin';
   }
 
-  const light = mix(base, 'w', 0.42),
-    dark = mix(base, 'b', 0.28),
+  // 4.18.15: clay has more depth (owner: 'iets meer 3D-achtig'): more contrast, a bounce light under, a sharp gloss.
+  const light = mix(base, 'w', felt ? 0.42 : 0.62),
+    dark = mix(base, 'b', felt ? 0.28 : 0.5),
     edge = mix(base, 'b', 0.45);
   const defs =
     `<radialGradient id="${id}g" cx="34%" cy="26%" r="85%"><stop offset="0" stop-color="${light}"/><stop offset=".5" stop-color="${base}"/><stop offset="1" stop-color="${dark}"/></radialGradient>` +
-    `<radialGradient id="${id}s" cx="42%" cy="34%" r="72%"><stop offset=".62" stop-color="#000" stop-opacity="0"/><stop offset="1" stop-color="#000" stop-opacity=".22"/></radialGradient>` +
+    `<radialGradient id="${id}s" cx="42%" cy="34%" r="72%"><stop offset=".62" stop-color="#000" stop-opacity="0"/><stop offset="1" stop-color="#000" stop-opacity="${felt ? 0.22 : 0.42}"/></radialGradient>` +
+    `<linearGradient id="${id}l" x1="0" y1="0" x2=".7" y2="1"><stop offset="0" stop-color="#fff" stop-opacity=".75"/><stop offset=".45" stop-color="#fff" stop-opacity="0"/></linearGradient><filter id="${id}k" x="-50%" y="-50%" width="200%" height="200%"><feGaussianBlur stdDeviation=".7"/></filter>` +
     `<filter id="${id}b" x="-50%" y="-50%" width="200%" height="200%"><feGaussianBlur stdDeviation="2.2"/></filter>` +
     (felt
       ? `<filter id="${id}f" x="-10%" y="-10%" width="120%" height="120%">` +
@@ -321,16 +324,100 @@ export function botSvg(seed: string, { traits, style = 'clay', mood = 'idle', ui
 
   return (
     `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" aria-hidden="true" focusable="false"><defs>${defs}</defs>` +
-    `<ellipse cx="50" cy="94" rx="28" ry="3.6" fill="#000" opacity=".28" filter="url(#${id}b)"/>` +
+    `<ellipse cx="50" cy="94" rx="30" ry="4.2" fill="#000" opacity=".24" filter="url(#${id}b)"/>` +
+    (felt ? '' : `<ellipse cx="50" cy="91.5" rx="20" ry="2" fill="#000" opacity=".3" filter="url(#${id}k)"/>`) +
     behind +
     `<g${felt ? ` filter="url(#${id}f)"` : ''}>` +
     `<path d="${B.d}" fill="url(#${id}g)"/>` +
     `<path d="${B.d}" fill="url(#${id}s)"/>` +
-    `<g clip-path="url(#${id}c)"><ellipse cx="${B.h[0]}" cy="${B.h[1]}" rx="11" ry="6.5" transform="rotate(-28 ${B.h[0]} ${B.h[1]})" fill="#fff" opacity="${felt ? 0.18 : 0.42}" filter="url(#${id}b)"/></g>` +
+    `<g clip-path="url(#${id}c)"><ellipse cx="${B.h[0]}" cy="${B.h[1]}" rx="11" ry="6.5" transform="rotate(-28 ${B.h[0]} ${B.h[1]})" fill="#fff" opacity="${felt ? 0.18 : 0.5}" filter="url(#${id}b)"/>` +
+    (felt
+      ? ''
+      : `<ellipse cx="50" cy="96" rx="36" ry="12" fill="${light}" opacity=".6" filter="url(#${id}b)"/>` +
+        `<ellipse cx="${B.h[0] - 1}" cy="${B.h[1] - 1}" rx="4.2" ry="2.4" transform="rotate(-28 ${B.h[0]} ${B.h[1]})" fill="#fff" opacity=".9" filter="url(#${id}k)"/>`) +
+    `</g>` +
     `<path d="${B.d}" fill="none" stroke="${edge}" stroke-opacity=".35" stroke-width="1"/>` +
+    (felt ? '' : `<path d="${B.d}" fill="none" stroke="url(#${id}l)" stroke-width="1.6" transform="translate(50 51) scale(.975) translate(-50 -51)"/>`) +
     `</g>` +
     front +
     `<g transform="translate(${fx} ${fy})">${cheeks}<g${blink}>${eyesSvg(eyes, ink, fs, mood)}</g>${mouthSvg(mouth, ink, fs)}</g>` +
+    zzz +
+    `</svg>`
+  );
+}
+
+// ------------------------------------------------------------------ futuristic 3D styles (4.18.15)
+
+/**
+ * "neo": a glossy, saturated 3D shell with a dark glass visor and glowing eyes; "void": a black glass shell with a rim
+ * light and a visor glowing in the bot's colour. Same shapes, colours, extras and moods as clay; mouths and cheeks are
+ * left out (the visor is the face).
+ */
+function futureSvg(seed: string, { traits, style = 'neo', mood = 'idle', uid }: BotSvgOptions): string {
+  const t = traitsFor(seed, traits);
+  const id = 'tf' + String(uid).replace(/[^a-zA-Z0-9]/g, '').slice(0, 40);
+  const base = (PALETTE as Record<string, string>)[t.color] || (HEX.test(t.color) ? t.color : PALETTE.slate);
+  const B = BODY[t.shape] || BODY.squircle;
+  const [fx, fy, f0] = B.f;
+  const s = f0 * 1.2;
+  const dark = style === 'void';
+  const glow = mood === 'error' ? '#ff5d6c' : mood === 'waiting' ? '#ffd34d' : mood === 'done' ? '#7dffb2' : dark ? mix(base, 'w', 0.35) : mix(base, 'w', 0.82);
+  const shellA = dark ? '#3a3f4c' : mix(base, 'w', 0.55);
+  const shellB = dark ? '#14161c' : base;
+  const shellC = dark ? '#050608' : mix(base, 'b', 0.5);
+  const rim = dark ? base : mix(base, 'w', 0.7);
+  const defs =
+    `<radialGradient id="${id}g" cx="32%" cy="22%" r="95%"><stop offset="0" stop-color="${shellA}"/><stop offset=".45" stop-color="${shellB}"/><stop offset="1" stop-color="${shellC}"/></radialGradient>` +
+    `<linearGradient id="${id}r" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="${rim}" stop-opacity=".95"/><stop offset=".5" stop-color="${rim}" stop-opacity=".05"/><stop offset="1" stop-color="${rim}" stop-opacity=".7"/></linearGradient>` +
+    `<linearGradient id="${id}h" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#fff" stop-opacity="${dark ? 0.32 : 0.75}"/><stop offset="1" stop-color="#fff" stop-opacity="0"/></linearGradient>` +
+    `<linearGradient id="${id}v" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#2a3142"/><stop offset=".55" stop-color="#0a0d14"/><stop offset="1" stop-color="#05070b"/></linearGradient>` +
+    `<filter id="${id}b" x="-50%" y="-50%" width="200%" height="200%"><feGaussianBlur stdDeviation="2.2"/></filter>` +
+    `<filter id="${id}e" x="-80%" y="-80%" width="260%" height="260%"><feGaussianBlur stdDeviation="1.6" result="g"/><feMerge><feMergeNode in="g"/><feMergeNode in="g"/><feMergeNode in="SourceGraphic"/></feMerge></filter>` +
+    `<clipPath id="${id}c"><path d="${B.d}"/></clipPath>`;
+
+  let extra: FaceExtra = t.extra;
+  if ((extra === 'ears' || extra === 'horns') && !ROUND_TOP.includes(t.shape)) extra = 'antenna';
+  if (extra === 'sprout' || extra === 'crown') extra = 'antenna';
+  const top = B.top;
+  let behind = '';
+  if (extra === 'antenna')
+    behind = `<path d="M50,${top + 2}V${top - 7}" stroke="${dark ? '#4a5060' : mix(base, 'b', 0.35)}" stroke-width="2.4" stroke-linecap="round"/><circle cx="50" cy="${top - 9}" r="4.4" fill="${glow}" filter="url(#${id}e)"/>`;
+  if (extra === 'ears') behind = `<path d="M24,30L20,8L42,20Z" fill="url(#${id}g)"/><path d="M76,30L80,8L58,20Z" fill="url(#${id}g)"/>`;
+  if (extra === 'horns') behind = `<path d="M32,22Q26,6 36,6Q36,14 42,18Z" fill="${glow}" opacity=".9"/><path d="M68,22Q74,6 64,6Q64,14 58,18Z" fill="${glow}" opacity=".9"/>`;
+
+  // Visor: a dark glass band across the face; the eyes glow in it. Moods change the eyes' shape.
+  const vw = 40 * s,
+    vh = 17 * s;
+  const dx = 9.5 * s,
+    ex = mood === 'working' ? 2 : 0;
+  const sleep = mood === 'paused' || mood === 'limit';
+  const eye = (x: number) =>
+    sleep
+      ? `<rect x="${n2(x - 4.5 * s)}" y="${n2(-0.9 * s)}" width="${n2(9 * s)}" height="${n2(1.8 * s)}" rx="${n2(0.9 * s)}" fill="${glow}" opacity=".7"/>`
+      : mood === 'done'
+        ? `<path d="M${n2(x - 4.5 * s)},${n2(1.6 * s)}Q${n2(x)},${n2(-4.5 * s)} ${n2(x + 4.5 * s)},${n2(1.6 * s)}" fill="none" stroke="${glow}" stroke-width="${n2(2.4 * s)}" stroke-linecap="round"/>`
+        : mood === 'error'
+          ? `<path d="M${n2(x - 3.5 * s)},${n2(-3 * s)}L${n2(x + 3.5 * s)},${n2(3 * s)}M${n2(x + 3.5 * s)},${n2(-3 * s)}L${n2(x - 3.5 * s)},${n2(3 * s)}" stroke="${glow}" stroke-width="${n2(2.2 * s)}" stroke-linecap="round"/>`
+          : `<rect x="${n2(x - 2.6 * s)}" y="${n2((mood === 'waiting' ? -5 : -4.2) * s)}" width="${n2(5.2 * s)}" height="${n2((mood === 'waiting' ? 10 : 8.4) * s)}" rx="${n2(2.6 * s)}" fill="${glow}"/>`;
+  const visor =
+    `<rect x="${n2(-vw / 2)}" y="${n2(-vh / 2)}" width="${n2(vw)}" height="${n2(vh)}" rx="${n2(vh / 2)}" fill="url(#${id}v)" stroke="${dark ? base : '#000'}" stroke-opacity="${dark ? 0.55 : 0.25}" stroke-width="${dark ? 1.2 : 0.8}"/>` +
+    `<path d="M${n2(-vw / 2 + vh / 2)},${n2(-vh / 2 + 1.6)}H${n2(vw / 2 - vh / 2)}" stroke="#fff" stroke-opacity=".22" stroke-width="${n2(1.4 * s)}" stroke-linecap="round"/>` +
+    `<g filter="url(#${id}e)"${!sleep && mood !== 'done' && mood !== 'error' ? ' class="tb-eyes"' : ''}>${eye(-dx + ex)}${eye(dx + ex)}</g>`;
+  const zzz = sleep
+    ? `<text x="74" y="22" font-family="system-ui,sans-serif" font-weight="800" font-size="13" fill="currentColor" opacity=".55">z</text><text x="83" y="12" font-family="system-ui,sans-serif" font-weight="800" font-size="9" fill="currentColor" opacity=".4">z</text>`
+    : '';
+
+  return (
+    `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" aria-hidden="true" focusable="false"><defs>${defs}</defs>` +
+    `<ellipse cx="50" cy="94" rx="28" ry="3.6" fill="${dark ? base : '#000'}" opacity="${dark ? 0.35 : 0.3}" filter="url(#${id}b)"/>` +
+    behind +
+    `<path d="${B.d}" fill="url(#${id}g)"/>` +
+    `<g clip-path="url(#${id}c)">` +
+    `<ellipse cx="${B.h[0] + 6}" cy="${B.h[1] - 2}" rx="24" ry="10" transform="rotate(-18 ${B.h[0] + 6} ${B.h[1] - 2})" fill="url(#${id}h)"/>` +
+    `<ellipse cx="50" cy="100" rx="40" ry="14" fill="${dark ? base : '#000'}" opacity="${dark ? 0.22 : 0.18}" filter="url(#${id}b)"/>` +
+    `</g>` +
+    `<path d="${B.d}" fill="none" stroke="url(#${id}r)" stroke-width="${dark ? 1.8 : 1.4}"/>` +
+    `<g transform="translate(${fx} ${fy - 2})">${visor}</g>` +
     zzz +
     `</svg>`
   );

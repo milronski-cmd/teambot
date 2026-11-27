@@ -223,7 +223,16 @@ function BotRow({ agent, thread, active, size, onNavigate }: { agent: Agent; thr
   const room = menu ? 'group-hover/row:invisible group-focus-within/row:invisible' : '';
   // One row on the phone and in the sidebar: the face, the name with the time, and under it what the bot last said or
   // does now, with one signal at the end. The sidebar row is a little smaller.
-  const row = (
+  // 4.18.15, the owner: the menu must be simpler. The sidebar row is one line: the face, the name, the one signal.
+  const row = desk ? (
+    <a href={href} onClick={onNavigate} aria-current={active ? 'page' : undefined} title={deskTip(mood, text, { approvals, firstApproval, live, last, agent })} className="flex min-w-0 flex-1 items-center gap-2.5 rounded-[inherit] px-2 py-1.5">
+      <LiveBotAvatar bot={agent} size={30} />
+      <span className={cx('min-w-0 flex-1 truncate text-[13.5px] text-fg', unread ? 'font-semibold' : 'font-medium')} translate="no">
+        {agent.name}
+      </span>
+      <span className={cx('flex shrink-0 items-center pe-1', room)}>{signal}</span>
+    </a>
+  ) : (
     <a
       href={href}
       onClick={onNavigate}

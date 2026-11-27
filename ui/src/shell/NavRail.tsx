@@ -32,7 +32,6 @@ import { AwakeIndicator } from './power';
 import { StopAllButton, logout, toggleSidebarFolded, useSidebarFolded } from './Sidebar';
 import { ChatList, PinnedRows } from './ChatList';
 import { NewMenu } from './NewMenu';
-import { UsageMeter } from '../modules/usage/UsageMeter';
 import { TeamSwitcher } from './TeamSwitcher';
 import { setThemePref, useThemePref } from './theme';
 import { useBusy, useWaiting, useWorstUsage } from './status';
@@ -240,7 +239,6 @@ export function NavRail({ route, listShown }: { route: string[]; listShown: bool
         <div className="space-y-1 border-t border-line px-3 pb-3 pt-2">
           <StopAllButton />
           <AwakeIndicator className="w-full rounded-full" />
-          <UsageMeter className="min-w-0 px-1" />
           <div className="flex items-center gap-1 pt-1">
             <a href={d.settings.href} aria-current={settingsOn ? 'page' : undefined} className={cx('flex h-9 flex-1 items-center gap-2.5 rounded-full px-3 text-[13px] font-medium transition-colors', settingsOn ? 'bg-surface-2 text-fg' : 'text-muted hover:bg-surface-2/70 hover:text-fg')}>
               <Settings className="size-[17px] shrink-0" aria-hidden />
