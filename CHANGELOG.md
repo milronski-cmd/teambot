@@ -1,5 +1,11 @@
 # Changelog
 
+## [4.18.18] — 2026-11-27
+
+### Rustiger menu
+- **Vier tegels op één rij**: Dashboard, Wacht, Taken en Meer (Routines, Geheugen, Apps, Marktplaats), met nieuwe icoontjes.
+- **De teamkiezer** is de kop boven je gesprekken; inklappen staat onderin.
+
 ## [4.18.17] — 2026-11-27
 
 ### Mooier

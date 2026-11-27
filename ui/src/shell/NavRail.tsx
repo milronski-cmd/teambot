@@ -6,6 +6,10 @@ import {
   Blocks,
   Brain,
   CheckSquare,
+  Ellipsis,
+  Hand,
+  LayoutGrid,
+  ListTodo,
   ChevronDown,
   ChevronsLeft,
   ChevronsRight,
@@ -154,6 +158,7 @@ export function NavRail({ route, listShown }: { route: string[]; listShown: bool
   const isDark = theme === 'dark' || (theme === 'system' && typeof window !== 'undefined' && window.matchMedia('(prefers-color-scheme: dark)').matches);
   const chatsActive = d.chats.active(route);
   const more = useMoreOpen();
+  const moreActive = [d.routines, d.memory, d.apps, d.market].some((x) => x.active(route));
   const settingsOn = d.settings.active(route);
 
   // Open: one sidebar like a modern AI app (4.18.14): logo, search pill, the places with their names, then the bots as
@@ -171,9 +176,6 @@ export function NavRail({ route, listShown }: { route: string[]; listShown: bool
             TeamBot
           </div>
           <NotificationBell className="flex size-8 items-center justify-center rounded-full text-muted transition-colors hover:bg-surface-2 hover:text-fg" />
-          <button type="button" onClick={toggleOpen} aria-expanded data-testid="nav-toggle" aria-label={t('Menu inklappen')} className="flex size-8 items-center justify-center rounded-full text-muted transition-colors hover:bg-surface-2 hover:text-fg">
-            <PanelLeftClose className="size-[17px]" aria-hidden />
-          </button>
         </div>
 
         <div className="px-3 pb-2">
@@ -184,20 +186,13 @@ export function NavRail({ route, listShown }: { route: string[]; listShown: bool
           </button>
         </div>
 
-        <div className="space-y-0.5 px-3 pb-1">
+        {/* The places as four tiles in a row (4.18.18, the owner: "minder druk"): the bots below get the room. */}
+        <div className="grid grid-cols-4 gap-1 px-3 pb-1 pt-1">
           {(
             [
-              ['dashboard', d.dashboard, Activity, 0],
-              ['inbox', d.inbox, Inbox, waiting],
-              ['tasks', d.tasks, CheckSquare, 0],
-              ...(more || [d.routines, d.memory, d.apps, d.market].some((x) => x.active(route))
-                ? ([
-                    ['routines', d.routines, AlarmClock, 0],
-                    ['memory', d.memory, Brain, 0],
-                    ['apps', d.apps, Blocks, 0],
-                    ['market', d.market, Store, 0],
-                  ] as const)
-                : []),
+              ['dashboard', d.dashboard, LayoutGrid, 0],
+              ['inbox', d.inbox, Hand, waiting],
+              ['tasks', d.tasks, ListTodo, 0],
             ] as const
           ).map(([id, dest, Icon, count]) => {
             const active = dest.active(route);
@@ -207,28 +202,53 @@ export function NavRail({ route, listShown }: { route: string[]; listShown: bool
                 href={dest.href}
                 data-testid={`nav-${id}`}
                 aria-current={active ? 'page' : undefined}
-                className={cx('flex h-9 items-center gap-3 rounded-full px-3.5 text-[13.5px] font-medium transition-colors', active ? 'bg-surface-2 text-fg' : 'text-muted hover:bg-surface-2/70 hover:text-fg')}
+                aria-label={count ? `${t(dest.label)}, ${count}` : t(dest.label)}
+                className={cx('group flex flex-col items-center gap-1 rounded-2xl py-2 transition-colors', active ? 'bg-surface-2 text-fg' : 'text-muted hover:bg-surface-2/70 hover:text-fg')}
               >
-                <Icon className={cx('size-[17px] shrink-0', active ? 'text-brand stroke-[2.2]' : 'stroke-[1.8]')} aria-hidden />
-                <span className="min-w-0 flex-1 truncate">{t(dest.label)}</span>
-                {!!count && <span className="flex h-5 min-w-5 items-center justify-center rounded-full bg-brand px-1.5 text-[11px] font-bold tabular-nums text-black">{count}</span>}
+                <span className="relative">
+                  <Icon className={cx('size-[21px]', active ? 'text-brand stroke-[2.2]' : 'stroke-[1.8]')} aria-hidden />
+                  {!!count && <span className="absolute -end-2.5 -top-1.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-brand px-1 text-[10px] font-bold tabular-nums text-black">{count}</span>}
+                </span>
+                <span className="max-w-full truncate px-0.5 text-[11px] font-medium">{t(id === 'inbox' ? 'Wacht' : dest.label)}</span>
               </a>
             );
           })}
-          <button type="button" onClick={toggleMore} aria-expanded={more} className="flex h-9 w-full items-center gap-3 rounded-full px-3.5 text-[13.5px] font-medium text-muted transition-colors hover:bg-surface-2/70 hover:text-fg">
-            <ChevronDown className={cx('size-[17px] shrink-0 transition-transform', more && 'rotate-180')} aria-hidden />
-            <span className="flex-1 text-start">{t(more ? 'Minder' : 'Meer')}</span>
-          </button>
+          <div className="relative">
+            <button
+              type="button"
+              onClick={toggleMore}
+              aria-expanded={more}
+              aria-haspopup="menu"
+              className={cx('flex w-full flex-col items-center gap-1 rounded-2xl py-2 transition-colors', more || moreActive ? 'bg-surface-2 text-fg' : 'text-muted hover:bg-surface-2/70 hover:text-fg')}
+            >
+              <Ellipsis className={cx('size-[21px]', moreActive ? 'text-brand stroke-[2.2]' : 'stroke-[1.8]')} aria-hidden />
+              <span className="text-[11px] font-medium">{t('Meer')}</span>
+            </button>
+            {more && (
+              <>
+                <div className="fixed inset-0 z-30" onClick={toggleMore} aria-hidden />
+                <div role="menu" className="absolute end-0 top-full z-40 mt-1.5 w-52 rounded-2xl border border-line-strong bg-surface p-1.5 shadow-pop">
+                  {(
+                    [
+                      [d.routines, AlarmClock],
+                      [d.memory, Brain],
+                      [d.apps, Blocks],
+                      [d.market, Store],
+                    ] as const
+                  ).map(([dest, Icon]) => (
+                    <a key={dest.href} role="menuitem" href={dest.href} onClick={toggleMore} className={cx('flex h-10 items-center gap-3 rounded-xl px-3 text-[13.5px] font-medium transition-colors hover:bg-surface-2', dest.active(route) ? 'text-fg' : 'text-muted hover:text-fg')}>
+                      <Icon className={cx('size-[18px] shrink-0', dest.active(route) && 'text-brand')} aria-hidden />
+                      {t(dest.label)}
+                    </a>
+                  ))}
+                </div>
+              </>
+            )}
+          </div>
         </div>
 
-        <div className="px-3 pt-1">
-          <TeamSwitcher className="w-full" />
-        </div>
-
-        <div className="flex items-center justify-between px-5 pb-1 pt-3">
-          <a href={d.chats.href} aria-current={chatsActive ? 'page' : undefined} className="text-[11.5px] font-semibold uppercase tracking-wider text-muted hover:text-fg">
-            {t('Gesprekken')}
-          </a>
+        <div className="flex items-center gap-1 px-3 pb-1 pt-3">
+          <TeamSwitcher className="min-w-0 flex-1" compact />
           <NewMenu />
         </div>
         <PinnedRows route={route} className="px-2" />
@@ -244,6 +264,9 @@ export function NavRail({ route, listShown }: { route: string[]; listShown: bool
               <Settings className="size-[17px] shrink-0" aria-hidden />
               {t(d.settings.label)}
             </a>
+            <button type="button" onClick={toggleOpen} aria-expanded data-testid="nav-toggle" aria-label={t('Menu inklappen')} className="flex size-9 items-center justify-center rounded-full text-muted transition-colors hover:bg-surface-2 hover:text-fg">
+              <PanelLeftClose className="size-[17px]" aria-hidden />
+            </button>
             <button type="button" onClick={() => setThemePref(isDark ? 'light' : 'dark')} aria-label={isDark ? t('Licht thema') : t('Donker thema')} className="flex size-9 items-center justify-center rounded-full text-muted transition-colors hover:bg-surface-2 hover:text-fg">
               {isDark ? <Sun className="size-[17px]" /> : <Moon className="size-[17px]" />}
             </button>

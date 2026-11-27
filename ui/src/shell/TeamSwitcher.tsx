@@ -19,7 +19,7 @@ const hasOverview = () => !!moduleById('teams')?.pages?.some((p) => p.path === '
  * and the task board (and every page that uses ../modules/teams/scope). *Alle teams* also opens the overview of all
  * teams when the app has one (package C2).
  */
-export function TeamSwitcher({ size = 'desk', className, onNavigate }: { size?: 'desk' | 'phone'; className?: string; onNavigate?(): void }) {
+export function TeamSwitcher({ size = 'desk', className, onNavigate, compact }: { size?: 'desk' | 'phone'; className?: string; onNavigate?(): void; /** The open menu: a quiet heading over the conversations ("Gesprekken" with one team). */ compact?: boolean }) {
   const { teams, multi, active } = useTeamView();
   const [open, setOpen] = useState(false);
   const [creating, setCreating] = useState(false);
@@ -41,7 +41,7 @@ export function TeamSwitcher({ size = 'desk', className, onNavigate }: { size?: 
   }, [open]);
   useDismiss(open, wrap, () => setOpen(false), btn);
 
-  if (!multi) return null;
+  if (!multi) return compact ? <span className={cx('px-2 text-[12px] font-semibold uppercase tracking-wider text-muted', className)}>{t('Gesprekken')}</span> : null;
 
   const choose = (id: string) => {
     setActiveTeam(id);
@@ -74,7 +74,7 @@ export function TeamSwitcher({ size = 'desk', className, onNavigate }: { size?: 
           'flex w-full min-w-0 items-center text-start font-semibold transition-colors',
           // The sidebar's header row: quiet, like the app name it stands in for; the phone keeps the bordered field.
           // Tight padding: "Alle teams" has to fit next to the three header buttons without being cut off.
-          phone ? 'h-11 gap-2.5 rounded-control border border-line bg-surface-2 px-2.5 text-[15px] hover:bg-surface-3' : 'h-10 gap-2.5 rounded-full border border-line-strong bg-surface px-4 text-[13.5px] font-medium hover:border-fg/25 aria-expanded:border-fg/25 coarse:h-11',
+          phone ? 'h-11 gap-2.5 rounded-control border border-line bg-surface-2 px-2.5 text-[15px] hover:bg-surface-3' : compact ? 'h-8 gap-2 rounded-full px-2 text-[12px] uppercase tracking-wider text-muted hover:bg-surface-2 hover:text-fg aria-expanded:bg-surface-2' : 'h-10 gap-2.5 rounded-full border border-line-strong bg-surface px-4 text-[13.5px] font-medium hover:border-fg/25 aria-expanded:border-fg/25 coarse:h-11',
         )}
       >
         {active ? <TeamDot color={active.color} size={phone ? 12 : 10} /> : <AllDots teams={teams} size={phone ? 12 : 10} />}
