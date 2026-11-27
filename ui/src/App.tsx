@@ -218,10 +218,10 @@ function Shell() {
     <div className="tb-desk safe-x flex h-full overflow-hidden">
       <SkipLink />
       <NavRail route={parts} listShown={listShown} />
-      <div className="flex min-w-0 flex-1 overflow-hidden py-2 pe-2">
-        <div className="tb-sheet flex min-w-0 flex-1 overflow-hidden rounded-[20px] border border-line">
+      <div className="flex min-w-0 flex-1 overflow-hidden">
+        <div className="tb-sheet flex min-w-0 flex-1 overflow-hidden">
           {listShown && (
-            <aside className="tb-sidebar-sheet w-[288px] shrink-0 overflow-hidden border-e border-line">
+            <aside className="tb-sidebar-sheet w-[288px] shrink-0 overflow-hidden">
               <Sidebar route={parts} />
             </aside>
           )}

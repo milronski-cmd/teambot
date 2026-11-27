@@ -58,8 +58,8 @@ export const ACCENTS: readonly Accent[] = [
   {
     id: 'standard',
     label: 'Standaard',
-    light: { accent: '#181715', accentSoft: '#e5e1d8', accentFg: '#faf8f5', ring: '#181715' },
-    dark: { accent: '#f3f0e8', accentSoft: '#2a2723', accentFg: '#131210', ring: '#f3f0e8' },
+    light: { accent: '#0d0d0d', accentSoft: '#e7e7e7', accentFg: '#ffffff', ring: '#0d0d0d' },
+    dark: { accent: '#fafafa', accentSoft: '#282828', accentFg: '#000000', ring: '#fafafa' },
     logo: STANDARD_LOGO,
   },
   pal({ id: 'lavender', label: 'Lavendel', light: ['#7c48ae', '#eee5f9'], dark: ['#c0a1e4', '#2d2636'], logo: '#cba1fa' }),
@@ -81,8 +81,8 @@ export const DEFAULT_ACCENT = 'standard';
  * dark sample side by side) and by the contrast test; tests/accent.test.ts checks that they equal styles.css.
  */
 export const NEUTRALS = {
-  light: { canvas: '#f6f4ef', surface: '#ffffff', 'surface-2': '#f1eee8', 'surface-3': '#e5e1d8', fg: '#181715', muted: '#5f5a52', line: '#e4dfd5', 'line-strong': '#cfc9bc' },
-  dark: { canvas: '#131210', surface: '#1b1917', 'surface-2': '#24221e', 'surface-3': '#2f2c27', fg: '#f3f0e8', muted: '#989286', line: '#292622', 'line-strong': '#3c3832' },
+  light: { canvas: '#ffffff', surface: '#ffffff', 'surface-2': '#f3f3f3', 'surface-3': '#e7e7e7', fg: '#0d0d0d', muted: '#5c5c5c', line: '#ececec', 'line-strong': '#d6d6d6' },
+  dark: { canvas: '#000000', surface: '#141414', 'surface-2': '#1d1d1d', 'surface-3': '#282828', fg: '#fafafa', muted: '#9b9b9b', line: '#1f1f1f', 'line-strong': '#303030' },
 } as const;
 export type Mode = keyof typeof NEUTRALS;
 

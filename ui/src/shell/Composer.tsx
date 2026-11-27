@@ -202,7 +202,7 @@ export function Composer({ threadId, agentId, busy, disabled, replyTo, onCancelR
       {disabled && <div className="mb-2 rounded-xl bg-warn-soft px-3 py-2 text-xs font-medium text-warn">{disabled}</div>}
       <div
         data-composer
-        className="relative rounded-2xl border border-line-strong bg-surface-2/70 px-2 py-1.5 transition-colors focus-within:border-fg/40 focus-within:bg-surface"
+        className="relative rounded-[28px] border border-line-strong bg-surface px-2.5 py-2 shadow-[0_0_0_1px_transparent] transition-colors focus-within:border-fg/25"
       >
         {slash.menu}
         {files.length > 0 && (

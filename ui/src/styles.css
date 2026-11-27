@@ -44,28 +44,28 @@
   --shadow-lg: 0 12px 32px -6px rgb(0 0 0 / 0.18), 0 2px 6px -1px rgb(0 0 0 / 0.08);
   --shadow-xl: 0 12px 32px -6px rgb(0 0 0 / 0.18), 0 2px 6px -1px rgb(0 0 0 / 0.08);
   --shadow-2xl: 0 12px 32px -6px rgb(0 0 0 / 0.18), 0 2px 6px -1px rgb(0 0 0 / 0.08);
-  --color-rail: #ebe7df;
-  --color-canvas: #f6f4ef;
+  --color-rail: #f3f3f3;
+  --color-canvas: #ffffff;
   --color-surface: #ffffff;
-  --color-surface-2: #f1eee8;
-  --color-surface-3: #e5e1d8;
-  --color-fg: #181715;
-  --color-muted: #5f5a52;
-  --color-line: #e4dfd5;
-  --color-line-strong: #cfc9bc;
-  /* Editorial chat tones: quiet warm stone & deep ink. */
-  --color-bubble: #f1eee8;
-  --color-bubble-me: #181715;
-  --color-bubble-me-fg: #faf8f5;
+  --color-surface-2: #f3f3f3;
+  --color-surface-3: #e7e7e7;
+  --color-fg: #0d0d0d;
+  --color-muted: #5c5c5c;
+  --color-line: #ececec;
+  --color-line-strong: #d6d6d6;
+  /* Grok-like: pure black / white, neutral greys, no colour cast. */
+  --color-bubble: #f3f3f3;
+  --color-bubble-me: #f0f0f0;
+  --color-bubble-me-fg: #0d0d0d;
   /* Refined Deep Cobalt brand accent (user can still pick any accent in Instellingen). */
-  --color-brand: #1d4ed8;
-  --color-brand-soft: #e0e7ff;
-  --color-accent: #181715;
-  --color-accent-soft: #e5e1d8;
+  --color-brand: #0d0d0d;
+  --color-brand-soft: #ececec;
+  --color-accent: #0d0d0d;
+  --color-accent-soft: #e7e7e7;
   /* The call-to-action button: the accent itself (a chosen accent colour replaces both). */
-  --color-btn: #181715;
-  --color-btn-fg: #faf8f5;
-  --color-accent-fg: #faf8f5;
+  --color-btn: #0d0d0d;
+  --color-btn-fg: #ffffff;
+  --color-accent-fg: #ffffff;
   --color-ok: #0f766e;
   --color-ok-soft: #e2f5f2;
   --color-ok-fg: #ffffff;
@@ -77,31 +77,31 @@
   --color-danger-soft: #fbe8ee;
   --color-danger-fg: #ffffff;
   --font-sans: "Inter Variable", "Inter", "Segoe UI Variable", "Segoe UI", system-ui, -apple-system, sans-serif;
-  --font-editorial: "Iowan Old Style", "Palatino Linotype", Georgia, Cambria, serif;
+  --font-editorial: var(--font-sans);
   --font-mono: "Cascadia Code", "JetBrains Mono", Consolas, ui-monospace, monospace;
   --breakpoint-desk: 760px;
 }
 
 .dark {
-  --color-rail: #0d0c0b;
-  --color-canvas: #131210;
-  --color-surface: #1b1917;
-  --color-surface-2: #24221e;
-  --color-surface-3: #2f2c27;
-  --color-fg: #f3f0e8;
-  --color-muted: #989286;
-  --color-line: #292622;
-  --color-line-strong: #3c3832;
-  --color-bubble: #23211d;
-  --color-bubble-me: #f3f0e8;
-  --color-bubble-me-fg: #131210;
-  --color-brand: #60a5fa;
-  --color-brand-soft: #1a2438;
-  --color-accent: #f3f0e8;
-  --color-accent-soft: #2a2723;
-  --color-btn: #f3f0e8;
-  --color-btn-fg: #131210;
-  --color-accent-fg: #131210;
+  --color-rail: #0a0a0a;
+  --color-canvas: #000000;
+  --color-surface: #141414;
+  --color-surface-2: #1d1d1d;
+  --color-surface-3: #282828;
+  --color-fg: #fafafa;
+  --color-muted: #9b9b9b;
+  --color-line: #1f1f1f;
+  --color-line-strong: #303030;
+  --color-bubble: #1d1d1d;
+  --color-bubble-me: #262626;
+  --color-bubble-me-fg: #fafafa;
+  --color-brand: #e6e6e6;
+  --color-brand-soft: #262626;
+  --color-accent: #fafafa;
+  --color-accent-soft: #282828;
+  --color-btn: #fafafa;
+  --color-btn-fg: #000000;
+  --color-accent-fg: #000000;
   --color-ok: #2dd4bf;
   --color-ok-soft: #132826;
   --color-ok-fg: #041d1b;
@@ -931,16 +931,16 @@ body {
 }
 .tb-editorial {
   font-family: var(--font-editorial);
-  letter-spacing: -0.02em;
+  letter-spacing: -0.025em;
 }
 .tb-chat-canvas {
-  background: var(--color-surface);
+  background: var(--color-canvas);
 }
 .tb-pane {
-  background: var(--color-surface);
+  background: var(--color-canvas);
 }
 .tb-sidebar-sheet {
-  background: color-mix(in srgb, var(--color-canvas) 82%, var(--color-surface));
+  background: var(--color-rail);
 }
 .tb-desk-page {
   background: var(--color-canvas);

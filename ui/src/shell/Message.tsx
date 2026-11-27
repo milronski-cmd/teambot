@@ -726,7 +726,7 @@ export const MessageItem = memo(function MessageItem({ m, results, compact, show
                 'text-[14.5px] leading-relaxed',
                 external
                   ? 'rounded-2xl border border-line bg-surface-2 px-4 py-2.5 text-fg'
-                  : 'rounded-[14px] border-s-[3px] border-brand bg-surface-2/85 px-4 py-2.5 text-fg',
+                  : 'rounded-[24px] bg-bubble-me px-4.5 py-2.5 text-bubble-me-fg',
                 m.pinned && 'ring-2 ring-warn',
               )}
             >
