@@ -16,6 +16,8 @@ export interface CustomerSettings {
   knowledge: string;
   /** Also the business profile of this channel's own team (package B4). */
   profile: boolean;
+  /** WhatsApp (QR): a separate business number, so customers may write to it. */
+  businessNumber: boolean;
 }
 
 /** Same defaults as the server (server/modules/channels/customer.ts). */
@@ -32,6 +34,7 @@ export function customerSettings(c: any): CustomerSettings {
     hours: { enabled: b(h.enabled, false), days: Array.isArray(h.days) ? h.days : [1, 2, 3, 4, 5], from: h.from || '09:00', to: h.to || '17:00' },
     knowledge: String(s.knowledge || ''),
     profile: b(s.profile, false),
+    businessNumber: b(s.businessNumber, false),
   };
 }
 
@@ -76,7 +79,19 @@ export function CustomerTab({ b, reload }: { b: BindingDetail; reload(): void })
           <p className="text-sm text-muted">
             Voor mensen buiten je team. TeamBot controleert elk antwoord vóór het verstuurd wordt.
           </p>
-          {qr && <p className="text-sm text-danger">WhatsApp via QR-code is je eigen nummer: niet geschikt voor klanten. Gebruik WhatsApp Business of Telegram.</p>}
+          {qr && !c.businessNumber && <p className="text-sm text-danger">WhatsApp via QR-code is standaard je eigen nummer: klanten bereiken de bot dan niet. Is dit een apart zakelijk nummer? Zet dat hieronder aan.</p>}
+          {qr && (
+            <Toggle
+              checked={c.businessNumber}
+              onChange={(v) => set({ businessNumber: v, ...(v ? {} : { open: false }) })}
+              label="Dit is een apart zakelijk nummer"
+            />
+          )}
+          {qr && c.businessNumber && (
+            <p className="text-sm text-muted">
+              Klanten mogen dit nummer schrijven. WhatsApp staat bots via WhatsApp Web niet officieel toe en kan het nummer blokkeren; je eigen nummer merkt daar niets van.
+            </p>
+          )}
         </div>
       </div>
 
@@ -84,8 +99,8 @@ export function CustomerTab({ b, reload }: { b: BindingDetail; reload(): void })
         <>
           <div className="space-y-4 border-t border-line pt-4">
             <Switch
-              checked={c.open && !qr}
-              disabled={qr || b.openDoorSupported === false}
+              checked={c.open && (!qr || c.businessNumber)}
+              disabled={qr ? !c.businessNumber : b.openDoorSupported === false}
               onChange={(v) => set({ open: v })}
               label="Iedereen mag de bot een bericht sturen"
               hint="Klanten hoeven geen koppelcode te sturen. Uit = alleen mensen op de allowlist."

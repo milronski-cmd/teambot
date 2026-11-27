@@ -94,7 +94,7 @@ function isActiveBot(route: string[], agentId: string, threads: Thread[]) {
 const ROW_EDGE_DESK = 'border-[color:var(--tb-row,var(--color-surface))]';
 const ROW_EDGE_PHONE = 'border-[color:var(--tb-row,var(--color-canvas))]';
 /** Row classes that set --tb-row with the row's own background. */
-const rowBg = (active: boolean) => (active ? 'bg-surface-3 [--tb-row:var(--color-surface-3)]' : 'hover:bg-surface-2 hover:[--tb-row:var(--color-surface-2)]');
+const rowBg = (active: boolean) => (active ? 'bg-surface-2 text-fg [--tb-row:var(--color-surface-2)]' : 'hover:bg-surface-2/60 hover:[--tb-row:var(--color-surface-2)]');
 
 /** The count on a face (questions that wait, unread): top corner, so the status dot keeps the bottom corner. */
 function CountBadge({ n, tone, label, size }: { n: number; tone: 'warn' | 'neutral'; label: string; size: 'desk' | 'phone' }) {
@@ -431,8 +431,9 @@ function PinTile({ agent, thread, active, onNavigate, size }: { agent: Agent; th
       data-status={dotState(mood)}
       aria-label={size === 'rail' ? agent.name : undefined}
       className={cx(
-        'flex flex-col items-center gap-1 rounded-2xl text-center transition-colors',
-        size === 'rail' ? 'size-14 justify-center' : 'px-1 pb-1.5 pt-2.5',
+        'flex flex-col items-center gap-1 rounded-2xl border text-center transition-[background-color,border-color,transform,box-shadow] duration-150 hover:-translate-y-0.5',
+        active ? 'border-brand/40' : 'border-line/70 bg-surface-2/40 hover:border-line-strong hover:shadow-sm',
+        size === 'rail' ? 'size-14 justify-center' : 'px-1.5 pb-2 pt-2.5',
         size === 'phone' ? 'min-w-0 flex-1' : size === 'desk' && 'w-[84px] flex-none',
         rowBg(active),
       )}

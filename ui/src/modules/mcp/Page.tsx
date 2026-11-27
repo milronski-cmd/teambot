@@ -14,8 +14,10 @@ import { Wizard, type PackagePick } from './Wizard';
 import { PackageImport } from './PackageImport';
 import { ImportDialog, type ImportedInfo } from './Import';
 import type { ConnDraft } from './forms';
-import { GoogleCard } from './Google';
+import { GoogleAccounts } from './Google';
 import { BankCard } from './Bank';
+import { MicrosoftAccounts } from './Microsoft';
+import { ForwardEmailCard, TransipCard } from './KeyApps';
 import { ServerTab } from './ServerTab';
 import { firstSentence } from '../../lib/sentence';
 import { useQuickConnect, QuickStatus } from './quick';
@@ -162,12 +164,15 @@ export function MainPage() {
       .catch(() => setCatalog([]));
   }, []);
   const custom = catalog?.find((e) => e.id === 'custom') || null;
-  // Google and the bank are cards of their own (Google.tsx, Bank.tsx); their connections are not listed a second time.
-  const mine = (list || []).filter((c) => c.catalog_id !== 'google' && c.catalog_id !== 'bank');
+  // Google, Outlook, the bank, TransIP and Forward Email are cards of their own (Google.tsx, Microsoft.tsx, Bank.tsx,
+  // KeyApps.tsx); their connections are not listed a second time.
+  const OWN_CARDS = ['google', 'microsoft', 'bank', 'transip', 'forwardemail'];
+  const mine = (list || []).filter((c) => !OWN_CARDS.includes(c.catalog_id || ''));
   const shown = useMemo(() => {
     // One click or only a login first; an app that needs a key or an own app of the service after those.
     const rank = (e: CatalogEntry) => (e.oneClick === 'form' ? 100 : 0) + (FIRST.indexOf(e.id) + 1 || 99);
-    const l = (catalog || []).filter((e) => e.id !== 'custom' && (q ? `${e.name} ${e.description} ${e.publisher}`.toLowerCase().includes(q.toLowerCase()) : !e.advanced));
+    // An app that is already connected stands above, under its own card; it is not offered again here.
+    const l = (catalog || []).filter((e) => e.id !== 'custom' && !e.connected && (q ? `${e.name} ${e.description} ${e.publisher}`.toLowerCase().includes(q.toLowerCase()) : !e.advanced));
     return l.sort((a, b) => rank(a) - rank(b) || a.name.localeCompare(b.name));
   }, [catalog, q]);
   const visible = q || all ? shown : shown.slice(0, 8);
@@ -187,8 +192,11 @@ export function MainPage() {
       />
       <div className="mx-auto max-w-5xl space-y-6 p-4 sm:p-6">
         <div className="space-y-3" data-testid="apps-connected">
-          <GoogleCard />
+          <GoogleAccounts />
+          <MicrosoftAccounts />
           <BankCard />
+          <TransipCard />
+          <ForwardEmailCard />
           {error && (
             <EmptyState title="Laden mislukt" action={<Button onClick={reload}>Opnieuw</Button>}>
               {error}

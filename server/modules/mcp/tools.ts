@@ -8,7 +8,9 @@ import { toolName } from '../../tools/registry.js';
 import type { ConnectionRow, ToolRow } from './db.js';
 import type { McpManager } from './runtime.js';
 import { label } from './runtime.js';
-import { GOOGLE_ID, googlePart } from './google.js';
+import { GOOGLE_ID, adsImpact, googlePart } from './google.js';
+import { movesMoney } from './risk.js';
+import { TRANSIP_ID } from './transip.js';
 import { words } from '../../../shared/i18n-core.js';
 
 export const GROUP = 'mcp';
@@ -197,7 +199,8 @@ export function toolProvider(ctx: Ctx, mgr: McpManager) {
 }
 
 function mcpTool(ctx: Ctx, mgr: McpManager, c: ConnectionRow, t: ToolRow, name: string): ToolDef {
-  const risk = effectiveRisk(t);
+  // Money stays "danger" even when the risk was lowered by hand: a payment always asks the owner (broker.ts).
+  const risk: ToolRisk = movesMoney(t.name) ? 'danger' : effectiveRisk(t);
   const svc = label(c);
   const desc = `[${svc} · MCP] ${t.title ? t.title + ' — ' : ''}${t.description || t.name}`.slice(0, 1500);
   return {
@@ -213,6 +216,12 @@ function mcpTool(ctx: Ctx, mgr: McpManager, c: ConnectionRow, t: ToolRow, name: 
     // Google is one connection with seven services: each is a part of its own, so a question about "Search Console"
     // or "Gmail" brings just those tools along (tools/selection.ts).
     app: (c.catalog_id === GOOGLE_ID && googlePart(t.name)) || svc,
+    // Money (refunds, payouts, invoices, subscriptions): a payment, which asks the owner on every access level.
+    ...(movesMoney(t.name) ? { impact: 'payment' as const } : {}),
+    // Google Ads: spending more (budget, bid, switching on) is a payment; pausing or excluding is an ordinary outward step.
+    ...(c.catalog_id === GOOGLE_ID && /^ads_(mutate|campaign_status|budget_set|negatives_add)$/.test(t.name) ? { impact: (a: any) => adsImpact(t.name, a) } : {}),
+    // TransIP: registering a domain costs money (an invoice): a payment, which asks the owner on every access level.
+    ...(c.catalog_id === TRANSIP_ID && t.name === 'transip_domain_register' ? { impact: 'payment' as const } : {}),
     // An ordinary reply, with the owner's switch on, is a step the bot takes itself (google.ts plainReply).
     ...(c.catalog_id === GOOGLE_ID && t.name === 'gmail_send' ? { riskFor: (a: any, tc: any) => (ctx.store.getSetting<boolean>(tc.userId, MAIL_RULE, false) === true && plainReply(a) ? 'write' : risk) } : {}),
     async run(args: any, tc: ToolContext): Promise<ToolOutput> {

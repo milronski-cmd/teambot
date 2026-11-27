@@ -11,11 +11,21 @@ import { newId, now } from '../../core/db.js';
 import { HttpError } from '../../core/http.js';
 import { resolveInWorkspace } from '../../tools/builtin/files.js';
 import { type FetchFn, politeFetch, sha } from './fetch.js';
-import { engineFor } from './engine.js';
+import { LEARN_ENGINE, engineFor } from './engine.js';
 import { clip, jaccard, looksLikeInstruction, ownWords, saysUnknown, tokens } from './guard.js';
 import { defaultSourcesFor, fieldOf, onTopic, primaryScore, roleHead, sourceQueries, specialismOf, subjectWords, topicHits } from './defaults.js';
 
 export type SourceKind = 'web' | 'feed' | 'docs' | 'file';
+/** Searching the internet on its own: off (default), only about the owner's own products and leads, or field-wide. */
+export type WebMode = 'off' | 'products' | 'open';
+export const WEB_MODES: WebMode[] = ['off', 'products', 'open'];
+/** What of the business itself a specialist learns from. */
+export type LearnFrom = 'conversations' | 'products' | 'sales';
+export const LEARN_FROM: LearnFrom[] = ['conversations', 'products', 'sales'];
+/** The web mode of a profile (no setting: off). */
+/** Learns from the owner's own material (conversations, products, sales), with or without web sources. */
+export const ownMaterial = (p: { settings?: any } | null | undefined): boolean => Array.isArray(p?.settings?.learnFrom) && p!.settings.learnFrom.length > 0;
+export const webModeOf = (settings: any): WebMode => (WEB_MODES.includes(settings?.web) ? settings.web : 'off');
 export type Cadence = 'hourly' | 'daily' | 'weekly';
 export const CADENCES: Cadence[] = ['hourly', 'daily', 'weekly'];
 export type BudgetId = 'none' | 'small' | 'normal' | 'large';
@@ -232,6 +242,16 @@ export class SpecialistService {
     if (body?.budget !== undefined) patch.budget = (Object.keys(BUDGETS).includes(body.budget) ? body.budget : 'none') as BudgetId;
     // "Leert met": the specialist's own model (default) or a cheaper (free or local) one.
     if (body?.learnWith !== undefined) patch.settings = { ...cur.settings, learnWith: body.learnWith === 'cheap' ? 'cheap' : 'own' };
+    // 25 Nov 2026, the owner: learning is about his own business, not "random" pages. `web`: off (default) = no searching
+    // the internet on its own; products = only about his own products and leads; open = the old field-wide search.
+    if (body?.web !== undefined) patch.settings = { ...(patch.settings || cur.settings), web: WEB_MODES.includes(body.web) ? body.web : 'off' };
+    // What of the business itself it learns from (business.ts in this module): its conversations with customers and the
+    // owner's corrections, the products (Merchant Center), the sales (Stripe).
+    if (Array.isArray(body?.learnFrom)) patch.settings = { ...(patch.settings || cur.settings), learnFrom: body.learnFrom.map(String).filter((x: string) => LEARN_FROM.includes(x as LearnFrom)) };
+    if (body?.learnEngine !== undefined) {
+      const le = body.learnEngine;
+      this.store.setSetting(agent.user_id, LEARN_ENGINE, le && typeof le === 'object' && le.providerId ? { providerId: clip(String(le.providerId), 80), model: clip(String(le.model || ''), 120) } : null);
+    }
     if (body?.selfTest !== undefined) patch.self_test = !!body.selfTest;
     const next = { ...cur, ...patch };
     if (next.enabled && !next.field) throw bad('Beschrijf eerst in één zin het vakgebied van deze specialist.');
@@ -416,6 +436,9 @@ export class SpecialistService {
     const have = this.sources(agent.id);
     // (`replace`: a suggested source stopped answering — look for another one next to what is there.)
     if (!p || (have.length && !o.replace) || agent.settings?.private === true) return 0;
+    // Finding its own sources on the internet only when the owner opened that up (25 Nov 2026: a bot "Teamhelper" found
+    // teamhelper.cn, "EMAIL" the help pages of KPN mail — nothing to do with his business).
+    if (webModeOf(p.settings) !== 'open') return 0;
     if (Date.now() - (Date.parse(p.settings?.discoveredAt || '') || 0) < WEEK) return 0;
     this.store.update('specialist_profiles', agent.id, { settings: { ...p.settings, discoveredAt: now() } }, 'agent_id');
     const seen = new Set<string>(have.map((x) => { try { return new URL(x.target).host; } catch { return ''; } }));
@@ -494,7 +517,8 @@ export class SpecialistService {
       try {
         // No sources yet (any field without a preset): the specialist finds its own first.
         if (!this.sources(p.agent_id).length) await this.discoverSources(agent);
-        if (!this.sources(p.agent_id).some((x) => x.enabled)) continue;
+        // (A bot that learns from the owner's own material needs no web source.)
+        if (!this.sources(p.agent_id).some((x) => x.enabled) && !ownMaterial(p)) continue;
         const { runRound } = await import('./round.js');
         if (await runRound(this, p.user_id, p.agent_id, { trigger: 'auto' })) ran++;
       } catch (e) {
@@ -509,7 +533,7 @@ export class SpecialistService {
     const agent = this.ownAgent(userId, agentId);
     if (!this.active(agentId)) throw bad('Maak deze bot eerst specialist: zet Specialisme aan en beschrijf het vakgebied.');
     if (!this.sources(agentId).length) await this.discoverSources(agent);
-    if (!this.sources(agentId).some((s) => s.enabled)) throw bad('Er zijn nog geen bronnen gevonden voor dit vakgebied. Voeg er zelf minstens één toe.');
+    if (!this.sources(agentId).some((s) => s.enabled) && !ownMaterial(this.profile(agentId))) throw bad('Er zijn nog geen bronnen gevonden voor dit vakgebied. Voeg er zelf minstens één toe.');
     if (this.running.has(agentId)) throw bad('Er loopt al een leerronde voor deze bot; wacht tot die klaar is.');
     const { runRound } = await import('./round.js');
     void runRound(this, userId, agentId, { trigger: 'manual' }).catch((e) => this.ctx.log.warn('[specialists] leerronde mislukt', String(e)));
@@ -532,6 +556,9 @@ export class SpecialistService {
       cadence: p.cadence,
       budget: p.budget,
       learnWith: p.settings?.learnWith === 'cheap' ? 'cheap' : 'own',
+      // What the specialist may look up on the internet, and which of the business's own material it learns from.
+      web: webModeOf(p.settings),
+      learnFrom: Array.isArray(p.settings?.learnFrom) ? p.settings.learnFrom.filter((x: string) => LEARN_FROM.includes(x as LearnFrom)) : [],
       selfTest: !!p.self_test,
       sources: this.sources(agent.id).map((s) => this.sourceView(s)),
       // When the next round runs by itself, and why the last one was skipped (no free or local model to learn with).

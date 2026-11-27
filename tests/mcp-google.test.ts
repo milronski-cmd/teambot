@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import http from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { startTestApp } from './helpers.js';
-import { GOOGLE_SERVICES, GOOGLE_TOOLS, setGoogleRetryWaits, tooFast, watchGmail } from '../server/modules/mcp/google.js';
+import { GOOGLE_SERVICES, GOOGLE_TOOLS, adsImpact, setGoogleRetryWaits, tooFast, watchGmail } from '../server/modules/mcp/google.js';
 
 /**
  * Google in one go, against a local stand-in for Google (TEAMBOT_GOOGLE_BASE): the login (authorization code + PKCE),
@@ -20,7 +20,7 @@ interface Seen {
 
 async function fakeGoogle() {
   const seen: Seen[] = [];
-  const state = { access: 1, grantScope: '' as string, refreshOk: true, merchantRegistered: false, tooFast: 0, daily: false, mail: false, inbox: [] as string[] };
+  const state = { access: 1, grantScope: '' as string, refreshOk: true, merchantRegistered: false, tooFast: 0, daily: false, mail: false, inbox: [] as string[], email: 'eigenaar@voorbeeld.nl' };
   const server = http.createServer((req, res) => {
     let body = '';
     req.on('data', (c) => (body += c));
@@ -33,7 +33,7 @@ async function fakeGoogle() {
         const f = new URLSearchParams(body);
         if (f.get('grant_type') === 'authorization_code') {
           if (f.get('code') !== 'code-123' || !f.get('code_verifier') || f.get('client_secret') !== 'secret-x') return json(400, { error: 'invalid_grant', error_description: 'Bad code' });
-          const id = Buffer.from(JSON.stringify({ email: 'eigenaar@voorbeeld.nl' })).toString('base64url');
+          const id = Buffer.from(JSON.stringify({ email: state.email })).toString('base64url');
           return json(200, { access_token: `at-${state.access}`, refresh_token: 'rt-1', expires_in: 3600, scope: state.grantScope, id_token: `x.${id}.y` });
         }
         if (!state.refreshOk) return json(400, { error: 'invalid_grant', error_description: 'Token has been revoked' });
@@ -74,7 +74,7 @@ test('Google: every tool belongs to a service, and reading tools never write', (
   const ids = new Set(GOOGLE_SERVICES.map((s) => s.id));
   for (const t of GOOGLE_TOOLS) assert.ok(ids.has(t.service), t.name);
   for (const s of GOOGLE_SERVICES) assert.ok(GOOGLE_TOOLS.some((t) => t.service === s.id), `${s.id} has tools`);
-  assert.deepEqual(GOOGLE_TOOLS.filter((t) => t.kind !== 'read').map((t) => t.name).sort(), ['calendar_create_event', 'ga_custom_dimension_create', 'ga_key_event_create', 'gmail_draft', 'gmail_draft_delete', 'gmail_send', 'gsc_sitemap_submit']);
+  assert.deepEqual(GOOGLE_TOOLS.filter((t) => t.kind !== 'read').map((t) => t.name).sort(), ['ads_budget_set', 'ads_campaign_status', 'ads_mutate', 'ads_negatives_add', 'calendar_create_event', 'ga_custom_dimension_create', 'ga_key_event_create', 'gmail_draft', 'gmail_draft_delete', 'gmail_send', 'gsc_site_add', 'gsc_site_delete', 'gsc_sitemap_delete', 'gsc_sitemap_submit']);
 });
 
 test('Google: one login connects it, the test proves each service, and disconnecting revokes', async () => {
@@ -158,14 +158,15 @@ test('Google: one login connects it, the test proves each service, and disconnec
     const reg = g.seen.find((x) => x.path.endsWith('developerRegistration:registerGcp'))!;
     assert.equal(JSON.parse(reg.body).developerEmail, 'eigenaar@voorbeeld.nl');
 
-    // "Verbinding werkt" per service: Ads still wants its developer token, Analytics is switched off in the project.
+    // "Verbinding werkt" per service: Ads works without a developer token (Google no longer requires one), Analytics
+    // is switched off in the project.
     let chk = await t.api('POST', '/mcp/google/test', {});
     const by = (id: string) => chk.checks.find((x: any) => x.id === id);
     assert.equal(by('searchconsole').ok, true);
     assert.equal(by('merchant').ok, true);
     assert.equal(by('gmail').ok, true);
-    assert.equal(by('ads').ok, false);
-    assert.equal(by('ads').needsToken, true);
+    assert.equal(by('ads').ok, true);
+    assert.equal(g.seen.filter((x) => x.path.startsWith('/googleads.googleapis.com/')).pop()!.headers['developer-token'], undefined, 'no token: no header');
     assert.equal(by('analytics').ok, false);
     assert.match(by('analytics').fixUrl, /analyticsadmin\.googleapis\.com/);
     await assert.rejects(t.api('PUT', '/mcp/google/ads', { developerToken: 'te kort' }), /developer token/);
@@ -453,4 +454,123 @@ test('writing in Search Console and Analytics: a sitemap is submitted, an event 
   assert.match(gtool('gsc_sitemap_submit').scope || '', /auth\/webmasters$/);
   assert.match(gtool('ga_key_event_create').scope || '', /auth\/analytics\.edit$/);
   assert.equal(gtool('ga_key_events').scope, undefined);
+});
+
+test('Google Ads: a change is tried first, then made; spending more always asks, pausing and excluding are ordinary steps', async () => {
+  const calls: any[] = [];
+  const g = (async (m: string, url: string, o: any = {}) => {
+    calls.push({ m, path: new URL(url).pathname, body: o.body, token: o.headers?.['developer-token'] });
+    return { mutateOperationResponses: [{ campaignResult: { resourceName: 'customers/1234567890/campaigns/9' } }] };
+  }) as any;
+  const x = { ctx: { secrets: { getByName: () => 'AbCdEfGhIjKlMnOpQrStUv' } }, conn: { id: 'c1', user_id: 'u1', oauth: {} } } as any;
+  const ops = [{ campaignOperation: { update: { resourceName: 'customers/C/campaigns/9', status: 'PAUSED' }, updateMask: 'status' } }];
+
+  // Trying: validateOnly, the "C" of the examples becomes the real customer id, and nothing is reported as changed.
+  const tried = await gtool('ads_preview').run({ customer: '123-456-7890', operations: ops }, g, x);
+  assert.equal(tried.veranderd, false);
+  assert.equal(calls[0].path, '/v26/customers/1234567890/googleAds:mutate');
+  assert.equal(calls[0].body.validateOnly, true);
+  assert.equal(calls[0].body.mutateOperations[0].campaignOperation.update.resourceName, 'customers/1234567890/campaigns/9');
+  assert.equal(calls[0].token, 'AbCdEfGhIjKlMnOpQrStUv');
+
+  const made = await gtool('ads_mutate').run({ customer: '1234567890', operations: ops }, g, x);
+  assert.deepEqual(made.resultaten, ['customers/1234567890/campaigns/9']);
+  assert.equal(calls[1].body.validateOnly, undefined);
+
+  await gtool('ads_budget_set').run({ customer: '1234567890', budget: '77', euros: 25.5 }, g, x);
+  assert.deepEqual(calls[2].body.mutateOperations, [{ campaignBudgetOperation: { update: { resourceName: 'customers/1234567890/campaignBudgets/77', amountMicros: '25500000' }, updateMask: 'amount_micros' } }]);
+  await gtool('ads_negatives_add').run({ customer: '1234567890', campaign: '9', keywords: ['gratis', 'tweedehands'] }, g, x);
+  assert.equal(calls[3].body.mutateOperations.length, 2);
+  assert.equal(calls[3].body.mutateOperations[0].campaignCriterionOperation.create.negative, true);
+  await assert.rejects(gtool('ads_mutate').run({ customer: '123', operations: ops }, g, x), /10 cijfers/);
+
+  // Trying is reading; every real change goes out (danger), and spending more is a payment.
+  assert.equal(gtool('ads_preview').kind, 'read');
+  for (const n of ['ads_mutate', 'ads_campaign_status', 'ads_budget_set', 'ads_negatives_add']) assert.equal(gtool(n).kind, 'send', n);
+  assert.equal(adsImpact('ads_mutate', { operations: ops }), 'external', 'pausing spends less');
+  assert.equal(adsImpact('ads_mutate', { operations: [{ campaignCriterionOperation: { create: { campaign: 'x', negative: true, keyword: { text: 'gratis' } } } }] }), 'external');
+  assert.equal(adsImpact('ads_mutate', { operations: [{ campaignOperation: { update: { resourceName: 'x', status: 'ENABLED' }, updateMask: 'status' } }] }), 'payment');
+  assert.equal(adsImpact('ads_mutate', { operations: [{ campaignOperation: { update: { resourceName: 'x', status: 'PAUSED', name: 'y' }, updateMask: 'status,name' } }] }), 'payment', 'more than pausing is not "spending less"');
+  assert.equal(adsImpact('ads_mutate', { operations: [...ops, { campaignBudgetOperation: { update: { resourceName: 'b', amountMicros: '1' }, updateMask: 'amount_micros' } }] }), 'payment');
+  assert.equal(adsImpact('ads_mutate', { operations: [{ adGroupCriterionOperation: { create: { adGroup: 'a', keyword: { text: 'fiets' } } } }] }), 'payment', 'a keyword that runs spends');
+  assert.equal(adsImpact('ads_budget_set', { euros: 1 }), 'payment');
+  assert.equal(adsImpact('ads_campaign_status', { status: 'ENABLED' }), 'payment');
+  assert.equal(adsImpact('ads_campaign_status', { status: 'PAUSED' }), 'external');
+  assert.equal(adsImpact('ads_mutate', {}), 'payment', 'unknown counts as spending');
+});
+
+test('Search Console: a site is added or removed and a sitemap taken away, with the right to write', async () => {
+  const calls: any[] = [];
+  const g = (async (m: string, url: string) => (calls.push([m, new URL(url).pathname]), {})) as any;
+  await gtool('gsc_site_add').run({ site: 'sc-domain:voorbeeld.nl' }, g, {} as any);
+  await gtool('gsc_sitemap_delete').run({ site: 'sc-domain:voorbeeld.nl', sitemap: 'https://voorbeeld.nl/sitemap.xml' }, g, {} as any);
+  await gtool('gsc_site_delete').run({ site: 'sc-domain:voorbeeld.nl' }, g, {} as any);
+  assert.deepEqual(calls, [
+    ['PUT', '/webmasters/v3/sites/sc-domain%3Avoorbeeld.nl'],
+    ['DELETE', '/webmasters/v3/sites/sc-domain%3Avoorbeeld.nl/sitemaps/https%3A%2F%2Fvoorbeeld.nl%2Fsitemap.xml'],
+    ['DELETE', '/webmasters/v3/sites/sc-domain%3Avoorbeeld.nl'],
+  ]);
+  for (const n of ['gsc_site_add', 'gsc_site_delete', 'gsc_sitemap_delete']) assert.match(gtool(n).scope || '', /auth\/webmasters$/, n);
+});
+
+test('Google: a second account comes next to the first, logging in again keeps each account, and each has its own tools', async () => {
+  const g = await fakeGoogle();
+  process.env.TEAMBOT_GOOGLE_BASE = g.base;
+  process.env.TEAMBOT_GOOGLE_CLIENT_ID = '999-teambot.apps.googleusercontent.com';
+  process.env.TEAMBOT_GOOGLE_CLIENT_SECRET = 'secret-x';
+  const t = await startTestApp({ mode: 'desktop' });
+  const login = async (body: any) => {
+    const a = new URL((await t.api('POST', '/mcp/google/start', body)).authorizationUrl);
+    assert.equal((await fetch(`${a.searchParams.get('redirect_uri')}?code=code-123&state=${a.searchParams.get('state')}`)).status, 200);
+    return a;
+  };
+  try {
+    await login({ services: ['gmail'] });
+    let s = await t.api('GET', '/mcp/google');
+    assert.deepEqual(s.accounts.map((x: any) => x.email), ['eigenaar@voorbeeld.nl']);
+    const first = s.accounts[0].id;
+
+    // "Nog een Google-account": Google lets you choose, no address filled in; the new address is a second account.
+    g.state.email = 'privé@voorbeeld.nl';
+    const a = await login({ services: ['gmail'], add: true });
+    assert.equal(a.searchParams.get('prompt'), 'consent select_account');
+    assert.equal(a.searchParams.get('login_hint'), null);
+    s = await t.api('GET', '/mcp/google');
+    assert.deepEqual(s.accounts.map((x: any) => x.email), ['eigenaar@voorbeeld.nl', 'privé@voorbeeld.nl']);
+    const second = s.accounts[1].id;
+    assert.equal(s.connection.id, first, 'without ?conn= the first account');
+    assert.equal((await t.api('GET', `/mcp/google?conn=${second}`)).email, 'privé@voorbeeld.nl');
+
+    // Logging in again for the second account asks Google for that address and changes nothing about the first.
+    const again = await login({ services: ['gmail'], conn: second });
+    assert.equal(again.searchParams.get('login_hint'), 'privé@voorbeeld.nl');
+    // "Add" with an address that is already there: that account again, not a third.
+    g.state.email = 'eigenaar@voorbeeld.nl';
+    await login({ services: ['gmail'], add: true });
+    assert.equal((await t.api('GET', '/mcp/google')).accounts.length, 2);
+
+    // Each account its own tools for the bots, told apart by the address.
+    const ctx = t.app.ctx;
+    const rows = ctx.store.all<any>("SELECT id, slug, label FROM mcp_connections WHERE catalog_id = 'google' ORDER BY created_at");
+    assert.equal(rows.length, 2);
+    assert.notEqual(rows[0].slug, rows[1].slug);
+    assert.equal(rows[1].label, 'privé@voorbeeld.nl');
+    await t.api('POST', `/mcp/connections/${first}/test`, {});
+    await t.api('POST', `/mcp/connections/${second}/test`, {});
+    const bot = await t.agent({ name: 'Post' });
+    const th = await t.api('POST', '/threads', { agentId: bot.id });
+    const names = (await ctx.tools.forAgent(ctx.store.agent(bot.id)!, ctx.store.thread(th.id)!)).map((x: any) => x.name).filter((n: string) => n.endsWith('gmail_search'));
+    assert.equal(names.length, 2, 'gmail_search once per account');
+
+    // The developer token and the mail on the dashboard are per account.
+    await t.api('PUT', '/mcp/google/ads', { developerToken: 'AbCdEfGhIjKlMnOpQrStUv', conn: second });
+    assert.equal((await t.api('GET', `/mcp/google?conn=${second}`)).adsToken, true);
+    assert.equal((await t.api('GET', '/mcp/google')).adsToken, false);
+  } finally {
+    delete process.env.TEAMBOT_GOOGLE_BASE;
+    delete process.env.TEAMBOT_GOOGLE_CLIENT_ID;
+    delete process.env.TEAMBOT_GOOGLE_CLIENT_SECRET;
+    await t.close();
+    await g.close();
+  }
 });

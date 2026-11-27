@@ -15,8 +15,14 @@ const variants = {
   b: { shape: 'squircle', color: 'mint', eyes: 'bean', mouth: 'smile', extra: 'antenna', cheeks: true },
   c: { shape: 'squircle', color: 'sun', eyes: 'bean', mouth: 'smile', extra: 'antenna', cheeks: true },
   d: { shape: 'squircle', color: 'coral', eyes: 'bean', mouth: 'smile', extra: 'antenna', cheeks: true },
+  e: { shape: 'pill', color: 'tangerine', eyes: 'happy', mouth: 'smile', extra: 'sprout', cheeks: true },
+  f: { shape: 'bun', color: 'tangerine', eyes: 'visor', mouth: 'none', extra: 'antenna', cheeks: false },
+  g: { shape: 'cloud', color: 'tangerine', eyes: 'look', mouth: 'cat', extra: 'none', cheeks: true },
+  h: { shape: 'egg', color: 'tangerine', eyes: 'bean', mouth: 'o', extra: 'ears', cheeks: true },
+  i: { shape: 'bell', color: 'tangerine', eyes: 'dot', mouth: 'smile', extra: 'crown', cheeks: true },
+  j: { shape: 'flower', color: 'tangerine', eyes: 'happy', mouth: 'smile', extra: 'none', cheeks: true },
 };
-const pick = process.argv[3] || 'a';
+const pick = process.argv[3] ?? 'a';
 const b = await chromium.launch({ channel: 'msedge', headless: true });
 const p = await b.newPage({ viewport: { width: 1024, height: 1024 } });
 async function png(svg, size, file) {
@@ -24,7 +30,7 @@ async function png(svg, size, file) {
   await p.setContent(`<html><body style="margin:0;background:transparent">${svg.replace('<svg ', `<svg width="${size}" height="${size}" `)}</body></html>`);
   await p.screenshot({ path: file, omitBackground: true, clip: { x: 0, y: 0, width: size, height: size } });
 }
-if (!pick) {
+if (!pick || pick === 'sheet') {
   // contact sheet: each variant at home-screen size (60px, 120px) and large
   let html = '<html><body style="margin:0;padding:24px;background:#f2f2f5;font:14px system-ui;display:flex;gap:28px;flex-wrap:wrap">';
   for (const [k, t] of Object.entries(variants)) {
@@ -32,7 +38,7 @@ if (!pick) {
     html += `<div style="display:flex;flex-direction:column;gap:10px;align-items:center"><b>${k}</b><div style="width:180px;height:180px">${svg}</div><div style="display:flex;gap:10px;align-items:end"><div style="width:60px;height:60px">${svg}</div><div style="width:40px;height:40px">${svg}</div></div></div>`;
   }
   html += '</body></html>';
-  await p.setViewportSize({ width: 1000, height: 330 });
+  await p.setViewportSize({ width: 2100, height: 330 });
   await p.setContent(html); await p.waitForTimeout(300);
   await p.screenshot({ path: path.join(out, 'sheet.png') });
 } else {

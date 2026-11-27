@@ -8,8 +8,8 @@ import { DESK_QUERY, useIsDesktop, useVisualViewportHeight } from './lib/media';
 import { uiModules, useInboxExtraCount } from './modules';
 import { Button, EmptyState, Spinner, Toaster, cx } from './components/ui';
 import { AuthScreen } from './shell/Auth';
+import { NavRail, useNavOpen } from './shell/NavRail';
 import { Sidebar, useSidebarFolded } from './shell/Sidebar';
-import { TopBar } from './shell/TopBar';
 import { AgentChatRoute, ChatView } from './shell/ChatView';
 import { applyTheme } from './shell/theme';
 import { useDesktopBadge } from './shell/badge';
@@ -150,13 +150,17 @@ function Shell() {
   const parts = useRoute();
   const approvals = useApp((s) => s.approvals.length) + useInboxExtraCount();
   const desktop = useIsDesktop();
-  const folded = useSidebarFolded();
-  // --tb-side: the sidebar's width, for what is centred over the page next to it (the island's messages).
-  // The very first screen (no bot yet) is the welcome over the whole width: the list of bots comes with the first bot.
+  // The very first screen (no bot yet) is the welcome over the whole width: the list of agents comes with the first bot.
   const firstRun = useApp((s) => !s.agents.some((a) => !a.archived) && s.shared.length === 0) && !parts[0];
-  // The list of bots is a window next to the chats (and a bot's own settings); every other page has the whole width.
-  const listShown = !folded && !firstRun && DESTINATIONS.chats.active(parts);
-  useEffect(() => document.documentElement.style.setProperty('--tb-side', listShown ? '324px' : '12px'), [listShown]);
+  // The agents are a column next to the chats (and a bot's own settings); every other page has the whole width.
+  const folded = useSidebarFolded();
+  const navOpen = useNavOpen();
+  const listShown = desktop && !firstRun && DESTINATIONS.chats.active(parts) && !folded;
+  // --tb-side: what lies left of the page (rail + agents), for what is centred over the page.
+  useEffect(() => {
+    const railW = navOpen ? 232 : 66;
+    document.documentElement.style.setProperty('--tb-side', desktop ? `${railW + (listShown ? 288 : 12)}px` : '12px');
+  }, [desktop, listShown, navOpen]);
   useVisualViewportHeight();
 
   useEffect(() => {
@@ -208,26 +212,26 @@ function Shell() {
     );
   }
 
-  // The dashboard is the desktop itself: its widgets lie on the wallpaper, not in a window.
+  // The dashboard lies on the canvas inside the rounded editorial workspace sheet.
   const onDesk = parts[0] === 'dashboard';
   return (
-    // TeamBot's own shape (4.17.0): a menu bar over the whole app, and below it the pages as windows on a wallpaper;
-    // the list of bots is a window of its own next to the chats.
-    <div className="tb-desk safe-x flex h-full flex-col overflow-hidden">
+    <div className="tb-desk safe-x flex h-full overflow-hidden">
       <SkipLink />
-      <TopBar route={parts} listShown={listShown} />
-      <div className="flex min-h-0 flex-1 gap-3 px-3 pb-3">
-        {listShown && (
-          <aside className="tb-pane w-[300px] shrink-0 overflow-hidden">
-            <Sidebar route={parts} />
-          </aside>
-        )}
-        <main id="inhoud" tabIndex={-1} className={cx('relative flex min-w-0 flex-1 flex-col overflow-hidden outline-none', onDesk ? 'tb-desk-page' : 'tb-pane')}>
-          <OfflineBar />
-          <div className="min-h-0 flex-1">
-            <Routed parts={parts} />
-          </div>
-        </main>
+      <NavRail route={parts} listShown={listShown} />
+      <div className="flex min-w-0 flex-1 overflow-hidden py-2 pe-2">
+        <div className="tb-sheet flex min-w-0 flex-1 overflow-hidden rounded-[20px] border border-line">
+          {listShown && (
+            <aside className="tb-sidebar-sheet w-[288px] shrink-0 overflow-hidden border-e border-line">
+              <Sidebar route={parts} />
+            </aside>
+          )}
+          <main id="inhoud" tabIndex={-1} className={cx('relative flex min-w-0 flex-1 flex-col overflow-hidden outline-none', onDesk ? 'tb-desk-page' : 'tb-pane')}>
+            <OfflineBar />
+            <div className="min-h-0 flex-1">
+              <Routed parts={parts} />
+            </div>
+          </main>
+        </div>
       </div>
       <CommandPalette />
     </div>

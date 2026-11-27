@@ -226,7 +226,7 @@ test('Gemini Live: single-use token from the server, Google key stays there, NON
     assert.equal(r.json.wsUrl, `ws://127.0.0.1:${s.fake.port}/ws/google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContentConstrained?access_token=auth_tokens%2Ffake-gemini-123`);
     const minted = s.fake.seen.find((x) => x.path === '/v1beta/auth_tokens')!;
     assert.equal(minted.body.uses, 1);
-    assert.equal(minted.body.liveConnectConstraints.model, 'models/gemini-3.8-live');
+    assert.equal(minted.body.bidiGenerateContentSetup.model, 'models/gemini-3.8-live');
     const decl = r.json.setup.tools[0].functionDeclarations;
     assert.equal(decl.find((d: any) => d.name === 'ask_agent').behavior, 'NON_BLOCKING');
     assert.equal(decl.find((d: any) => d.name === 'end_call').behavior, undefined);

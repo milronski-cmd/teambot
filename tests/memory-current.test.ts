@@ -283,7 +283,7 @@ test('5 self-updating by default: a bot named after a known specialism becomes a
     const sem = await t.agent({ name: 'Sem', settings: { allowPrivateNetwork: true } });
     fx.pages.set('/seo.html', html('SEO-gids', `${A60} Anders kort Google hem af.`));
     fx.pages.set('/nieuws.html', html('Google-update november', 'Google heeft in november 2026 bekendgemaakt dat sitelinks in de zoekresultaten voortaan uit hoogstens acht regels bestaan, tegen zes regels eerder dit jaar.', 'Volgens deze blog mag de title tag van een pagina hoogstens 90 tekens lang zijn, maar dat is alleen een gerucht van een forum en nergens door Google zelf bevestigd of gedocumenteerd.'));
-    await t.api('PUT', `/specialists/${sem.id}`, { enabled: true, field: 'Zoekmachines en vindbaarheid', sources: [{ kind: 'web', target: `${fx.base}/seo.html` }] });
+    await t.api('PUT', `/specialists/${sem.id}`, { enabled: true, field: 'Zoekmachines en vindbaarheid', web: 'open', sources: [{ kind: 'web', target: `${fx.base}/seo.html` }] });
     const queries: string[] = [];
     sp.setOptions({ search: async (_u: string, q: string) => (queries.push(q), [{ title: 'Google-update', url: `${fx.base}/nieuws.html` }]) });
     const SITELINKS = 'Sitelinks in de zoekresultaten bestaan sinds november 2026 uit hoogstens acht regels.';

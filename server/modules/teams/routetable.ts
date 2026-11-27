@@ -803,6 +803,17 @@ GET    /mcp/bank/banks                                         shared
 POST   /mcp/bank/link                                          shared
 POST   /mcp/bank/finish                                        shared
 POST   /mcp/bank/unlink                                        shared
+GET    /mcp/microsoft                                           shared
+POST   /mcp/microsoft/start                                     shared
+POST   /mcp/microsoft/test                                      shared
+GET    /mcp/microsoft/mail                                      shared
+GET    /mcp/microsoft/mail/:id                                  shared
+POST   /mcp/microsoft/mail/send                                 shared
+GET    /dashboard/business                                      shared
+GET    /mcp/transip                                             shared
+PUT    /mcp/transip                                             shared
+GET    /mcp/forwardemail                                        shared
+PUT    /mcp/forwardemail                                        shared
 GET    /mcp/import/local                                       shared
 GET    /mcp/connections/:id                                    team
 PATCH  /mcp/connections/:id                                    team
@@ -811,6 +822,7 @@ DELETE /mcp/connections/:id                                    team
 POST   /mcp/connections/:id/restart                            team
 POST   /mcp/connections/:id/stop                               team
 POST   /mcp/connections/:id/test                               team
+POST   /mcp/health                                             team
 POST   /mcp/connections/:id/actions                            team
 PATCH  /mcp/connections/:id/tools/:name                        team
 POST   /mcp/connections/:id/tools/approve                      team

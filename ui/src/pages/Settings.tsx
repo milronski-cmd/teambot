@@ -1002,12 +1002,11 @@ function SettingsNav({ rows, tabs, current, big }: { rows: SettingsNavRow[]; tab
 /** The settings list as a column next to the page (wide screens). */
 function SettingsColumn({ rows, tabs, current }: { rows: SettingsNavRow[]; tabs: SettingsTab[]; current: string | null }) {
   return (
-    // Flat, part of the page: no line of its own (only the app's sidebar has one).
-    <aside className="h-full w-[232px] shrink-0">
-      <div className="scroll-thin h-full overflow-y-auto px-2.5 pb-6 pt-5">
-        <div className="mb-3 flex items-center gap-2 px-1.5">
+    <aside className="tb-sidebar-sheet h-full w-[248px] shrink-0 border-e border-line">
+      <div className="scroll-thin h-full overflow-y-auto px-3 pb-6 pt-5">
+        <div className="mb-4 flex items-center gap-2 px-1.5">
           <LeaveSettings compact />
-          <a href="#/settings" className="block text-lg font-bold tracking-tight hover:text-fg">
+          <a href="#/settings" className="tb-editorial block text-[20px] font-bold hover:text-fg">
             Instellingen
           </a>
         </div>
@@ -1164,7 +1163,7 @@ export function SettingsPage({ tab }: { tab?: string }) {
         )}
         {/* Every settings page opens the same way: the title, its one line as the (i) next to it (less text). */}
         <div className="flex min-w-0 flex-wrap items-center">
-          <h1 className="text-xl font-bold leading-tight tracking-tight sm:text-[22px]">{title}</h1>
+          <h1 className="tb-editorial text-[26px] font-bold leading-tight">{title}</h1>
           {hint && <HintTip text={hint} />}
         </div>
         <div className="mt-5 space-y-4">

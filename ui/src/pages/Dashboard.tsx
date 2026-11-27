@@ -1,7 +1,6 @@
 import React, { useEffect, useState } from 'react';
-import { ArrowUpRight, BarChart3, Blocks, Gauge, Inbox, Landmark, LayoutGrid, ListChecks, Mail, TrendingDown, TrendingUp, Users, X, type LucideIcon } from 'lucide-react';
+import { ArrowUpRight, BarChart3, TrendingDown, TrendingUp } from 'lucide-react';
 import { Card, EmptyState, Page, PageHeader, SectionTitle, cx, timeAgo } from '../components/ui';
-import { BotAvatar } from '../components/BotFace';
 import { t } from '../lib/i18n';
 import { useIsDesktop } from '../lib/media';
 import { useRoute } from '../lib/router';
@@ -10,11 +9,11 @@ import { teamApi, useTeamChanged } from '../modules/teamdata/api';
 import { BotName } from '../modules/teamdata/parts';
 import { TeamFilterNote } from '../modules/teams/FilterNote';
 import { useTeamView } from '../modules/teams/scope';
-import { useBusy, useClock, useWaiting } from '../shell/status';
+import { useBusy, useClock, useWaiting, useWorstUsage } from '../shell/status';
 import { AppsSection, appState, useApps, type AppRow } from './dashboard/Apps';
-import { botsBusy } from './dashboard/text';
 import { RatioBar, TrendLine, courseOf, ratioOf, trendNote } from './dashboard/Trend';
 import { MailSection } from './dashboard/Mail';
+import { BusinessSection } from './dashboard/Business';
 import { MoneySection } from './dashboard/Money';
 import { OpenApp, TasksBlock } from './dashboard/parts';
 import { TeamSection } from './dashboard/Team';
@@ -23,123 +22,96 @@ import { UsageSection, isUsageTile, type MeterTile } from './dashboard/Usage';
 type Tile = { id: number; sleutel: string; groep?: string | null; titel: string; waarde?: string | null; eenheid?: string | null; toelichting?: string | null; link?: string | null; bot?: string | null; history?: { v: number; at: string }[]; bijgewerkt?: string | null; team?: string; maximum?: string | null; meter?: { value: number; max: number } | null };
 
 /**
- * The apps of the start screen. The first is the home screen (every part as a widget); each of the others is one part,
- * whole, in a window. Their order is the order of the dock; the two colours are the icon's own (as on a phone's home
- * screen: an app is found by its colour before its name).
+ * The parts of the dashboard. The first is the overview; each of the others is one part, whole. 24 Nov 2026, the owner:
+ * the home screen of an "OS" (wallpaper, dock with coloured app icons, widgets of glass) was "onoverzichtelijk en druk";
+ * now plain tabs at the top, one row of numbers, and only cards that show something.
  */
 type AppId = '' | 'cijfers' | 'geld' | 'post' | 'verbruik' | 'team' | 'apps';
-const APPS: { id: AppId; label: string; icon: LucideIcon; from: string; to: string }[] = [
-  { id: '', label: 'Overzicht', icon: LayoutGrid, from: '#64748b', to: '#334155' },
-  { id: 'cijfers', label: 'Cijfers', icon: BarChart3, from: '#f59e0b', to: '#ea580c' },
-  { id: 'geld', label: 'Geld', icon: Landmark, from: '#10b981', to: '#047857' },
-  { id: 'post', label: 'Post', icon: Mail, from: '#3b82f6', to: '#1d4ed8' },
-  { id: 'verbruik', label: 'Verbruik', icon: Gauge, from: '#8b5cf6', to: '#6d28d9' },
-  { id: 'team', label: 'Team', icon: Users, from: '#ec4899', to: '#be185d' },
-  { id: 'apps', label: 'Apps', icon: Blocks, from: '#06b6d4', to: '#0e7490' },
-];
-/** Two places outside the dashboard that belong in the dock: what waits for him, and the task board. */
-const PLACES: { id: string; label: string; icon: LucideIcon; from: string; to: string; href: string }[] = [
-  { id: 'wacht', label: 'Wacht op jou', icon: Inbox, from: '#f97316', to: '#c2410c', href: '#/inbox' },
-  { id: 'taken', label: 'Taken', icon: ListChecks, from: '#14b8a6', to: '#0f766e', href: '#/tasks' },
+const APPS: { id: AppId; label: string }[] = [
+  { id: '', label: 'Overzicht' },
+  { id: 'cijfers', label: 'Cijfers' },
+  { id: 'geld', label: 'Geld' },
+  { id: 'post', label: 'Post' },
+  { id: 'verbruik', label: 'Verbruik' },
+  { id: 'team', label: 'Team' },
+  { id: 'apps', label: 'Apps' },
 ];
 
-/** An app's icon: a rounded tile in its own two colours, the sign in white. */
-function AppIcon({ icon: Icon, from, to, size = 48 }: { icon: LucideIcon; from: string; to: string; size?: number }) {
+/** The parts as sleek flat segmented tabs. */
+function Tabs({ active }: { active: AppId }) {
   return (
-    <span className="tb-app-icon flex shrink-0 items-center justify-center text-white" style={{ width: size, height: size, borderRadius: size * 0.3, background: `linear-gradient(145deg, ${from}, ${to})` }} aria-hidden>
-      <Icon style={{ width: size * 0.5, height: size * 0.5 }} strokeWidth={2} />
-    </span>
-  );
-}
-
-/** The dock: every app as its icon, the one that is open marked. Always at the foot of the screen. */
-function Dock({ active, inline }: { active: AppId; inline?: boolean }) {
-  const waiting = useWaiting();
-  return (
-    <nav aria-label={t('Onderdelen van het dashboard')} className={inline ? 'flex shrink-0 px-3 pt-1' : 'pointer-events-none sticky bottom-3 z-30 mt-auto flex shrink-0 justify-center px-2 pt-6'} data-testid="dashboard-dock">
-      <div className={cx('tb-glass tb-dock scroll-thin pointer-events-auto flex max-w-full items-end gap-1.5 overflow-x-auto px-2.5 pb-1.5 pt-2.5 sm:gap-2.5', inline && 'w-full')}>
-        {APPS.map((a) => {
-          const on = a.id === active;
-          return (
-            <a key={a.id || 'home'} href={a.id ? `#/dashboard/${a.id}` : '#/dashboard'} aria-current={on ? 'page' : undefined} className="tb-dock-item group flex w-[4.5rem] shrink-0 flex-col items-center gap-1 rounded-xl outline-none" data-testid={`dashboard-app-${a.id || 'home'}`}>
-              <AppIcon icon={a.icon} from={a.from} to={a.to} size={44} />
-              <span className={cx('max-w-full truncate text-[10.5px] leading-3', on ? 'font-semibold text-fg' : 'text-muted')}>{t(a.label)}</span>
-              <span className={cx('size-1 rounded-full', on ? 'bg-fg' : 'bg-transparent')} aria-hidden />
-            </a>
-          );
-        })}
-        {inline && <span className="mx-0.5 mb-5 h-9 w-px shrink-0 bg-fg/15" aria-hidden />}
-        {(inline ? PLACES : []).map((p) => (
-          <a key={p.id} href={p.href} className="tb-dock-item group relative flex w-[4.5rem] shrink-0 flex-col items-center gap-1 rounded-xl outline-none" data-testid={`dashboard-place-${p.id}`}>
-            <AppIcon icon={p.icon} from={p.from} to={p.to} size={44} />
-            {p.id === 'wacht' && waiting > 0 && <span className="absolute -top-1 end-0.5 flex h-5 min-w-5 items-center justify-center rounded-full bg-danger px-1 text-[11px] font-bold tabular-nums text-danger-fg">{waiting}</span>}
-            <span className="max-w-full truncate text-[10.5px] leading-3 text-muted">{t(p.label)}</span>
-            <span className="size-1" aria-hidden />
+    <nav aria-label={t('Onderdelen van het dashboard')} className="scroll-thin inline-flex max-w-full gap-1 overflow-x-auto rounded-lg border border-line bg-surface-2/70 p-0.5" data-testid="dashboard-dock">
+      {APPS.map((a) => {
+        const on = a.id === active;
+        return (
+          <a key={a.id || 'home'} href={a.id ? `#/dashboard/${a.id}` : '#/dashboard'} aria-current={on ? 'page' : undefined} className={cx('shrink-0 rounded-md px-3 py-1.5 text-[13px] transition-colors', on ? 'bg-surface font-semibold text-fg' : 'font-medium text-muted hover:text-fg')} data-testid={`dashboard-app-${a.id || 'home'}`}>
+            {t(a.label)}
           </a>
-        ))}
-      </div>
+        );
+      })}
     </nav>
   );
 }
 
-/** A widget on the home screen: one pane of glass around a part. */
+/** A card on the overview. */
 function Widget({ className, children }: { className?: string; children: React.ReactNode }) {
   return <div className={cx('tb-glass tb-widget', className)}>{children}</div>;
 }
 
-/**
- * The top of the home screen, one strip (4.17.0; was a big clock and three tall cards that were mostly empty): the
- * greeting and the day, the bots at work by their faces, and three counts that are each a way somewhere — what waits
- * for you, who works, which apps work. The time itself is in the menu bar.
- */
+/** One number on the overview: a label, the number, and where it leads. */
+function Stat({ label, value, href, tone, testid }: { label: string; value: string; href: string; tone?: 'warn'; testid: string }) {
+  return (
+    <a href={href} className="tb-glass group block rounded-[18px] px-4 py-3.5 transition-[border-color,box-shadow,transform] duration-150 hover:-translate-y-0.5 hover:border-line-strong hover:shadow-md" data-testid={testid}>
+      <div className="flex items-center justify-between gap-2 text-[13px] text-muted">
+        <span>{label}</span>
+        <ArrowUpRight className="size-3.5 opacity-0 transition-opacity duration-150 group-hover:opacity-70" aria-hidden />
+      </div>
+      <div className={cx('mt-1 text-2xl font-semibold tabular-nums tracking-tight', tone === 'warn' && 'text-warn')}>{value}</div>
+    </a>
+  );
+}
+
+/** The top of the overview: the greeting, and one row of the numbers that matter. Nothing else. */
 function Greeting({ apps }: { apps: AppRow[] | null }) {
   const me = useApp((s) => s.me);
   const { agents, busy } = useBusy();
   const waiting = useWaiting();
+  const worst = useWorstUsage();
   const now = useClock();
   const hour = now.getHours();
   const hello = hour < 6 ? t('Goedenacht') : hour < 12 ? t('Goedemorgen') : hour < 18 ? t('Goedemiddag') : t('Goedenavond');
   const first = String(me?.name || '').trim().split(/\s+/)[0];
-  const day = now.toLocaleDateString(undefined, { weekday: 'long', day: 'numeric', month: 'long' });
   const ok = (apps || []).filter((a) => appState(a).tone === 'ok').length;
-  const stats: { key: string; icon: LucideIcon; from: string; to: string; title: string; value: string; href: string }[] = [
-    { key: 'waiting', icon: Inbox, from: '#f97316', to: '#c2410c', title: t('Wacht op jou'), value: String(waiting), href: '#/inbox' },
-    { key: 'team', icon: Users, from: '#ec4899', to: '#be185d', title: t('Aan het werk'), value: t('{0} van {1}', busy.length, agents.length), href: '#/dashboard/team' },
-    { key: 'apps', icon: Blocks, from: '#06b6d4', to: '#0e7490', title: t('Apps werken'), value: apps === null ? '…' : t('{0} van {1}', ok, apps.length), href: '#/m/mcp/' },
-  ];
+  const used = worst ? new Intl.NumberFormat(undefined, { style: 'percent', maximumFractionDigits: 0 }).format((worst.usedPercent || 0) / 100) : '–';
   return (
-    <div className="tb-glass tb-widget flex flex-wrap items-center gap-x-6 gap-y-4 px-5 py-4 sm:px-6" data-testid="dashboard-hero">
-      <div className="min-w-0 flex-1">
-        <div className="text-2xl font-bold tracking-tight sm:text-[28px]" translate="no">
+    <div className="space-y-4 rounded-xl border border-line bg-surface p-5 sm:p-6" data-testid="dashboard-hero">
+      <div className="flex flex-wrap items-baseline justify-between gap-2">
+        <h1 className="text-2xl font-bold tracking-tight" translate="no">
           {first ? `${hello}, ${first}` : hello}
-        </div>
-        <div className="mt-1 flex flex-wrap items-center gap-3 text-sm text-muted">
-          <span className="first-letter:uppercase">{day}</span>
-          {agents.length > 0 && (
-            <a href="#/dashboard/team" className="flex items-center gap-2 rounded-full pe-2 transition-colors hover:text-fg" title={botsBusy(busy.length, agents.length)}>
-              <span className="flex -space-x-1.5">
-                {(busy.length ? busy : agents).slice(0, 6).map((a) => (
-                  <span key={a.id} className="rounded-full ring-2 ring-surface">
-                    <BotAvatar bot={a} size={22} mood={busy.length ? 'working' : 'idle'} />
-                  </span>
-                ))}
-              </span>
-              {botsBusy(busy.length, agents.length)}
-            </a>
-          )}
-        </div>
+        </h1>
+        <span className="text-xs font-medium text-muted">
+          {now.toLocaleDateString(undefined, { weekday: 'long', day: 'numeric', month: 'long' })}
+        </span>
       </div>
-      <div className="grid w-full grid-cols-3 gap-2 sm:w-auto" data-testid="dashboard-status">
-        {stats.map((x) => (
-          <a key={x.key} href={x.href} className="group flex flex-col items-start gap-2 rounded-2xl bg-fg/[0.05] px-3 py-2.5 transition-colors hover:bg-fg/[0.09] sm:min-w-[180px] sm:flex-row sm:items-center sm:gap-3" data-testid={`dashboard-stat-${x.key}`}>
-            <AppIcon icon={x.icon} from={x.from} to={x.to} size={34} />
-            <div className="min-w-0">
-              <div className="text-[12px] font-medium leading-4 text-muted sm:truncate">{x.title}</div>
-              <div className="text-lg font-bold leading-tight tracking-tight">{x.value}</div>
-            </div>
-          </a>
-        ))}
+      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4" data-testid="dashboard-status">
+        <Stat label={t('Wacht op jou')} value={String(waiting)} href="#/inbox" tone={waiting ? 'warn' : undefined} testid="dashboard-stat-waiting" />
+        <Stat label={t('Aan het werk')} value={t('{0} van {1}', busy.length, agents.length)} href="#/dashboard/team" testid="dashboard-stat-team" />
+        <Stat label={t('Verbruik')} value={used} href="#/dashboard/verbruik" testid="dashboard-stat-usage" />
+        <Stat label={t('Apps werken')} value={apps === null ? '…' : t('{0} van {1}', ok, apps.length)} href="#/m/mcp/" testid="dashboard-stat-apps" />
       </div>
+    </div>
+  );
+}
+
+/** What is not connected yet, on one line: no card per part with a paragraph each. */
+function NotConnected({ items }: { items: string[] }) {
+  if (!items.length) return null;
+  return (
+    <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-dashed border-line px-4 py-3 text-sm" data-testid="dashboard-not-connected">
+      <span className="text-muted">{t('Nog niet gekoppeld: {0}', items.join(', '))}</span>
+      <a href="#/m/mcp/" className="font-medium text-fg hover:underline">
+        {t('Koppelen')}
+      </a>
     </div>
   );
 }
@@ -179,10 +151,21 @@ export function DashboardPage() {
   const meters = (rows || []).filter((r) => r.meter) as MeterTile[];
   const costs = (rows || []).filter((r) => !r.meter && isUsageTile(r)) as MeterTile[];
   const numbers = (rows || []).filter((r) => !r.meter && !isUsageTile(r));
-  const here = APPS.find((a) => a.id === app)!;
+  // The team card only with a team (a new install has no bots yet: no empty card).
+  const hasBots = useBusy().agents.some((a) => !a.archived);
+  // What is not connected, named once on the overview (each part tells when it has loaded).
+  const [off, setOff] = useState<Record<string, boolean>>({});
+  const mark = (k: string) => (v: boolean) => setOff((o) => (o[k] === v ? o : { ...o, [k]: v }));
+  const missing = [off.bank && t('bank'), off.mail && t('mail'), apps && !apps.length && t('apps')].filter(Boolean) as string[];
   // One app, whole.
   let one: React.ReactNode = null;
-  if (app === 'cijfers') one = <NumbersApp rows={rows} numbers={numbers} err={err} several={several} />;
+  if (app === 'cijfers')
+    one = (
+      <div className="space-y-6">
+        <BusinessSection />
+        <NumbersApp rows={rows} numbers={numbers} err={err} several={several} />
+      </div>
+    );
   else if (app === 'geld') one = <MoneySection />;
   else if (app === 'post') one = <MailSection />;
   else if (app === 'verbruik') one = <UsageSection meters={meters} costs={costs} />;
@@ -198,52 +181,38 @@ export function DashboardPage() {
     <Page className="tb-os flex flex-col">
       {/* On the phone the way back (to "Meer") is the page's own. */}
       {!desktop && <PageHeader width="full" title="Dashboard" back={app ? { href: '#/dashboard', label: 'Dashboard' } : undefined} />}
-      {!desktop && <Dock active={app} inline />}
-      <div className="mx-auto w-full max-w-[1500px] shrink-0 space-y-4 px-3 pb-4 pt-2 sm:px-4">
+      <div className="mx-auto w-full max-w-[1200px] shrink-0 space-y-5 px-4 pb-8 pt-3 sm:px-6">
+        <Tabs active={app} />
         <TeamFilterNote />
         {app === '' ? (
-          <div className={cx('grid grid-cols-1 items-stretch gap-4 xl:grid-cols-12', desktop && 'pb-28')} data-testid="dashboard-home">
-            <div className="xl:col-span-12">
-              <Greeting apps={apps} />
+          <div className="space-y-5" data-testid="dashboard-home">
+            <Greeting apps={apps} />
+            <BusinessSection />
+            {numbers.length > 0 && (
+              <Widget>
+                <NumbersBlock rows={rows} numbers={numbers} err={err} />
+              </Widget>
+            )}
+            <div className="grid grid-cols-1 items-start gap-5 lg:grid-cols-2">
+              <Widget>
+                <TasksBlock />
+              </Widget>
+              {hasBots && (
+                <Widget>
+                  <TeamSection />
+                </Widget>
+              )}
+              <MoneySection compact quiet onOff={mark('bank')} />
+              <MailSection compact quiet onOff={mark('mail')} />
             </div>
-            <Widget className="xl:col-span-8">
-              <NumbersBlock rows={rows} numbers={numbers} err={err} />
-            </Widget>
-            <Widget className="xl:col-span-4">
-              <UsageSection meters={meters} costs={costs} compact />
-            </Widget>
-            <Widget className="xl:col-span-6">
-              <MoneySection compact />
-            </Widget>
-            <Widget className="xl:col-span-6">
-              <MailSection compact />
-            </Widget>
-            <Widget className="xl:col-span-4">
-              <TasksBlock />
-            </Widget>
-            <Widget className="xl:col-span-4">
-              <TeamSection />
-            </Widget>
-            <Widget className="xl:col-span-4">
-              <AppsSection apps={apps} compact />
-            </Widget>
+            <NotConnected items={missing} />
           </div>
         ) : (
-          <div className={cx('tb-glass tb-window min-h-[62vh]', desktop && 'mb-28')} data-testid="dashboard-window">
-            <div className="flex h-12 items-center justify-between gap-3 border-b border-fg/10 px-3">
-              <div className="flex min-w-0 items-center gap-2.5">
-                <AppIcon icon={here.icon} from={here.from} to={here.to} size={28} />
-                <h1 className="truncate text-[15px] font-bold tracking-tight">{t(here.label)}</h1>
-              </div>
-              <a href="#/dashboard" aria-label={t('Sluiten')} className="flex size-8 items-center justify-center rounded-full text-muted transition-colors hover:bg-fg/10 hover:text-fg" data-testid="dashboard-window-close">
-                <X className="h-4 w-4" aria-hidden />
-              </a>
-            </div>
-            <div className="tb-window-body p-4 sm:p-5">{one}</div>
+          <div className="min-h-[62vh]" data-testid="dashboard-window">
+            {one}
           </div>
         )}
       </div>
-      {desktop && <Dock active={app} />}
     </Page>
   );
 }

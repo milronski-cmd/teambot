@@ -7,7 +7,7 @@ import { formatDateTime, formatNumber } from '../../lib/format';
 import { t } from '../../lib/i18n';
 import { stableJson, useEditorSection } from '../../lib/editorSave';
 import type { Agent } from '../../lib/types';
-import { type BudgetId, type Cadence, type SourceKind, type SourceView, type SpecialistView, spApi, useSpecialistData } from './api';
+import { type BudgetId, type Cadence, type LearnFrom, type WebMode, type SourceKind, type SourceView, type SpecialistView, spApi, useSpecialistData } from './api';
 
 export const KIND_LABEL: Record<SourceKind, string> = { web: 'Website', feed: 'Feed', docs: 'Documentatie', file: 'Eigen bestand' };
 const KIND_HINT: Record<SourceKind, string> = {
@@ -25,8 +25,16 @@ interface Draft {
   budget: BudgetId;
   selfTest: boolean;
   learnWith: 'own' | 'cheap';
+  web: WebMode;
+  learnFrom: LearnFrom[];
   sources: SourceView[];
 }
+
+const LEARN_FROM_OPTIONS: { id: LearnFrom; label: string }[] = [
+  { id: 'conversations', label: 'Gesprekken met klanten' },
+  { id: 'products', label: 'Producten en prijzen' },
+  { id: 'sales', label: 'Verkopen' },
+];
 
 const draftOf = (v: SpecialistView): Draft => ({
   enabled: v.enabled,
@@ -36,6 +44,8 @@ const draftOf = (v: SpecialistView): Draft => ({
   budget: v.budget,
   selfTest: v.selfTest,
   learnWith: v.learnWith === 'cheap' ? 'cheap' : 'own',
+  web: v.web || 'off',
+  learnFrom: v.learnFrom || [],
   sources: v.sources.map((s) => ({ id: s.id, kind: s.kind, target: s.target, label: s.label, enabled: s.enabled, suggested: s.suggested })),
 });
 const comparable = (d: Draft) => ({ ...d, sources: d.sources.map((s) => ({ kind: s.kind, target: s.target, label: s.label, enabled: s.enabled })) });
@@ -189,6 +199,20 @@ function SpecialistCard({ agentId, agentName }: { agentId: string; agentName: st
                   ))}
                 </Select>
               </Field>
+            </div>
+            <Field label="Internet" hint={d.web === 'off' ? 'Leert alleen van de bronnen hierboven en je eigen materiaal.' : d.web === 'products' ? 'Zoekt alleen op over je eigen producten: prijzen, leveranciers, concurrenten. Wat hij vindt, keur jij eerst goed.' : 'Zoekt zelf nieuwe bronnen over zijn vakgebied.'}>
+              <Select value={d.web} onChange={(e) => set({ web: e.target.value as WebMode })}>
+                <option value="off">Niet zoeken</option>
+                <option value="products">Alleen over mijn producten</option>
+                <option value="open">Vrij zoeken in het vakgebied</option>
+              </Select>
+            </Field>
+            <div className="space-y-1.5">
+              <p className="text-sm font-medium">Leert van je eigen bedrijf</p>
+              {LEARN_FROM_OPTIONS.map((o) => (
+                <Toggle key={o.id} checked={d.learnFrom.includes(o.id)} onChange={(v) => set({ learnFrom: v ? [...d.learnFrom, o.id] : d.learnFrom.filter((x) => x !== o.id) })} label={o.label} />
+              ))}
+              <p className="text-xs text-muted">Wat hij hieruit leert, komt eerst bij jou ter goedkeuring.</p>
             </div>
             <Toggle checked={d.selfTest} onChange={(v) => set({ selfTest: v })} label="Zelftest (één keer per week)" />
             <p className="text-xs text-muted">Bij de zelftest bedenkt de specialist vragen; wat hij niet weet, wordt een leerdoel.</p>

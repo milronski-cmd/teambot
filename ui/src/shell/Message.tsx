@@ -722,7 +722,13 @@ export const MessageItem = memo(function MessageItem({ m, results, compact, show
             {m.reply_to && <ReplyQuote id={m.reply_to} threadId={m.thread_id} />}
             <div
               translate="no"
-              className={cx('rounded-bubble px-4 py-2.5 text-[14px] leading-relaxed', external ? 'bg-bubble' : 'bg-bubble-me text-bubble-me-fg', m.pinned && 'ring-2 ring-warn')}
+              className={cx(
+                'text-[14.5px] leading-relaxed',
+                external
+                  ? 'rounded-2xl border border-line bg-surface-2 px-4 py-2.5 text-fg'
+                  : 'rounded-[14px] border-s-[3px] border-brand bg-surface-2/85 px-4 py-2.5 text-fg',
+                m.pinned && 'ring-2 ring-warn',
+              )}
             >
               {body}
             </div>
@@ -767,12 +773,11 @@ export const MessageItem = memo(function MessageItem({ m, results, compact, show
   return (
     <div id={`m-${m.id}`} className={cx('group relative flex gap-2.5 px-4 sm:px-6', compact ? 'pt-1.5' : 'pt-5')}>
       {actions}
-      {/* One bot: its face is in the header, not next to every answer (as in Grok Bot); a group shows who speaks. */}
-      {!showName ? null : compact ? <div className="w-[26px] shrink-0" /> : <BotAvatar bot={agent || { id: m.author_id, name: m.author_name }} size={26} mood={streaming ? 'working' : 'idle'} className="mt-0.5" />}
-      <div className="flex min-w-0 max-w-full flex-1 flex-col items-start gap-2 sm:max-w-[85%]">
-        {(showName && !compact) && (
-          <div className="-mb-1 flex items-baseline gap-2 px-1">
-            <span className="text-[13px] font-bold">{m.author_name}</span>
+      {compact ? <div className="w-[28px] shrink-0" /> : <BotAvatar bot={agent || { id: m.author_id, name: m.author_name }} size={28} mood={streaming ? 'working' : 'idle'} className="mt-0.5" />}
+      <div className="flex min-w-0 max-w-full flex-1 flex-col items-start gap-2 sm:max-w-[88%]">
+        {!compact && (
+          <div className="-mb-1 flex items-baseline gap-2">
+            <span className="text-[13px] font-semibold text-fg">{m.author_name}</span>
             <span className="text-[11px] text-muted">{fmtTime(m.created_at)}</span>
           </div>
         )}
@@ -810,7 +815,7 @@ export const MessageItem = memo(function MessageItem({ m, results, compact, show
         ) : null}
         {plan && <PlanCard steps={plan} live={streaming} />}
         {(body || thinking) && (
-          <div className={cx('max-w-full rounded-bubble bg-bubble px-4 py-2.5 text-[14px] leading-relaxed', m.pinned && 'ring-2 ring-warn')}>
+          <div className={cx('max-w-full py-0.5 text-[14.5px] leading-relaxed text-fg', m.pinned && 'rounded-xl px-3 py-2 ring-2 ring-warn')}>
             {body}
             {thinking && <LiveLine m={m} sig={liveSig} label={liveLabel} detail={liveDetail} dots chip={steps.length > 0} />}
           </div>

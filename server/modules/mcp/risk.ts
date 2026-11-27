@@ -27,13 +27,42 @@ const DANGER_VERBS = new Set([
 /** Verbs that run code or commands. */
 const EXEC_VERBS = new Set(['run', 'exec', 'execute', 'eval', 'evaluate', 'shell', 'spawn', 'invoke']);
 
-function firstVerb(name: string): string {
-  const parts = name
+function nameParts(name: string): string[] {
+  return name
     .replace(/([a-z0-9])([A-Z])/g, '$1_$2')
     .toLowerCase()
     .split(/[^a-z0-9]+/)
     .filter(Boolean);
-  return parts[0] || '';
+}
+
+function firstVerb(name: string): string {
+  return nameParts(name)[0] || '';
+}
+
+/** Words that name money moving or being owed: payments, refunds, payouts, invoices, subscriptions. */
+const MONEY_WORDS = new Set([
+  'pay', 'pays', 'payment', 'payments', 'payout', 'payouts', 'refund', 'refunds', 'charge', 'charges', 'transfer', 'transfers',
+  'invoice', 'invoices', 'subscription', 'subscriptions', 'subscribe', 'checkout', 'purchase', 'buy', 'capture', 'withdraw',
+  'withdrawal', 'withdrawals', 'dispute', 'disputes',
+]);
+/** A tool that starts with one of these only looks money up (list_refunds, retrieve_balance, get_payment_intent). */
+const MONEY_READ_START = new Set(['get', 'list', 'search', 'read', 'fetch', 'query', 'find', 'describe', 'retrieve', 'lookup', 'view', 'show', 'count']);
+/** …unless another word in the name acts (get_and_refund_payment). */
+const MONEY_ACTS = new Set([
+  'create', 'update', 'cancel', 'delete', 'remove', 'send', 'finalize', 'capture', 'issue', 'void', 'confirm', 'approve', 'execute',
+  'make', 'process', 'submit', 'initiate', 'start', 'pay', 'refund', 'charge', 'transfer', 'withdraw', 'add', 'set', 'accept', 'close',
+]);
+
+/**
+ * Whether a connector tool moves money (create_refund, cancel_subscription, create_payment_link, finalize_invoice,
+ * capture_order_payment). Such a call is a payment: it is always "danger" with impact "payment", so it asks the owner
+ * on every access level, also in "Volledige toegang". A server's readOnlyHint cannot lift that: the name decides.
+ */
+export function movesMoney(name: string): boolean {
+  const parts = nameParts(name);
+  if (!parts.some((w) => MONEY_WORDS.has(w))) return false;
+  if (MONEY_READ_START.has(parts[0]) && !parts.slice(1).some((w) => MONEY_ACTS.has(w))) return false;
+  return true;
 }
 
 /**
@@ -66,6 +95,7 @@ export function riskOf(annotations: any, name: string, description = '', guess =
   const verb = firstVerb(name);
   if (DANGER_VERBS.has(verb)) r = stricter(r, 'danger');
   else if (EXEC_VERBS.has(verb)) r = stricter(r, 'exec');
+  if (movesMoney(name)) r = 'danger';
   if (r !== 'read') guessed = false;
   return { risk: r, guessed };
 }

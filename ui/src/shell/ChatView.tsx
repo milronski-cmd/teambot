@@ -630,7 +630,7 @@ export function ChatView({ threadId }: { threadId: string }) {
       <div className="flex min-w-0 flex-1 flex-col" style={pagesDocked ? { minWidth: CHAT_MIN } : undefined}>
         <header className="safe-top shrink-0 border-b border-line bg-surface">
           {/* With the model control in it, the phone's header stands a little closer together, so the name and the model both fit. */}
-          <div className={cx('@container flex h-[60px] items-center px-2 desk:h-[54px] desk:px-4', modelSwitch ? 'gap-1 desk:gap-2' : 'gap-2')}>
+          <div className={cx('@container flex h-[56px] items-center px-3 desk:h-[52px] desk:px-5', modelSwitch ? 'gap-1.5 desk:gap-2' : 'gap-2')}>
             {!desktop && (
               <a href="#/" className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-fg transition-colors hover:bg-surface-2 active:bg-surface-3" aria-label="Terug naar chats">
                 <ArrowLeft className="h-5 w-5" />
@@ -730,7 +730,7 @@ export function ChatView({ threadId }: { threadId: string }) {
 
         <div
           ref={scroller}
-          className="scroll-thin relative min-h-0 flex-1 overflow-y-auto pb-6"
+          className="tb-chat-canvas scroll-thin relative min-h-0 flex-1 overflow-y-auto pb-6"
           onScroll={(e) => {
             const el = e.currentTarget;
             const near = el.scrollHeight - el.scrollTop - el.clientHeight < 80;
@@ -804,7 +804,7 @@ export function ChatView({ threadId }: { threadId: string }) {
           </div>
           {showJump && (
             <button
-              className="sticky bottom-3 left-1/2 z-10 mx-auto flex -translate-x-1/2 items-center gap-1.5 rounded-full border border-line bg-surface px-3.5 py-1.5 text-xs font-semibold shadow-pop transition-colors hover:bg-surface-2"
+              className="sticky bottom-3 left-1/2 z-10 mx-auto flex -translate-x-1/2 items-center gap-1.5 rounded-full border border-line-strong/70 bg-surface px-3.5 py-1.5 text-xs font-semibold shadow-pop transition-[background-color,transform] duration-150 hover:-translate-y-0.5 hover:bg-surface-2"
               onClick={() => {
                 const el = scroller.current;
                 if (el) el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' });
@@ -815,7 +815,8 @@ export function ChatView({ threadId }: { threadId: string }) {
           )}
         </div>
 
-        <div className="mx-auto w-full max-w-[860px]">
+        <div className="tb-chat-canvas w-full">
+          <div className="mx-auto w-full max-w-[860px]">
           {elsewhere.map((w) => (
             <a
               key={w.id}
@@ -847,6 +848,7 @@ export function ChatView({ threadId }: { threadId: string }) {
             accessory={agent && thread.kind !== 'room' && !agent.shared_from ? <ChatUsage agent={agent} provider={provider} threadId={threadId} busy={busy} reserve={reserve ? { model: reserve.model } : undefined} /> : undefined}
             placeholder={asking && queue.enabled ? 'Typ je antwoord op de vraag…' : !desktop ? 'Bericht…' : agent && thread.kind !== 'room' ? `Bericht aan ${agent.name}…` : thread.kind === 'room' ? 'Bericht aan de groep (@naam)…' : undefined}
           />
+          </div>
         </div>
       </div>
 

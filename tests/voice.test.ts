@@ -131,7 +131,9 @@ test('realtime client secret: login + own bot required, fixed key never leaves t
     const s2 = JSON.parse(s.fake.seen.filter((x) => x.path === '/v1/realtime/client_secrets').at(-1)!.body.toString('utf8')).session;
     assert.equal(s2.model, 'gpt-realtime-2.1');
     assert.equal(s2.tools[0].name, 'ask_agent');
-    assert.doesNotMatch(s2.instructions, /Je bent behulpzaam/, 'agent mode does not need the full instructions');
+    // 25 Nov 2026, the owner: the voice "herkent het gesprek niet en de situatie". It knows who it is and what is going on.
+    assert.match(s2.instructions, /Je bent behulpzaam/, 'agent mode knows the bot instructions');
+    assert.match(s2.instructions, /De situatie nu/, 'agent mode knows the date, time and what the bot remembers');
 
     const bad = await s.A('POST', '/voice/realtime/session', { agentId: a.id, model: 'gpt-6-super' });
     assert.equal(bad.status, 400, 'models outside the server allowlist are refused');

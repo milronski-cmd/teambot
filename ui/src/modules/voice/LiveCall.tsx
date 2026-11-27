@@ -73,18 +73,19 @@ export function LiveCallButton({ threadId, agentId }: { threadId: string; agentI
   const active = useCall((s) => !!s.call && s.call.threadId === threadId);
   if (!agentId) return null;
   return (
+    // 25 Nov 2026: a bare phone icon was not found; the word is on the button.
     <Button
       variant="ghost"
-      size="icon"
-      aria-label="Live praten"
+      size="sm"
       title="Live praten (spraak)"
-      className={active ? 'text-ok' : undefined}
+      className={cx('gap-1.5 px-2.5', active && 'text-ok')}
       onClick={() => {
         if (useCall.getState().call) return toast(t('Er loopt al een gesprek. Hang eerst op (de balk onderaan).'));
         useCall.setState({ call: { threadId, agentId, n: ++callSeq } });
       }}
     >
-      <Phone className="h-4 w-4" />
+      <Phone className="h-4 w-4" aria-hidden />
+      {t('Bellen')}
     </Button>
   );
 }
@@ -448,7 +449,7 @@ function CallDialog({ threadId, agentId, onClose }: { threadId: string; agentId:
                   type="password"
                   autoComplete="off"
                   value={key}
-                  placeholder={kind === 'gemini' ? 'AIza…' : 'sk-…'}
+                  placeholder={kind === 'gemini' ? 'AIza… of AQ.…' : 'sk-…'}
                   onChange={(e) => setKey(e.target.value)}
                   onKeyDown={(e) => e.key === 'Enter' && saveKey()}
                   aria-label={kind === 'gemini' ? 'Google AI Studio-sleutel' : 'OpenAI API-sleutel'}

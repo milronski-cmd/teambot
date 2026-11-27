@@ -44,6 +44,10 @@ export interface CliDef {
   billing?: 'free' | 'subscription' | 'paid' | 'local';
   /** `<bin> <modelsArgs>` prints one "provider/model" per line (no prompt, no cost). */
   modelsArgs?: string[];
+  /** The models list prints "id<TAB>name" per line (Antigravity's `agy models`), not "provider/model". */
+  modelsTabbed?: boolean;
+  /** The model is chosen in the ACP session (`session/set_model`), not with a launch flag (Antigravity). */
+  acpSetModel?: boolean;
   acpProbe?: string;
   acpFallback?: string[];
   /** Flag to choose a model at launch (ACP agents). */
@@ -298,6 +302,9 @@ export const CLI_DEFS: CliDef[] = [
     bins: ['agy'],
     versionArgs: ['--version'],
     acpArgs: ['acp'],
+    modelsArgs: ['models'],
+    modelsTabbed: true,
+    acpSetModel: true,
     install: { note: 'Installeer Google Antigravity via antigravity.google; de CLI "agy" komt mee.' },
     login: 'agy acp --login  (of log in via de Antigravity-app)',
     docsUrl: 'https://antigravity.google/docs',

@@ -1,5 +1,111 @@
 # Changelog
 
+## [4.18.10] — 2026-11-25
+
+### Hersteld
+- **Verkoopcijfers in de leerronde** rekent TeamBot zelf uit (alleen euro, zoals het dashboard), in plaats van het model.
+
+## [4.18.9] — 2026-11-25
+
+### Hersteld
+- **Leren met je gekozen model**, ook als een CLI zegt dat hij kan antwoorden maar niets teruggeeft.
+
+## [4.18.8] — 2026-11-25
+
+### Hersteld
+- **Leren met je gekozen model** werkt ook als de bot zelf via Antigravity werkt (die kan geen losse vraag beantwoorden).
+
+## [4.18.7] — 2026-11-25
+
+### Leren van je eigen bedrijf
+- **Geen willekeurige internetrondes meer.** Een bot zoekt niet meer zelf op internet naar bronnen of nieuws over zijn
+  vakgebied, tenzij je dat per bot aanzet. Kan ook: alleen zoeken wat anderen vragen voor **jouw eigen producten**.
+- **Leren van eigen materiaal:** klantgesprekken en jouw correcties op antwoorden (pas vanaf 10 gesprekken of een
+  correctie), je producten uit Merchant Center en je verkoop uit Stripe. Wat een bot daaruit leert, keur je eerst goed.
+- **Leren met een ander model** als de bot via een CLI werkt die geen losse vraag kan beantwoorden (Antigravity).
+
+### Live praten
+- **De stem kent de situatie:** de instructies van de bot, de datum en tijd, wat hij onthouden heeft en de laatste
+  20 berichten van het gesprek. Bovenaan de chat staat nu een knop *Bellen*.
+
+## [4.18.6] — 2026-11-25
+
+### Hersteld
+- **Gemini Live start weer.** Google hernoemde een veld bij het aanmaken van de tijdelijke sleutel voor een live gesprek
+  ("Unknown name liveConnectConstraints"); TeamBot gebruikt nu de nieuwe naam.
+
+## [4.18.5] — 2026-11-25
+
+### Hersteld
+- **Nieuwe Google Gemini-sleutels ("AQ.…") worden herkend** bij *Sleutel plakken*, zodat je Gemini en Gemini Live kunt
+  koppelen met een sleutel uit Google AI Studio.
+
+## [4.18.4] — 2026-11-25
+
+### Google-modellen
+- **Gemini via Google Antigravity.** TeamBot vindt de Antigravity-CLI (agy) nu ook waar Google hem installeert, en toont
+  per bot de modellen van je Google-abonnement (Gemini 4 Neon, Carbon, Argon, Hydrogen, Gemini 3.8 Flash …). Het
+  gekozen model wordt in elke sessie ingesteld.
+
+## [4.18.3] — 2026-11-25
+
+### Dashboard
+- **Je bedrijf in grafieken.** Bovenaan het dashboard: omzet (Stripe), advertentiekosten (Google Ads), bezoekers
+  (Analytics), hoe vaak je in Google gevonden wordt (Search Console) en je saldo, elk met de vorige periode ernaast. Per
+  onderdeel een grafiek in een eigen vaste kleur, met bij aanwijzen de cijfers per dag. Kies 7, 30 of 90 dagen.
+- **Altijd actueel.** TeamBot haalt de cijfers elk half uur op de achtergrond opnieuw op; het dashboard zegt hoe oud ze
+  zijn en heeft een knop *Nu verversen*.
+
+## [4.18.2] — 2026-11-24
+
+### Hersteld
+- **WhatsApp koppelen werkt weer.** WhatsApp Web veranderde op 23 november zijn inlogpagina, waardoor er geen QR-code meer
+  kwam ("Onzichtbaar WhatsApp Web starten" bleef hangen). TeamBot gebruikt nu de herstelde versie van whatsapp-web.js.
+
+## [4.18.1] — 2026-11-24
+
+### Hersteld
+- **Google en GitHub werken weer.** In 4.18.0 ontbrak de ingebouwde inlog-app van TeamBot, waardoor Google en GitHub
+  om opnieuw inloggen vroegen. De build neemt ze nu altijd mee.
+- **Het menu is leesbaar.** Elk icoon in het menu links heeft zijn naam eronder (ingeklapt) of ernaast (uitgeklapt),
+  ook Zoeken, Meldingen en Instellingen. De meldingen openen naast de bel en omhoog, in plaats van onder het scherm.
+- **Gebruik onder de lijst met bots:** elke ring heeft zijn naam (Claude, OpenCode) en *Gebruik* staat erbij.
+
+## [4.18.0] — 2026-11-24
+
+### Alles koppelen
+- **Meerdere Google-accounts naast elkaar.** Onder Apps › Google staat *Nog een Google-account toevoegen*: een tweede
+  Gmail, een zakelijk en een privéaccount. Elk account heeft een eigen kaart, eigen tools voor de bots (met het adres
+  erbij) en een eigen developer token. Opnieuw inloggen met een ander adres vervangt nooit meer stil het account dat je
+  bots gebruikten. Op het dashboard kies je bij Post elk Google-postvak.
+- **Wat al gekoppeld is, staat niet meer bij de koppelingen.** Een gekoppelde app staat alleen nog bovenaan; met Google
+  gekoppeld verdwijnen ook Gmail, Drive, Agenda, Ads en Search Console uit *Meer apps*. In de Marktplaats staat
+  *Toegevoegd*.
+- **Outlook (Microsoft) met één klik**, ook meerdere accounts naast elkaar (privé en zakelijk, Hotmail, MSN,
+  Outlook.com en werkaccounts). Bots lezen, zoeken, maken concepten, versturen (vraagt eerst), verplaatsen mail en
+  beheren de agenda. Nieuwe mail start routines die op mail wachten; op het dashboard kies je elk Outlook-postvak.
+- **TransIP**: bots kijken of een domein vrij is, registreren het (kost geld: vraagt altijd jou), en beheren DNS en
+  nameservers. Koppelen met je TransIP-loginnaam en een key pair (Account › API).
+- **Forward Email**: domeinen toevoegen en controleren welke DNS-records nog missen, mailadressen en doorstuuradressen
+  maken, wijzigen en weghalen. Koppelen met je API-token (My Account › Security).
+- **Bank:** de toestemming duurt zo lang als je bank toestaat (was altijd 180 dagen, waarop banken met 90 dagen
+  weigerden). Een mislukte poging staat in het logboek.
+
+### Google Ads en Search Console beheren
+- **Bots wijzigen Google Ads**: campagnes, budgetten, advertentiegroepen, advertenties, zoekwoorden, uitsluitingen,
+  biedstrategieën en conversieacties. Altijd eerst een proefronde (`ads_preview`, er verandert niets), dan echt
+  (`ads_mutate`), plus losse tools voor campagne aan/uit, dagbudget en uitsluitingszoekwoorden. **Meer uitgeven**
+  (budget, bod, iets aanzetten, een nieuwe campagne, zoekwoord of advertentie) **vraagt altijd jou**, ook bij volledige
+  toegang; pauzeren en uitsluiten is een gewone stap.
+- **Geen developer token meer nodig**: Google vraagt er niet meer om. Een opgeslagen token gaat nog mee.
+- **Search Console**: sites toevoegen en weghalen, sitemaps weghalen.
+- Nieuwe tools van TeamBots eigen apps (Google, bank) werken na een update meteen, zonder eerst goed te keuren.
+
+### Klantenservice op WhatsApp
+- **Een apart zakelijk WhatsApp-nummer** (via QR-code) kan nu klantenservice doen: zet *Dit is een apart zakelijk
+  nummer* aan bij Klantenservice. Klanten mogen dan schrijven, met het AI-label en de controle van elk antwoord; geld,
+  prijzen en beloftes komen bij jou. Groepen blijven dicht. Op je eigen nummer verandert niets.
+
 ## [4.17.0] — 2026-11-23
 
 ### Een nieuwe indeling en een nieuw icoon

@@ -72,7 +72,7 @@ test('Claude Code compacts within a long turn at the same number as TeamBot betw
     const th = await t.api('POST', '/threads', { agentId: bot.id });
     await t.say(th.id, 'Lees alles na.');
     const first = fs.readFileSync(process.env.FAKE_CLI_LOG!, 'utf8').split('\n').filter(Boolean).map((l) => JSON.parse(l)).filter((l) => l.argv?.includes('-p')).at(-1);
-    assert.equal(CLI_CONTEXT_CAP, 200_000);
+    assert.equal(CLI_CONTEXT_CAP, 100_000);
     assert.equal(first.autoCompactWindow, String(CLI_CONTEXT_CAP));
     // The owner switched compaction off for this bot: Claude Code keeps its own setting.
     const a = t.app.ctx.store.agent(bot.id)!;

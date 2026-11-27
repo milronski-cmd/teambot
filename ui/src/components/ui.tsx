@@ -59,7 +59,7 @@ export function Button({ variant = 'secondary', size = 'md', loading, icon, clas
       type={type}
       {...p}
       disabled={disabled || loading}
-      className={cx('inline-flex shrink-0 select-none items-center font-medium transition-[background-color,opacity] disabled:cursor-not-allowed', v, s, radius, className)}
+      className={cx('inline-flex shrink-0 select-none items-center font-medium transition-[background-color,opacity,transform,box-shadow] duration-150 active:scale-[0.98] disabled:cursor-not-allowed disabled:active:scale-100', v, s, radius, className)}
     >
       {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : icon}
       {children}
@@ -67,7 +67,7 @@ export function Button({ variant = 'secondary', size = 'md', loading, icon, clas
   );
 }
 
-const control = 'rounded-control border border-line-strong bg-surface text-sm text-fg outline-none transition-colors placeholder:text-muted hover:border-line-strong focus:border-muted focus:bg-surface';
+const control = 'rounded-control border border-line-strong bg-surface text-sm text-fg outline-none transition-[border-color,box-shadow,background-color] duration-150 placeholder:text-muted hover:border-muted/60 focus:border-fg/45 focus:bg-surface focus:ring-2 focus:ring-fg/10';
 
 export const Input = React.forwardRef<HTMLInputElement, React.InputHTMLAttributes<HTMLInputElement>>(function Input({ className, ...p }, ref) {
   return <input ref={ref} {...p} className={cx('h-9 px-3 coarse:h-11', control, fullWidth(className), className)} />;
@@ -151,7 +151,7 @@ export function Field({ label, hint, children, className }: { label: React.React
 
 export function Card({ className, children, ...p }: React.HTMLAttributes<HTMLDivElement>) {
   return (
-    <div {...p} className={cx('rounded-card border border-line bg-surface', className)}>
+    <div {...p} className={cx('rounded-card border border-line bg-surface shadow-[0_1px_2px_rgb(0_0_0/0.03)]', className)}>
       {children}
     </div>
   );
@@ -203,7 +203,8 @@ export function HintTip({ text }: { text: React.ReactNode }) {
 export function CardHead({ icon, tone, title, hint, action, className, id, as: H = 'h2' }: { icon: LucideIcon; tone?: Tone; title: React.ReactNode; hint?: React.ReactNode; action?: React.ReactNode; className?: string; id?: string; as?: 'h2' | 'h3' }) {
   return (
     <div className={cx('flex flex-wrap items-center gap-x-3 gap-y-1', className)}>
-      <IconTile icon={icon} tone={tone} />
+      {/* Clean (24 Nov 2026): the icon small and quiet in front of the title, not a coloured tile. */}
+      <IconTile icon={icon} tone={tone} size="sm" />
       {/* The (i) sits next to the title, not in it: the heading's name stays the title alone. */}
       <div className="flex min-w-[min(100%,9rem)] flex-1 flex-wrap items-center">
         <H id={id} className="text-[15px] font-bold leading-snug tracking-tight [overflow-wrap:anywhere]">
@@ -217,12 +218,12 @@ export function CardHead({ icon, tone, title, hint, action, className, id, as: H
 }
 
 /** Small section title inside a page or card (with `icon`: the same icon tile as a card head). */
-export function SectionTitle({ children, action, className, icon, tone }: { children: React.ReactNode; action?: React.ReactNode; className?: string; icon?: LucideIcon; tone?: Tone }) {
+/** A quiet heading: just the title, no coloured tile (24 Nov 2026: "druk … veel dingen"). `icon`/`tone` are still accepted. */
+export function SectionTitle({ children, action, className }: { children: React.ReactNode; action?: React.ReactNode; className?: string; icon?: LucideIcon; tone?: Tone }) {
   return (
     <div className={cx('flex flex-wrap items-center justify-between gap-x-3 gap-y-2', className)}>
-      <div className="flex min-w-0 items-center gap-3">
-        {icon && <IconTile icon={icon} tone={tone} />}
-        <h2 className="text-[15px] font-bold leading-snug tracking-tight">{children}</h2>
+      <div className="flex min-w-0 items-center gap-2">
+        <h2 className="text-[15px] font-semibold leading-snug tracking-tight">{children}</h2>
       </div>
       {action}
     </div>
@@ -232,10 +233,10 @@ export function SectionTitle({ children, action, className, icon, tone }: { chil
 export function Badge({ tone = 'neutral', children, className }: { tone?: 'neutral' | 'accent' | 'ok' | 'warn' | 'danger'; children: React.ReactNode; className?: string }) {
   const t = {
     neutral: 'bg-surface-3 text-muted',
-    accent: 'bg-surface-3 text-fg',
-    ok: 'bg-ok-soft text-ok',
-    warn: 'bg-warn-soft text-warn',
-    danger: 'bg-danger-soft text-danger',
+    accent: 'bg-surface-3 text-fg ring-1 ring-inset ring-line-strong',
+    ok: 'bg-ok-soft text-ok ring-1 ring-inset ring-ok/15',
+    warn: 'bg-warn-soft text-warn ring-1 ring-inset ring-warn/15',
+    danger: 'bg-danger-soft text-danger ring-1 ring-inset ring-danger/15',
   }[tone];
   return <span className={cx('inline-flex shrink-0 items-center gap-1 whitespace-nowrap rounded-full px-2 py-0.5 text-[11.5px] font-semibold', t, className)}>{children}</span>;
 }
@@ -376,22 +377,26 @@ export function Modal({ open, onClose, title, children, footer, wide }: { open: 
 
 export function Tabs<T extends string>({ tabs, value, onChange }: { tabs: { id: T; label: React.ReactNode }[]; value: T; onChange(v: T): void }) {
   return (
-    <div className="scroll-thin -mx-1 flex gap-1 overflow-x-auto px-1 pb-1" role="tablist">
-      {tabs.map((t) => (
-        <button
-          key={t.id}
-          type="button"
-          role="tab"
-          aria-selected={value === t.id}
-          onClick={() => onChange(t.id)}
-          className={cx(
-            'h-8 shrink-0 whitespace-nowrap rounded-full px-3.5 text-[13px] transition-colors coarse:h-11',
-            value === t.id ? 'bg-surface-3 font-semibold text-fg' : 'font-medium text-muted hover:bg-surface-2 hover:text-fg',
-          )}
-        >
-          {t.label}
-        </button>
-      ))}
+    <div className="scroll-thin flex gap-1 overflow-x-auto border-b border-line" role="tablist">
+      {tabs.map((t) => {
+        const on = value === t.id;
+        return (
+          <button
+            key={t.id}
+            type="button"
+            role="tab"
+            aria-selected={on}
+            onClick={() => onChange(t.id)}
+            className={cx(
+              'relative h-9 shrink-0 whitespace-nowrap px-3 text-[13.5px] transition-colors coarse:h-11',
+              on ? 'font-semibold text-fg' : 'font-medium text-muted hover:text-fg',
+            )}
+          >
+            {t.label}
+            {on && <span className="absolute bottom-0 start-2 end-2 h-[2px] rounded-full bg-fg" aria-hidden />}
+          </button>
+        );
+      })}
     </div>
   );
 }
@@ -443,7 +448,7 @@ export function PageHeader({ title, subtitle, actions, back: given, width = '4xl
           <div className="flex items-center gap-3">
             {icon && <IconTile icon={icon} tone={tone} size="xl" />}
             <div className="flex min-w-0 flex-wrap items-center">
-              <h1 className="text-xl font-bold leading-tight tracking-tight sm:text-[22px]">{title}</h1>
+              <h1 className="tb-editorial text-[26px] font-bold leading-tight sm:text-[28px]">{title}</h1>
               {subtitle && <HintTip text={subtitle} />}
             </div>
           </div>

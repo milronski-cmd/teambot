@@ -26,6 +26,8 @@ import { Politeness, RobotsError, docLinks, isFeed, parseFeed, readable, sha } f
 import { clip, containment, jaccard, looksLikeInstruction, newParagraphs, normalize, paragraphs, grounded, quoteSafe, sanitizeSource, shortIds, tokens } from './guard.js';
 import { BUDGETS, type GoalRow, type RoundLine, type SourceRow, SOURCE_LABEL, type SpecialistService } from './service.js';
 import { newsQuery } from './defaults.js';
+import { conversationMaterial, ownSystem, productMaterial, productQueries, salesMaterial, type OwnKind, type OwnUnit, type Product } from './material.js';
+import { webModeOf } from './service.js';
 
 export interface RoundOptions {
   /** `auto` = started by TeamBot's own schedule: skipped quietly (null) when there is nothing to learn with now. */
@@ -68,6 +70,10 @@ interface Unit {
   entryId?: string;
   /** Found with a web search, not one of the specialist's own sources: may add, never overrule those. */
   found?: boolean;
+  /** The owner's own material (material.ts): learned with its own instruction. */
+  own?: OwnKind;
+  /** What is learned from it waits for the owner's approval ("te controleren"). */
+  propose?: boolean;
 }
 
 const PART_CHARS = 12_000;
@@ -457,7 +463,7 @@ async function round(svc: SpecialistService, agent: Agent, o: RoundOptions) {
     ]
       .filter(Boolean)
       .join('\n');
-    const system = extractionSystem(prof.field, { goalsOnly: u.goalsOnly, max: FACTS_PER_CALL, about: aboutOf(ctx, agent) });
+    const system = u.own ? ownSystem(prof.field, u.own, FACTS_PER_CALL, aboutOf(ctx, agent), ownProductsSeen.map((p) => p.title)) : extractionSystem(prof.field, { goalsOnly: u.goalsOnly, max: FACTS_PER_CALL, about: aboutOf(ctx, agent) });
     const estimate = estimateTokens(system.length + prompt.length) + MAX_OUT;
     if (!canCall(estimate)) return 'budget';
     o.progress?.(`Leert van ${clip(label, 60)}`);
@@ -546,6 +552,8 @@ async function round(svc: SpecialistService, agent: Agent, o: RoundOptions) {
         // of a technique or guideline.
         reviewKind: mem.reviewKindOf?.(factText) || 'practice',
         observedAt: u.published || undefined,
+        // Learned from the owner's own material, or about his products found on the internet: he approves it first.
+        ...(u.propose ? { forcePropose: true } : {}),
       });
       const base = { text: factText, source: u.url, sourceLabel: label, published: u.published, itemId: out?.item?.id, ref: out?.item?.ref, changeId: out?.changeId || null };
       const act = String(out?.action || 'invalid');
@@ -718,6 +726,41 @@ async function round(svc: SpecialistService, agent: Agent, o: RoundOptions) {
 
   let staleSources = 0;
   let budgetOut = false;
+
+  // 1b. The owner's own material first (material.ts): his customer conversations and corrections, his products, his
+  //     sales. Learned only when there is enough of it; everything learned from it waits for his approval.
+  const learnOwn: string[] = Array.isArray(prof.settings?.learnFrom) ? prof.settings.learnFrom : [];
+  let ownProductsSeen: Product[] = [];
+  if (learnOwn.length && !o.signal?.aborted) {
+    const ownSince: Record<string, string> = { ...(prof.settings?.ownSince || {}) };
+    const take = async (kind: OwnKind, got: { units: OwnUnit[]; gate: { ready: boolean; why?: string } }) => {
+      if (!got.gate.ready) {
+        lines.push({ kind: 'skipped', text: got.gate.why || 'Nog niets om van te leren.' });
+        return;
+      }
+      const pseudo = { id: `own:${agent.id}:${kind}`, agent_id: agent.id, user_id: userId, kind: 'web', target: `teambot:${kind}`, label: 'Eigen materiaal', enabled: true, suggested: false, state: {}, sort: -1 } as any as SourceRow;
+      for (const u of got.units) {
+        if (budgetOut || o.signal?.aborted) break;
+        if ((await learnFrom(pseudo, { ...u, propose: true }, u.text)) === 'budget') budgetOut = true;
+      }
+      if (!budgetOut) ownSince[kind] = now();
+    };
+    try {
+      if (learnOwn.includes('conversations')) await take('conversations', conversationMaterial(ctx, agent, ownSince.conversations || null));
+      if (learnOwn.includes('products')) {
+        const pm = await productMaterial(ctx, agent);
+        ownProductsSeen = pm.products;
+        // The assortment itself only once a week (it rarely changes); the list is still used for searching below.
+        if (Date.now() - (Date.parse(ownSince.products || '') || 0) > 6.5 * 864e5) await take('products', pm);
+      }
+      if (learnOwn.includes('sales')) await take('sales', await salesMaterial(ctx, agent));
+    } catch (e: any) {
+      lines.push({ kind: 'error', text: clip(`Eigen materiaal lezen lukte niet: ${e?.message || e}`, 300) });
+    }
+    const cur = svc.profile(agent.id);
+    if (cur) ctx.store.update('specialist_profiles', agent.id, { settings: { ...cur.settings, ownSince } }, 'agent_id');
+  }
+
   for (const s of order) {
     if (o.signal?.aborted) break;
     const label = s.label || s.target;
@@ -791,14 +834,31 @@ async function round(svc: SpecialistService, agent: Agent, o: RoundOptions) {
   //    before, read like a source. Works without the owner adding anything; costs one search and at most NEWS_PAGES
   //    model calls, inside this round's budget.
   const lastSearch = Date.parse(prof.settings?.newsSearchAt || '') || 0;
-  if (!budgetOut && !o.signal?.aborted && agent.settings?.private !== true && Date.now() - lastSearch > NEWS_EVERY_DAYS * 864e5 && canCall(2500)) {
+  //    25 Nov 2026: only when the owner allows searching the internet for this bot (`web`): "products" searches only
+  //    what others ask for the products he sells himself; "open" is the field-wide search of before.
+  const webMode = webModeOf(prof.settings);
+  if (webMode !== 'off' && !budgetOut && !o.signal?.aborted && agent.settings?.private !== true && Date.now() - lastSearch > NEWS_EVERY_DAYS * 864e5 && canCall(2500)) {
     const seen = new Set<string>(Array.isArray(prof.settings?.newsSeen) ? prof.settings.newsSeen : []);
     const own = new Set(sources.map((x) => x.target));
     try {
-      o.progress?.('Zoekt wat er veranderd is');
-      const query = newsQuery(prof.field);
+      let hits: { title: string; url: string; q?: string }[] = [];
+      if (webMode === 'products') {
+        o.progress?.('Zoekt wat anderen vragen voor jouw producten');
+        if (!ownProductsSeen.length) ownProductsSeen = (await productMaterial(ctx, agent)).products;
+        // A different few products each round, so over the weeks the whole assortment is compared.
+        const turn = Number(prof.settings?.productTurn || 0);
+        const pool = ownProductsSeen.slice(turn % Math.max(1, ownProductsSeen.length)).concat(ownProductsSeen);
+        for (const q of productQueries(pool, 3)) {
+          for (const h of await svc.opts.search(userId, q, 4)) hits.push({ ...h, q });
+        }
+        const cur0 = svc.profile(agent.id);
+        if (cur0) ctx.store.update('specialist_profiles', agent.id, { settings: { ...cur0.settings, productTurn: turn + 3 } }, 'agent_id');
+      } else {
+        o.progress?.('Zoekt wat er veranderd is');
+        hits = await svc.opts.search(userId, newsQuery(prof.field), 6);
+      }
       // (A page that is not about the field is judged by the extraction call itself: "relevant": false, nothing learned.)
-      const hits = (await svc.opts.search(userId, query, 6)).filter((h) => /^https?:\/\//i.test(h?.url || '') && !seen.has(sha(h.url)) && !own.has(h.url));
+      hits = hits.filter((h) => /^https?:\/\//i.test(h?.url || '') && !seen.has(sha(h.url)) && !own.has(h.url));
       const pseudo = { id: `search:${agent.id}`, agent_id: agent.id, user_id: userId, kind: 'web', target: 'zoeken', label: 'Gevonden met zoeken', enabled: true, suggested: false, state: {}, sort: 999 } as any as SourceRow;
       let read = 0;
       for (const h of hits) {
@@ -815,7 +875,8 @@ async function round(svc: SpecialistService, agent: Agent, o: RoundOptions) {
           }
           if (clean.text.trim().length < 200) continue;
           read++;
-          if ((await learnFrom(pseudo, { url: h.url, title: clip(r.title || h.title || h.url, 120), text: clean.text, published: isoOrNull(f.lastModified), found: true }, clean.text)) === 'budget') budgetOut = true;
+          const market = webMode === 'products' ? { own: 'market' as OwnKind, propose: true } : {};
+          if ((await learnFrom(pseudo, { url: h.url, title: clip(r.title || h.title || h.url, 120), text: clean.text, published: isoOrNull(f.lastModified), found: true, ...market }, clean.text)) === 'budget') budgetOut = true;
         } catch (e: any) {
           // A page that cannot be read is simply not learned from (no error line: the owner did not choose it).
           ctx.log.info?.(`[specialists] gevonden pagina niet gelezen: ${plainFetchError(e)}`);

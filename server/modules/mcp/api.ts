@@ -8,6 +8,10 @@ import type { ConnectionRow, ToolRow } from './db.js';
 import { BEHIND_GOOGLE, CATALOG, type CatalogEntry, catalogEntry } from './catalog.js';
 import { GOOGLE_ID, registerGoogle, revokeGoogle } from './google.js';
 import { BANK_ID, registerBank, revokeBank } from './bank.js';
+import { MS_ID, registerMicrosoft, revokeMicrosoft } from './microsoft.js';
+import { TRANSIP_ID, TRANSIP_SECRET, registerTransip } from './transip.js';
+import { FORWARDEMAIL_ID, FORWARDEMAIL_SECRET, registerForwardEmail } from './forwardemail.js';
+import { forgetSecret } from './keyapp.js';
 import { registerMailboxes } from './mailboxes.js';
 import { CALLBACK_PATH, beginOAuth, completeOAuth, connectionSecretPrefix, copyOAuthClient, getConn, prepareOAuth, revokeOAuth, setOAuthClient, sharedOAuthClients } from './oauth.js';
 import { isRisk, riskOf, riskRank } from './risk.js';
@@ -26,6 +30,7 @@ import { probeUrl } from './oauth.js';
 import { teambotApp } from './teambot-apps.js';
 import { registerImportRoutes } from './import-routes.js';
 import { actionsByDefault } from './defaults.js';
+import { checkAll } from './health.js';
 
 import { baseUrl } from '../../core/http.js';
 export { baseUrl };
@@ -340,6 +345,18 @@ function lockToTemplate(b: any, entry: CatalogEntry) {
   }
 }
 
+/**
+ * The catalogue entries this user already has: every connection made from the catalogue, and with the built-in Google
+ * login also the separate Google apps it replaces (Gmail, Drive, Ads ...). Keeps a connected app out of the
+ * "Meer apps" list and marks it "Toegevoegd" in the Marktplaats.
+ */
+export function connectedCatalogIds(ctx: Ctx, userId: string): Set<string> {
+  const ids = new Set<string>();
+  for (const c of ctx.store.find<ConnectionRow>('mcp_connections', { user_id: userId })) if (c.catalog_id) ids.add(c.catalog_id);
+  if (ids.has('google')) for (const id of BEHIND_GOOGLE) ids.add(id);
+  return ids;
+}
+
 export function registerRoutes(ctx: Ctx, mgr: McpManager, registry?: Registry) {
   const strictFor = (u: { role: any }) => strictPolicyFor(ctx, u);
   const api = ctx.api;
@@ -351,6 +368,7 @@ export function registerRoutes(ctx: Ctx, mgr: McpManager, registry?: Registry) {
     ah(async (req) => {
       const u = user(req);
       const stdioOk = mayUseStdio(ctx, u.id);
+      const linked = connectedCatalogIds(ctx, u.id);
       return CATALOG.map((e) => ({
         ...e,
         available: e.transport !== 'stdio' || e.id === 'custom' || stdioOk,
@@ -360,6 +378,8 @@ export function registerRoutes(ctx: Ctx, mgr: McpManager, registry?: Registry) {
         runtime: (e.command && toolchainOf(e.command)) || undefined,
         oneClick: oneClick(e),
         advanced: BEHIND_GOOGLE.has(e.id) || undefined,
+        /** Already connected (or covered by the Google login): the Apps page does not offer it a second time. */
+        connected: linked.has(e.id) || undefined,
         // Built-in templates count as trusted (publisher TeamBot); "Eigen server" is configured by the user.
         signature: e.id === 'custom' ? null : builtinView(),
       }));
@@ -821,7 +841,11 @@ export function registerRoutes(ctx: Ctx, mgr: McpManager, registry?: Registry) {
   }
 
   registerGoogle(ctx, mgr, { baseUrl: (req) => baseUrl(ctx, req), uniqueSlug: (userId, wanted) => uniqueSlug(ctx, userId, wanted), callbackPage, emit, view: (c) => connView(ctx, mgr, c, true), setBindings: (userId, connId, ids) => setBindings(ctx, userId, connId, ids) });
+  registerMicrosoft(ctx, mgr, { baseUrl: (req) => baseUrl(ctx, req), uniqueSlug: (userId, wanted) => uniqueSlug(ctx, userId, wanted), callbackPage, emit, view: (c) => connView(ctx, mgr, c, true), setBindings: (userId, connId, ids) => setBindings(ctx, userId, connId, ids) });
   registerBank(ctx, mgr, { baseUrl: (req) => baseUrl(ctx, req), uniqueSlug: (userId, wanted) => uniqueSlug(ctx, userId, wanted), callbackPage, emit, view: (c) => connView(ctx, mgr, c, true), setBindings: (userId, connId, ids) => setBindings(ctx, userId, connId, ids), actionsByDefault: (userId) => actionsByDefault(ctx, userId) });
+  const keyApp = { uniqueSlug: (userId: string, wanted: string) => uniqueSlug(ctx, userId, wanted), emit, view: (c: ConnectionRow) => connView(ctx, mgr, c, true), setBindings: (userId: string, connId: string, ids: string[]) => setBindings(ctx, userId, connId, ids), actionsByDefault: (userId: string) => actionsByDefault(ctx, userId) };
+  registerTransip(ctx, mgr, keyApp);
+  registerForwardEmail(ctx, mgr, keyApp);
   registerMailboxes(ctx);
   registerImportRoutes(ctx, mgr, { createConnection, probe: (userId, url, transport) => probeUrl(ctx, userId, url, transport), view: (c) => connView(ctx, mgr, c) });
 
@@ -981,6 +1005,10 @@ export function registerRoutes(ctx: Ctx, mgr: McpManager, registry?: Registry) {
       if (c.auth === 'oauth') revoke = await revokeOAuth(ctx, c, { forget: true });
       else if (c.catalog_id === GOOGLE_ID) revoke = await revokeGoogle(ctx, c);
       else if (c.catalog_id === BANK_ID) revoke = await revokeBank(ctx, c);
+      else if (c.catalog_id === MS_ID) revoke = await revokeMicrosoft(ctx, c);
+      // A key app's key goes with its connection (nothing to end at the service: the key stays valid there until the owner removes it).
+      else if (c.catalog_id === TRANSIP_ID) forgetSecret(ctx, u.id, TRANSIP_SECRET);
+      else if (c.catalog_id === FORWARDEMAIL_ID) forgetSecret(ctx, u.id, FORWARDEMAIL_SECRET);
       await mgr.remove(c.id);
       deleteKVSecrets(ctx, c.env);
       deleteKVSecrets(ctx, c.headers);
@@ -1095,6 +1123,15 @@ export function registerRoutes(ctx: Ctx, mgr: McpManager, registry?: Registry) {
   api.post(
     '/mcp/connections/:id/test',
     ah(async (req) => verify(user(req).id, ownConn(ctx, req), req.body || {})),
+  );
+
+  /** The daily check of your apps, now (health.ts): approves nothing, used by the update script after an install. */
+  api.post(
+    '/mcp/health',
+    ah(async (req) => {
+      const results = await checkAll(ctx, mgr, user(req).id);
+      return { ok: results.every((r) => r.ok), results };
+    }),
   );
 
   /**

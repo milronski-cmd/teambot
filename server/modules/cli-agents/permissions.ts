@@ -7,6 +7,7 @@ import { passGate } from '../../tools/gate.js';
 import { redact } from '../../core/secrets.js';
 import { approvalWhat } from '../../../shared/approvalLabels.js';
 import { ownerOnlyText, sharedRunOf } from '../../agent/shared.js';
+import { movesMoney } from '../mcp/risk.js';
 
 /**
  * The way in to the permission gate for a CLI engine's own tools. Every approval request a CLI makes (Claude Code
@@ -75,6 +76,7 @@ const SENDS = new Set(['send', 'publish', 'post', 'reply', 'forward', 'share', '
  *    for TeamBot's own channels.
  */
 export function appToolRisk(tool: string, input: any): ToolRisk {
+  if (movesMoney(appToolParts(tool)?.tool || tool)) return 'danger';
   const words = nameWords(appToolParts(tool)?.tool || tool);
   const acts = words.slice(1).some((w) => ACTS.has(w) || SENDS.has(w) || (OUTWARD.has(w) && !['message', 'email', 'mail', 'comment', 'order', 'invoice', 'payment'].includes(w)));
   if (READ_START.has(words[0]) && !acts) return 'read';
@@ -86,7 +88,8 @@ export function appToolRisk(tool: string, input: any): ToolRisk {
 
 /** Paying through an app is never the bot's own call: it asks on every level, whatever else the owner allowed. */
 export function appToolImpact(tool: string): ToolImpact {
-  return nameWords(appToolParts(tool)?.tool || tool).some((w) => MONEY.has(w)) ? 'payment' : 'external';
+  const name = appToolParts(tool)?.tool || tool;
+  return movesMoney(name) || nameWords(name).some((w) => MONEY.has(w)) ? 'payment' : 'external';
 }
 
 /**

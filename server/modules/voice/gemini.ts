@@ -86,7 +86,7 @@ export async function createGeminiSession(
   const setup = {
     model: `models/${model}`,
     generationConfig: { responseModalities: ['AUDIO'], speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: voice } } } },
-    systemInstruction: { parts: [{ text: buildInstructions(ctx, agent, thread, mode, settings, specs) }] },
+    systemInstruction: { parts: [{ text: await buildInstructions(ctx, agent, thread, mode, settings, specs) }] },
     ...(mode === 'agent' ? { tools: geminiTools(specs) } : {}),
     inputAudioTranscription: {},
     outputAudioTranscription: {},
@@ -104,7 +104,8 @@ export async function createGeminiSession(
         uses: 1,
         expireTime: new Date(at + 35 * 60_000).toISOString(),
         newSessionExpireTime: new Date(at + 60_000).toISOString(),
-        liveConnectConstraints: { model: `models/${model}` },
+        // Google renamed this field (25 Nov 2026: "Unknown name liveConnectConstraints at auth_token").
+        bidiGenerateContentSetup: { model: `models/${model}` },
       }),
       redirect: 'error',
       signal: AbortSignal.timeout(20_000),

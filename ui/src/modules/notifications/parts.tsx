@@ -196,7 +196,8 @@ export function NotificationList({ compact, onNavigate }: { compact?: boolean; o
 }
 
 /** The bell: unread count; on wide screens a popover with the history, on the phone a link to the Meldingen page. */
-export function NotificationBell({ className, size = 'md' }: { className?: string; size?: 'md' | 'lg' }) {
+/** `labeled`: the word "Meldingen" shown with the bell (the menu on the left): under it when folded, beside it when unfolded. */
+export function NotificationBell({ className, size = 'md', labeled }: { className?: string; size?: 'md' | 'lg'; labeled?: 'below' | 'beside' }) {
   const unread = useNotifications((s) => s.unread);
   const open = useNotifications((s) => s.panelOpen);
   const count = useNotifications((s) => s.items?.length ?? 0);
@@ -210,14 +211,22 @@ export function NotificationBell({ className, size = 'md' }: { className?: strin
   }, [desktop, open]);
   // The bell sits in the list panel, which clips what sticks out of it: the panel is placed fixed on the window, under
   // the bell and kept inside it (a fixed element is not cut off by the list's overflow).
-  const [at, setAt] = useState<{ top: number; left: number } | null>(null);
+  // In the menu on the left the bell sits low: the panel then opens beside it, upwards, so it is never cut off by
+  // the bottom of the window (24 Nov 2026, the owner: "die belletje … kan je de tekst niet eens lezen").
+  const [at, setAt] = useState<{ top?: number; bottom?: number; left: number; max: number } | null>(null);
   useEffect(() => {
     if (!open) return;
     const place = () => {
       const r = ref.current?.getBoundingClientRect();
       if (!r) return;
       const width = Math.min(420, window.innerWidth - 24);
-      setAt({ top: r.bottom + 6, left: Math.max(12, Math.min(r.left, window.innerWidth - width - 12)) });
+      const h = window.innerHeight;
+      if (r.top > h / 2) {
+        const left = r.right + 16 + width <= window.innerWidth - 12 ? r.right + 16 : Math.max(12, window.innerWidth - width - 12);
+        setAt({ bottom: Math.max(12, h - r.bottom), left, max: Math.min(640, r.bottom - 12) });
+      } else {
+        setAt({ top: r.bottom + 6, left: Math.max(12, Math.min(r.left, window.innerWidth - width - 12)), max: Math.min(640, h - r.bottom - 18) });
+      }
     };
     place();
     window.addEventListener('resize', place);
@@ -239,15 +248,27 @@ export function NotificationBell({ className, size = 'md' }: { className?: strin
     );
   return (
     <div className="relative" ref={ref}>
-      <button type="button" className={btn} aria-label={label} title="Meldingen" aria-haspopup="dialog" aria-expanded={open} onClick={() => setOpen(!open)}>
-        <Bell className="size-icon-lg" aria-hidden />
-        {badge}
+      <button type="button" className={labeled ? className : btn} aria-label={label} title={labeled ? undefined : 'Meldingen'} aria-haspopup="dialog" aria-expanded={open} onClick={() => setOpen(!open)}>
+        {labeled ? (
+          <>
+            <span className="relative flex size-8 shrink-0 items-center justify-center">
+              <Bell className="size-[19px]" aria-hidden />
+              {badge}
+            </span>
+            <span className={labeled === 'below' ? 'max-w-full text-center text-[10.5px] font-semibold leading-tight line-clamp-2' : 'min-w-0 flex-1 truncate text-start'}>Meldingen</span>
+          </>
+        ) : (
+          <>
+            <Bell className="size-icon-lg" aria-hidden />
+            {badge}
+          </>
+        )}
       </button>
       {open && at && (
         <div
           role="dialog"
           aria-labelledby={titleId}
-          style={{ top: at.top, left: at.left, maxHeight: `min(640px, calc(100vh - ${Math.round(at.top) + 12}px))` }}
+          style={{ top: at.top, bottom: at.bottom, left: at.left, maxHeight: at.max }}
           className="fixed z-50 flex w-[min(420px,calc(100vw-24px))] flex-col rounded-2xl border border-line bg-surface shadow-2xl"
         >
           <div className="flex items-center gap-1 px-4 pb-1 pt-3">

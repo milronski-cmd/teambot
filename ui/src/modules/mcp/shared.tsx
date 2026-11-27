@@ -168,6 +168,8 @@ export interface CatalogEntry {
   oneClick?: 'connect' | 'login' | 'form';
   /** Only shown when searched for: the built-in Google connection does the same in one login. */
   advanced?: boolean;
+  /** Already connected by this user (or covered by the Google login). */
+  connected?: boolean;
   /** Built-in templates: TeamBot (trusted); package templates: the publisher signature. */
   signature?: SigView | null;
 }

@@ -77,23 +77,21 @@ try {
     await page.waitForTimeout(400);
   };
 
-  // Nothing connected yet: every block says how to connect it, nothing is an error.
+  // Nothing connected yet (24 Nov 2026, the calm overview): no card per part with a paragraph, one line names what is
+  // not connected; nothing is an error.
   await go('');
-  await page.getByTestId('dashboard-mail').waitFor({ timeout: 15000 });
+  await page.getByTestId('dashboard-not-connected').waitFor({ timeout: 15000 });
   await page.waitForTimeout(1500);
   const empty = await page.locator('main, body').first().innerText();
-  check('zonder koppelingen: Post wijst naar Apps', /Gmail is niet gekoppeld/.test(empty));
-  check('zonder koppelingen: Geld zegt hoe je de bank koppelt', /Koppel je bank/.test(empty) && /Alleen lezen, nooit betalen/.test(empty));
-  check('Wacht op jou, Team en Cijfers staan er', /Wacht op jou/.test(empty) && /Niets dat op je wacht/.test(empty) && /Staat stil:/.test(empty) && /Cijfers/.test(empty));
+  const missing = await page.getByTestId('dashboard-not-connected').innerText();
+  check('zonder koppelingen: één regel noemt bank, mail en apps, met de weg naar Apps', /bank/.test(missing) && /mail/.test(missing) && /apps/.test(missing) && (await page.getByTestId('dashboard-not-connected').getByRole('link').getAttribute('href')) === '#/m/mcp/');
+  check('geen lege kaarten voor Geld en Post', (await page.getByTestId('dashboard-mail').count()) === 0 && (await page.getByTestId('dashboard-money').count()) === 0 && !/Koppel je bank/.test(empty));
+  check('Wacht op jou, Team en Taken staan er', /Wacht op jou/.test(empty) && /Staat stil:/.test(empty) && /Niets open/.test(empty));
   check('Wacht op jou is alleen een teller met een link, geen kaarten', (await page.getByTestId('dashboard-stat-waiting').getAttribute('href')) === '#/inbox' && (await page.getByRole('group', { name: 'Goedkeuring nodig' }).count()) === 0);
-  check('Gekoppelde apps staat erop en zegt hoe je koppelt', /Gekoppelde apps/.test(empty) && /Nog geen apps gekoppeld/.test(empty));
-  check('het dock toont de zeven apps met Overzicht gekozen, en de weg naar Wacht op jou en Taken', (await page.locator('[data-testid^="dashboard-app-"]').count()) === 7 && (await page.getByTestId('dashboard-app-home').getAttribute('aria-current')) === 'page' && (await page.getByTestId('dashboard-place-wacht').getAttribute('href')) === '#/inbox' && (await page.getByTestId('dashboard-place-taken').getAttribute('href')) === '#/tasks');
-  const bar = await page.getByTestId('dashboard-menubar').innerText();
-  check('de menubalk zegt waar je bent en hoe laat het is', /TeamBot/.test(bar) && /Overzicht/.test(bar) && /\d{1,2}[:.]\d{2}/.test(bar), bar.replace(/\s+/g, ' '));
-  const homeBox = await page.getByTestId('dashboard-home').boundingBox();
-  check('het startscherm gebruikt het hele venster: de lijst met bots maakt plaats', homeBox.width > 1150 && (await page.getByText('Nog geen gesprek').count()) === 0, `breedte ${Math.round(homeBox.width)}`);
-  check('bovenaan staat een begroeting met de bots, de dag en de tijd', (await page.getByTestId('dashboard-hero').count()) === 1 && /Goede|Goed/.test(await page.getByTestId('dashboard-hero').innerText()) && /\d{1,2}[:.]\d{2}/.test(await page.getByTestId('dashboard-hero').innerText()));
-  check('Taken en Verbruik staan op het startscherm', /Er staat niets open/.test(empty) && (await page.getByTestId('dashboard-usage').count()) === 1);
+  check('één rij cijfers: wacht op jou, aan het werk, verbruik, apps', (await page.locator('[data-testid^="dashboard-stat-"]').count()) === 4);
+  check('de tabs tonen de zeven onderdelen met Overzicht gekozen', (await page.locator('[data-testid^="dashboard-app-"]').count()) === 7 && (await page.getByTestId('dashboard-app-home').getAttribute('aria-current')) === 'page');
+  check('geen dock, geen gekleurde app-iconen', (await page.locator('.tb-dock, .tb-app-icon').count()) === 0);
+  check('bovenaan alleen een begroeting', (await page.getByTestId('dashboard-hero').count()) === 1 && /Goede|Goed/.test(await page.getByTestId('dashboard-hero').innerText()));
   await shot('1-leeg');
 
   // With mail and a bank (stand-ins at the page).
@@ -113,7 +111,7 @@ try {
   // A block opens its app: Post, whole.
   await page.getByTestId('dashboard-mail-row').first().click();
   await page.getByTestId('dashboard-mail-search').waitFor({ timeout: 10000 });
-  check('een bericht op het startscherm opent de app Post, als venster', /#\/dashboard\/post$/.test(page.url()) && (await page.getByTestId('dashboard-app-post').getAttribute('aria-current')) === 'page' && /Post/.test(await page.getByTestId('dashboard-window').locator('h1').innerText()));
+  check('een bericht op het startscherm opent Post', /#\/dashboard\/post$/.test(page.url()) && (await page.getByTestId('dashboard-app-post').getAttribute('aria-current')) === 'page' && (await page.getByTestId('dashboard-window').count()) === 1);
   await page.getByTestId('dashboard-mail-row').first().click();
   await page.getByTestId('dashboard-mail-open').waitFor({ timeout: 10000 });
   check('een mail opent met de hele tekst', /Ik heb de onderdelen donderdag nodig/.test(await page.getByTestId('dashboard-mail-open').innerText()));
@@ -160,12 +158,12 @@ try {
   await shot('4-post');
   await page.unroute('**/api/mcp/mailboxes');
 
-  // A window closes back to the home screen.
-  await page.getByTestId('dashboard-window-close').click();
+  // The tab Overzicht goes back to the overview.
+  await page.getByTestId('dashboard-app-home').click();
   await page.getByTestId('dashboard-home').waitFor({ timeout: 10000 });
-  check('het venster sluit terug naar het startscherm', /#\/dashboard$/.test(page.url()) && (await page.getByTestId('dashboard-window').count()) === 0);
+  check('de tab Overzicht gaat terug naar het overzicht', /#\/dashboard$/.test(page.url()) && (await page.getByTestId('dashboard-window').count()) === 0);
 
-  // The app Geld: every account, the balance per day, and the transactions. Opened from the dock.
+  // The app Geld: every account, the balance per day, and the transactions. Opened from the tabs.
   await page.getByTestId('dashboard-app-geld').click();
   await page.getByTestId('dashboard-window').waitFor({ timeout: 10000 });
   await page.getByTestId('dashboard-account').first().waitFor({ timeout: 15000 });
@@ -221,7 +219,7 @@ try {
   await go('');
   await page.getByTestId('dashboard-kpi').first().waitFor({ timeout: 15000 });
   check('het startscherm toont de cijfers klein, het cijfer dat bewoog eerst met zijn lijn', (await page.getByTestId('dashboard-kpi').count()) === 2 && /Aanvragen deze week/.test(await page.getByTestId('dashboard-kpi').first().innerText()) && (await page.getByTestId('dashboard-spark').count()) === 1);
-  check('en de meters, zonder ze tussen de cijfers te zetten', (await page.getByTestId('dashboard-usage').getByTestId('dashboard-meter').count()) === 2 && (await page.getByTestId('dashboard-numbers').getByText('Hosting: extra budget deze maand').count()) === 0);
+  check('de meters staan niet tussen de cijfers (die staan onder Verbruik)', (await page.getByTestId('dashboard-numbers').getByText('Hosting: extra budget deze maand').count()) === 0);
   await page.getByTestId('dashboard-kpi').first().click();
   await page.getByTestId('dashboard-tile').first().waitFor({ timeout: 10000 });
   check('een cijfer op het startscherm opent de app Cijfers', /#\/dashboard\/cijfers$/.test(page.url()));
@@ -242,8 +240,9 @@ try {
   check('apps staan er als tegels met hun stand', /Google\s+Verbonden/.test(apps) && /Lighthouse\s+Klaar voor gebruik/.test(apps) && /Boekhouding\s+Werkt niet/.test(apps) && /Oude koppeling\s+Uit/.test(apps) && /Apps die werken: 2 van 4/.test(apps), apps.split('\n').join(' | ').slice(0, 200));
   check('een tegel opent de app', (await page.getByTestId('dashboard-app').first().getAttribute('href')) === '#/m/mcp/c/mcp_a');
   await go('');
-  await page.getByTestId('dashboard-app').first().waitFor({ timeout: 15000 });
-  check('de teller bovenaan telt ze', /4\s+2 van 4 werken/.test(await page.getByTestId('dashboard-stat-apps').innerText()));
+  await page.getByTestId('dashboard-stat-apps').waitFor({ timeout: 15000 });
+  await page.waitForTimeout(800);
+  check('de teller bovenaan telt ze', /2 van 4/.test(await page.getByTestId('dashboard-stat-apps').innerText()));
   await page.waitForTimeout(600);
   await page.screenshot({ path: path.join(SHOTS, 'dashboard-8-start-vol.png'), fullPage: false });
   console.log('  schermafbeelding: dashboard-8-start-vol.png');

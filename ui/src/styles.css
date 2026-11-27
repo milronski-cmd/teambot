@@ -44,70 +44,73 @@
   --shadow-lg: 0 12px 32px -6px rgb(0 0 0 / 0.18), 0 2px 6px -1px rgb(0 0 0 / 0.08);
   --shadow-xl: 0 12px 32px -6px rgb(0 0 0 / 0.18), 0 2px 6px -1px rgb(0 0 0 / 0.08);
   --shadow-2xl: 0 12px 32px -6px rgb(0 0 0 / 0.18), 0 2px 6px -1px rgb(0 0 0 / 0.08);
-  --color-canvas: #f5f5f6;
+  --color-rail: #ebe7df;
+  --color-canvas: #f6f4ef;
   --color-surface: #ffffff;
-  --color-surface-2: #f1f1f3;
-  --color-surface-3: #e7e7ea;
-  --color-fg: #141416;
-  --color-muted: #5f5f67;
-  --color-line: #e5e5e8;
-  --color-line-strong: #d0d0d6;
-  /* Chat bubbles: the bot's and your own. */
-  --color-bubble: #f1f1f3;
-  --color-bubble-me: #ff9440;
-  --color-bubble-me-fg: #1f1406;
-  /* TeamBot's own orange (the logo): the active place in the rail. */
-  --color-brand: #c75a0b;
-  --color-brand-soft: #ffe8d6;
-  --color-accent: #141416;
-  --color-accent-soft: #e7e7ea;
+  --color-surface-2: #f1eee8;
+  --color-surface-3: #e5e1d8;
+  --color-fg: #181715;
+  --color-muted: #5f5a52;
+  --color-line: #e4dfd5;
+  --color-line-strong: #cfc9bc;
+  /* Editorial chat tones: quiet warm stone & deep ink. */
+  --color-bubble: #f1eee8;
+  --color-bubble-me: #181715;
+  --color-bubble-me-fg: #faf8f5;
+  /* Refined Deep Cobalt brand accent (user can still pick any accent in Instellingen). */
+  --color-brand: #1d4ed8;
+  --color-brand-soft: #e0e7ff;
+  --color-accent: #181715;
+  --color-accent-soft: #e5e1d8;
   /* The call-to-action button: the accent itself (a chosen accent colour replaces both). */
-  --color-btn: #141416;
-  --color-btn-fg: #ffffff;
-  --color-accent-fg: #ffffff;
-  --color-ok: #136b3c;
-  --color-ok-soft: #e7f3ec;
+  --color-btn: #181715;
+  --color-btn-fg: #faf8f5;
+  --color-accent-fg: #faf8f5;
+  --color-ok: #0f766e;
+  --color-ok-soft: #e2f5f2;
   --color-ok-fg: #ffffff;
-  --color-warn: #855507;
+  --color-warn: #92400e;
   --color-warn-soft: #f7efe1;
   --color-warn-fg: #1a1405;
-  --color-warn-strong: #e9a32a;
-  --color-danger: #b12e2e;
-  --color-danger-soft: #faeaea;
+  --color-warn-strong: #d97706;
+  --color-danger: #be123c;
+  --color-danger-soft: #fbe8ee;
   --color-danger-fg: #ffffff;
   --font-sans: "Inter Variable", "Inter", "Segoe UI Variable", "Segoe UI", system-ui, -apple-system, sans-serif;
+  --font-editorial: "Iowan Old Style", "Palatino Linotype", Georgia, Cambria, serif;
   --font-mono: "Cascadia Code", "JetBrains Mono", Consolas, ui-monospace, monospace;
   --breakpoint-desk: 760px;
 }
 
 .dark {
-  --color-canvas: #131313;
-  --color-surface: #1a1a1a;
-  --color-surface-2: #222222;
-  --color-surface-3: #2c2c2c;
-  --color-fg: #f2f2f2;
-  --color-muted: #a3a3a3;
-  --color-line: #272727;
-  --color-line-strong: #3a3a3a;
-  --color-bubble: #262626;
-  --color-bubble-me: #ff9440;
-  --color-bubble-me-fg: #1f1406;
-  --color-brand: #ff9a4d;
-  --color-brand-soft: #3b2616;
-  --color-accent: #e8e8e8;
-  --color-accent-soft: #2c2c2c;
-  --color-btn: #ececec;
-  --color-btn-fg: #141414;
-  --color-accent-fg: #141414;
-  --color-ok: #4fd18b;
-  --color-ok-soft: #14241b;
-  --color-ok-fg: #06210f;
-  --color-warn: #ffc24a;
-  --color-warn-soft: #29241e;
+  --color-rail: #0d0c0b;
+  --color-canvas: #131210;
+  --color-surface: #1b1917;
+  --color-surface-2: #24221e;
+  --color-surface-3: #2f2c27;
+  --color-fg: #f3f0e8;
+  --color-muted: #989286;
+  --color-line: #292622;
+  --color-line-strong: #3c3832;
+  --color-bubble: #23211d;
+  --color-bubble-me: #f3f0e8;
+  --color-bubble-me-fg: #131210;
+  --color-brand: #60a5fa;
+  --color-brand-soft: #1a2438;
+  --color-accent: #f3f0e8;
+  --color-accent-soft: #2a2723;
+  --color-btn: #f3f0e8;
+  --color-btn-fg: #131210;
+  --color-accent-fg: #131210;
+  --color-ok: #2dd4bf;
+  --color-ok-soft: #132826;
+  --color-ok-fg: #041d1b;
+  --color-warn: #fbbf24;
+  --color-warn-soft: #2b2317;
   --color-warn-fg: #1a1405;
-  --color-warn-strong: #ffc24a;
-  --color-danger: #ff7a7a;
-  --color-danger-soft: #2c1818;
+  --color-warn-strong: #f59e0b;
+  --color-danger: #fb7185;
+  --color-danger-soft: #2e171d;
   --color-danger-fg: #1b0b0b;
 }
 
@@ -564,9 +567,10 @@ body {
 .md pre {
   background: var(--color-canvas);
   border: 1px solid var(--color-line);
-  border-radius: 10px;
-  padding: 0.75em 1em;
+  border-radius: 12px;
+  padding: 0.85em 1.05em;
   overflow-x: auto;
+  box-shadow: inset 0 1px 2px rgb(0 0 0 / 0.04);
 }
 .md pre code {
   background: none;
@@ -833,32 +837,21 @@ body {
  * whole page, a menu bar at the top, widgets as panes of glass, a dock with the apps at the bottom, and an app that
  * opens as a window. Only here: the rest of TeamBot keeps its quiet surfaces.
  */
+/* 24 Nov 2026, the owner: "onoverzichtelijk en druk … helemaal clean en nieuw". No wallpaper, no glass: one calm plane
+   with plain cards on it. */
 .tb-os {
   position: relative;
   min-height: 100%;
-  background:
-    radial-gradient(62rem 40rem at 4% -12%, rgb(99 102 241 / 0.34), transparent 62%),
-    radial-gradient(50rem 34rem at 100% 0%, rgb(255 138 61 / 0.3), transparent 60%),
-    radial-gradient(56rem 36rem at 84% 112%, rgb(16 185 129 / 0.24), transparent 62%),
-    radial-gradient(48rem 32rem at 6% 108%, rgb(236 72 153 / 0.22), transparent 60%),
-    var(--color-canvas);
+  background: var(--color-canvas);
 }
 .tb-glass {
-  border: 1px solid color-mix(in srgb, var(--color-fg) 10%, transparent);
-  background: color-mix(in srgb, var(--color-surface) 66%, transparent);
-  -webkit-backdrop-filter: blur(22px) saturate(1.4);
-  backdrop-filter: blur(22px) saturate(1.4);
-  box-shadow:
-    inset 0 1px 0 0 color-mix(in srgb, #fff 7%, transparent),
-    0 22px 44px -28px rgb(0 0 0 / 0.5);
+  border: 1px solid var(--color-line);
+  background: var(--color-surface);
 }
-/* A widget: its title and what it shows are one pane. The card inside gives up its own surface. */
+/* A widget: its title and what it shows are one card. The card inside gives up its own surface. */
 .tb-widget {
-  border-radius: 1.375rem;
+  border-radius: 1rem;
   overflow: hidden;
-  transition:
-    transform 180ms cubic-bezier(0.23, 1, 0.32, 1),
-    border-color 180ms;
 }
 .tb-widget > section > div:first-child {
   padding: 0.875rem 1rem 0;
@@ -919,59 +912,64 @@ body {
 }
 
 /*
- * TeamBot's shape (4.17.0): a menu bar over the whole app (shell/TopBar.tsx), and below it the pages as windows on a
- * wallpaper (App.tsx). The dashboard lies on the wallpaper itself; its widgets are panes of glass (.tb-glass above).
+ * TeamBot Editorial & Arc Workspace framing: warm outer rail + floating rounded workspace sheet.
  */
 .tb-desk {
-  background:
-    radial-gradient(70rem 44rem at -6% -18%, rgb(99 102 241 / 0.2), transparent 62%),
-    radial-gradient(56rem 38rem at 104% -8%, rgb(255 138 61 / 0.2), transparent 60%),
-    radial-gradient(60rem 40rem at 88% 118%, rgb(16 185 129 / 0.14), transparent 62%),
-    radial-gradient(50rem 34rem at -4% 112%, rgb(236 72 153 / 0.13), transparent 60%),
-    var(--color-canvas);
+  background: var(--color-rail);
 }
-.dark .tb-desk {
-  background:
-    radial-gradient(70rem 44rem at -6% -18%, rgb(99 102 241 / 0.26), transparent 62%),
-    radial-gradient(56rem 38rem at 104% -8%, rgb(255 138 61 / 0.22), transparent 60%),
-    radial-gradient(60rem 40rem at 88% 118%, rgb(16 185 129 / 0.16), transparent 62%),
-    radial-gradient(50rem 34rem at -4% 112%, rgb(236 72 153 / 0.15), transparent 60%),
-    #0d0d10;
+.tb-rail {
+  background: var(--color-rail);
 }
-/*
- * A window: the list of bots, a page. Nearly solid (text stays calm to read), the wallpaper shows at its edges. No
- * backdrop-filter here: a blurred ancestor becomes the box of every fixed overlay inside it, and dialogs and full
- * screens would stay inside the window.
- */
-.tb-pane {
-  border-radius: 1.25rem;
-  border: 1px solid color-mix(in srgb, var(--color-fg) 9%, transparent);
-  background: color-mix(in srgb, var(--color-surface) 94%, transparent);
+.tb-sheet {
+  background: var(--color-surface);
   box-shadow:
-    inset 0 1px 0 0 color-mix(in srgb, #fff 6%, transparent),
-    0 24px 48px -30px rgb(0 0 0 / 0.45),
-    0 2px 6px -2px rgb(0 0 0 / 0.08);
+    -2px 0 24px -10px rgb(24 23 21 / 0.1),
+    0 1px 3px rgb(24 23 21 / 0.05);
+}
+.dark .tb-sheet {
+  box-shadow: -2px 0 32px -12px rgb(0 0 0 / 0.65);
+}
+.tb-editorial {
+  font-family: var(--font-editorial);
+  letter-spacing: -0.02em;
+}
+.tb-chat-canvas {
+  background: var(--color-surface);
+}
+.tb-pane {
+  background: var(--color-surface);
+}
+.tb-sidebar-sheet {
+  background: color-mix(in srgb, var(--color-canvas) 82%, var(--color-surface));
 }
 .tb-desk-page {
-  background: transparent;
+  background: var(--color-canvas);
 }
 .tb-desk .tb-os {
   background: transparent;
 }
-/* The places in the menu bar: one pill of glass, the one you are at lifted out of it. */
 .tb-places,
 .tb-search {
-  border: 1px solid color-mix(in srgb, var(--color-fg) 8%, transparent);
-  background: color-mix(in srgb, var(--color-surface) 55%, transparent);
-  -webkit-backdrop-filter: blur(18px) saturate(1.3);
-  backdrop-filter: blur(18px) saturate(1.3);
+  border: 0;
+  background: transparent;
 }
 .tb-place-on {
-  background: var(--color-surface);
-  box-shadow:
-    0 1px 2px rgb(0 0 0 / 0.12),
-    0 0 0 1px color-mix(in srgb, var(--color-fg) 7%, transparent);
+  background: var(--color-surface-2);
 }
-.dark .tb-place-on {
-  background: color-mix(in srgb, var(--color-fg) 12%, var(--color-surface));
+
+/* The dashboard's charts (pages/dashboard/charts.tsx): one fixed colour per part of the business, validated for colour
+   blindness against the light and the dark surface (dataviz reference palette, slots 1, 2, 3 and 7). */
+.viz {
+  --viz-1: #2a78d6;
+  --viz-2: #eb6834;
+  --viz-3: #1baf7a;
+  --viz-4: #6250d6;
+  --viz-5: #8a8984;
+}
+.dark .viz {
+  --viz-1: #3987e5;
+  --viz-2: #d95926;
+  --viz-3: #199e70;
+  --viz-4: #9085e9;
+  --viz-5: #9b9a95;
 }

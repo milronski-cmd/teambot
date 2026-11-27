@@ -315,6 +315,17 @@ export class CliAgents {
             const live = def.billing === 'subscription' ? (await self.status(def, cfg).catch(() => null))?.billing : undefined;
             const billing = live === 'api' ? ('paid' as const) : live === 'subscription' ? ('subscription' as const) : undefined;
             const base = (def.models || ['default']).map((id) => ({ id, label: id === 'default' ? 'Standaard (instelling van de CLI)' : id, tools: true, billing }));
+            if (def.modelsArgs && def.modelsTabbed) {
+              // "gemini-4-neon-high<TAB>Gemini 4 Neon (High)": the models this login has, from the CLI itself (no cost).
+              const { bin } = await self.resolveBin(def, cfg);
+              const r = bin ? await runQuick(bin, def.modelsArgs, { timeoutMs: 60_000 }).catch(() => null) : null;
+              const found = (r?.stdout || '')
+                .split(/\r?\n/)
+                .map((l) => /^([\w.:-]{2,120})\t(.{1,120})$/.exec(l.trim()))
+                .filter((m): m is RegExpExecArray => !!m)
+                .map((m) => ({ id: m[1], label: m[2].trim(), tools: true, billing: (def.billing === 'subscription' ? 'subscription' : undefined) as any }));
+              return [base[0], ...found];
+            }
             if (def.modelsArgs) {
               const { bin } = await self.resolveBin(def, cfg);
               // OpenCode picks how deeply a model thinks itself (its own model variants); TeamBot has no level to set.
@@ -457,7 +468,7 @@ export class CliAgents {
     if (def.engine === 'acp') {
       const args = [...(await this.acpLaunch(def, bin, cfg, req.model)), ...(def.custom ? [] : checkExtraArgs(def, s.opts.extraArgs))];
       const authMethod = typeof cfg.config?.authMethod === 'string' && /^[\w.:-]{1,60}$/.test(cfg.config.authMethod) ? cfg.config.authMethod : undefined;
-      return done(await runAcp(s, { def, bin, args, env: acpModelEnv(def, req.model, appsOff(s.agent)), bridge: this.bridge, authMethod, billing, track: this.track, unsafe: () => this.settings().unsafe[def.id] || null, markUnsafe: (info) => this.setUnsafe(def.id, info), context }));
+      return done(await runAcp(s, { def, bin, args, model: req.model, env: acpModelEnv(def, req.model, appsOff(s.agent)), bridge: this.bridge, authMethod, billing, track: this.track, unsafe: () => this.settings().unsafe[def.id] || null, markUnsafe: (info) => this.setUnsafe(def.id, info), context }));
     }
     throw new Error(def.unsupported || `${def.label} wordt niet ondersteund`);
   }

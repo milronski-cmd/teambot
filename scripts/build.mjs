@@ -2,6 +2,7 @@
 // (they are installed in node_modules / packaged by electron-builder).
 import { build } from 'esbuild';
 import fs from 'node:fs';
+import path from 'node:path';
 
 const pkg = JSON.parse(fs.readFileSync('package.json', 'utf8'));
 const external = [...Object.keys(pkg.dependencies || {}), 'electron', '@anthropic-ai/sdk'];
@@ -17,7 +18,10 @@ function teambotApps() {
     const env = `TEAMBOT_${name.toUpperCase()}_CLIENT`;
     let clientId = process.env[`${env}_ID`] || '';
     let clientSecret = process.env[`${env}_SECRET`] || '';
-    const file = process.env[`${env}_FILE`];
+    // Without a variable: the publisher's own copy on this computer, outside the source (%APPDATA%TeamBot-build-keys).
+    // 24 Nov 2026: a build without them shipped without Google and GitHub, and every existing login stopped working.
+    const keep = process.env.APPDATA ? path.join(process.env.APPDATA, 'TeamBot-build-keys', `${name}-client.json`) : '';
+    const file = process.env[`${env}_FILE`] || (!clientId && keep && fs.existsSync(keep) ? keep : '');
     if (file) {
       const j = JSON.parse(fs.readFileSync(file, 'utf8'));
       const c = j.installed || j.web || j;

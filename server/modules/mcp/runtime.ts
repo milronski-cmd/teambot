@@ -11,6 +11,9 @@ import type { ConnectionRow, ToolRow } from './db.js';
 import { entryForConn } from './package.js';
 import { googleServer } from './google.js';
 import { BANK_ID, bankServer } from './bank.js';
+import { MS_ID, microsoftServer } from './microsoft.js';
+import { TRANSIP_ID, transipServer } from './transip.js';
+import { FORWARDEMAIL_ID, forwardEmailServer } from './forwardemail.js';
 import { AuthRequiredError, TeamBotOAuthProvider, getConn, patchOAuth, refreshIfNeeded } from './oauth.js';
 import { riskFromAnnotations, riskOf, stricter, toolHash } from './risk.js';
 import { cleanError, guardedFetch, killTree, maskSecrets, mayUsePrivateNetwork, mayUseStdio, pidAlive, resolveKV, sleep, withTimeout } from './util.js';
@@ -186,9 +189,9 @@ export class McpManager {
 
   private async makeTransport(c: ConnectionRow, r: Runtime): Promise<Transport> {
     if (c.transport === 'builtin') {
-      // A server inside TeamBot itself (Google, the bank): the client talks to it over a linked in-memory pair.
+      // A server inside TeamBot itself (Google, the bank, TransIP, Forward Email): the client talks to it over a linked in-memory pair.
       const [mine, theirs] = InMemoryTransport.createLinkedPair();
-      await (c.catalog_id === BANK_ID ? bankServer(this.ctx, c) : googleServer(this.ctx, this, c)).connect(theirs);
+      await (c.catalog_id === BANK_ID ? bankServer(this.ctx, c) : c.catalog_id === TRANSIP_ID ? transipServer(this.ctx, c) : c.catalog_id === FORWARDEMAIL_ID ? forwardEmailServer(this.ctx, c) : c.catalog_id === MS_ID ? microsoftServer(this.ctx, this, c) : googleServer(this.ctx, this, c)).connect(theirs);
       return mine;
     }
     if (c.transport === 'stdio') {
@@ -396,11 +399,14 @@ export class McpManager {
           last_seen: ts,
         };
         if (guessedNow) loosened.push(name);
+        // TeamBot's own apps (Google, the bank): a new or changed tool is TeamBot's own code that came with an update, not
+        // a server changing itself, so it is usable at once; its risk still decides what asks the owner (broker.ts).
+        const own = c.transport === 'builtin';
         if (!row) {
           newCount++;
-          ctx.store.insert('mcp_tools', { connection_id: connId, name, ...base, server_risk: hint, user_risk: null, enabled: true, approved: false, changed: false, first_seen: ts });
+          ctx.store.insert('mcp_tools', { connection_id: connId, name, ...base, server_risk: hint, user_risk: null, enabled: true, approved: own, changed: false, first_seen: ts });
         } else {
-          const changed = row.approved && row.schema_hash !== hash;
+          const changed = !own && row.approved && row.schema_hash !== hash;
           ctx.store.exec(
             'UPDATE mcp_tools SET title = ?, description = ?, input_schema = ?, annotations = ?, hint_risk = ?, server_risk = ?, schema_hash = ?, present = 1, last_seen = ?, approved = ?, changed = ? WHERE connection_id = ? AND name = ?',
             base.title,

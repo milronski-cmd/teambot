@@ -633,7 +633,7 @@ test('a search hit is a source only when it is about the bot’s work: a municip
     assert.equal(sp.svc.aboutWork(store.agent(bot.id)!, 'SEO', hits[0].title, hits[0].url), false);
     assert.equal(sp.svc.aboutWork(store.agent(bot.id)!, 'SEO', hits[1].title, hits[1].url), true);
     // A specialism without sources of its own: TeamBot looks for them — and takes only the one about the work.
-    await t.api('PUT', `/specialists/${bot.id}`, { enabled: true, field: 'SEO', sources: [] });
+    await t.api('PUT', `/specialists/${bot.id}`, { enabled: true, field: 'SEO', sources: [], web: 'open' });
     store.exec('DELETE FROM specialist_sources WHERE agent_id = ?', bot.id);
     assert.equal(await sp.svc.discoverSources(store.agent(bot.id)!), 1);
     assert.deepEqual(store.all<any>('SELECT target FROM specialist_sources WHERE agent_id = ?', bot.id).map((x) => x.target), [`${fx.base}/zoekmachines.html`]);
@@ -684,6 +684,31 @@ test('upgrade, once: a source a search once brought in that is not about the wor
     const ch = store.one<any>("SELECT id FROM memory_changes WHERE actor_id = 'specialists-fit' LIMIT 1");
     t.app.ctx.services.memory.undo(owner, ch.id);
     assert.equal(active().length, 4);
+  } finally {
+    await done(t, fx);
+  }
+});
+
+test('own business first (25 Nov 2026): no searching the internet unless the owner opens it up; a customer-service bot learns from its own conversations only once there are enough, and what it learns waits for approval', async () => {
+  const { t, fx, bot } = await setup();
+  try {
+    const sp = t.app.ctx.services.specialists;
+    const store = t.app.ctx.store;
+    const searched: string[] = [];
+    sp.setOptions({ search: async (_u: string, q: string) => (searched.push(q), [{ title: 'Klantenservice van een telecombedrijf', url: `${fx.base}/kpn.html` }]) });
+    fx.pages.set('/kpn.html', { type: 'text/html', body: html('Klantenservice telecom', P1) });
+    // Default: web off. No sources found on its own, no news search.
+    await t.api('PUT', `/specialists/${bot.id}`, { enabled: true, field: 'Klantenservice (WhatsApp en mail)', sources: [], learnFrom: ['conversations'] });
+    store.exec('DELETE FROM specialist_sources WHERE agent_id = ?', bot.id);
+    assert.equal(await sp.svc.discoverSources(store.agent(bot.id)!), 0, 'finds no sources of its own');
+    const started = await t.api('POST', `/specialists/${bot.id}/learn`);
+    assert.equal(started.started, true, 'a bot that learns from its own material needs no web source');
+    for (let i = 0; i < 400 && (sp.svc.running.has(bot.id) || !lastRound(t, bot.id)?.finished_at); i++) await new Promise((r) => setTimeout(r, 25));
+    const r = lastRound(t, bot.id);
+    assert.deepEqual(searched, [], 'nothing searched on the internet');
+    assert.equal(fx.hits.get('/kpn.html') || 0, 0, 'no page of another company read');
+    assert.equal(extractionCalls(t), 0, 'nothing learned');
+    assert.ok((r.lines || []).some((l: any) => /Nog te weinig om van te leren/.test(l.text)), 'says why it waits');
   } finally {
     await done(t, fx);
   }

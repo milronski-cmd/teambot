@@ -40,8 +40,11 @@ export const AUTO_AT = 0.75;
  * team grew to 650,000 tokens per step (22 Nov 2026). Tried on the real Claude Code (23 Nov 2026), one task of reading
  * 30 stories: without it 953,000 tokens of input and up to 282,000 per step; with it 313,000 and at most 120,000 per
  * step (Claude Code compacted twice); all 30 answers right both times.
+ * 24 Nov 2026, the owner: "super goed geheugen, maar niet veel te veel tokens". 100,000: a session is summed up sooner,
+ * so a turn reads at most about half of what it read before; what must last is in TeamBot's own memory (facts,
+ * dossiers, summaries with their source), not in a long engine session.
  */
-export const CLI_CONTEXT_CAP = 200_000;
+export const CLI_CONTEXT_CAP = 100_000;
 
 function tokens(m: Message): number {
   let chars = (m.content || '').length;

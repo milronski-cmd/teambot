@@ -439,6 +439,7 @@ export function registerBank(ctx: Ctx, mgr: McpManager, h: BankHelpers) {
       try {
         await caller(app)('GET', '/aspsps', { query: { country: 'NL' } });
       } catch (e: any) {
+        ctx.log.warn('[mcp] bank: applicatie niet aangenomen', cleanError(e).slice(0, 300));
         throw bad(`Enable Banking nam deze gegevens niet aan: ${cleanError(e).slice(0, 300)}`);
       }
       ctx.secrets.set(u.id, APP, JSON.stringify(app));
@@ -479,9 +480,10 @@ export function registerBank(ctx: Ctx, mgr: McpManager, h: BankHelpers) {
       let r: any;
       try {
         r = await caller(app)('POST', '/auth', {
-          body: { access: { valid_until: new Date(Date.now() + days * 86400_000).toISOString() }, aspsp: { name: bank, country }, state: st, redirect_url: redirect(req, app), psu_type: req.body?.business === true ? 'business' : 'personal', language: 'nl' },
+          body: { access: { valid_until: new Date(Date.now() + days * 86400_000 - 10 * 60_000).toISOString() }, aspsp: { name: bank, country }, state: st, redirect_url: redirect(req, app), psu_type: req.body?.business === true ? 'business' : 'personal', language: 'nl' },
         });
       } catch (e: any) {
+        ctx.log.warn('[mcp] bank: toestemming vragen mislukt', bank, country, cleanError(e).slice(0, 300));
         throw bad(cleanError(e).slice(0, 400));
       }
       if (typeof r?.url !== 'string' || !/^https:\/\//.test(r.url)) throw bad('Enable Banking gaf geen adres om toestemming te geven.');

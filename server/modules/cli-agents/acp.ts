@@ -75,6 +75,8 @@ export interface AcpDeps {
   bridge?: PermissionBridge;
   /** Extra environment for this run (e.g. the chosen model in the CLI's inline config). */
   env?: Record<string, string>;
+  /** The bot's model; chosen in the session when the CLI picks models there (def.acpSetModel). */
+  model?: string;
   /** Optional auth method id the owner selected (calls ACP `authenticate` with an already existing CLI login). */
   authMethod?: string;
   billing(): Promise<'subscription' | 'api' | 'unknown'>;
@@ -552,6 +554,15 @@ export async function runAcp(s: RunScope, d: AcpDeps): Promise<AgentRunResult> {
     }
     unlockStart();
     s.emit({ type: 'session', sessionId: sessionId! });
+    // The bot's model, for a CLI that chooses it per session (Antigravity: Gemini 4 Neon, Carbon, … 25 Nov 2026).
+    if (d.def.acpSetModel && d.model && d.model !== 'default' && /^[\w.:/@+-]{1,120}$/.test(d.model)) {
+      try {
+        await peer.request('session/set_model', { sessionId, modelId: d.model }, 30_000);
+        s.activity('session', `Model ingesteld: ${d.model}`);
+      } catch (e: any) {
+        return fail(`${d.def.label} kon het model "${d.model}" niet instellen: ${errorText(e)}`);
+      }
+    }
     const pm = pickAcpMode(agent.access_mode, modes?.currentModeId, modes?.availableModes || []);
     if (pm.refuse) return fail(pm.refuse);
     if (pm.set) {

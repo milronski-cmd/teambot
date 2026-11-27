@@ -47,8 +47,23 @@ export function TrendLine({ points, height = 44 }: { points: Point[]; height?: n
     const y = (v: number) => (hi === lo ? H / 2 : H - pad - ((v - lo) / (hi - lo)) * (H - 2 * pad));
     const xy = points.map((p, i) => [x(ts[i]), y(p.v)] as const);
     const r1 = (n: number) => Math.round(n * 10) / 10;
-    return { xy, d: xy.map(([px, py], i) => `${i ? 'L' : 'M'}${r1(px)},${r1(py)}`).join(' ') };
+    // A smooth line (24 Nov 2026: "de grafieken wat mooier"): Catmull-Rom through every point, as cubic Béziers; the
+    // control points are kept inside the band so the curve never overshoots below the lowest or above the highest value.
+    const clampY = (v: number) => Math.min(H - pad, Math.max(pad, v));
+    let d = `M${r1(xy[0][0])},${r1(xy[0][1])}`;
+    for (let i = 0; i < xy.length - 1; i++) {
+      const p0 = xy[Math.max(0, i - 1)];
+      const p1 = xy[i];
+      const p2 = xy[i + 1];
+      const p3 = xy[Math.min(xy.length - 1, i + 2)];
+      const c1 = [p1[0] + (p2[0] - p0[0]) / 6, clampY(p1[1] + (p2[1] - p0[1]) / 6)];
+      const c2 = [p2[0] - (p3[0] - p1[0]) / 6, clampY(p2[1] - (p3[1] - p1[1]) / 6)];
+      d += ` C${r1(c1[0])},${r1(c1[1])} ${r1(c2[0])},${r1(c2[1])} ${r1(p2[0])},${r1(p2[1])}`;
+    }
+    const area = `${d} L${r1(xy[xy.length - 1][0])},${H} L${r1(xy[0][0])},${H} Z`;
+    return { xy, d, area };
   }, [points, H]);
+  const fill = `${id.replace(/:/g, '')}-fill`;
   const last = geo.xy[geo.xy.length - 1];
   const nearest = (clientX: number, box: DOMRect) => {
     const px = ((clientX - box.left) / box.width) * W;
@@ -77,11 +92,18 @@ export function TrendLine({ points, height = 44 }: { points: Point[]; height?: n
         }}
         data-testid="dashboard-trend-line"
       >
-        <path d={geo.d} fill="none" stroke="currentColor" className="text-muted/70" strokeWidth={2} strokeLinejoin="round" strokeLinecap="round" vectorEffect="non-scaling-stroke" />
+        <defs>
+          <linearGradient id={fill} x1="0" x2="0" y1="0" y2="1">
+            <stop offset="0%" stopColor="var(--color-brand)" stopOpacity={0.32} />
+            <stop offset="100%" stopColor="var(--color-brand)" stopOpacity={0} />
+          </linearGradient>
+        </defs>
+        <path d={geo.area} fill={`url(#${fill})`} stroke="none" />
+        <path d={geo.d} fill="none" stroke="var(--color-brand)" strokeWidth={2.25} strokeLinejoin="round" strokeLinecap="round" vectorEffect="non-scaling-stroke" />
         {at !== null && <line x1={geo.xy[at][0]} x2={geo.xy[at][0]} y1={0} y2={H} stroke="currentColor" className="text-fg/30" strokeWidth={1} vectorEffect="non-scaling-stroke" />}
       </svg>
       {/* The points as round marks (an SVG stretched to the width would make them ovals). */}
-      <span className="pointer-events-none absolute size-2.5 -translate-x-1/2 -translate-y-1/2 rounded-full bg-accent ring-2 ring-surface" style={{ left: `${(last[0] / W) * 100}%`, top: last[1] }} aria-hidden />
+      <span className="pointer-events-none absolute size-2.5 -translate-x-1/2 -translate-y-1/2 rounded-full bg-brand ring-2 ring-surface" style={{ left: `${(last[0] / W) * 100}%`, top: last[1] }} aria-hidden />
       {at !== null && at !== points.length - 1 && <span className="pointer-events-none absolute size-2 -translate-x-1/2 -translate-y-1/2 rounded-full bg-fg ring-2 ring-surface" style={{ left: `${(geo.xy[at][0] / W) * 100}%`, top: geo.xy[at][1] }} aria-hidden />}
       {shown && (
         <div id={id} role="status" className="pointer-events-none absolute bottom-full z-10 mb-1.5 -translate-x-1/2 whitespace-nowrap rounded-lg bg-fg px-2 py-1 text-[12px] text-canvas shadow-lg" style={{ left: `${Math.min(88, Math.max(12, (geo.xy[at!][0] / W) * 100))}%` }}>
@@ -119,8 +141,8 @@ export function ratioOf(value: unknown): { part: number; whole: number } | null 
 /** A part of a whole as a thin bar: what is there in the accent, the rest in a lighter step. */
 export function RatioBar({ part, whole }: { part: number; whole: number }) {
   return (
-    <div className="h-2 overflow-hidden rounded-full bg-accent/15" role="meter" aria-valuemin={0} aria-valuemax={whole} aria-valuenow={part} aria-label={t('{0} van {1}', num(part), num(whole))} data-testid="dashboard-ratio">
-      <div className="h-full rounded-full bg-accent" style={{ width: `${Math.max(2, (part / whole) * 100)}%` }} />
+    <div className="h-2 overflow-hidden rounded-full bg-brand/15" role="meter" aria-valuemin={0} aria-valuemax={whole} aria-valuenow={part} aria-label={t('{0} van {1}', num(part), num(whole))} data-testid="dashboard-ratio">
+      <div className="h-full rounded-full bg-brand" style={{ width: `${Math.max(2, (part / whole) * 100)}%` }} />
     </div>
   );
 }

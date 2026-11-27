@@ -41,6 +41,8 @@ const PREFIXES: [RegExp, string[]][] = [
   [/^sk-(proj|svcacct|None)-/, ['openai']],
   [/^gsk_/, ['groq']],
   [/^AIza[\w-]{30,}$/, ['google']],
+  // Google AI Studio's newer keys (Nov 2026): "AQ." and a long token.
+  [/^AQ\.[\w.-]{30,}$/, ['google']],
   [/^xai-/, ['xai']],
   [/^csk-/, ['cerebras']],
   [/^nvapi-/, ['nvidia']],

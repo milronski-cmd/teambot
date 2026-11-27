@@ -204,14 +204,16 @@ export function UsageMeter({ className }: { className?: string }) {
     opener.current = e.currentTarget;
     show(open === key ? null : key);
   };
-  const ringBtn = 'tb-tip tb-tip-up tb-tip-start flex size-9 shrink-0 items-center justify-center rounded-full transition-colors hover:bg-surface-2 active:bg-surface-3 aria-expanded:bg-surface-3 coarse:size-11';
+  // 24 Nov 2026, the owner: the bare rings were unreadable. Each ring now carries its name; the ring itself shows how
+  // much is used, the details open on a click.
+  const ringBtn = 'flex h-9 shrink-0 items-center gap-1 rounded-full pe-2 ps-0 text-[12px] font-semibold text-fg/80 transition-colors hover:bg-surface-2 hover:text-fg active:bg-surface-3 aria-expanded:bg-surface-3 coarse:h-11';
 
   return (
     <div
       ref={wrap}
       // Not `relative`: the popover anchors to the sidebar's footer (shell/Sidebar.tsx) and opens above the whole footer,
       // so it never half-covers the row of fixed places right above the rings (they stay full-size targets).
-      className={cx('flex items-center gap-0.5', className)}
+      className={cx('flex flex-wrap items-center gap-0.5', className)}
       role="group"
       aria-label="Gebruik"
       // A popover, not a modal: tabbing out of it closes it (the focus is somewhere else then).
@@ -227,6 +229,9 @@ export function UsageMeter({ className }: { className?: string }) {
         // The ring in words (it is decorative): "Claude nog 62%", "Codex op", "Groq beschikbaar".
         <button key={i.key} type="button" data-usage-meter={i.key} aria-haspopup="dialog" aria-expanded={open === i.key} aria-controls={open === i.key ? panelId : undefined} aria-label={i.summary} onClick={(e) => toggle(i.key, e)} className={ringBtn}>
           <MeterRing item={i} />
+          <span className="min-w-0 truncate" aria-hidden>
+            {i.name}
+          </span>
         </button>
       ))}
       {rest.length > 0 && (
@@ -243,8 +248,9 @@ export function UsageMeter({ className }: { className?: string }) {
           +{rest.length}
         </button>
       )}
-      <a href="#/m/usage/" aria-label="Gebruik en limieten" onClick={() => setOpen(null)} className={cx(iconBtn, 'tb-tip tb-tip-up tb-tip-end ms-auto size-9')}>
+      <a href="#/m/usage/" onClick={() => setOpen(null)} className="ms-auto flex h-9 shrink-0 items-center gap-1 rounded-full px-1.5 text-[12px] font-semibold text-fg/80 transition-colors hover:bg-surface-2 hover:text-fg coarse:h-11">
         <Gauge className="size-icon" aria-hidden />
+        {t('Gebruik')}
       </a>
 
       <Pop

@@ -146,7 +146,8 @@ function MoneyCourse({ points, currency }: { points: ReturnType<typeof balanceCo
 }
 
 /** The owner's money on the dashboard: balances, their course per day and the latest transactions, straight from the bank app. */
-export function MoneySection({ compact }: { compact?: boolean } = {}) {
+/** `quiet`: on the overview, only when the bank is connected (else `onOff` tells the overview, which names it once). */
+export function MoneySection({ compact, quiet, onOff }: { compact?: boolean; quiet?: boolean; onOff?: (off: boolean) => void } = {}) {
   const [o, setO] = useState<Overview | null>(null);
   const [err, setErr] = useState('');
   const load = () =>
@@ -162,6 +163,10 @@ export function MoneySection({ compact }: { compact?: boolean } = {}) {
   const mixed = new Set((o?.accounts || []).map((a) => a.balances?.[0]?.currency).filter(Boolean)).size > 1;
   const known = (o?.accounts || []).length > 0 && (o?.accounts || []).every((a) => a.balances?.length);
   const course = useMemo(() => (o && known && !mixed && o.from && o.to ? balanceCourse(total, o.transactions, o.from, o.to) : []), [o]);
+  useEffect(() => {
+    if (o) onOff?.(o.status !== 'on');
+  }, [o]);
+  if (quiet && (!o || o.status !== 'on')) return null;
 
   return (
     <section className="space-y-2" data-testid="dashboard-money">

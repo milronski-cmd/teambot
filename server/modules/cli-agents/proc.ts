@@ -17,7 +17,8 @@ export function systemBinDirs(): string[] {
   if (isWin) {
     const appData = process.env.APPDATA || path.join(home, 'AppData', 'Roaming');
     const local = process.env.LOCALAPPDATA || path.join(home, 'AppData', 'Local');
-    dirs.push(path.join(appData, 'npm'), path.join(local, 'Microsoft', 'WinGet', 'Links'), path.join(local, 'Programs'), path.join(home, 'scoop', 'shims'), path.join(local, 'pnpm'));
+    // agy: Google Antigravity puts its CLI in AppData/Local/agy/bin without adding it to PATH (25 Nov 2026).
+    dirs.push(path.join(appData, 'npm'), path.join(local, 'Microsoft', 'WinGet', 'Links'), path.join(local, 'Programs'), path.join(home, 'scoop', 'shims'), path.join(local, 'pnpm'), path.join(local, 'agy', 'bin'));
   } else {
     dirs.push('/usr/local/bin', '/opt/homebrew/bin', '/usr/bin', path.join(home, '.volta', 'bin'));
   }

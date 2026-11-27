@@ -200,7 +200,10 @@ export function Composer({ threadId, agentId, busy, disabled, replyTo, onCancelR
         </div>
       )}
       {disabled && <div className="mb-2 rounded-xl bg-warn-soft px-3 py-2 text-xs font-medium text-warn">{disabled}</div>}
-      <div data-composer className="relative rounded-[26px] border border-transparent bg-surface-2 px-2 py-1.5 transition-colors focus-within:border-line-strong">
+      <div
+        data-composer
+        className="relative rounded-2xl border border-line-strong bg-surface-2/70 px-2 py-1.5 transition-colors focus-within:border-fg/40 focus-within:bg-surface"
+      >
         {slash.menu}
         {files.length > 0 && (
           <div className="flex flex-wrap gap-2 px-1.5 pb-1 pt-1.5">
@@ -233,11 +236,8 @@ export function Composer({ threadId, agentId, busy, disabled, replyTo, onCancelR
             ))}
           </div>
         )}
-        <div className="flex items-end gap-1">
+        <div className="flex flex-col">
           <input ref={fileInput} type="file" multiple hidden onChange={(e) => e.target.files && (addFiles(e.target.files), (e.target.value = ''))} />
-          <Button variant="ghost" size="icon" className="rounded-full" aria-label="Bestand toevoegen" title="Bestand toevoegen (of sleep/plak een bestand)" onClick={() => fileInput.current?.click()}>
-            <Plus className="h-5 w-5" />
-          </Button>
           <textarea
             ref={ta}
             value={text}
@@ -266,37 +266,44 @@ export function Composer({ threadId, agentId, busy, disabled, replyTo, onCancelR
             placeholder={placeholder || 'Typ een bericht…'}
             aria-label="Bericht"
             title="Enter = versturen · Shift+Enter = nieuwe regel · / of $ = skills en opdrachten"
-            className="max-h-60 min-h-9 min-w-0 flex-1 resize-none bg-transparent px-1 py-2 text-[16px] leading-snug desk:text-[15px] outline-none placeholder:text-muted coarse:min-h-11 coarse:py-2.5"
+            className="max-h-60 min-h-10 w-full min-w-0 resize-none bg-transparent px-3 pb-1.5 pt-2 text-[16px] leading-snug desk:text-[15px] outline-none placeholder:text-muted coarse:min-h-11"
           />
-          {accessory}
-          {actions.map((A, i) => (
-            <A
-              key={i}
-              threadId={threadId}
-              agentId={agentId}
-              insertText={(t) => setText((x) => (x ? x + (x.endsWith(' ') ? '' : ' ') + t : t))}
-              send={(t, o) => send(t, { voice: o?.voice, attachments: o?.attachments })}
-            />
-          ))}
-          {busy && !text.trim() && !files.length && (
-            // Only with nothing typed: right next to Versturen it was hit by mistake while sending the next message (the
-            // owner stopped his bots several times that way, 15 nov). Stopping leaves the keyboard up, like sending does.
-            <Button variant="soft" size="icon" className="rounded-full" aria-label="Stoppen" title="Stoppen" {...keepsFocus(onStop)}>
-              <Square className="h-3.5 w-3.5 fill-current" />
-            </Button>
-          )}
-          <Button
-            variant="primary"
-            size="icon"
-            className="rounded-full"
-            aria-label="Versturen"
-            title={busy ? `Versturen (${busyHint || 'komt in de wachtrij'})` : 'Versturen'}
-            loading={sending}
-            disabled={uploading || (!text.trim() && !files.length) || !!disabled}
-            {...keepsFocus(() => send())}
-          >
-            <ArrowUp className="h-[18px] w-[18px]" strokeWidth={2.4} />
-          </Button>
+          <div className="flex items-center justify-between gap-2 border-t border-line/50 px-1.5 pb-1 pt-1.5">
+            <div className="flex min-w-0 items-center gap-1">
+              <Button variant="ghost" size="icon" className="rounded-full" aria-label="Bestand toevoegen" title="Bestand toevoegen (of sleep/plak een bestand)" onClick={() => fileInput.current?.click()}>
+                <Plus className="h-5 w-5" />
+              </Button>
+              {accessory}
+            </div>
+            <div className="flex shrink-0 items-center gap-1">
+              {actions.map((A, i) => (
+                <A
+                  key={i}
+                  threadId={threadId}
+                  agentId={agentId}
+                  insertText={(t) => setText((x) => (x ? x + (x.endsWith(' ') ? '' : ' ') + t : t))}
+                  send={(t, o) => send(t, { voice: o?.voice, attachments: o?.attachments })}
+                />
+              ))}
+              {busy && !text.trim() && !files.length && (
+                <Button variant="soft" size="icon" className="rounded-full" aria-label="Stoppen" title="Stoppen" {...keepsFocus(onStop)}>
+                  <Square className="h-3.5 w-3.5 fill-current" />
+                </Button>
+              )}
+              <Button
+                variant="primary"
+                size="icon"
+                className="rounded-full bg-btn text-btn-fg hover:opacity-90 disabled:bg-surface-3 disabled:text-muted"
+                aria-label="Versturen"
+                title={busy ? `Versturen (${busyHint || 'komt in de wachtrij'})` : 'Versturen'}
+                loading={sending}
+                disabled={uploading || (!text.trim() && !files.length) || !!disabled}
+                {...keepsFocus(() => send())}
+              >
+                <ArrowUp className="h-[18px] w-[18px]" strokeWidth={2.4} />
+              </Button>
+            </div>
+          </div>
         </div>
       </div>
     </div>

@@ -255,6 +255,9 @@ test('5b any specialism: a field nobody foresaw (beekeeping, tax law, TikTok) is
     for (let i = 0; i < 80 && !(await t.api('GET', `/specialists/${bea.id}`)).enabled; i++) await new Promise((r) => setTimeout(r, 25));
     let v = await t.api('GET', `/specialists/${bea.id}`);
     assert.deepEqual([v.enabled, v.field, v.learnOn, v.sources.length], [true, 'Bijen houden', true, 0]);
+    // Since 25 Nov 2026 a bot only searches the internet on its own when the owner opens that up (web: open).
+    assert.equal(await sp.svc.discoverSources(t.app.ctx.store.agent(bea.id)!), 0, 'no searching by default');
+    await t.api('PUT', `/specialists/${bea.id}`, { web: 'open' });
     // The first due round: it searches, keeps what answers and is primary, and learns from it.
     t.script.push(extract(() => ({ facts: [{ text: BEES, quote: 'Een bijenvolk heeft in de winter ongeveer vijftien kilo wintervoer nodig' }] })));
     assert.equal(await sp.svc.roundsDue(), 1);
@@ -311,7 +314,7 @@ test('6b checking that things are current is standing behaviour of every bot: th
     sp.setOptions({ hostDelayMs: 0, search: async () => [{ title: 'Bijen houden: officiële informatie', url: `${fx2.base}/nieuw.html` }] });
     fx2.pages.set('/nieuw.html', html('De Nederlandse Bijenhoudersvereniging geeft voorlichting over het houden van bijen en het inwinteren van volken. '.repeat(5)));
     const bea = await t.agent({ name: 'Bea', settings: { allowPrivateNetwork: true } });
-    await t.api('PUT', `/specialists/${bea.id}`, { enabled: true, field: 'Bijen houden', sources: [{ kind: 'web', target: `${fx.base}/weg.html`, suggested: true }] });
+    await t.api('PUT', `/specialists/${bea.id}`, { enabled: true, field: 'Bijen houden', web: 'open', sources: [{ kind: 'web', target: `${fx.base}/weg.html`, suggested: true }] });
     for (let i = 0; i < 3; i++) await sp.learn(u, bea.id);
     const v = await t.api('GET', `/specialists/${bea.id}`);
     assert.deepEqual(v.sources.map((s: any) => [s.target.split('/').pop(), s.enabled]), [['weg.html', false], ['nieuw.html', true]]);

@@ -26,8 +26,13 @@ export interface WorkHours {
 
 export interface CustomerConfig {
   enabled: boolean;
-  /** Anyone may write in a private chat (no pairing code). Never on WhatsApp (QR): that is the owner's own number. */
+  /**
+   * Anyone may write in a private chat (no pairing code). On WhatsApp (QR) only when the owner says it is a separate
+   * business number (`businessNumber`): by default that is his own number, where strangers never reach the bot.
+   */
   open: boolean;
+  /** WhatsApp (QR): this is a separate business number, not the owner's own; customers may write to it. */
+  businessNumber: boolean;
   /** The bot says it is an AI. */
   aiLabel: boolean;
   /** Questions the bot cannot answer from approved knowledge go to the owner. */
@@ -66,7 +71,8 @@ export function readCustomer(c: any, adapter: string): CustomerConfig {
   const to = HHMM.test(pad(h.to)) ? pad(h.to) : DEFAULT_HOURS.to;
   return {
     enabled: bool(src.enabled, false),
-    open: NO_OPEN_DOOR.has(adapter) ? false : bool(src.open, true),
+    open: NO_OPEN_DOOR.has(adapter) && src.businessNumber !== true ? false : bool(src.open, true),
+    businessNumber: NO_OPEN_DOOR.has(adapter) && src.businessNumber === true,
     aiLabel: bool(src.aiLabel, true),
     handoff: bool(src.handoff, true),
     approveMoney: bool(src.approveMoney, true),
@@ -91,7 +97,8 @@ export function normalizeCustomer(input: any, prev: any, adapter: string): Custo
   return readCustomer(merged, adapter);
 }
 
-export const canOpenDoor = (adapter: string) => !NO_OPEN_DOOR.has(adapter);
+/** May strangers write on this channel at all? WhatsApp (QR) only once the owner said it is a separate business number. */
+export const canOpenDoor = (adapter: string, customer?: any) => !NO_OPEN_DOOR.has(adapter) || customer?.businessNumber === true;
 
 // ---------------------------------------------------------------- approved knowledge
 

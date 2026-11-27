@@ -131,8 +131,80 @@ export function clsPool(data: ArrayLike<number>, dims: readonly number[]): Float
   return out;
 }
 
+/**
+ * A first load in a process of its own (24 Nov 2026). ONNX Runtime is native code: on one owner's pc (Windows 11, AMD
+ * Ryzen 7 7800X3D, onnxruntime-node 1.30.0) creating the session for this model crashed with an access violation, also
+ * in plain Node, and took all of TeamBot with it at the first turn of every bot — no log, no error, just gone. So
+ * before the model is ever loaded inside TeamBot, a short-lived copy of this program (Electron as Node, or Node) loads it
+ * and runs one text. Only when that comes back OK is it loaded here; otherwise memory searches by words, and the reason
+ * is kept next to the model (probe.json, per ONNX Runtime version and model), so the check is not repeated every start.
+ */
+const PROBE_SCRIPT = `
+const path = require('path');
+const ort = require(process.env.TB_ORT);
+(async () => {
+  const dir = process.env.TB_DIR;
+  const s = await ort.InferenceSession.create(path.join(dir, 'model.onnx'), { executionProviders: ['cpu'], intraOpNumThreads: 1, interOpNumThreads: 1, graphOptimizationLevel: 'all' });
+  const n = 3;
+  const feeds = { input_ids: new ort.Tensor('int64', new BigInt64Array([0n, 100n, 2n]), [1, n]), attention_mask: new ort.Tensor('int64', new BigInt64Array([1n, 1n, 1n]), [1, n]) };
+  if (s.inputNames.includes('token_type_ids')) feeds.token_type_ids = new ort.Tensor('int64', new BigInt64Array(n), [1, n]);
+  await s.run(feeds);
+  process.stdout.write('TB_PROBE_OK');
+})().catch((e) => { process.stdout.write('TB_PROBE_ERR ' + String(e && e.message || e).slice(0, 300)); process.exit(3); });
+`;
+
+function ortVersion(): string {
+  try {
+    return String(req('onnxruntime-node/package.json').version || '');
+  } catch {
+    return '';
+  }
+}
+
+/** null = the model loads and runs on this computer; else why not. Kept in `<dir>/probe.json`. */
+export async function probeModel(dir: string, timeoutMs = 120_000): Promise<string | null> {
+  const key = `${ortVersion()}|${BUILTIN.name}|${process.platform}-${process.arch}`;
+  const file = path.join(dir, 'probe.json');
+  try {
+    const kept = JSON.parse(fs.readFileSync(file, 'utf8'));
+    if (kept?.key === key) return kept.ok ? null : String(kept.error || 'Het ingebouwde zoekmodel werkt niet op deze computer.');
+  } catch {
+    /* not probed yet */
+  }
+  const { spawn } = await import('node:child_process');
+  const result = await new Promise<string | null>((resolve) => {
+    let out = '';
+    const child = spawn(process.execPath, ['-e', PROBE_SCRIPT], {
+      env: { ...process.env, ELECTRON_RUN_AS_NODE: '1', TB_ORT: req.resolve('onnxruntime-node'), TB_DIR: dir },
+      stdio: ['ignore', 'pipe', 'ignore'],
+      windowsHide: true,
+    });
+    const timer = setTimeout(() => child.kill(), timeoutMs);
+    child.stdout!.on('data', (d) => (out += String(d)));
+    child.on('error', (e) => (clearTimeout(timer), resolve(`De controle van het zoekmodel kon niet starten: ${String(e.message).slice(0, 200)}`)));
+    child.on('exit', (code, signal) => {
+      clearTimeout(timer);
+      if (out.includes('TB_PROBE_OK')) return resolve(null);
+      const err = /TB_PROBE_ERR (.*)/.exec(out)?.[1];
+      const how = err ? err : signal ? `gestopt (${signal})` : `vastgelopen (code 0x${((code ?? 0) >>> 0).toString(16).toUpperCase()})`;
+      resolve(`Het ingebouwde zoekmodel loopt vast op deze computer (ONNX Runtime ${ortVersion() || '?'}: ${how}). Zoeken op woorden werkt gewoon.`);
+    });
+  });
+  try {
+    fs.writeFileSync(file, JSON.stringify({ key, ok: result === null, error: result, at: new Date().toISOString() }, null, 1));
+  } catch {
+    /* not kept: probed again next start */
+  }
+  return result;
+}
+
 /** The real runtime: ONNX Runtime + the Hugging Face tokenizer, CPU only, a few threads. */
 const ortLoader: RuntimeLoader = async (dir) => {
+  const problem = await probeModel(dir);
+  if (problem) {
+    runtimeErr = problem;
+    throw new Error(problem);
+  }
   const ort = req('onnxruntime-node');
   const { Tokenizer } = req('@huggingface/tokenizers');
   const read = async (f: string) => JSON.parse(await fs.promises.readFile(path.join(dir, f), 'utf8'));

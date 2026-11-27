@@ -261,7 +261,7 @@ export const PROVIDERS: ProviderDef[] = [
     baseUrl: 'https://generativelanguage.googleapis.com/v1beta/openai',
     needsKey: true,
     keyUrl: 'https://aistudio.google.com/apikey',
-    keyPlaceholder: 'AIza...',
+    keyPlaceholder: 'AIza... of AQ....',
     description: 'Gemini-modellen via de Gemini API (Google AI Studio). Werkt met tools, afbeeldingen en denkniveaus.',
     costNote: 'Gratis tier zonder betaalgegevens voor de Flash- en Flash-Lite-modellen, met limieten per minuut en per dag die je in AI Studio ziet (reset om middernacht Pacific-tijd); Pro- en Argon-modellen alleen betaald. In de gratis tier mag Google je invoer gebruiken om producten te verbeteren. Een app die je aan gebruikers in de EER, Zwitserland of het VK aanbiedt, mag volgens de voorwaarden van Google alleen de betaalde laag gebruiken; daarom staat de gratis laag niet bij "Gratis modellen".',
     costCheckedAt: '2026-11-09',

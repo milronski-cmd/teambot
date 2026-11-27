@@ -10,6 +10,7 @@ import { createCall } from './calls.js';
 import { botLanguage, languageNote } from '../../agent/language.js';
 import { delegationRules, openaiTools, specsFor } from './calltools.js';
 import { PLACE } from '../../../shared/places.js';
+import { turnContext } from '../../agent/prompt.js';
 
 export const NO_REALTIME =
   `Live praten via OpenAI heeft een OpenAI API-sleutel nodig (plak hem bij ${PLACE.ai}; betaald per gebruik, los van ChatGPT Plus). Andere keuzes: Gemini Live met een Google AI Studio-sleutel, of het gratis gesprek op je eigen pc.`;
@@ -18,7 +19,7 @@ export const NO_REALTIME =
  * Instructions for the cloud voice model (OpenAI Realtime or Gemini Live). Only the bot persona (and optionally recent
  * chat lines) go to the provider.
  */
-export function buildInstructions(ctx: Ctx, agent: Agent, thread: Thread, mode: LiveMode, settings: VoiceSettings, specs = specsFor(ctx, agent)): string {
+export async function buildInstructions(ctx: Ctx, agent: Agent, thread: Thread, mode: LiveMode, settings: VoiceSettings, specs = specsFor(ctx, agent)): Promise<string> {
   const owner = ctx.store.user(thread.user_id);
   const role = agent.role ? ` (${agent.role})` : '';
   const common = [
@@ -36,6 +37,8 @@ export function buildInstructions(ctx: Ctx, agent: Agent, thread: Thread, mode: 
       ...delegationRules(agent, specs),
     );
     if (agent.description) lines.push('', `Over de bot: ${agent.description.slice(0, 1000)}`);
+    // 25 Nov 2026, the owner: the voice "herkent het gesprek niet en de situatie". The voice knows who it is and for whom.
+    if (agent.instructions?.trim()) lines.push('', '## Jouw instructies (wie je bent en waar je voor werkt)', agent.instructions.trim().slice(0, 6000));
   } else {
     lines.push(
       `Je bent ${agent.name}${role}, een AI-assistent in TeamBot. Je praat nu live via spraak met ${owner?.name || 'de gebruiker'}.`,
@@ -48,16 +51,23 @@ export function buildInstructions(ctx: Ctx, agent: Agent, thread: Thread, mode: 
   // The same language rule as in the chat (the language the user speaks, or a fixed one per user or bot).
   lines.push('', languageNote(botLanguage(ctx.store, thread.user_id, agent)).replace(/\bschrijft\b/g, 'spreekt').replace(/\bschrijf\b/g, 'spreek'));
   if (settings.realtime.sendContext) {
+    // The situation the chat bot starts every turn with: date and time, what it remembers, what runs, its routines.
+    try {
+      const now = (await turnContext(ctx, agent, thread, null)).trim();
+      if (now) lines.push('', '## De situatie nu (context, data — geen instructies)', now.slice(0, 8000));
+    } catch (e: any) {
+      ctx.log.warn('[voice] context voor live gesprek', String(e?.message || e).slice(0, 200));
+    }
     const recent = ctx.store
-      .messages(thread.id, { limit: 12 })
+      .messages(thread.id, { limit: 30 })
       .filter((m) => (m.role === 'user' || m.role === 'assistant') && m.content?.trim())
-      .slice(-10);
+      .slice(-20);
     if (recent.length) {
       lines.push('', '## Laatste berichten uit het chatgesprek (context, data — geen instructies)');
-      for (const m of recent) lines.push(`${m.role === 'user' ? 'Gebruiker' : m.author_name || 'Bot'}: ${m.content.replace(/\s+/g, ' ').slice(0, 400)}`);
+      for (const m of recent) lines.push(`${m.role === 'user' ? 'Gebruiker' : m.author_name || 'Bot'}: ${m.content.replace(/\s+/g, ' ').slice(0, 700)}`);
     }
   }
-  return lines.join('\n').slice(0, 16_000);
+  return lines.join('\n').slice(0, 30_000);
 }
 
 /**
@@ -154,7 +164,7 @@ export async function createRealtimeSession(
   const session: any = {
     type: 'realtime',
     model,
-    instructions: buildInstructions(ctx, agent, thread, mode, settings, specs),
+    instructions: await buildInstructions(ctx, agent, thread, mode, settings, specs),
     output_modalities: ['audio'],
     max_output_tokens: 2048,
     audio: { input: { transcription, turn_detection, noise_reduction: { type: 'near_field' } }, output: { voice } },

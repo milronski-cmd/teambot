@@ -21,6 +21,8 @@ interface GoogleState {
   plainReplies?: boolean;
   adsLogin: string;
   connection: Conn | null;
+  /** Every Google account of this user, the first first. */
+  accounts?: { id: string; email: string; status: 'on' | 'expired' }[];
 }
 interface Check {
   id: string;
@@ -109,7 +111,7 @@ function OwnClient({ s, onSaved }: { s: GoogleState; onSaved(next: GoogleState):
 }
 
 /** Google Ads needs one thing more than the login: the developer token of the owner's own Ads account. */
-function AdsToken({ onSaved }: { onSaved(): void }) {
+function AdsToken({ onSaved, connId }: { onSaved(): void; connId?: string }) {
   const [v, setV] = useState('');
   const [busy, setBusy] = useState(false);
   return (
@@ -123,7 +125,7 @@ function AdsToken({ onSaved }: { onSaved(): void }) {
         onClick={async () => {
           setBusy(true);
           try {
-            await api.put('/mcp/google/ads', { developerToken: v.trim() });
+            await api.put('/mcp/google/ads', { developerToken: v.trim(), conn: connId });
             setV('');
             onSaved();
           } catch (e) {
@@ -144,7 +146,9 @@ function AdsToken({ onSaved }: { onSaved(): void }) {
  * Google in one go: one card, one button. Search Console, Merchant Center, Google Ads, Analytics, Gmail, Agenda and
  * Drive come with a single login; TeamBot tests each of them and says per service what (if anything) is still missing.
  */
-export function GoogleCard() {
+/** `connId`: one Google account of several (each has its own card); without it, the first (or the login for one). */
+export function GoogleCard({ connId }: { connId?: string } = {}) {
+  const q = connId ? `?conn=${encodeURIComponent(connId)}` : '';
   const [s, setS] = useState<GoogleState | null>(null);
   const [phase, setPhase] = useState<'idle' | 'client' | 'waiting' | 'testing'>('idle');
   const [checks, setChecks] = useState<Check[] | null>(null);
@@ -155,7 +159,7 @@ export function GoogleCard() {
 
   const load = () =>
     api
-      .get<GoogleState>('/mcp/google')
+      .get<GoogleState>(`/mcp/google${q}`)
       .then((x) => live.current && setS(x))
       .catch((e) => live.current && setErr(e.message));
 
@@ -163,10 +167,10 @@ export function GoogleCard() {
     setPhase('testing');
     setErr('');
     try {
-      const cur = await api.get<GoogleState>('/mcp/google');
+      const cur = await api.get<GoogleState>(`/mcp/google${q}`);
       // The ordinary read test of Apps makes the tools usable; then one real read per service.
       if (cur.connection) await api.post(`/mcp/connections/${cur.connection.id}/test`, {});
-      const r = await api.post<GoogleState & { checks: Check[] }>('/mcp/google/test', {});
+      const r = await api.post<GoogleState & { checks: Check[] }>('/mcp/google/test', { conn: connId });
       if (!live.current) return;
       setChecks(r.checks);
       setS(r);
@@ -181,7 +185,8 @@ export function GoogleCard() {
     live.current = true;
     load();
     const off = on('mcp.oauth', (ev: any) => {
-      if (!ev?.google) return;
+      // With several accounts each card only hears its own login.
+      if (!ev?.google || (connId && ev.id !== connId && ev.ok)) return;
       if (ev.ok) {
         toast('Google is gekoppeld', 'ok');
         void runTest();
@@ -204,7 +209,7 @@ export function GoogleCard() {
     const w = openLoginWindow();
     setErr('');
     try {
-      const r = await api.post<{ authorizationUrl: string }>('/mcp/google/start', { services });
+      const r = await api.post<{ authorizationUrl: string }>('/mcp/google/start', { services, conn: connId });
       setLoginUrl(r.authorizationUrl);
       if (w && !w.closed) w.location.href = r.authorizationUrl;
       else window.open(r.authorizationUrl, '_blank', 'noopener');
@@ -284,7 +289,7 @@ export function GoogleCard() {
             {failed.map((c) => (
               <div key={c.id} className="space-y-2">
                 {c.needsToken ? (
-                  <AdsToken onSaved={runTest} />
+                  <AdsToken onSaved={runTest} connId={connId} />
                 ) : (
                   <ConnectResult
                     ok={false}
@@ -390,5 +395,62 @@ export function GoogleCard() {
         <div className="text-xs text-muted">{names.join(' · ')}</div>
       ) : null}
     </ConnectCard>
+  );
+}
+
+/**
+ * Every Google account its own card (a second Gmail, a business and a private account), and a button to add one more.
+ * A login with an address that is already there logs that account in again; a new address is a new account.
+ */
+export function GoogleAccounts() {
+  const [accounts, setAccounts] = useState<NonNullable<GoogleState['accounts']>>([]);
+  const [adding, setAdding] = useState(false);
+  const load = () =>
+    api
+      .get<GoogleState>('/mcp/google')
+      .then((x) => setAccounts(x.accounts || []))
+      .catch(() => {});
+  useEffect(() => {
+    load();
+    const offA = on('mcp.oauth', (ev: any) => {
+      if (!ev?.google) return;
+      setAdding(false);
+      load();
+    });
+    const offB = on('mcp.updated', () => load());
+    return () => {
+      offA();
+      offB();
+    };
+  }, []);
+  const add = async () => {
+    const w = openLoginWindow();
+    try {
+      const cur = await api.get<GoogleState>('/mcp/google');
+      const r = await api.post<{ authorizationUrl: string }>('/mcp/google/start', { services: cur.services.map((x) => x.id), add: true });
+      if (w && !w.closed) w.location.href = r.authorizationUrl;
+      else window.open(r.authorizationUrl, '_blank', 'noopener');
+      setAdding(true);
+    } catch (e) {
+      w?.close();
+      toastError(e);
+    }
+  };
+  return (
+    <>
+      {accounts.length <= 1 ? <GoogleCard key={accounts[0]?.id || 'none'} connId={accounts[0]?.id} /> : accounts.map((a) => <GoogleCard key={a.id} connId={a.id} />)}
+      {accounts.length > 0 && (
+        <div className="flex flex-wrap items-center gap-2">
+          <Button size="sm" icon={<LogIn className="h-4 w-4" />} loading={adding} onClick={add} data-testid="google-add-account">
+            Nog een Google-account toevoegen
+          </Button>
+          {adding && (
+            <button type="button" className="text-xs text-muted underline hover:text-fg" onClick={() => setAdding(false)}>
+              Annuleren
+            </button>
+          )}
+        </div>
+      )}
+    </>
   );
 }

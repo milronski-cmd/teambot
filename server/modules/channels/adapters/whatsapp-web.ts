@@ -2,6 +2,7 @@ import crypto from 'node:crypto';
 import { bad } from '../../../core/http.js';
 import { splitMessage, toWhatsApp } from '../format.js';
 import { parsePairCode } from '../manager.js';
+import { readCustomer } from '../customer.js';
 import { ChannelError, REACTION_EMOJI, type AdapterContext, type AdapterDef, type AdapterRuntime, type BindingStatus, type Conversation, type InboundAttachment, type Outbound, type ReactionStatus } from '../types.js';
 import { phoneDigits, type DriverFactory, type WaDriver, type WaIncoming, type WaMe } from '../whatsapp-web/driver.js';
 import { SessionStore } from '../whatsapp-web/session.js';
@@ -263,8 +264,12 @@ export class WhatsAppWebRuntime implements AdapterRuntime {
     } else {
       if (m.isGroup && !cfg.allowGroups) return;
       const sid = m.senderPhone || `lid:${m.senderJid}`;
-      // Unknown numbers: dropped without logging anything about them (this is the owner's personal WhatsApp).
-      if (!this.ctx.isAllowed(sid) && !parsePairCode(m.body)) return;
+      // Unknown numbers: dropped without logging anything about them (this is the owner's personal WhatsApp), unless
+      // the owner said this is a separate business number with customer service open: then a customer in a private
+      // chat goes on to the manager, which applies the customer rules (limits, the check of every answer).
+      const cust = readCustomer(cfg.customer, 'whatsapp-web');
+      const customerDoor = !m.isGroup && cust.enabled && cust.open && cust.businessNumber;
+      if (!this.ctx.isAllowed(sid) && !parsePairCode(m.body) && !customerDoor) return;
       if (m.isGroup && !m.mentionsMe) return;
     }
     const maxAge = (Number(cfg.maxAgeHours) || 24) * 3600_000;

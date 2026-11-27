@@ -156,7 +156,7 @@ function LinkForm({ s, onDone, onCancel }: { s: BankState; onDone(next?: BankSta
     setBusy(true);
     setErr('');
     try {
-      const r = await api.post<{ url: string }>('/mcp/bank/link', { bank, country, business });
+      const r = await api.post<{ url: string }>('/mcp/bank/link', { bank, country, business, days: chosen?.days || undefined });
       if (w && !w.closed) w.location.href = r.url;
       else window.open(r.url, '_blank', 'noopener');
       setWaiting(r.url);

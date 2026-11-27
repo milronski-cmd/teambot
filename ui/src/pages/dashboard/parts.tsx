@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { ArrowUpRight, ListChecks } from 'lucide-react';
+import { ChevronRight, ListChecks } from 'lucide-react';
 import { api } from '../../lib/api';
 import { t } from '../../lib/i18n';
 import { Card, SectionTitle } from '../../components/ui';
@@ -8,9 +8,9 @@ import { BotName } from '../../modules/teamdata/parts';
 /** The way from a block on the start screen into its app (the same part of the dashboard, whole). */
 export function OpenApp({ href, label }: { href: string; label?: string }) {
   return (
-    <a href={href} className="inline-flex h-8 items-center gap-1 rounded-lg px-2 text-sm text-muted transition-colors hover:bg-surface-2 hover:text-fg" data-testid="dashboard-open">
-      {label || t('Openen')}
-      <ArrowUpRight className="h-4 w-4" aria-hidden />
+    <a href={href} className="inline-flex h-8 items-center gap-0.5 rounded-lg px-2 text-[13px] text-muted transition-colors hover:bg-surface-2 hover:text-fg" data-testid="dashboard-open">
+      {label || t('Alles')}
+      <ChevronRight className="h-4 w-4" aria-hidden />
     </a>
   );
 }
@@ -49,7 +49,7 @@ export function TasksBlock() {
       </SectionTitle>
       <Card className="p-0">
         {state === 'loading' && <div className="p-4 text-sm text-muted">…</div>}
-        {state === 'none' && <div className="p-4 text-sm text-muted">Er staat niets open. Wat je een bot vraagt of wat een bot zelf oppakt, komt hier te staan.</div>}
+        {state === 'none' && <div className="p-4 text-sm text-muted">Niets open.</div>}
         {state === 'list' && (
           <>
             <div className="flex flex-wrap items-baseline gap-x-4 gap-y-1 p-4 pb-2">

@@ -96,7 +96,7 @@ export function ConnectCard({
             <h3 className="font-semibold">{title}</h3>
             <ConnectBadge state={state} label={stateLabel} />
           </div>
-          {line && <p className="mt-0.5 text-sm text-muted">{line}</p>}
+          {line && <p className="mt-0.5 line-clamp-1 text-sm text-muted">{line}</p>}
         </div>
         {action && <div className="flex shrink-0 flex-wrap items-center gap-2">{action}</div>}
       </div>

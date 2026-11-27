@@ -847,3 +847,47 @@ test('whatsapp (QR): a real Ogg/Opus voice note is transcribed by the free local
     await t.close();
   }
 });
+
+test('whatsapp (QR): on a separate business number with customer service on, a customer may write; without it, or in a group, strangers stay out', async () => {
+  const t = await startTestApp();
+  try {
+    const { b, wa, drivers } = await setupWa(t);
+    await linkOwner(t, b, wa);
+    const stranger = (body: string, extra: any = {}) => ({ fromMe: false, selfChat: false, chatId: '31644444444@c.us', senderPhone: '31644444444', senderJid: '31644444444@c.us', senderName: 'Klant', body, ...extra });
+    const conversations = () => t.app.ctx.store.one<any>('SELECT COUNT(*) n FROM channel_conversations WHERE binding_id = ?', b.id)!.n;
+    const current = async (n: number) => {
+      await new Promise((r) => setTimeout(r, 300));
+      return drivers.length > n ? reconnected(t, b, drivers, drivers.length - 1) : drivers.at(-1)!;
+    };
+
+    // Customer service on, door "open", but not said to be a business number: the owner's own WhatsApp stays closed.
+    let n = drivers.length;
+    await t.api('PATCH', `/channels/bindings/${b.id}`, { config: { customer: { enabled: true, open: true, knowledge: 'Levertijd: 2 werkdagen.' } } });
+    let d = await current(n);
+    assert.equal((await t.api('GET', `/channels/bindings/${b.id}`)).openDoorSupported, false);
+    d.msg(stranger('Wat is de levertijd?'));
+    await new Promise((r) => setTimeout(r, 200));
+    assert.equal(conversations(), 0, 'the stranger did not get in');
+
+    // The owner says it is a separate business number: the customer reaches the bot, and gets an answer.
+    n = drivers.length;
+    await t.api('PATCH', `/channels/bindings/${b.id}`, { config: { customer: { enabled: true, open: true, businessNumber: true, knowledge: 'Levertijd: 2 werkdagen.' } } });
+    d = await current(n);
+    assert.equal((await t.api('GET', `/channels/bindings/${b.id}`)).openDoorSupported, true);
+    t.script.push({ text: 'De levertijd is 2 werkdagen.' });
+    d.msg(stranger('Wat is de levertijd?'));
+    await until(() => d.texts.some((x) => x.chatId === '31644444444@c.us'), 5000, 'answer to the customer');
+    // The customer rules apply (AI label, the check of every answer before it goes out).
+    assert.match(d.texts.find((x) => x.chatId === '31644444444@c.us')!.text, /AI-assistent/);
+    const input = t.app.ctx.store.messages(threadOf(t, '31644444444')!.id).find((m) => m.role === 'user')!;
+    assert.equal(input.parts.channel.isOwner, false);
+
+    // A stranger in a group: still out.
+    const before = conversations();
+    d.msg(stranger('Hoi groep', { isGroup: true, chatId: '1203@g.us' }));
+    await new Promise((r) => setTimeout(r, 200));
+    assert.equal(conversations(), before);
+  } finally {
+    await t.close();
+  }
+});

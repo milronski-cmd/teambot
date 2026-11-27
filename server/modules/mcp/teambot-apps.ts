@@ -16,6 +16,8 @@
  *    "External", home page, privacy page and domain, then "Publish app" (in "Testing" a login ends after 7 days).
  *    Unverified, Google shows "deze app is niet geverifieerd" and allows 100 users; verification lifts both (Gmail and
  *    Drive reading are "restricted" scopes: a yearly security assessment). Clients › "Desktop app" › "Download JSON".
+ *  - Microsoft (Outlook, microsoft.ts): an Entra "public client" without a secret, so its id ships in the source as the
+ *    default (MS_DEFAULT_CLIENT_ID); TEAMBOT_MS_CLIENT_ID or a built-in "microsoft" app here wins.
  *  - GitHub: Settings › Developer settings › OAuth Apps › New, callback http://127.0.0.1/api/public/mcp/oauth/callback
  *    (GitHub accepts any port on a loopback address), "Expire user access tokens" on; then a client secret.
  */

@@ -7,9 +7,11 @@ import { migrations } from './db.js';
 import type { ConnectionRow } from './db.js';
 import { CATALOG, catalogEntry } from './catalog.js';
 import { McpManager, label } from './runtime.js';
-import { GROUP, boundConnections, toolProvider, usableTools } from './tools.js';
-import { connView, registerRoutes } from './api.js';
+import { startDailyCheck } from './health.js';
+import { GROUP, boundConnections, effectiveRisk, toolProvider, usableTools } from './tools.js';
+import { connView, connectedCatalogIds, registerRoutes } from './api.js';
 import { registerExpose } from './expose.js';
+import { registerBusiness } from './business.js';
 import { registerCli, removeLocalUrl, writeLocalUrl } from './cli.js';
 import { viewKV } from './util.js';
 import { newBotBinder, upgradeDefaults } from './defaults.js';
@@ -20,8 +22,11 @@ import { newBotBinder, upgradeDefaults } from './defaults.js';
  * read-only install test, call log — plus TeamBot itself as a small MCP server.
  */
 const managers = new WeakMap<Ctx, McpManager>();
+/** The app runtime of one TeamBot instance (the daily check and its test). */
+export const mcpManager = (ctx: Ctx) => managers.get(ctx) ?? null;
 /** The address written to <data>/local-url for `teambot send` (removed again on stop). */
 const localUrls = new WeakMap<Ctx, string | null>();
+const healthChecks = new WeakMap<Ctx, () => void>();
 /** TeamBot's own MCP endpoint (closed on stop: open 2026-era exchanges and subscriptions end). */
 const exposed = new WeakMap<Ctx, { close(): Promise<void> }>();
 
@@ -47,6 +52,7 @@ const mod: Module = {
     let fetcher: Fetcher = defaultFetcher;
     const registry = new Registry(ctx, new WebCache(path.join(ctx.config.dataDir, 'cache', 'mcp-registry'), () => fetcher, ctx.log));
     registerRoutes(ctx, m, registry);
+    registerBusiness(ctx, m);
     exposed.set(ctx, registerExpose(ctx));
     registerCli(ctx); // `teambot send` (bin/teambot.mjs)
 
@@ -79,7 +85,10 @@ const mod: Module = {
 
     ctx.services.mcp = {
       /** Connector catalogue for the marketplace (read-only templates). */
-      catalog: () => CATALOG.map((e) => ({ ...e })),
+      catalog: (userId?: string) => {
+        const linked = userId ? connectedCatalogIds(ctx, userId) : new Set<string>();
+        return CATALOG.map((e) => ({ ...e, installed: linked.has(e.id) }));
+      },
       catalogEntry: (id: string) => catalogEntry(id),
       /** The MCP Registry client (browse/search/detail; cached). */
       registry,
@@ -95,6 +104,24 @@ const mod: Module = {
         return a ? boundConnections(ctx, a).map((c) => ({ id: c.id, name: label(c), tools: usableTools(ctx, c).map((t) => t.name) })) : [];
       },
       status: (connId: string) => m.status(connId),
+      /**
+       * One READING tool of one of the user's own connections, called by TeamBot itself (the dashboard, a learning round
+       * that learns from the owner's products and sales). Refused for any tool that is not a reading tool.
+       */
+      read: async (userId: string, connId: string, tool: string, args: any = {}) => {
+        const c = ctx.store.get<ConnectionRow>('mcp_connections', connId);
+        if (!c || c.user_id !== userId || !c.enabled) throw new Error('Koppeling niet gevonden');
+        const row = ctx.store.one<any>('SELECT * FROM mcp_tools WHERE connection_id = ? AND name = ? AND present = 1', connId, tool);
+        if (!row || effectiveRisk(ctx.store.decode<any>('mcp_tools', row)) !== 'read') throw new Error(`${tool} is geen leestool`);
+        const res: any = await m.use(c, (cl) => cl.callTool({ name: tool, arguments: args }, { timeout: 90_000 }));
+        const text = (res?.content || []).map((x: any) => x?.text || '').join('');
+        if (res?.isError) throw new Error(text.slice(0, 400) || 'fout');
+        try {
+          return JSON.parse(text);
+        } catch {
+          return text;
+        }
+      },
       /** Internal: runtime manager (tests and diagnostics only; never exposed over HTTP). */
       _manager: m,
       exportUser: (userId: string) => ({
@@ -133,9 +160,14 @@ const mod: Module = {
       ctx.log.error('[mcp] defaults upgrade failed', e);
     }
     managers.get(ctx)?.startSweeper();
+    // The daily check of the apps (health.ts); not in tests, they call checkAll themselves.
+    const m = managers.get(ctx);
+    if (m && !process.env.TEAMBOT_TEST && process.env.NODE_ENV !== 'test') healthChecks.set(ctx, startDailyCheck(ctx, m));
     localUrls.set(ctx, writeLocalUrl(ctx));
   },
   async stop(ctx: Ctx) {
+    healthChecks.get(ctx)?.();
+    healthChecks.delete(ctx);
     removeLocalUrl(ctx, localUrls.get(ctx) ?? null);
     await managers.get(ctx)?.stopAll();
     await exposed.get(ctx)?.close();

@@ -13,7 +13,7 @@ import { RateLimiter, scrub, sha256 } from './security.js';
 import { ChannelTeams } from './teams.js';
 import { botTags, plusAddress } from './email-util.js';
 import { computeHealth, ERROR_KINDS, NOT_RECEIVED, parseTestCode, type HealthRecord, type HealthView } from './health.js';
-import { AI_LABEL_EVERY_MS, TEXT, classifyDraft, hoursSummary, humanRequested, isOpen, knowledgeItems, nextOpening, readCustomer, type CustomerConfig, type DraftVerdict, type KnowledgeItem } from './customer.js';
+import { AI_LABEL_EVERY_MS, TEXT, canOpenDoor, classifyDraft, hoursSummary, humanRequested, isOpen, knowledgeItems, nextOpening, readCustomer, type CustomerConfig, type DraftVerdict, type KnowledgeItem } from './customer.js';
 import {
   ChannelError,
   type AccessLevel,
@@ -322,8 +322,8 @@ export class ChannelManager {
       counts,
       /** Has TeamBot really received and sent with these settings? ("verbonden" only when both are proven) */
       health: this.healthView(b),
-      /** Customer mode: may strangers write in a private chat? Never on WhatsApp (QR), that is the owner's own number. */
-      openDoorSupported: b.adapter !== 'whatsapp-web',
+      /** Customer mode: may strangers write in a private chat? On WhatsApp (QR) only on a separate business number. */
+      openDoorSupported: canOpenDoor(b.adapter, b.config?.customer),
       /** The team this channel belongs to (that of its bot or group); only that team's bots answer and send on it. */
       team_id: this.teams.teamOf(b),
       teamName: this.teams.teamName(this.teams.teamOf(b)),

@@ -18,6 +18,9 @@ export interface SourceView {
   lastError?: string | null;
 }
 
+export type WebMode = 'off' | 'products' | 'open';
+export type LearnFrom = 'conversations' | 'products' | 'sales';
+
 export interface SpecialistView {
   agentId: string;
   agentName: string;
@@ -29,6 +32,10 @@ export interface SpecialistView {
   selfTest: boolean;
   /** The specialist's own model (default) or a cheaper (free or local) one. */
   learnWith?: 'own' | 'cheap';
+  /** Internet: nothing, only about the products (prices, suppliers), or open (sources it finds itself). */
+  web?: WebMode;
+  /** The business's own material it learns from (what it learns there waits for the owner's approval). */
+  learnFrom?: LearnFrom[];
   sources: SourceView[];
   /** When the next round starts by itself; `skipped` = the last one waited for a free or local model. */
   nextRoundAt?: string | null;
@@ -141,7 +148,7 @@ export interface SpecialistListItem {
 export const spApi = {
   list: () => api.get<SpecialistListItem[]>('/specialists'),
   get: (agentId: string) => api.get<SpecialistView>(`/specialists/${agentId}`),
-  save: (agentId: string, body: Partial<{ enabled: boolean; field: string; learnOn: boolean; cadence: Cadence; budget: BudgetId; selfTest: boolean; learnWith: 'own' | 'cheap'; sources: SourceView[] }>) => api.put<SpecialistView>(`/specialists/${agentId}`, body),
+  save: (agentId: string, body: Partial<{ enabled: boolean; field: string; learnOn: boolean; cadence: Cadence; budget: BudgetId; selfTest: boolean; learnWith: 'own' | 'cheap'; web: WebMode; learnFrom: LearnFrom[]; sources: SourceView[] }>) => api.put<SpecialistView>(`/specialists/${agentId}`, body),
   learn: (agentId: string) => api.post<{ started: boolean }>(`/specialists/${agentId}/learn`),
   knowledge: (agentId: string) => api.get<{ dossierId: string | null; dossierStatus: string | null; facts: Fact[]; review: Fact[]; retired?: Retired[]; size?: { active: number; target: number } | null }>(`/specialists/${agentId}/knowledge`),
   retire: (agentId: string, ref: string, reason: string) => api.post<{ changeId: string }>(`/specialists/${agentId}/knowledge/${ref}/retire`, { reason }),

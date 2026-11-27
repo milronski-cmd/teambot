@@ -366,6 +366,10 @@ test('customers who simply write get no tools, only in private chats; strangers 
     // WhatsApp via QR never opens the door (it is the owner's own number).
     assert.equal(readCustomer({ enabled: true, open: true }, 'whatsapp-web').open, false);
     assert.equal(canOpenDoor('whatsapp-web'), false);
+    // ... unless the owner said it is a separate business number.
+    assert.equal(readCustomer({ enabled: true, open: true, businessNumber: true }, 'whatsapp-web').open, true);
+    assert.equal(canOpenDoor('whatsapp-web', { businessNumber: true }), true);
+    assert.equal(readCustomer({ businessNumber: true }, 'telegram').businessNumber, false);
     assert.equal(canOpenDoor('whatsapp'), true);
   } finally {
     await t.close();

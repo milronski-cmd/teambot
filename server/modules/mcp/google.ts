@@ -297,11 +297,60 @@ const SAME_MAIL_MS = 30 * 60_000;
 const site = z.string().describe('De site zoals in Search Console, bijv. "https://www.voorbeeld.nl/" of "sc-domain:voorbeeld.nl" (zie gsc_sites)');
 const account = z.string().regex(/^\d+$/).describe('Merchant Center-account-ID, alleen cijfers (zie merchant_accounts)');
 
+const adsCustomer = z.string().describe('Klant-ID, 10 cijfers; streepjes mogen (zie ads_customers)');
+const adsId = (c: string) => String(c || '').replace(/\D/g, '');
+/** "123" or "customers/1234567890/campaigns/123": the full resource name. */
+function adsResource(customer: string, kind: string, id: string): string {
+  const s = String(id || '').trim();
+  if (/^customers\/\d+\//.test(s)) return s;
+  if (!/^\d+$/.test(s)) throw new Error(`Geef het ID als cijfers of als resourceName (customers/…/${kind}/…).`);
+  return `customers/${adsId(customer)}/${kind}/${s}`;
+}
+async function adsMutate(g: Call, x: { ctx: Ctx; conn: ConnectionRow }, customer: string, operations: any[], o: { validateOnly?: boolean; partialFailure?: boolean } = {}) {
+  const id = adsId(customer);
+  if (id.length !== 10) throw new Error('Het klant-ID heeft 10 cijfers (zie ads_customers).');
+  // The examples write "customers/C/"; Google needs the real customer id there.
+  const ops = JSON.parse(JSON.stringify(operations).replace(/customers\/C\//g, `customers/${id}/`));
+  return g('POST', `${ADS_URL}/customers/${id}/googleAds:mutate`, {
+    body: { mutateOperations: ops, ...(o.partialFailure ? { partialFailure: true } : {}), ...(o.validateOnly ? { validateOnly: true } : {}) },
+    headers: adsHeaders(x),
+    timeoutMs: 90_000,
+  });
+}
+
+/**
+ * What a change in Google Ads does to the owner's money. Spending less (pausing, removing, excluding search terms) is an
+ * outward step like any other; anything that can spend more (a budget, a bid, switching something on, a new campaign,
+ * keyword or ad) is a payment, which asks the owner on every access level (broker.ts).
+ */
+export function adsImpact(tool: string, args: any): 'external' | 'payment' {
+  const a = args || {};
+  if (tool === 'ads_campaign_status') return a.status === 'PAUSED' ? 'external' : 'payment';
+  if (tool === 'ads_negatives_add') return 'external';
+  if (tool !== 'ads_mutate') return 'payment';
+  const ops: any[] = Array.isArray(a.operations) ? a.operations : [];
+  if (!ops.length) return 'payment';
+  const lowers = (op: any) => {
+    const entries = Object.entries(op || {});
+    if (entries.length !== 1) return false;
+    const [kind, b] = entries[0] as [string, any];
+    if (!b || typeof b !== 'object') return false;
+    if (b.remove && !b.create && !b.update) return true;
+    const mask = String(b.updateMask || '').split(',').map((s) => s.trim()).filter(Boolean);
+    if (b.update && mask.length && mask.every((m) => m === 'status') && ['PAUSED', 'REMOVED'].includes(b.update.status)) return true;
+    if (b.create && b.create.negative === true && /CriterionOperation$/.test(kind)) return true;
+    return false;
+  };
+  return ops.every(lowers) ? 'external' : 'payment';
+}
+
 function adsHeaders(x: { ctx: Ctx; conn: ConnectionRow }): Record<string, string> {
+  // Google no longer requires a developer token for the Ads API (the API Center says so since 2026: access levels live
+  // in the Google Cloud project). One that was saved is still sent; should Google ask for one after all, its error names
+  // the developer token and Apps › Google shows the field for it (needsToken).
   const token = x.ctx.secrets.getByName(x.conn.user_id, adsName(x.conn.id));
-  if (!token) throw new Error('Google Ads vraagt een developer token. Vul hem in bij Apps › Google › Google Ads (uit het API-centrum van je Google Ads-beheerdersaccount).');
   const login = String((x.conn.oauth as any)?.ads_login || '').replace(/\D/g, '');
-  return { 'developer-token': token, ...(login ? { 'login-customer-id': login } : {}) };
+  return { ...(token ? { 'developer-token': token } : {}), ...(login ? { 'login-customer-id': login } : {}) };
 }
 
 /** Merchant API: the Google Cloud project of the client must be registered with the account once; TeamBot does it. */
@@ -399,6 +448,45 @@ export const GOOGLE_TOOLS: GTool[] = [
       return { ingediend: a.sitemap, site: a.site };
     },
   },
+  {
+    name: 'gsc_sitemap_delete',
+    service: 'searchconsole',
+    title: 'Sitemap verwijderen',
+    kind: 'send',
+    scope: S + 'webmasters',
+    description: 'Haal een ingediende sitemap weg uit Search Console (de sitemap zelf op de website blijft staan).',
+    input: { site, sitemap: z.string().url() },
+    run: async (a, g) => {
+      await g('DELETE', `${GSC}/sites/${encodeURIComponent(a.site)}/sitemaps/${encodeURIComponent(a.sitemap)}`);
+      return { verwijderd: a.sitemap, site: a.site };
+    },
+  },
+  {
+    name: 'gsc_site_add',
+    service: 'searchconsole',
+    title: 'Site toevoegen',
+    kind: 'write',
+    scope: S + 'webmasters',
+    description: 'Voeg een site toe aan Search Console ("https://www.voorbeeld.nl/" of "sc-domain:voorbeeld.nl"). Daarna moet het eigendom nog bevestigd worden (DNS of een bestand op de site) voordat er gegevens komen.',
+    input: { site },
+    run: async (a, g) => {
+      await g('PUT', `${GSC}/sites/${encodeURIComponent(a.site)}`);
+      return { toegevoegd: a.site };
+    },
+  },
+  {
+    name: 'gsc_site_delete',
+    service: 'searchconsole',
+    title: 'Site weghalen',
+    kind: 'send',
+    scope: S + 'webmasters',
+    description: 'Haal een site weg uit de lijst van dit Google-account in Search Console. De gegevens bij Google blijven; opnieuw toevoegen kan.',
+    input: { site },
+    run: async (a, g) => {
+      await g('DELETE', `${GSC}/sites/${encodeURIComponent(a.site)}`);
+      return { weggehaald: a.site };
+    },
+  },
   // ---- Merchant Center
   { name: 'merchant_accounts', service: 'merchant', title: 'Merchant Center-accounts', kind: 'read', description: 'Toon de Merchant Center-accounts waar dit Google-account bij kan.', input: {}, run: (_a, g) => g('GET', `${MERCHANT}/accounts/v1/accounts`) },
   {
@@ -429,10 +517,98 @@ export const GOOGLE_TOOLS: GTool[] = [
     kind: 'read',
     description:
       'Vraag gegevens op uit Google Ads met GAQL (alleen lezen). Voorbeeld: "SELECT campaign.name, metrics.clicks, metrics.impressions, metrics.cost_micros, metrics.conversions FROM campaign WHERE segments.date DURING LAST_30_DAYS ORDER BY metrics.cost_micros DESC". Bedragen zijn in micro’s (1.000.000 = 1 euro).',
-    input: { customer: z.string().describe('Klant-ID, 10 cijfers; streepjes mogen (zie ads_customers)'), query: z.string().min(10).describe('GAQL-query die met SELECT begint') },
+    input: {
+      customer: adsCustomer,
+      query: z.string().min(10).describe('GAQL-query die met SELECT begint'),
+      pageToken: z.string().optional().describe('nextPageToken uit het vorige antwoord, voor de volgende pagina'),
+    },
     run: (a, g, x) => {
       if (!/^\s*select\b/i.test(a.query)) throw new Error('Alleen SELECT-query’s (lezen).');
-      return g('POST', `${ADS_URL}/customers/${String(a.customer).replace(/\D/g, '')}/googleAds:search`, { body: { query: a.query }, headers: adsHeaders(x) });
+      return g('POST', `${ADS_URL}/customers/${adsId(a.customer)}/googleAds:search`, { body: { query: a.query, ...(a.pageToken ? { pageToken: a.pageToken } : {}) }, headers: adsHeaders(x) });
+    },
+  },
+  {
+    name: 'ads_preview',
+    service: 'ads',
+    title: 'Google Ads-wijziging proberen',
+    kind: 'read',
+    description:
+      'Laat Google een wijziging controleren zonder iets te veranderen (validateOnly). Zelfde invoer als ads_mutate. Doe dit altijd eerst: zo zie je fouten voordat de eigenaar iets hoeft goed te keuren.',
+    input: { customer: adsCustomer, operations: z.array(z.record(z.string(), z.any())).min(1).max(200).describe('Zoals bij ads_mutate') },
+    run: async (a, g, x) => {
+      await adsMutate(g, x, a.customer, a.operations, { validateOnly: true });
+      return { gecontroleerd: true, veranderd: false, operaties: a.operations.length, uitleg: 'Google keurt deze wijziging goed. Er is nog niets veranderd; voer hem uit met ads_mutate.' };
+    },
+  },
+  {
+    name: 'ads_mutate',
+    service: 'ads',
+    title: 'Google Ads wijzigen',
+    kind: 'send',
+    description: [
+      'Wijzig Google Ads: campagnes, budgetten, advertentiegroepen, advertenties, zoekwoorden, uitsluitingen, biedstrategieën, assets en conversieacties, in één keer (googleAds:mutate, REST/JSON, camelCase).',
+      'Elke operatie is één object met één sleutel, bijvoorbeeld campaignBudgetOperation, campaignOperation, adGroupOperation, adGroupAdOperation, adGroupCriterionOperation, campaignCriterionOperation, assetOperation, campaignAssetOperation, conversionActionOperation, sharedSetOperation, sharedCriterionOperation; daarin create, update (met updateMask) of remove (resourceName).',
+      'Nieuwe dingen die naar elkaar verwijzen krijgen tijdelijke negatieve ID’s, bijv. "customers/C/campaignBudgets/-1". "customers/C/" wordt het echte klant-ID.',
+      'Budget en campagne (gepauzeerd): [{"campaignBudgetOperation":{"create":{"resourceName":"customers/C/campaignBudgets/-1","name":"Budget fietsen","amountMicros":"20000000","deliveryMethod":"STANDARD"}}},{"campaignOperation":{"create":{"name":"Fietsen zoeken","status":"PAUSED","advertisingChannelType":"SEARCH","campaignBudget":"customers/C/campaignBudgets/-1","maximizeClicks":{},"networkSettings":{"targetGoogleSearch":true,"targetSearchNetwork":false,"targetContentNetwork":false},"containsEuPoliticalAdvertising":"DOES_NOT_CONTAIN_EU_POLITICAL_ADVERTISING"}}}]',
+      'Advertentiegroep: [{"adGroupOperation":{"create":{"campaign":"customers/C/campaigns/123","name":"E-bikes","status":"ENABLED","type":"SEARCH_STANDARD","cpcBidMicros":"800000"}}}]',
+      'Zoekwoord: [{"adGroupCriterionOperation":{"create":{"adGroup":"customers/C/adGroups/456","status":"ENABLED","keyword":{"text":"elektrische fiets","matchType":"PHRASE"}}}}]',
+      'Responsive zoekadvertentie: [{"adGroupAdOperation":{"create":{"adGroup":"customers/C/adGroups/456","status":"PAUSED","ad":{"finalUrls":["https://www.voorbeeld.nl/"],"responsiveSearchAd":{"headlines":[{"text":"…"},{"text":"…"},{"text":"…"}],"descriptions":[{"text":"…"},{"text":"…"}]}}}}}]',
+      'Pauzeren: [{"campaignOperation":{"update":{"resourceName":"customers/C/campaigns/123","status":"PAUSED"},"updateMask":"status"}}]',
+      'Bedragen in micro’s (1.000.000 = 1 euro). Probeer eerst met ads_preview. Meer uitgeven (budget, bod, iets aanzetten, een nieuwe campagne, zoekwoord of advertentie) vraagt altijd de eigenaar.',
+    ].join('\n'),
+    input: {
+      customer: adsCustomer,
+      operations: z.array(z.record(z.string(), z.any())).min(1).max(200).describe('MutateOperation-objecten, zie de beschrijving'),
+      partialFailure: z.boolean().optional().describe('true: wat lukt gaat door, de rest komt terug als fout'),
+    },
+    run: async (a, g, x) => {
+      const r = await adsMutate(g, x, a.customer, a.operations, { partialFailure: a.partialFailure });
+      const done = (r?.mutateOperationResponses || []).map((o: any) => Object.values(o || {}).map((v: any) => v?.resourceName).find(Boolean)).filter(Boolean);
+      return { veranderd: true, resultaten: done, ...(r?.partialFailureError ? { deelsMislukt: r.partialFailureError.message || r.partialFailureError } : {}) };
+    },
+  },
+  {
+    name: 'ads_campaign_status',
+    service: 'ads',
+    title: 'Campagne aan of uit',
+    kind: 'send',
+    description: 'Zet een Google Ads-campagne op pauze of weer aan. Aanzetten kost geld en vraagt altijd de eigenaar.',
+    input: { customer: adsCustomer, campaign: z.string().describe('Campagne-ID (cijfers) of resourceName'), status: z.enum(['PAUSED', 'ENABLED']) },
+    run: async (a, g, x) => {
+      const rn = adsResource(a.customer, 'campaigns', a.campaign);
+      await adsMutate(g, x, a.customer, [{ campaignOperation: { update: { resourceName: rn, status: a.status }, updateMask: 'status' } }]);
+      return { campagne: rn, status: a.status };
+    },
+  },
+  {
+    name: 'ads_budget_set',
+    service: 'ads',
+    title: 'Dagbudget instellen',
+    kind: 'send',
+    description: 'Stel het gemiddelde dagbudget van een campagnebudget in, in euro’s. Zoek het budget op met ads_query: "SELECT campaign.name, campaign_budget.resource_name, campaign_budget.amount_micros FROM campaign". Vraagt altijd de eigenaar.',
+    input: { customer: adsCustomer, budget: z.string().describe('Budget-ID (cijfers) of resourceName van campaign_budget'), euros: z.number().positive().max(100000).describe('Nieuw dagbudget in euro’s, bijv. 25') },
+    run: async (a, g, x) => {
+      const rn = adsResource(a.customer, 'campaignBudgets', a.budget);
+      await adsMutate(g, x, a.customer, [{ campaignBudgetOperation: { update: { resourceName: rn, amountMicros: String(Math.round(a.euros * 100) * 10_000) }, updateMask: 'amount_micros' } }]);
+      return { budget: rn, perDag: a.euros };
+    },
+  },
+  {
+    name: 'ads_negatives_add',
+    service: 'ads',
+    title: 'Uitsluitingszoekwoorden toevoegen',
+    kind: 'send',
+    description: 'Voeg uitsluitingszoekwoorden toe aan een campagne (zoektermen waarop je niet wilt verschijnen). Dat verlaagt uitgaven.',
+    input: {
+      customer: adsCustomer,
+      campaign: z.string().describe('Campagne-ID (cijfers) of resourceName'),
+      keywords: z.array(z.string().min(1).max(80)).min(1).max(200),
+      matchType: z.enum(['BROAD', 'PHRASE', 'EXACT']).optional().describe('Standaard PHRASE'),
+    },
+    run: async (a, g, x) => {
+      const camp = adsResource(a.customer, 'campaigns', a.campaign);
+      await adsMutate(g, x, a.customer, a.keywords.map((k: string) => ({ campaignCriterionOperation: { create: { campaign: camp, negative: true, keyword: { text: k, matchType: a.matchType || 'PHRASE' } } } })), { partialFailure: true });
+      return { campagne: camp, uitgesloten: a.keywords };
     },
   },
   // ---- Analytics
@@ -731,11 +907,21 @@ interface Flow {
   verifier: string;
   redirectUri: string;
   expires: number;
+  /** The account this login is for (logging in again); none with `add`. */
+  connId?: string;
+  /** "Nog een Google-account": never replaces an account that is already there. */
+  add?: boolean;
 }
 const flows = new Map<string, Flow>();
 
-export function googleConn(ctx: Ctx, userId: string): ConnectionRow | null {
-  return ctx.store.find<ConnectionRow>('mcp_connections', { user_id: userId, catalog_id: GOOGLE_ID })[0] || null;
+/** The user's Google accounts, the first connected first (more than one: a second Gmail, a business and a private account). */
+export function googleConns(ctx: Ctx, userId: string): ConnectionRow[] {
+  return ctx.store.find<ConnectionRow>('mcp_connections', { user_id: userId, catalog_id: GOOGLE_ID }).sort((a, b) => String(a.created_at).localeCompare(String(b.created_at)));
+}
+/** One Google account: the one with this id, or the first. */
+export function googleConn(ctx: Ctx, userId: string, connId?: string | null): ConnectionRow | null {
+  const all = googleConns(ctx, userId);
+  return (connId && all.find((c) => c.id === connId)) || all[0] || null;
 }
 
 /** One cheap read per service: the proof behind "Verbinding werkt", and where an API still has to be switched on. */
@@ -764,9 +950,11 @@ export function registerGoogle(ctx: Ctx, mgr: McpManager, h: GoogleHelpers) {
   const redirect = (req: Request) => h.baseUrl(req) + GOOGLE_CALLBACK_PATH;
   const loopback = (uri: string) => /^http:\/\/(127\.0\.0\.1|localhost)(:\d+)?\//.test(uri);
 
+  /** The account a request is about: ?conn= or { conn } (several Google accounts), else the first. */
+  const pick = (req: Request) => googleConn(ctx, user(req).id, str((req.query as any)?.conn ?? req.body?.conn, 80) || null);
   const state = (req: Request) => {
     const u = user(req);
-    const c = googleConn(ctx, u.id);
+    const c = pick(req);
     const client = googleClient(ctx, u.id);
     const o: any = c?.oauth || {};
     const on = c ? serviceIds(o.services) : [];
@@ -784,6 +972,8 @@ export function registerGoogle(ctx: Ctx, mgr: McpManager, h: GoogleHelpers) {
       adsToken: !!(c && ctx.secrets.getByName(u.id, adsName(c.id))),
       adsLogin: o.ads_login || '',
       connection: c ? h.view(c) : null,
+      /** Every Google account of this user, the first first. */
+      accounts: googleConns(ctx, u.id).map((x) => ({ id: x.id, email: String((x.oauth as any)?.email || ''), status: (x.oauth as any)?.status === 'connected' ? 'on' : 'expired' })),
     };
   };
 
@@ -825,7 +1015,10 @@ export function registerGoogle(ctx: Ctx, mgr: McpManager, h: GoogleHelpers) {
       const st = crypto.randomBytes(24).toString('base64url');
       const redirectUri = redirect(req);
       for (const [k, f] of flows) if (f.expires < Date.now()) flows.delete(k);
-      flows.set(sha256(st), { userId: u.id, services, verifier, redirectUri, expires: Date.now() + 10 * 60_000 });
+      const add = req.body?.add === true;
+      const target = add ? null : pick(req);
+      flows.set(sha256(st), { userId: u.id, services, verifier, redirectUri, expires: Date.now() + 10 * 60_000, connId: target?.id, add });
+      const hint = String((target?.oauth as any)?.email || '');
       const q = new URLSearchParams({
         client_id: client.id,
         redirect_uri: redirectUri,
@@ -835,9 +1028,9 @@ export function registerGoogle(ctx: Ctx, mgr: McpManager, h: GoogleHelpers) {
         code_challenge: crypto.createHash('sha256').update(verifier).digest('base64url'),
         code_challenge_method: 'S256',
         access_type: 'offline',
-        // consent: Google only hands out a refresh token when it asks again.
-        prompt: 'consent',
-        ...(googleConn(ctx, u.id)?.oauth && (googleConn(ctx, u.id)!.oauth as any).email ? { login_hint: (googleConn(ctx, u.id)!.oauth as any).email } : {}),
+        // consent: Google only hands out a refresh token when it asks again. Another account: Google lets you choose.
+        prompt: add ? 'consent select_account' : 'consent',
+        ...(hint ? { login_hint: hint } : {}),
       });
       return { authorizationUrl: `${at(AUTH_URL)}?${q}` };
     }),
@@ -875,9 +1068,15 @@ export function registerGoogle(ctx: Ctx, mgr: McpManager, h: GoogleHelpers) {
       // Only what the owner really ticked on Google's screen counts.
       const services = grantedServices(flow.services, String(tok.scope || ''));
       if (!services.length) return fail('Je hebt bij Google geen van de gevraagde rechten aangevinkt. Probeer het opnieuw en zet de vinkjes aan voor wat TeamBot mag gebruiken.', flow.userId);
-      let c = googleConn(ctx, flow.userId);
+      // Which account: the one this login was for; else the one with this address; a different address is a new
+      // account next to the others (never a silent swap of the account the bots were using).
+      const all = googleConns(ctx, flow.userId);
+      const same = email ? all.find((x) => String((x.oauth as any)?.email || '').toLowerCase() === email.toLowerCase()) : undefined;
+      const meant = flow.connId ? all.find((x) => x.id === flow.connId) : undefined;
+      let c: ConnectionRow | null = same || (meant && (!email || !(meant.oauth as any)?.email) ? meant : null) || (!flow.add && !flow.connId && all.length === 1 && !(all[0].oauth as any)?.email ? all[0] : null);
       const ts = now();
       const fresh = !c;
+      const extra = fresh && all.length > 0;
       if (!c) {
         const id = newId('mcp_');
         ctx.store.insert('mcp_connections', {
@@ -887,7 +1086,8 @@ export function registerGoogle(ctx: Ctx, mgr: McpManager, h: GoogleHelpers) {
           package: null,
           registry: null,
           name: 'Google',
-          label: '',
+          // A second account is told apart by its address (in the bots' tool list and on the Apps page).
+          label: extra ? email : '',
           slug: h.uniqueSlug(flow.userId, 'google'),
           transport: 'builtin',
           command: '',
@@ -943,7 +1143,7 @@ export function registerGoogle(ctx: Ctx, mgr: McpManager, h: GoogleHelpers) {
     '/mcp/google/test',
     ah(async (req) => {
       const u = user(req);
-      const c = googleConn(ctx, u.id);
+      const c = pick(req);
       if (!c) throw bad('Google is nog niet gekoppeld.');
       const g = caller(ctx, mgr, c.id);
       const on = serviceIds((c.oauth as any)?.services);
@@ -966,7 +1166,7 @@ export function registerGoogle(ctx: Ctx, mgr: McpManager, h: GoogleHelpers) {
     '/mcp/google/ads',
     ah(async (req) => {
       const u = user(req);
-      const c = googleConn(ctx, u.id);
+      const c = pick(req);
       if (!c) throw bad('Koppel eerst Google.');
       const token = str(req.body?.developerToken, 200).trim();
       if (token) {
@@ -983,8 +1183,7 @@ export function registerGoogle(ctx: Ctx, mgr: McpManager, h: GoogleHelpers) {
 
   /** The Gmail tool with this name, run for the owner; plain words when Gmail is not connected or not allowed. */
   const mail = async (req: Request, name: 'gmail_search' | 'gmail_read' | 'gmail_send', args: any) => {
-    const u = user(req);
-    const c = googleConn(ctx, u.id);
+    const c = pick(req);
     const o: any = c?.oauth || {};
     if (!c || o.status !== 'connected' || !serviceIds(o.services).includes('gmail')) throw bad('Gmail is niet gekoppeld. Koppel Google bij Apps en vink Gmail aan.');
     const tool = GOOGLE_TOOLS.find((t) => t.name === name)!;
@@ -1008,7 +1207,7 @@ export function registerGoogle(ctx: Ctx, mgr: McpManager, h: GoogleHelpers) {
     '/mcp/google/mail',
     ah(async (req) => {
       // Not connected is a state, not a failure: the dashboard shows how to connect it (and the browser logs no error).
-      const c = googleConn(ctx, user(req).id);
+      const c = pick(req);
       const o: any = c?.oauth || {};
       if (!c || o.status !== 'connected' || !serviceIds(o.services).includes('gmail')) return { messages: [], off: 'Gmail is niet gekoppeld. Koppel Google bij Apps en vink Gmail aan.' };
       return { messages: await mail(req, 'gmail_search', { query: str(req.query.q, 300).trim() || 'in:inbox', limit: Math.min(25, Math.max(1, Number(req.query.limit) || 15)) }) };
@@ -1060,11 +1259,13 @@ export async function watchGmail(ctx: Ctx, mgr: McpManager, onlyUser?: string): 
     try {
       const list = await g('GET', `${GMAIL}/messages`, { query: { q: 'in:inbox newer_than:2d', maxResults: 25 } });
       const ids: string[] = ((list.messages || []) as any[]).map((m) => String(m.id));
-      const state = ctx.store.getSetting<{ ids: string[] } | null>(c.user_id, GMAIL_SEEN, null);
+      // Per account; the first account keeps the key it had when there could be only one.
+      const seenKey = googleConn(ctx, c.user_id)?.id === c.id ? GMAIL_SEEN : `${GMAIL_SEEN}.${c.id}`;
+      const state = ctx.store.getSetting<{ ids: string[] } | null>(c.user_id, seenKey, null);
       const seen = new Set(state?.ids || []);
       // The first look: what is there now is old mail.
       const fresh = state ? ids.filter((id) => !seen.has(id)).reverse() : [];
-      ctx.store.setSetting(c.user_id, GMAIL_SEEN, { ids: [...new Set([...ids, ...(state?.ids || [])])].slice(0, 400) });
+      ctx.store.setSetting(c.user_id, seenKey, { ids: [...new Set([...ids, ...(state?.ids || [])])].slice(0, 400) });
       for (const id of fresh.slice(0, 10)) {
         const m = await g('GET', `${GMAIL}/messages/${encodeURIComponent(id)}`, { query: { format: 'full' } });
         // Only what really came in: not the owner's own sent mail that Gmail also labels with the conversation.

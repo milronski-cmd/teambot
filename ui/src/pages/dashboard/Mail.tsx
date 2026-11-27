@@ -51,7 +51,8 @@ interface Box {
   address: string;
 }
 const GOOGLE = 'google';
-export function MailSection({ compact }: { compact?: boolean } = {}) {
+/** `quiet`: on the overview, only when a mailbox is connected (else `onOff` tells the overview, which names it once). */
+export function MailSection({ compact, quiet, onOff }: { compact?: boolean; quiet?: boolean; onOff?: (off: boolean) => void } = {}) {
   const agents = useApp((s) => s.agents);
   const [rows, setRows] = useState<Row[] | null>(null);
   const [off, setOff] = useState('');
@@ -68,10 +69,28 @@ export function MailSection({ compact }: { compact?: boolean } = {}) {
   const [boxes, setBoxes] = useState<Box[]>([]);
   const [acct, setAcct] = useState(GOOGLE);
   const [adding, setAdding] = useState<{ address: string; password: string } | null>(null);
-  const base = acct === GOOGLE ? '/mcp/google/mail' : `/mcp/mailboxes/${acct}/mail`;
-  const address = boxes.find((b) => b.id === acct)?.address || '';
+  // Another Google account than the first: "google:<connection id>" (the server takes it as ?conn= / { conn }).
+  const isGoogle = acct === GOOGLE || acct.startsWith('google:');
+  const gconn = acct.startsWith('google:') ? acct.slice(7) : undefined;
+  const gq = gconn ? `&conn=${encodeURIComponent(gconn)}` : '';
+  // A Microsoft account (Outlook.com, Hotmail, MSN): "ms:<connection id>".
+  const isMs = acct.startsWith('ms:');
+  const mconn = isMs ? acct.slice(3) : undefined;
+  const conn = gconn || mconn;
+  const base = isGoogle ? '/mcp/google/mail' : isMs ? '/mcp/microsoft/mail' : `/mcp/mailboxes/${acct}/mail`;
+  const [gAccounts, setGAccounts] = useState<{ id: string; email: string }[]>([]);
+  const [msAccounts, setMsAccounts] = useState<{ id: string; email: string }[]>([]);
+  const address = boxes.find((b) => b.id === acct)?.address || msAccounts.find((m) => m.id === mconn)?.email || '';
 
   useEffect(() => {
+    api.get<{ accounts?: { id: string; email: string }[] }>('/mcp/google').then(
+      (r) => setGAccounts(r.accounts || []),
+      () => {},
+    );
+    api.get<{ accounts?: { id: string; email: string }[] }>('/mcp/microsoft').then(
+      (r) => setMsAccounts(r.accounts || []),
+      () => {},
+    );
     api.get<{ boxes: Box[] }>('/mcp/mailboxes').then(
       (r) => setBoxes(r.boxes),
       () => {},
@@ -80,7 +99,7 @@ export function MailSection({ compact }: { compact?: boolean } = {}) {
 
   const load = () =>
     api
-      .get<{ messages: Row[]; off?: string }>(acct === GOOGLE ? `${base}?limit=${compact ? 4 : 12}&q=${encodeURIComponent(`${box === 'sent' ? 'in:sent' : 'in:inbox'}${asked ? ` ${asked}` : ''}`)}` : `${base}?limit=${compact ? 4 : 12}&box=${box}&q=${encodeURIComponent(asked)}`)
+      .get<{ messages: Row[]; off?: string }>(isGoogle ? `${base}?limit=${compact ? 4 : 12}${gq}&q=${encodeURIComponent(`${box === 'sent' ? 'in:sent' : 'in:inbox'}${asked ? ` ${asked}` : ''}`)}` : `${base}?limit=${compact ? 4 : 12}&box=${box}&q=${encodeURIComponent(asked)}${mconn ? `&conn=${encodeURIComponent(mconn)}` : ''}`)
       .then(
         (r) => (setRows(r.messages), setOff(r.off ? t(r.off) : '')),
         (e) => (setRows([]), setOff(String(e?.message || e))),
@@ -90,10 +109,11 @@ export function MailSection({ compact }: { compact?: boolean } = {}) {
     setOpen(null);
     void load();
   }, [box, asked, acct]);
-  // Google is not connected but another mailbox is: show that one.
+  // Google is not connected but another mailbox is: show that one (a Microsoft account first).
   useEffect(() => {
-    if (off && acct === GOOGLE && boxes.length) setAcct(boxes[0].id);
-  }, [off, boxes]);
+    if (off && acct === GOOGLE && msAccounts.length) setAcct(`ms:${msAccounts[0].id}`);
+    else if (off && acct === GOOGLE && boxes.length) setAcct(boxes[0].id);
+  }, [off, boxes, msAccounts]);
 
   const connect = async () => {
     if (!adding) return;
@@ -116,7 +136,7 @@ export function MailSection({ compact }: { compact?: boolean } = {}) {
     if (!fresh) return;
     setBusy(true);
     try {
-      await api.post(`${base}/send`, { to: fresh.to.trim(), subject: fresh.subject.trim(), body: fresh.body });
+      await api.post(`${base}/send`, { to: fresh.to.trim(), subject: fresh.subject.trim(), body: fresh.body, conn });
       toast('Je mail is verstuurd', 'ok');
       setFresh(null);
       if (box === 'sent') void load();
@@ -130,7 +150,7 @@ export function MailSection({ compact }: { compact?: boolean } = {}) {
   const read = async (id: string) => {
     setLoading(id);
     try {
-      setOpen(await api.get<Full>(`${base}/${encodeURIComponent(id)}`));
+      setOpen(await api.get<Full>(`${base}/${encodeURIComponent(id)}${conn ? `?conn=${encodeURIComponent(conn)}` : ''}`));
       setReply('');
       setRows((l) => (l || []).map((r) => (r.id === id ? { ...r, unread: false } : r)));
     } catch (e) {
@@ -144,7 +164,7 @@ export function MailSection({ compact }: { compact?: boolean } = {}) {
     if (!open) return;
     setBusy(true);
     try {
-      await api.post(`${base}/send`, { to: senderAddress(open.from), subject: /^re:/i.test(open.subject) ? open.subject : `Re: ${open.subject}`, body: reply, thread: open.thread || undefined, inReplyTo: open.messageId, references: open.references });
+      await api.post(`${base}/send`, { to: senderAddress(open.from), subject: /^re:/i.test(open.subject) ? open.subject : `Re: ${open.subject}`, body: reply, thread: open.thread || undefined, inReplyTo: open.messageId, references: open.references, replyTo: isMs ? open.id : undefined, conn });
       toast('Je antwoord is verstuurd', 'ok');
       setOpen(null);
       setReply('');
@@ -163,7 +183,8 @@ export function MailSection({ compact }: { compact?: boolean } = {}) {
       const th = await api.post<{ id: string }>('/threads', { agentId });
       const inGmail = t('Lees deze mail in Gmail en stel een antwoord voor: “{0}” van {1} (id {2}).', open.subject, senderName(open.from), open.id);
       const inBox = t('Lees deze mail in het postvak {0} en stel een antwoord voor: “{1}” van {2} (id {3}).', address, open.subject, senderName(open.from), open.id);
-      await api.post(`/threads/${th.id}/messages`, { content: acct === GOOGLE ? inGmail : inBox });
+      const inOutlook = t('Lees deze mail in Outlook ({0}) en stel een antwoord voor: “{1}” van {2} (id {3}).', address, open.subject, senderName(open.from), open.id);
+      await api.post(`/threads/${th.id}/messages`, { content: isMs ? inOutlook : isGoogle ? (gconn ? `${inGmail} ${t('Deze mail staat in het Gmail-postvak van {0}.', gAccounts.find((x) => x.id === gconn)?.email || '')}` : inGmail) : inBox });
       navigate(`/t/${th.id}`);
     } catch (e) {
       toastError(e);
@@ -171,6 +192,11 @@ export function MailSection({ compact }: { compact?: boolean } = {}) {
       setBusy(false);
     }
   };
+
+  useEffect(() => {
+    if (rows !== null) onOff?.(!!off);
+  }, [rows, off]);
+  if (quiet && (rows === null || off)) return null;
 
   return (
     <section className="space-y-2" data-testid="dashboard-mail">
@@ -201,9 +227,19 @@ export function MailSection({ compact }: { compact?: boolean } = {}) {
       >
         Post
       </SectionTitle>
-      {!compact && boxes.length > 0 && !adding && (
+      {!compact && boxes.length + msAccounts.length + Math.max(0, gAccounts.length - 1) > 0 && !adding && (
         <select className="h-9 w-full rounded-lg border border-line bg-surface px-2 text-sm text-fg" value={acct} onChange={(e) => (setFresh(null), setAcct(e.target.value))} aria-label={t('Welk postvak')} data-testid="dashboard-mail-account" translate="no">
-          <option value={GOOGLE}>{t('Google-account')}</option>
+          <option value={GOOGLE}>{gAccounts.length > 1 ? gAccounts[0].email : t('Google-account')}</option>
+          {gAccounts.slice(1).map((a) => (
+            <option key={a.id} value={`google:${a.id}`}>
+              {a.email}
+            </option>
+          ))}
+          {msAccounts.map((a) => (
+            <option key={a.id} value={`ms:${a.id}`}>
+              {a.email || 'Outlook'}
+            </option>
+          ))}
           {boxes.map((b) => (
             <option key={b.id} value={b.id}>
               {b.address}

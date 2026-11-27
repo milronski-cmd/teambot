@@ -119,5 +119,6 @@ test('a CLI session with a window of a million tokens is compacted from 400,000 
   assert.equal(at(CLI_CONTEXT_CAP - 1, 1_000_000), false);
   assert.equal(at(CLI_CONTEXT_CAP, 1_000_000), true);
   assert.equal(at(160_000, 200_000), true, '75% of a small window still counts');
-  assert.equal(at(100_000, 200_000), false);
+  assert.equal(at(70_000, 200_000), false);
+  assert.equal(at(60_000, 80_000), true, '75% of a window smaller than the cap');
 });

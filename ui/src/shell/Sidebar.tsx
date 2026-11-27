@@ -128,8 +128,13 @@ export function Sidebar({ route, onNavigate }: { route: string[]; onNavigate?():
 
   return (
     <div className="flex h-full w-full flex-col" role="region" aria-label="Bots en gesprekken">
-      {/* The team switcher (only from two teams on), then search, the bell and "+" in one row, as OpenBot. */}
-      <div className="flex shrink-0 items-center gap-1 px-2 pb-2 pt-2">
+      {/* Editorial header + "+" menu */}
+      <div className="flex shrink-0 items-center justify-between px-4 pb-1 pt-4">
+        <span className="tb-editorial text-[19px] font-bold text-fg">Werkruimte</span>
+        <NewMenu onNavigate={onNavigate} />
+      </div>
+      {/* Search row */}
+      <div className="flex shrink-0 items-center gap-1.5 px-3 pb-3 pt-2">
         {searching ? (
           <form
             className="relative min-w-0 flex-1"
@@ -151,9 +156,9 @@ export function Sidebar({ route, onNavigate }: { route: string[]; onNavigate?():
               onBlur={() => !q.trim() && setSearching(false)}
               placeholder="Zoek een bot (Enter: overal)"
               aria-label="Bots zoeken (Enter zoekt overal)"
-              className="h-9 w-full rounded-control border border-line-strong bg-surface ps-9 pe-9 text-sm outline-none placeholder:text-muted coarse:h-11"
+              className="h-8 w-full rounded-[9px] border border-line-strong bg-surface ps-9 pe-9 text-[13px] outline-none placeholder:text-muted coarse:h-11"
             />
-            <button type="button" aria-label="Zoeken sluiten" onMouseDown={(e) => e.preventDefault()} onClick={closeSearch} className="absolute end-1 top-1/2 flex size-7 -translate-y-1/2 items-center justify-center rounded-md text-muted transition-colors hover:bg-surface-3 hover:text-fg">
+            <button type="button" aria-label="Zoeken sluiten" onMouseDown={(e) => e.preventDefault()} onClick={closeSearch} className="absolute end-1 top-1/2 flex size-6 -translate-y-1/2 items-center justify-center rounded-md text-muted transition-colors hover:bg-surface-3 hover:text-fg">
               <X className="size-icon" aria-hidden />
             </button>
           </form>
@@ -162,14 +167,12 @@ export function Sidebar({ route, onNavigate }: { route: string[]; onNavigate?():
             type="button"
             data-tip={t('Zoek een bot · Ctrl+K zoekt overal')}
             onClick={() => setSearching(true)}
-            className="tb-tip flex h-9 min-w-0 flex-1 items-center gap-2 rounded-control border border-line bg-surface-2 px-3 text-sm text-muted transition-colors hover:text-fg coarse:h-11"
+            className="tb-tip flex h-8 min-w-0 flex-1 items-center gap-2 rounded-[9px] border border-line bg-surface px-3 text-[13px] text-muted transition-colors hover:border-line-strong hover:text-fg coarse:h-11"
           >
-            <Search className="size-icon stroke-[1.75]" aria-hidden />
+            <Search className="size-3.5 stroke-[1.8]" aria-hidden />
             <span className="flex-1 text-start">Zoeken</span>
           </button>
         )}
-        {/* "+": Nieuwe bot, Nieuw team, Team uit een sjabloon. */}
-        <NewMenu onNavigate={onNavigate} />
       </div>
 
       {/* The list: the main bot and the pinned bots first (always in view), then every bot and group. */}
@@ -178,7 +181,7 @@ export function Sidebar({ route, onNavigate }: { route: string[]; onNavigate?():
         <ChatList route={route} onNavigate={onNavigate} q={q} pinned="apart" />
       </div>
 
-      {/* At the bottom: stop what runs, and the usage rings (one per subscription or provider; each shows its details).
+      {/* At the bottom: the usage rings (one per subscription or provider; each shows its details).
           relative: the usage popover opens above this footer. */}
       <div className="relative border-t border-line px-2 py-1.5">
         <UsageMeter className="min-w-0 px-1" />

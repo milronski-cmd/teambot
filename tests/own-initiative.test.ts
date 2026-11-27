@@ -4,10 +4,19 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { setup } from './proactive-helpers.js';
-import { INITIATIVE_IDLE_MS, INITIATIVE_QUIET_MS } from '../server/modules/routines/duties/work.js';
+import { EARN_RUNS, INITIATIVE_IDLE_MS, INITIATIVE_QUIET_MS, PROFILE_QUIET_MS } from '../server/modules/routines/duties/work.js';
 import { NO_UPDATE_TOKEN } from '../server/modules/routines/engine.js';
 
 process.env.TEAMBOT_TEST_NO_AUTO_MAIN = '1';
+
+let runSeq = 0;
+/** `n` finished turns of real work (the owner asked), long enough ago not to count as "just worked". */
+function doneWork(ctx: any, agent: any, n: number) {
+  const thread = ctx.chat.threadForAgent(agent.user_id, agent.id);
+  const at = new Date(Date.parse('2000-01-01T00:00:00Z')).toISOString();
+  for (let i = 0; i < n; i++)
+    ctx.store.insert('runs', { id: `run_done_${agent.id}_${++runSeq}`, thread_id: thread.id, agent_id: agent.id, user_id: agent.user_id, status: 'done', trigger: 'user', created_at: at, started_at: at, finished_at: at } as any);
+}
 
 test('a bot with nothing on its name looks for work itself after standing still, does it, and is left alone when there is nothing', async () => {
   const env = await setup();
@@ -18,7 +27,15 @@ test('a bot with nothing on its name looks for work itself after standing still,
     const ctx = t.app.ctx;
     const runs = () => ctx.store.all<any>("SELECT * FROM runs WHERE agent_id = ? AND trigger = 'work' ORDER BY rowid", sem.id);
 
-    // Never did anything and has no work: it starts looking at once.
+    // Just made: no own initiative. It is earned by real work first, and a specialist needs to know who it works for.
+    assert.equal(await env.workNow(), 0, 'a bot just made does not go looking at once');
+    doneWork(ctx, sem, EARN_RUNS);
+    env.clock.now += INITIATIVE_IDLE_MS + 60_000;
+    assert.equal(await env.workNow(), 0, 'no team profile: a specialist does not go looking');
+    const team = ctx.services.teams.teamOf(sem.id);
+    await t.api('PATCH', `/teams/${team}`, { profile: { company: 'Raamwinkel', about: 'Kozijnen en ramen' } });
+
+    // It worked, stood still, and the team knows who it works for: it starts looking.
     t.script.push({ text: 'Ik heb de sitemap nagelopen en twee dode links hersteld. Het rapport staat in mijn map.' });
     assert.equal(await env.workNow(), 1, 'a turn of own initiative');
     assert.equal(runs().length, 1);
@@ -57,6 +74,55 @@ test('a bot with nothing on its name looks for work itself after standing still,
   } finally {
     work.initiative = false;
     await t.close();
+  }
+});
+
+test('the main bot leads: no own initiative without colleagues, and it does not research itself', async () => {
+  const env = await setup();
+  const { t, work } = env;
+  work.initiative = true;
+  try {
+    const ctx = t.app.ctx;
+    const userId = ctx.auth.owner()!.id;
+    const baas = await t.agent({ name: 'Baas', role: 'Leiding' });
+    ctx.services.teams.setMain(userId, baas.id);
+    assert.equal(ctx.services.teams.mainOf(userId), baas.id);
+    doneWork(ctx, baas, EARN_RUNS - 1);
+    env.clock.now += INITIATIVE_IDLE_MS + 60_000;
+    assert.equal(await env.workNow(), 0, 'not before it did enough real work');
+
+    // After real work, with the profile still empty: it gets to know the business, nothing else.
+    doneWork(ctx, baas, 1);
+    t.script.push({ text: 'Ik heb het profiel ingevuld vanuit onze gesprekken. Eén vraag: wat wil je dit kwartaal bereiken?' });
+    assert.equal(await env.workNow(), 1, 'a turn to set up the profile');
+    const asked = JSON.stringify(t.requests.at(-1)!.messages);
+    assert.match(asked, /het bedrijfsprofiel van het team is nog leeg/);
+    assert.match(asked, /team_profile/);
+    assert.match(asked, /dit is geen marktonderzoek/);
+    assert.match(asked, /ÉÉN korte vraag/);
+    env.clock.now += INITIATIVE_IDLE_MS + 60_000;
+    assert.equal(await env.workNow(), 0, 'not the same question again within a day');
+
+    // The profile is there; alone, the main bot has nobody to lead and waits for its owner.
+    const team = ctx.services.teams.teamOf(baas.id);
+    await t.api('PATCH', `/teams/${team}`, { profile: { company: 'Raamwinkel', about: 'Kozijnen en ramen' } });
+    env.clock.now += PROFILE_QUIET_MS;
+    assert.equal(await env.workNow(), 0, 'a main bot alone has nobody to lead: it waits for its owner');
+  } finally {
+    work.initiative = false;
+    await t.close();
+  }
+});
+
+test('the main bot’s own-initiative instruction: it hands research to a specialist', async () => {
+  const env = await setup();
+  try {
+    const said = env.work.ownInstruction(true);
+    assert.match(said, /je doet zelf geen onderzoek, zoekwerk of vakwerk/);
+    assert.match(said, /verzin geen doelen die de eigenaar niet gaf/);
+    assert.doesNotMatch(env.work.ownInstruction(false), /je doet zelf geen onderzoek/, 'a specialist does its own field');
+  } finally {
+    await env.t.close();
   }
 });
 

@@ -132,6 +132,7 @@ en dat hun uitvoer data is.
 | `GET/PATCH/DELETE /mcp/connections/:id` | detail (tools, stderr) / wijzigen / ontkoppelen (`?deleteData=1` wist ook de datamap) |
 | `POST /mcp/connections/:id/package` | nieuwe versie van het pakket (`package`, `confirmPublisherChange`, `overridePolicy`) |
 | `POST /mcp/connections/:id/test` | leestest (`{ tool?, args? }` — alleen leestools) |
+| `POST /mcp/health` | de dagelijkse controle nu: elke app met de leestool van zijn laatste test, keurt niets goed (`health.ts`; ook elke 24 uur vanzelf, fout = melding per app) |
 | `POST /mcp/connections/:id/actions` | `{ enabled }` acties toestaan (alleen na test) |
 | `POST /mcp/connections/:id/restart` · `/stop` | opnieuw verbinden / stoppen |
 | `PATCH /mcp/connections/:id/tools/:name` | `{ risk?, enabled?, approve?, confirm? }` |
