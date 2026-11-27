@@ -68,3 +68,15 @@ test('photo avatars stay photos; random faces use only known parts', () => {
     assert.deepEqual(cleanTraits(t), t, 'every randomly chosen part is a known part');
   }
 });
+
+test('the 3D styles neo and void render every shape and mood well-formed, with only safe elements', () => {
+  const allowed = new Set(['svg', 'defs', 'radialGradient', 'linearGradient', 'stop', 'filter', 'feGaussianBlur', 'feMerge', 'feMergeNode', 'clipPath', 'path', 'ellipse', 'circle', 'rect', 'g', 'text']);
+  for (const style of ['neo', 'void'] as const)
+    for (const shape of SHAPES)
+      for (const mood of MOODS) {
+        const s = botSvg('x', { traits: { shape, color: COLORS[2], extra: EXTRAS[1] }, mood, uid: `${style}${shape}${mood}`, style });
+        assert.ok(s.startsWith('<svg') && s.endsWith('</svg>'));
+        assert.ok(!/NaN|undefined/.test(s), `${style}/${shape}/${mood}`);
+        for (const m of s.matchAll(/<([a-zA-Z]+)/g)) assert.ok(allowed.has(m[1]), `unexpected <${m[1]}>`);
+      }
+});

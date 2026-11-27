@@ -86,5 +86,8 @@ export function moodTone(mood: Mood): string {
 
 /** Global "Stijl figuurtjes" setting (Glad = clay, Vilt = felt). */
 export function useFaceStyle(): FaceStyle {
-  return useApp((s) => (s.settings?.ui?.botStyle === 'felt' ? 'felt' : 'clay'));
+  return useApp((s) => {
+    const v = s.settings?.ui?.botStyle;
+    return v === 'felt' || v === 'neo' || v === 'void' ? v : 'clay';
+  });
 }

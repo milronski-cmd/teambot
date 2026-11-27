@@ -228,6 +228,8 @@ export const SETTINGS = settings({
     choices: [
       { value: 'clay', label: 'Glad', means: 'gladde figuurtjes, als van klei (standaard)' },
       { value: 'felt', label: 'Vilt', means: 'figuurtjes van vilt' },
+      { value: 'neo', label: 'Neo', means: 'glanzend 3D met een glazen vizier en lichtende ogen' },
+      { value: 'void', label: 'Void', means: 'zwart glas met een neonrand' },
     ],
   },
   // ---- Standaarden voor nieuwe bots

@@ -296,6 +296,8 @@ function noteVersionChange(ctx: Ctx) {
             : `TeamBot draait weer op versie ${c.to}.`,
       link: '#/m/backups/nieuw',
       kind: 'system',
+      // One line for every update that is still unread (4.20.0: a row of 'bijgewerkt naar …' stacked up).
+      ref: 'app-version',
     });
   } else if (r.failed) {
     const f = r.failed;

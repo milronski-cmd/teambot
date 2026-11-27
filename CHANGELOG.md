@@ -1,5 +1,16 @@
 # Changelog
 
+## [4.20.0] — 2026-11-28
+
+### Het nieuwe TeamBot
+Alles van de afgelopen versies samen: zwart met TeamBot-oranje, één rustige zijbalk met je gesprekken, de chat in het midden met een welkomscherm, het nieuwe logo, bots met meer diepte en een dashboard met grote cijfers.
+
+### Nieuw
+- **Twee nieuwe stijlen voor je bots** onder Instellingen › Taal en uiterlijk: Neo (glanzend 3D met een glazen vizier) en Void (zwart glas met een neonrand). Glad blijft de standaard.
+
+### Hersteld
+- **Eén melding per update**: "TeamBot is bijgewerkt" stapelt zich niet meer op.
+
 ## [4.18.19] — 2026-11-27
 
 ### Hersteld
