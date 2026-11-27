@@ -68,6 +68,9 @@ function closeTeamBot() {
   }
   spawnSync('taskkill', ['/IM', 'TeamBot.exe', '/T', '/F'], { stdio: 'ignore' });
   spawnSync('powershell', ['-NoProfile', '-Command', 'Start-Sleep -Seconds 2']);
+  // A channel's own browser (WhatsApp Web) can outlive TeamBot and keep its cookie file locked: the backup would fail.
+  const ps = `Get-CimInstance Win32_Process | Where-Object { $_.CommandLine -and $_.CommandLine.Contains('${DATA.replace(/'/g, "''")}') } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }; Start-Sleep -Seconds 1`;
+  spawnSync('powershell', ['-NoProfile', '-Command', ps], { stdio: 'ignore' });
 }
 
 const startTeamBot = () => spawn(EXE, [], { detached: true, stdio: 'ignore' }).unref();
