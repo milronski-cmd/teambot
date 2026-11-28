@@ -1,25 +1,25 @@
 import SwiftUI
 import UIKit
 
-/// The look of the native screens, in one place. Same values as the web app (ui/src/styles.css): warm off-white
-/// canvas with white cards in light, near-black in dark, and one accent: the orange of TeamBot with dark ink.
+/// The look of the native screens, in one place. Same values as the web app (ui/src/styles.css, since 4.18.14):
+/// black and white with neutral greys, and one accent: the orange of TeamBot.
 enum Theme {
     /// The one main button per screen.
-    static let accent = dynamic(light: 0xFF9440, dark: 0xFF9A4D)
-    static let accentPressed = dynamic(light: 0xE07A22, dark: 0xE8863A)
+    static let accent = dynamic(light: 0xB23A08, dark: 0xFF8A3D)
+    static let accentPressed = dynamic(light: 0x942F05, dark: 0xE8742A)
     /// Text and icons on the orange button.
-    static let onAccent = dynamic(light: 0x241A10, dark: 0x1D140B)
+    static let onAccent = dynamic(light: 0xFFFFFF, dark: 0x000000)
     /// Orange for text, links and small controls: dark enough to read on the canvas (also Assets › AccentColor).
-    static let accentText = dynamic(light: 0xB85A0A, dark: 0xFFAB69)
+    static let accentText = dynamic(light: 0xB23A08, dark: 0xFF8A3D)
 
-    static let canvas = dynamic(light: 0xFAF9F7, dark: 0x0F0F11)
-    static let card = dynamic(light: 0xFFFFFF, dark: 0x19191D)
-    static let surface2 = dynamic(light: 0xF5F3EF, dark: 0x1F1F23)
-    static let surface3 = dynamic(light: 0xEBE8E2, dark: 0x28282E)
-    static let line = dynamic(light: 0xE6E2DC, dark: 0x2A2A30)
-    static let ink = dynamic(light: 0x1C1B19, dark: 0xEEEDF0)
-    static let muted = dynamic(light: 0x5C5852, dark: 0xA8A5AE)
-    static let danger = dynamic(light: 0xB12E2E, dark: 0xFF7A7A)
+    static let canvas = dynamic(light: 0xFFFFFF, dark: 0x000000)
+    static let card = dynamic(light: 0xFFFFFF, dark: 0x141414)
+    static let surface2 = dynamic(light: 0xF3F3F3, dark: 0x1D1D1D)
+    static let surface3 = dynamic(light: 0xE7E7E7, dark: 0x282828)
+    static let line = dynamic(light: 0xECECEC, dark: 0x1F1F1F)
+    static let ink = dynamic(light: 0x0D0D0D, dark: 0xFAFAFA)
+    static let muted = dynamic(light: 0x5C5C5C, dark: 0x9B9B9B)
+    static let danger = dynamic(light: 0xBE123C, dark: 0xFB7185)
 
     static let cardRadius: CGFloat = 16
     static let controlRadius: CGFloat = 14
